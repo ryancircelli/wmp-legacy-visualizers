@@ -1,0 +1,217 @@
+/* Tailwind v4 for the page: the theme (Luna palette, fonts, sizes), the state and width variants
+   the skins use, a small base layer, and no preflight.
+   - No preflight: the page's globals (html/body margin, transparency) live in index.html, and under
+     Spotify this sheet is adopted into the web player's page's shadow root, where a reset must
+     not assume it owns the document. The base layer below is the skin's own few resets, scoped to
+     [data-ui-root] (the skin's wrapper and every portalled menu and dialog).
+   - --spacing is 1px, so p-7 is 7px and w-202 is 202px: the skin is measured in pixels off the
+     reference captures, and rem would follow the host page's root font size under Spotify.
+   - Only src/skins and src/ui are scanned for class names (source(none) + @source). */
+@layer properties, theme, base, components, utilities;
+@import "tailwindcss/theme" layer(theme);
+@import "tailwindcss/utilities" layer(utilities) source(none);
+@source "../skins";
+@source ".";
+@source not inline("container");   /* the word appears in props and comments; no layout container here */
+
+@theme {
+  --spacing: 1px;
+  --color-*: initial;
+  --font-*: initial;
+  --text-*: initial;
+  --radius-*: initial;
+  --shadow-*: initial;
+
+  --font-xp: Tahoma, "Segoe UI", Verdana, sans-serif;
+  --font-mono: ui-monospace, "Lucida Console", monospace;
+
+  /* font sizes: line heights stay per use (the skin sets them next to the size) */
+  --text-10: 10px;
+  --text-11: 11px;
+  --text-12: 12px;
+  --text-13: 13px;
+  --text-14: 14px;
+  --text-17: 17px;
+  --text-20: 20px;
+
+  --radius-xs: 2px;
+  --radius-sm: 3px;
+  --radius-md: 4px;
+  --radius-lg: 6px;
+  --radius-win: 8px;          /* the Luna window's top corners */
+
+  --shadow-menu: 2px 2px 3px rgba(0, 0, 0, .45);
+  --shadow-dialog: 0 6px 22px rgba(0, 0, 0, .55);
+
+  /* ---- Luna palette: every solid colour the WMP 9 skin uses, by role ---------------------- */
+  --color-white: #FFFFFF;
+  --color-black: #000000;
+  --color-transparent: transparent;
+  /* the window */
+  --color-luna-sep: #7F90B5;        /* the 1px steel separator Luna uses everywhere */
+  --color-luna-lo: #BFD2EA;         /* chrome light */
+  --color-luna-hi: #DFE9F5;         /* chrome highlight */
+  --color-ink: #17255A;             /* the skin's text and focus ring */
+  --color-luna-frame: #B7C9EC;      /* the frame body behind the panes */
+  --color-caption-edge: #0A3E9E;    /* minimize / maximize rim */
+  --color-close-edge: #A32A06;      /* close rim */
+  --color-knob-ink: #23365F;        /* task pane knob arrows */
+  --color-pill-edge: #93A0C6;
+  --color-pill-edge-hot: #4E6693;
+  --color-pill-ink: #16234C;        /* the view pill's and the task buttons' text */
+  --color-task-rule: #D8E0EF;
+  --color-task-edge: #3E5599;
+  --color-task-hot: #0B3FA0;
+  --color-slate: #3A4874;           /* disabled tasks, device icon outlines */
+  --color-task-arrow: #24356B;
+  --color-task-expand: #2A3E77;
+  --color-grip-edge: #8FA3C8;
+  /* XP's classic controls (menus, dialogs, the Media Library) */
+  --color-xp-face: #ECE9D8;
+  --color-xp-face-hot: #F4F2E6;
+  --color-xp-edge: #ACA899;
+  --color-xp-edge-dark: #8E8B76;
+  --color-xp-shade: #A0A0A0;
+  --color-xp-select: #316AC5;
+  --color-xp-select-ink: #D6E4FA;
+  --color-xp-accel: #5A5648;
+  --color-xp-disabled: #9A968A;   /* a disabled menu item */
+  --color-xp-field: #7F9DB9;
+  --color-xp-navy: #0A246A;
+  --color-xp-default: #003C74;
+  --color-xp-hot: #FFF6D8;
+  --color-xp-tab: #E2DFCE;
+  --color-xp-ro: #F5F3E8;
+  --color-xp-ro-ink: #3A3A3A;
+  --color-xp-hint: #4A4A4A;
+  --color-xp-rule: #D8D4C0;
+  --color-xp-grey: #555555;
+  --color-xp-grid: #E4E4E4;
+  --color-xp-grid-v: #EFEFEF;
+  --color-xp-hover: #E8EEF9;
+  --color-xp-link: #0A36A8;
+  --color-xp-heading: #1C3A7A;
+  /* Media Library / Guide / Radio / Devices */
+  --color-list-head-edge: #A9B8E0;
+  --color-view-head-edge: #2F4A8C;
+  --color-view-note: #DCE6FA;
+  --color-guide-rule: #C9D6EE;
+  --color-art-plate: #4A5689;
+  --color-lit-edge: #2A5FA8;        /* lit discs, the radio ▶ */
+  --color-radio-ink: #10306A;
+  --color-device-on: #D0E7FF;
+  --color-disc-ink: #22315B;        /* shuffle / lyrics glyphs, the TV icon */
+  /* the display plate */
+  --color-viz-edge: #60647F;
+  --color-rbtn-edge: #3E3E3E;
+  --color-viz-label: #F2F4FA;
+  --color-dbg-ink: #A8F0A8;
+  --color-dbg-edge: #2A4A2A;
+  --color-lyric-gold: #FFE24A;
+  /* the playlist pane */
+  --color-pl-bg: #394472;
+  --color-pl-band-ink: #F4F6FD;
+  --color-pl-art-bg: #1D243F;
+  --color-pl-art-edge: #4A5178;
+  --color-pl-ink: #D8DEF2;          /* artist, list items, the Open button */
+  --color-pl-album: #9AA5CF;
+  --color-pl-from: #B9C4E8;
+  --color-pl-lyric: #C9D1EE;
+  --color-pl-rule: #2A3254;
+  --color-pl-rule-hi: #4C578A;
+  --color-pl-foot: #2B3254;
+  --color-pl-scroll: #7183C9;
+  --color-pl-scroll-track: #2B3459;
+  --color-pl-group-ink: #EEF1FA;
+  --color-pl-group-edge: #7C88B8;
+  --color-pl-hot: #55639F;
+  --color-pl-open-edge: #5C6796;
+  --color-pl-open-edge-hot: #8E9BD0;
+  /* seek bar and transport */
+  --color-spill-edge: #5E7299;
+  --color-spill-ink: #26386A;
+  --color-thumb-edge: #0C6A0C;
+  --color-disc-edge: #5C6874;
+  --color-disc-glyph: #17233F;
+  --color-stop-glyph: #1B2540;
+  --color-glyph-off: #93A3B8;       /* a transport glyph with nothing to act on (WMP 9's disabled grey-blue) */
+  --color-tr-ink: #1B2A55;
+  --color-status-ink: #2C3E6E;
+  --color-sbtn-edge: #66727B;
+  --color-grip-ink: #8E9AB8;
+
+  /* ---- two- and three-stop gradients (bg-<name>); the many-stop and pixel-stop ones are
+          wmp9.module.css's (ARCHITECTURE.md lists them) ------------------------------------- */
+  --background-image-luna-window: linear-gradient(180deg, #0058EE, #0046D5);
+  --background-image-taskpane: linear-gradient(180deg, #8CA2DE, #7E93D0 40%, #6E82BF);
+  --background-image-task-hover: linear-gradient(90deg, #FFFFFF, #E8F1FE 60%, #D2E2FA);
+  --background-image-task-on: linear-gradient(90deg, #E4F1FF, #D0E7FF 45%, #C4DFF7);
+  --background-image-task-grip: linear-gradient(90deg, #F6FBFF, #DDE7F7 60%, #C3D0E8);
+  --background-image-list-head: linear-gradient(180deg, #6D86C9, #4E67AE);
+  --background-image-ml-head: linear-gradient(180deg, #F7F9FD, #E3EAF6);
+  --background-image-vizctl: linear-gradient(180deg, #2A3050, #212741 40%, #1B2039);
+  --background-image-pl-band: linear-gradient(180deg, #6D7DC9, #6071BF 40%, #5A6BB4);
+  --background-image-listbox: linear-gradient(180deg, #414D80, #333D67);
+  --background-image-list-group: linear-gradient(180deg, #6675B4, #4A5691);
+  --background-image-list-on: linear-gradient(180deg, #5E9BEE, #2464B8);
+  --background-image-pl-open: linear-gradient(180deg, #4A5689, #384270);
+  --background-image-spill: linear-gradient(180deg, #FBFDFF, #DDE6F5 55%, #BDCCE6);
+  --background-image-tgroup: linear-gradient(180deg, rgba(255, 255, 255, .72), rgba(160, 176, 205, .34));
+  --background-image-caption: linear-gradient(180deg, rgba(0, 88, 238, .7), rgba(0, 67, 207, .7));
+  --background-image-dlg-title: linear-gradient(90deg, #0A246A, #4E7BC4 55%, #A6CAF0);
+  /* XP Luna's push button face (white top fading to the face colour) */
+  --background-image-xp-button: linear-gradient(180deg, #FFFFFF, #F4F3EE 45%, #ECEBE6 85%, #D6D0C5);
+  --background-image-dlg-close: linear-gradient(#F09A7A, #D6502A 50%, #A82B10);
+}
+
+/* :hover as the skin always meant it (Tailwind's default also requires @media (hover: hover)). */
+@custom-variant hover (&:hover);
+/* Widths: WMP's own breakpoints, inclusive (max-width), as the skin always had them. */
+@custom-variant lt-900 (@media (width < 900px));   /* the details pane hides under 900 px */
+@custom-variant max-620 (@media (max-width: 620px));
+@custom-variant max-520 (@media (max-width: 520px));
+@custom-variant max-440 (@media (max-width: 440px));
+/* App states, set as data attributes on the skin's window element (#chrome): full screen /
+   screensaver (bare), the Spotify engine, the playlist pane off (nopl), the task pane off (notask).
+   Declared after the widths so a state rule wins over a width rule, as it did. */
+@custom-variant bare (&:where([data-bare], [data-bare] *));
+@custom-variant spotify (&:where([data-spotify], [data-spotify] *));
+@custom-variant nopl (&:where([data-nopl], [data-nopl] *));
+@custom-variant notask (&:where([data-notask], [data-notask] *));
+
+@layer base {
+  :where([data-ui-root]), :where([data-ui-root]) * { box-sizing: border-box; }
+  :where([data-ui-root]) :where(button, input, select) { font: inherit; color: inherit; }
+  :where([data-ui-root]) :where(button) { cursor: pointer; }
+  /* beats any display utility (a layered !important outranks every later layer) */
+  :where([data-ui-root])[hidden], :where([data-ui-root]) [hidden] { display: none !important; }
+  :where([data-ui-root]) :focus-visible { outline: 1px dotted var(--color-ink); outline-offset: 1px; }
+  :where([data-ui-root]) :where(svg) { display: block; }
+}
+
+/* Tailwind registers its per-element variables (--tw-border-style, --tw-shadow, ...) with
+   @property, and gives the initial values as plain declarations only to browsers without
+   @property. A shadow root ignores @property, so under Spotify those variables would be unset and
+   `border`, `shadow-*`, `after:` would draw nothing: declare the initial values for everyone.
+   tests/spotify-smoke.js fails the build if Tailwind starts registering one missing from here. */
+@layer properties {
+  *, ::before, ::after, ::backdrop {
+    --tw-translate-x: 0; --tw-translate-y: 0; --tw-translate-z: 0;
+    --tw-rotate-x: initial; --tw-rotate-y: initial; --tw-rotate-z: initial; --tw-skew-x: initial; --tw-skew-y: initial;
+    --tw-scale-x: 1; --tw-scale-y: 1; --tw-scale-z: 1;
+    --tw-border-style: solid; --tw-outline-style: solid;
+    --tw-gradient-position: initial; --tw-gradient-from: #0000; --tw-gradient-via: #0000; --tw-gradient-to: #0000;
+    --tw-gradient-stops: initial; --tw-gradient-via-stops: initial;
+    --tw-gradient-from-position: 0%; --tw-gradient-via-position: 50%; --tw-gradient-to-position: 100%;
+    --tw-leading: initial; --tw-font-weight: initial; --tw-tracking: initial; --tw-ordinal: initial;
+    --tw-shadow: 0 0 #0000; --tw-shadow-color: initial; --tw-shadow-alpha: 100%;
+    --tw-inset-shadow: 0 0 #0000; --tw-inset-shadow-color: initial; --tw-inset-shadow-alpha: 100%;
+    --tw-ring-color: initial; --tw-ring-shadow: 0 0 #0000; --tw-inset-ring-color: initial; --tw-inset-ring-shadow: 0 0 #0000;
+    --tw-ring-inset: initial; --tw-ring-offset-width: 0px; --tw-ring-offset-color: #fff; --tw-ring-offset-shadow: 0 0 #0000;
+    --tw-blur: initial; --tw-brightness: initial; --tw-contrast: initial; --tw-grayscale: initial; --tw-hue-rotate: initial;
+    --tw-invert: initial; --tw-opacity: initial; --tw-saturate: initial; --tw-sepia: initial;
+    --tw-drop-shadow: initial; --tw-drop-shadow-color: initial; --tw-drop-shadow-alpha: 100%; --tw-drop-shadow-size: initial;
+    --tw-text-shadow-color: initial; --tw-text-shadow-alpha: 100%;
+    --tw-duration: initial; --tw-ease: initial; --tw-content: "";
+  }
+}

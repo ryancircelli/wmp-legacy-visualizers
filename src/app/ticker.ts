@@ -1,0 +1,123 @@
+// The render loop the old shell ran (src/90-shell.js frame()): a fixed-fps accumulator on rAF,
+// at most 3 engine steps a frame, paused while the capture is, held while a non-visualizer view
+// covers the screen (full screen always shows the visualizer), and the first painted frame
+// reported once. The engine and the canvas come and go with the <Visualizer/> that shows them.
+import { createEngine, makeLevel, nativeSize, type TimedLevel, type VisEngine } from '../engine';
+import type { AppStore } from '../model';
+
+export interface Ticker {
+  attach(canvas: HTMLCanvasElement): () => void;
+  readonly engine: VisEngine | null;
+  readonly level: TimedLevel;
+  readonly fps: number;
+  /** a test/debug hold on top of the capture's own pause */
+  paused: boolean;
+  nativeSize(): [number, number];
+  debugText(): string;
+}
+
+function mark(n: string) {
+  window.alchemyMarks?.push(n + '=' + Math.round(performance.now()));
+}
+
+export function createTicker(store: AppStore, onFirstFrame: () => void): Ticker {
+  const silent = makeLevel();
+  let canvas: HTMLCanvasElement | null = null, eng: VisEngine | null = null, level: TimedLevel = silent;
+  let acc = 0, last = 0, frames = 0, fpsAt = 0, fps = 0, raf = 0, first = true;
+  const S = () => store.getState().settings;
+  const full = () => !!document.fullscreenElement || store.getState().ui.bare || store.getState().auth.mode === 'screensaver';
+
+  function fillLevel(): TimedLevel {
+    const f = store.getState().vis.level;
+    if (f) return (level = f());
+    // no audio producer yet: digital silence, still animating if the setting says so
+    silent.state = !t.paused && S().animate ? 2 : 1;
+    silent.timeStamp = performance.now();
+    return (level = silent);
+  }
+
+  function make() {
+    if (!canvas) return;
+    const s = store.getState();
+    eng = createEngine(s.vis.kind, canvas, { preset: s.vis.preset, scale: S().scale,
+      options: { intended: S().intended, fps: S().fps, backgroundColor: S().bg } });
+  }
+
+  function frame(now: number) {
+    raf = requestAnimationFrame(frame);
+    let dt = now - last;
+    last = now;
+    if (dt > 250) dt = 250;                       // tab was hidden; don't catch up
+    const step = 1000 / S().fps, st = store.getState();
+    const paused = t.paused || !!st.playback.capture?.paused;
+    acc += dt;
+    let runs = 0, drew = false;
+    while (acc >= step && runs < 3) {             // hard cap: no spiral of death
+      acc -= step; runs++;
+      // Held: nothing on screen to render into (a library view covers it), so the engine is not
+      // run at all; full screen always shows it.
+      if (eng && !paused && !(st.vis.hold && !full())) { eng.render(fillLevel()); drew = true; }
+    }
+    if (acc > step * 3) acc = 0;
+    if (drew && eng) {
+      eng.present(); frames++;
+      if (first) {
+        first = false; mark('firstRender');
+        // setTimeout, not straight through: inside rAF the frame is not composited yet.
+        setTimeout(onFirstFrame, 0);
+      }
+    }
+    if (now - fpsAt >= 500) {
+      fps = Math.round((frames * 1000) / (now - fpsAt));
+      frames = 0; fpsAt = now;
+    }
+  }
+
+  const t: Ticker = {
+    paused: false,
+    get engine() { return eng; },
+    get level() { return level; },
+    get fps() { return fps; },
+    attach(c) {
+      canvas = c;
+      make();
+      const offs = [
+        store.subscribe((s) => s.vis.kind + ':' + s.vis.preset, () => {
+          const s = store.getState();
+          if (eng && eng.kind === s.vis.kind) eng.setPreset(s.vis.preset);
+          else make();
+        }),
+        store.subscribe((s) => s.settings.scale, (v) => eng?.setScale(v)),
+        store.subscribe((s) => s.settings.intended, (v) => { if (eng) eng.options.intended = v; }),
+        store.subscribe((s) => s.settings.bg, (v) => { if (eng) eng.options.backgroundColor = v; }),
+        store.subscribe((s) => s.settings.fps, (v) => { if (eng) eng.options.fps = v; acc = 0; }),
+      ];
+      // One observer covers window resizes, full screen and the task pane collapsing.
+      let tm = 0;
+      const ro = new ResizeObserver(() => { clearTimeout(tm); tm = window.setTimeout(() => eng?.resize(), 150); });
+      ro.observe(c);
+      last = fpsAt = performance.now();
+      raf = requestAnimationFrame(frame);
+      return () => {
+        cancelAnimationFrame(raf); ro.disconnect(); clearTimeout(tm);
+        for (const off of offs) off();
+        canvas = null; eng = null;
+      };
+    },
+    nativeSize() {
+      const c = canvas;
+      return nativeSize(store.getState().vis.kind, Math.max(16, c?.clientWidth || innerWidth), Math.max(16, c?.clientHeight || innerHeight));
+    },
+    debugText() {
+      if (!eng || !canvas) return '';
+      let d: unknown;
+      try { d = eng.debug(); } catch (e) { d = { error: String(e) }; }
+      const st = store.getState(), c = st.playback.capture;
+      return 'fps ' + fps + ' / ' + S().fps + '   buffer ' + eng.width + 'x' + eng.height +
+        ' (' + S().scale + ')   view ' + canvas.width + 'x' + canvas.height +
+        '\nstate ' + level.state + (t.paused || c?.paused ? ' PAUSED' : '') +
+        '   source ' + (c ? c.kind : 'none') + '\n' + JSON.stringify(d, null, 1);
+    },
+  };
+  return t;
+}

@@ -1,0 +1,43 @@
+# Builds the page (npm run build -> dist/) and publishes it to Cloudflare (wmp.ryancircelli.com) on every push to master.
+# workflow_dispatch from any other branch checks and builds only: the deploy step is master-only.
+# Secrets: CLOUDFLARE_API_KEY + CLOUDFLARE_EMAIL (Global API Key — rotate to a scoped token when possible), CLOUDFLARE_ACCOUNT_ID.
+name: deploy
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'src/**'
+      - 'index.html'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'vite.*'
+      - 'tools/postbuild.js'
+      - 'tsconfig*.json'
+      - 'eslint.config.*'
+      - 'public/**'
+      - 'wrangler.jsonc'
+      - '.github/workflows/deploy.yml'
+  workflow_dispatch:
+concurrency: { group: pages-deploy, cancel-in-progress: true }
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions: { contents: read, deployments: write }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '24', cache: npm }
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm test
+      - name: Build site
+        env: { GITHUB_SHA: '${{ github.sha }}' }
+        run: npm run build && ls -l dist
+      - name: Deploy to Cloudflare (Worker with static assets, custom domain wmp.ryancircelli.com)
+        if: github.ref == 'refs/heads/master'
+        env:
+          CLOUDFLARE_API_KEY: ${{ secrets.CLOUDFLARE_API_KEY }}
+          CLOUDFLARE_EMAIL: ${{ secrets.CLOUDFLARE_EMAIL }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: npx --yes wrangler@4 deploy

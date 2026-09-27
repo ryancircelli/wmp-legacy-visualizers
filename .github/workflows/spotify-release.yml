@@ -1,0 +1,116 @@
+# Packages the Spotify client and keeps one rolling download link:
+# https://github.com/ryancircelli/wmp-legacy-visualizers/releases/download/spotify-latest/WmpSpotify-win64.zip
+# The zip is also a workflow artifact on every run, including workflow_dispatch from a branch.
+#
+# Same build as app-release.yml with `--mode=spotify` baked in (CONTRACT.md v6): the exe embeds
+# ../dist/spotify-inject.js and injects it into open.spotify.com (deno-webview/spotify.ts).
+name: spotify-release
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'deno-webview/**'
+      - 'deno/**'
+      - 'src/**'
+      - 'index.html'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'vite.*'
+      - 'tools/postbuild.js'
+      - 'tsconfig*.json'
+      - 'eslint.config.*'
+      - 'public/**'
+      - '.github/workflows/spotify-release.yml'
+  workflow_dispatch:
+concurrency:
+  group: spotify-release
+  cancel-in-progress: true
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      # The page: TypeScript + React, built by Vite into ../dist (index.html, alchemy.html,
+      # spotify-inject.js, version.json). Checks first, so a red typecheck never ships an exe.
+      - name: Check and build the page
+        env:
+          GITHUB_SHA: ${{ github.sha }}
+        run: |
+          npm ci
+          npm run typecheck
+          npm run lint
+          npm test
+          npm run build
+          ls -l dist
+
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      # Before the tests: one of them asserts the PE subsystem byte of the built helper.
+      - name: Build the audio helper (x86_64-pc-windows-gnu)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends gcc-mingw-w64-x86-64
+          rustup target add x86_64-pc-windows-gnu
+          cd deno-webview && deno task audio
+          ls -l native/alchemy-audio.exe
+
+      - name: Test
+        working-directory: deno-webview
+        run: deno test -A
+
+      # deno task compile:spotify rebuilds ../dist (npm run build) and re-runs `deno task audio` (a no-op after
+      # the step above), so the packaged page and helper are always this commit's.
+      - name: Compile x86_64-pc-windows-msvc
+        working-directory: deno-webview
+        env:
+          GITHUB_SHA: ${{ github.sha }}
+        run: |
+          deno task compile:spotify
+          ls -l dist/WmpSpotify.exe
+
+      - name: Assemble the zip
+        run: |
+          d=deno-webview/dist/WmpSpotify-app
+          mkdir -p "$d"
+          mv deno-webview/dist/WmpSpotify.exe "$d/"
+          cp deno-webview/README.md "$d/"
+          (cd deno-webview/dist && zip -qry "$GITHUB_WORKSPACE/WmpSpotify-win64.zip" WmpSpotify-app)
+          ls -l WmpSpotify-win64.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: WmpSpotify-win64
+          path: WmpSpotify-win64.zip
+          retention-days: 30
+
+      # Rolling tag: deleted and recreated so the download URL never changes.
+      - name: Update the spotify-latest release
+        if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # One quoted line per paragraph: a heredoc would carry this step's YAML indentation
+          # into the notes and render every paragraph as a code block.
+          printf '%s\n' \
+            "Windows x64 build of ${GITHUB_SHA::7}." \
+            '' \
+            'Unzip it anywhere and run `WmpSpotify.exe`. It is one self-contained file - nothing has to stay next to it, and there is no installer. Spotify'"'"'s own web player runs inside the Windows Media Player 9 skin: log in once (File > Log out to switch accounts), and playback, the library, Radio Tuner and Play on Device are the Spotify ones.' \
+            '' \
+            '**Needs the WebView2 runtime**, which ships with Windows 11 and with current Windows 10. Nothing to install otherwise.' \
+            '' \
+            '**SmartScreen:** the exe is unsigned, so the first run shows "Windows protected your PC" - click *More info* > *Run anyway*. Nothing to do about that short of a code-signing certificate.' \
+            > notes.md
+          gh release delete spotify-latest --yes --cleanup-tag || true
+          gh release create spotify-latest WmpSpotify-win64.zip \
+            --target "$GITHUB_SHA" \
+            --title "WMP Spotify (latest)" \
+            --notes-file notes.md

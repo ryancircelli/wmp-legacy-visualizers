@@ -1,0 +1,107 @@
+/* WMP 9 "Corporate" on XP Luna: what Tailwind utilities cannot say sanely. Everything else (layout,
+   spacing, colour, type, borders, two- and three-stop gradients, states, widths) is utility classes
+   on the components, over the tokens in src/ui/theme.css. Each rule here sets only backgrounds
+   (and the slider's pseudo-elements), never a property a utility also sets on the same element:
+   this sheet is unlayered, so it would win. ARCHITECTURE.md "Tailwind" lists every rule and why.
+   Measured off re/captures/wmp9-corporate-reference.png (658x467). */
+
+/* XP squares a maximized window's corners, and the host drops its own rounded window region to
+   match (deno-webview/win32.ts roundTop()); a plain browser guesses from the window against the
+   screen (App.tsx). The host also appends #chrome,#titlebar{border-radius:0!important}. */
+:global(body.maximized) .corners { border-radius: 0; }
+
+/* ---- many-stop and pixel-stop gradients ------------------------------------------------- */
+.titlebar {
+  background: linear-gradient(180deg,
+    #0058EE 0%, #3F97FF 6%, #0372FF 12%, #0058E6 20%,
+    #0055E5 44%, #0058EE 60%, #026AFE 74%, #0060FC 88%, #0043CF 100%);
+}
+/* Luna caption buttons: two blue rounded squares, one red close */
+.wbtn { background: linear-gradient(180deg, #7FB6FB 0%, #3A8AF7 18%, #1466E2 52%, #0B52C8 82%, #2E7BEE 100%); }
+.wbtn:hover { background: linear-gradient(180deg, #A8CEFD, #5EA2F9 20%, #2E7BEE 55%, #1A62D8 85%, #4F94F2); }
+.wbtn.x { background: linear-gradient(180deg, #FCBFA2 0%, #F98B62 16%, #EE5C2A 50%, #CE3A0C 84%, #F0794A 100%); }
+.wbtn.x:hover { background: linear-gradient(180deg, #FFD6C2, #FCA382 18%, #F5713F 52%, #DE4A17 86%, #F98F63); }
+
+/* the top band: two-tone pinstripe blue, the steel sep at 15px, a dark line at 29px */
+.topbar {
+  background: linear-gradient(180deg,
+    #5C6991 0px, #7A809D 8px, #9CA2C1 14px, #B6BBDB 15px,
+    #7F90B5 15px, #7F90B5 16px,
+    #9AB7F0 16px, #A4C3FF 18px, #92AEE8 20px, #6A7EBF 26px, #5666AB 29px,
+    #2B448B 29px, #2B448B 30px,
+    #DFE9F5 30px, #BFD2EA 34px, #7F90B5 34px);
+}
+/* the round show/hide-the-task-pane knob */
+.knob {
+  background: radial-gradient(circle at 34% 26%, #FFFFFF, #E6F3FF 40%, #B8CBE4 76%, #7D8FB4);
+  box-shadow: 0 0 0 1px #5B6C90, 0 1px 2px rgba(0,0,0,.35), inset 0 0 0 1px rgba(255,255,255,.65);
+}
+/* the curved light band that sweeps in from the top right */
+.npband {
+  background: linear-gradient(180deg,
+    #FDFEFF 0px, #F0F5FB 6px, #A9B4D7 6px, #FDFEFE 7px, #E4EBF7 12px,
+    #D2DAF0 18px, #C7D2EC 20px, #BFD2EA 30px);
+  /* (no fade to the steel sep at the bottom: the sweep and the band left of it stay #BFD2EA there) */
+}
+.npill { background: linear-gradient(180deg, #FDFEFE 0%, #EDF2FA 18%, #DCE4F4 52%, #C8D4EC 88%, #BFCBE4 100%); }
+.npill:hover, .npill[data-state=open] { background: linear-gradient(180deg, #FFFFFF, #E8EFFA 46%, #D3DFF3); }
+.tasklist { background: linear-gradient(90deg, #FFFFFF, #FAFCFE 18%, #E2E9F7 52%, #C8D2EC 82%, #BFD2EA); }
+
+/* the seek bar: the transport panel's top lip */
+.seekrow {
+  background: linear-gradient(180deg,
+    #EEF3FA 0px, #BFD2EA 1px, #6882B0 2px, #949FBE 4px, #A4ADC8 6px,
+    #B9BFD3 7px, #CED2DF 9px, #DDE0E8 11px, #E7EAEE 13px, #FFFFFF 14px);
+}
+/* the green thumb: two layers (a grey window in a green bar) */
+.seekthumb {
+  background:
+    linear-gradient(90deg, #17A012 0 5px, #C7D2DC 5px, #D8E2EA 16px, #17A012 16px),
+    linear-gradient(180deg, #4BDA3C, #0E8A0C);
+}
+/* the transport panel: a light band over the Luna band */
+.transport {
+  background: linear-gradient(180deg,
+    #FFFEF6 0px, #FFFFFF 1px, #FDFDFD 4px, #D6E0F2 5px, #A4B5D7 6px, #A0AAC6 7px,
+    #ADB7D1 10px, #BFC9E0 13px, #CBD5EA 15px, #D8E2F4 18px, #DBE5F7 19px, #CED7F0 28px,
+    #7F90B5 29px, #7F90B5 30px,
+    #58658F 30px, #6B7597 34px, #80859E 38px, #9195AC 41px, #A9ADC9 44px, #BCC2E2 47px);
+}
+/* the silver discs: a white top-left highlight over a cool blue floor; peach while muted */
+.disc {
+  background:
+    radial-gradient(circle at 34% 20%, rgba(255,255,255,1) 0 22%, rgba(255,255,255,0) 60%),
+    linear-gradient(158deg, #FFFFFF 0%, #F4F7FC 20%, #DCE6F3 46%, #BCD4E8 72%, #AECCE4 92%, #C3E2F3 100%);
+}
+.disc.muted {
+  background:
+    radial-gradient(circle at 36% 24%, rgba(255,255,255,.9) 0 26%, rgba(255,255,255,0) 66%),
+    linear-gradient(158deg, #FFF6F0, #F6D8C4 40%, #E8A882 74%, #D68B60);
+}
+/* the small shuffle / lyrics discs, lit blue while on */
+.sbtn { background: linear-gradient(158deg, #FFFFFF, #EDF1F8 30%, #D3DEEE 62%, #C3E2F3); }
+.sbtn.lit { background: linear-gradient(158deg, #FFFFFF, #CFE3FF 30%, #7FB4F5 62%, #3C8DE8); }
+/* the grey round buttons under the screen, and the radio ▶ */
+.rbtn { background: radial-gradient(circle at 34% 28%, #E4E4E4, #B4B4B4 40%, #8A8A8A 72%, #5E5E5E); }
+.rbtn:hover { background: radial-gradient(circle at 34% 28%, #FFFFFF, #D2D2D2 40%, #A6A6A6 72%, #767676); }
+/* the lyrics button under the screen, lit blue while lyrics are on */
+.rbtnlit { background: radial-gradient(circle at 34% 28%, #FFFFFF, #CFE3FF 40%, #7FB4F5 72%, #3C8DE8); }
+.radioplay { background: radial-gradient(circle at 35% 30%, #FFFFFF, #CFE3FF 40%, #7FB4F5 75%, #3C8DE8); }
+
+/* ---- the volume slider: a native range's track and thumb are vendor pseudo-elements -------- */
+.vol {
+  -webkit-appearance: none; appearance: none; position: relative; z-index: 2;
+  width: 100%; height: 22px; margin: 0; background: none;
+}
+.vol::-webkit-slider-runnable-track { height: 2px; background: linear-gradient(180deg, #7C9E79, #5E8C58); }
+.vol::-webkit-slider-thumb {
+  -webkit-appearance: none; width: 9px; height: 16px; margin-top: -7px; border-radius: 2px;
+  border: 1px solid #0C6A0C;
+  background: linear-gradient(180deg, #58E246, #1BA614 46%, #0E8A0C);
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,.45);
+}
+.vol::-moz-range-track { height: 2px; background: linear-gradient(180deg, #7C9E79, #5E8C58); }
+.vol::-moz-range-thumb {
+  width: 9px; height: 16px; border-radius: 2px; border: 1px solid #0C6A0C;
+  background: linear-gradient(180deg, #58E246, #1BA614 46%, #0E8A0C);
+}

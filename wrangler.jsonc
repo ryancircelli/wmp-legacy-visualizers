@@ -1,0 +1,9 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "wmp-legacy-visualizers",
+  "compatibility_date": "2026-09-01",
+  // Static single-file site: dist/ is assembled by `npm run build`
+  "assets": { "directory": "./dist", "html_handling": "auto-trailing-slash", "not_found_handling": "404-page" },
+  "routes": [ { "pattern": "wmp.ryancircelli.com", "custom_domain": true } ],
+  "workers_dev": true
+}

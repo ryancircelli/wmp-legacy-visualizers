@@ -1,0 +1,32 @@
+shot-*.png
+alchemy_tone.wav
+__pycache__/
+electron/node_modules/
+electron/dist/
+electron/alchemy.html
+electron/alchemy-scr.log
+1801/
+*.wav
+*.ppm
+luma*
+frames*.bin
+harness-out/
+dist/
+.env
+.env.*
+
+# wrangler files
+.wrangler
+.dev.vars*
+!.dev.vars.example
+!.env.example
+
+# deno
+deno-webview/native/alchemy-audio.exe
+node_modules/
+
+# the reverse-engineering archive (decompiles, specs) is private and never committed here
+re/
+spec/
+NOTES-*.md
+HANDOFF.md

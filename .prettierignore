@@ -1,0 +1,4 @@
+# The engine is wrapped verbatim from src/*.js (ARCHITECTURE.md "Engine"): keep its layout reviewable against the originals.
+src/engine
+dist
+alchemy.html

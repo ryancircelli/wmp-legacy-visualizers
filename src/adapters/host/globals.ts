@@ -1,0 +1,36 @@
+// The window globals the hosts set (CONTRACT.md v1–v6.1; deno-webview/main.ts, spotify.ts).
+export interface SpotifyObserved {
+  token?: string;
+  at?: number;
+  clientToken?: string;
+  loggedIn?: boolean;
+  expiresAt?: number;
+  clientId?: string;
+  deviceId?: string;
+  activeDeviceId?: string;
+  connectionId?: string;
+  spclient?: string;
+  hashes?: Record<string, string>;
+  state?: unknown;
+  cluster?: unknown;
+  devices?: unknown;
+}
+
+declare global {
+  interface Window {
+    alchemyEngine?: string;
+    alchemyRoot?: ShadowRoot | Document;
+    alchemyElectron?: { loopback?: boolean; mode?: string };
+    alchemyScreensaver?: { audio?: boolean; url?: string };
+    alchemyMarks?: string[];
+    alchemyWinDrag?: () => void;
+    alchemyWinMin?: () => void;
+    alchemyWinMax?: () => void;
+    alchemyWinClose?: () => void;
+    alchemyWinSize?: () => void;
+    alchemyWinFull?: (on: boolean) => void;
+    alchemySpotifyLogout?: () => void;
+    __wmpSpotify?: SpotifyObserved;
+  }
+}
+export {};
