@@ -12,12 +12,7 @@
 // (The system-audio application, WmpVisualizers.exe / `--mode=app`, was retired 2026-09-24.)
 import { AUDIO_PATH } from "./audio.ts";
 import { Webview } from "./webview_ffi.ts";
-import {
-  cached as cachedUpdate,
-  type Manifest,
-  type Page,
-  refresh as refreshUpdate,
-} from "./update.ts";
+import { cached as cachedUpdate, type Manifest, type Page } from "./update.ts";
 import { type Bundle, type Dev, SPOTIFY_LOGIN, spotifyScript } from "./spotify.ts";
 import { DEV_BUNDLE_PATH, DEV_SOCKET_PATH } from "./dev.ts";
 import {
@@ -189,6 +184,22 @@ const OWN: Manifest = await Deno.readTextFile(new URL("../dist/update.json", imp
     (t) => JSON.parse(t) as Manifest,
     () => ({ version, built: 0, needs: 0, host: "unknown", files: {} }),
   );
+
+/** update.ts's refresh() on its own thread (update_worker.ts); null if the worker failed. */
+function checkUpdates(
+  o: { dir: string; name: string; own: Manifest },
+): Promise<{ page: Page | null; hostUpdate: boolean } | null> {
+  return new Promise((ok) => {
+    const w = new Worker(import.meta.resolve("./update_worker.ts"), { type: "module" });
+    w.onmessage = (e) => ok(e.data);
+    w.onerror = (e) => {
+      e.preventDefault(); // a failed check is no update, never a failed launch
+      log(`update worker: ${e.message}`);
+      ok(null);
+    };
+    w.postMessage(o);
+  });
+}
 
 /** The only addresses the page may open in the browser (alchemyOpenUrl): the project's own. */
 export function allowedUrl(url: string): boolean {
@@ -744,9 +755,8 @@ if (import.meta.main) {
     dir: UPDATE_DIR,
     name: mode === "spotify" ? "spotify-inject.js" : "index.html",
     own: OWN,
-    log,
   };
-  const fresh = updateOpts ? refreshUpdate(updateOpts) : null;
+  const fresh = updateOpts ? checkUpdates(updateOpts) : null;
   const had = updateOpts ? cachedUpdate(updateOpts) : null;
 
   const w = new Webview(`${NATIVE_DIR}\\webview.dll`, false, hwnd);

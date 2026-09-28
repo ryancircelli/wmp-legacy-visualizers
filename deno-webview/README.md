@@ -755,8 +755,10 @@ repeated per screen.
 
 The page an exe runs can be newer than the exe (`update.ts`, CONTRACT.md v7). Each deploy publishes
 `update.json` and its Ed25519 signature beside `index.html` and `spotify-inject.js`; CI signs with
-the `UPDATE_SIGNING_KEY` secret, and the public half is a constant in `update.ts`. At launch the
-host asks for the manifest while WebView2 starts, and waits at most half a second more once it has.
+the `UPDATE_SIGNING_KEY` secret, and the public half is a constant in `update.ts`. At launch a
+worker thread (`update_worker.ts`) asks for the manifest while WebView2 starts. The main thread
+cannot: it spends that time in one blocking call and the rest of its life in the message pump, and a
+fetch started there never finished. The host waits at most half a second more once WebView2 is up.
 A copy is used only when the signature verifies, the file matches the manifest's sha256, it is newer
 than the page built in, and it needs no more than this exe's `HOST_API`. The good copy is cached in
 `%LOCALAPPDATA%\WmpLegacyVisualizers\update` and verified again from disk at every launch, so a
