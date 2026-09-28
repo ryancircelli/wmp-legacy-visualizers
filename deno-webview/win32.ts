@@ -100,6 +100,10 @@ const SHELL_SYMBOLS = {
     parameters: ["buffer", "i32", "buffer", "buffer", "u32"],
     result: "u32",
   },
+  ShellExecuteW: {
+    parameters: ["pointer", "buffer", "buffer", "pointer", "pointer", "i32"],
+    result: "pointer",
+  },
 } as const;
 
 const WS_POPUP = 0x80000000, WS_CLIPCHILDREN = 0x2000000;
@@ -138,6 +142,11 @@ function wstr(s: string): Uint8Array {
   const dv = new DataView(b.buffer);
   for (let i = 0; i < s.length; i++) dv.setUint16(i * 2, s.charCodeAt(i), true);
   return b;
+}
+
+/** Opens a URL in the user's default browser. */
+export function openInBrowser(url: string) {
+  shell32().ShellExecuteW(null, wstr("open"), wstr(url), null, null, 1); // SW_SHOWNORMAL
 }
 
 /** A modal error box on top of everything: the only way a GUI-subsystem exe can say why it is

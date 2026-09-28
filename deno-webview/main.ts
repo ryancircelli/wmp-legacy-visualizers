@@ -12,6 +12,12 @@
 // (The system-audio application, WmpVisualizers.exe / `--mode=app`, was retired 2026-09-24.)
 import { AUDIO_PATH } from "./audio.ts";
 import { Webview } from "./webview_ffi.ts";
+import {
+  cached as cachedUpdate,
+  type Manifest,
+  type Page,
+  refresh as refreshUpdate,
+} from "./update.ts";
 import { type Bundle, type Dev, SPOTIFY_LOGIN, spotifyScript } from "./spotify.ts";
 import { DEV_BUNDLE_PATH, DEV_SOCKET_PATH } from "./dev.ts";
 import {
@@ -25,6 +31,7 @@ import {
   fullscreen,
   fullToggle,
   type Geom,
+  openInBrowser,
   placement,
   resizeWebview,
   showHost,
@@ -174,6 +181,26 @@ function settings(): Record<string, string | boolean> {
  * immutable per build — the page directory is even named after the build — which is what lets a
  * relaunch of the same build skip the unpack entirely (`unpacked()`). */
 const NATIVE_DIR = `${APPDIR}\\native`;
+/** Page updates (update.ts): the cached newer page, its manifest, the latest manifest seen. */
+const UPDATE_DIR = `${APPDIR}\\update`;
+/** The manifest of the page built into this exe (tools/postbuild.js). */
+const OWN: Manifest = await Deno.readTextFile(new URL("../dist/update.json", import.meta.url))
+  .then(
+    (t) => JSON.parse(t) as Manifest,
+    () => ({ version, built: 0, needs: 0, host: "unknown", files: {} }),
+  );
+
+/** The only addresses the page may open in the browser (alchemyOpenUrl): the project's own. */
+export function allowedUrl(url: string): boolean {
+  try {
+    const u = new URL(url);
+    return u.protocol === "https:" && (u.hostname === "wmp.ryancircelli.com" ||
+      (u.hostname === "github.com" &&
+        /^\/ryancircelli\/wmp-legacy-visualizers(\/|$)/.test(u.pathname)));
+  } catch {
+    return false;
+  }
+}
 const PAGE_DIR = `${APPDIR}\\page\\${version.slice(0, 12)}`;
 
 /** One line naming the build whose files are in place, written once both unpacks have finished. */
@@ -368,11 +395,14 @@ function initScript(
   page: string,
   spotify: Bundle | null = null,
   dev: Dev | null = null,
+  hostUpdate = false,
 ): string {
   // The per-document setup every mode shares: flags the page reads, startup marks, the report.
   // In spotify mode it runs only on open.spotify.com (spotify.ts guards it), never on the login.
   const common = `
   window.alchemyElectron = { loopback: true, mode: ${JSON.stringify(mode)} };
+  // a newer exe is out (update.ts): the page offers the download (Help menu)
+  window.alchemyHostUpdate = ${hostUpdate};
   // The page prefers this over getDisplayMedia when audio is true: ws://.../audio carries the
   // helper's PCM (deno-webview/audio.ts, src/90-shell.js Shell.useLocalAudio).
   window.alchemyScreensaver = { audio: ${audio}, url: "ws://127.0.0.1:${port}${AUDIO_PATH}" };
@@ -708,6 +738,16 @@ if (import.meta.main) {
   // Started here for the same reason, and awaited after the same call: a `pageUrl` pointing at a
   // host that has gone away is 4 s, and it may as well be 4 s of WebView2's own startup.
   const remote = remotePage();
+  // Page updates, the same way (update.ts): the site's signed manifest is asked for now, and the
+  // cache read, while WebView2 starts. Not in dev mode, where the page is the working tree's.
+  const updateOpts = dev ? null : {
+    dir: UPDATE_DIR,
+    name: mode === "spotify" ? "spotify-inject.js" : "index.html",
+    own: OWN,
+    log,
+  };
+  const fresh = updateOpts ? refreshUpdate(updateOpts) : null;
+  const had = updateOpts ? cachedUpdate(updateOpts) : null;
 
   const w = new Webview(`${NATIVE_DIR}\\webview.dll`, false, hwnd);
   webview = w;
@@ -755,18 +795,42 @@ if (import.meta.main) {
   ) || 0;
   mark(port ? `server on 127.0.0.1:${port}` : "no server of our own: no system audio");
 
-  const vhost = w.virtualHost(VHOST, PAGE_DIR);
+  // The newest page this launch can have: what the site answered by now (half a second more at
+  // most), else the cache's, else the one built in. A late answer still lands in the cache.
+  const got = fresh
+    ? await Promise.race([fresh, new Promise<null>((ok) => setTimeout(() => ok(null), 500))])
+    : null;
+  const cache = had ? await had : null;
+  const update: Page | null = got?.page ?? cache?.page ?? null;
+  const hostUpdate = !!(got?.hostUpdate || cache?.hostUpdate);
+  mark(
+    `page: ${
+      update
+        ? `update ${update.manifest.version.slice(0, 7)} (${got?.page ? "fetched" : "cached"})`
+        : "built in"
+    }` +
+      `${hostUpdate ? "; a newer exe is out" : ""}`,
+  );
+  const pageDir = update && mode !== "spotify" ? UPDATE_DIR : PAGE_DIR;
+  const vhost = w.virtualHost(VHOST, pageDir);
   const remoteUrl = await remote;
   const base = remoteUrl ??
     (vhost ? `https://${VHOST}/index.html` : `http://127.0.0.1:${port}/`);
   const url = new URL(base);
   url.searchParams.set("mode", pageMode);
-  url.searchParams.set("v", version.slice(0, 12));
+  url.searchParams.set("v", (update?.manifest.version ?? version).slice(0, 12));
   if (mode === "s") url.searchParams.set("ss", "1");
-  mark(`virtual host ${VHOST} -> ${PAGE_DIR}: ${vhost}; page ${url}`);
+  mark(`virtual host ${VHOST} -> ${pageDir}: ${vhost}; page ${url}`);
 
   w.bind("alchemyQuit", (a) => quit(String(a[0] ?? "page")));
   w.bind("alchemyLog", (a) => log(String(a[0] ?? "")));
+  // The Help menu's downloads and GitHub, in the user's browser: only the project's own addresses
+  // (any script on open.spotify.com can call a binding too).
+  w.bind("alchemyOpenUrl", (a) => {
+    const u = String(a[0] ?? "");
+    if (allowedUrl(u)) openInBrowser(u);
+    else log(`open url refused: ${u.slice(0, 120)}`);
+  });
   // The page's first painted frame reaches this. It no longer decides when the window appears —
   // the window has been up since before WebView2 was started — so all it does is say when the skin
   // actually landed in it, and hand the page the one piece of window state that arrived too early
@@ -788,7 +852,9 @@ if (import.meta.main) {
   // Spotify mode: the overlay bundle `npm run build` emits (CONTRACT.md v6), embedded
   // with ../dist like the page itself.
   const bundle: Bundle | null = mode !== "spotify" ? null : JSON.parse(
-    await Deno.readTextFile(new URL("../dist/spotify-inject.js", import.meta.url)),
+    update
+      ? new TextDecoder().decode(update.bytes)
+      : await Deno.readTextFile(new URL("../dist/spotify-inject.js", import.meta.url)),
   );
   const devInject: Dev | null = dev && port
     ? {
@@ -797,7 +863,7 @@ if (import.meta.main) {
       cssSuffix: "",
     }
     : null;
-  w.init(initScript(pageMode, !!audioExe, port, url.toString(), bundle, devInject));
+  w.init(initScript(pageMode, !!audioExe, port, url.toString(), bundle, devInject, hostUpdate));
 
   if (mode !== "s") {
     // The page's XP title bar is the window's only title bar, and the skin's status-bar grip its

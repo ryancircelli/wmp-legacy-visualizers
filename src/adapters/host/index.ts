@@ -4,6 +4,20 @@
 import './globals';
 import type { AppStore, Mode, WinAction } from '../../model';
 
+/** A newer exe is out (the host's page-update check found another host build): recorded, and
+ *  asked about in a dialog at most once a day. Page fixes arrive by themselves; this is the rest. */
+export function announceHostUpdate(store: AppStore): void {
+  const on = window.alchemyHostUpdate === true;
+  store.getState().actions.setAuth({ hostUpdate: on });
+  if (!on) return;
+  const today = new Date().toISOString().slice(0, 10), KEY = 'wmp.updateAsked';
+  try {
+    if (localStorage.getItem(KEY) === today) return;
+    localStorage.setItem(KEY, today);
+  } catch { /* no storage: ask every launch */ }
+  store.getState().actions.setUi({ dialog: 'update' });
+}
+
 /** One boot stage into the host's startup log (a no-op in a plain browser). */
 export function mark(n: string): void {
   window.alchemyMarks?.push(n + '=' + Math.round(performance.now()));

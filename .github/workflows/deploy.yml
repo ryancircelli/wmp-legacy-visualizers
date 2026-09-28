@@ -1,6 +1,7 @@
 # Builds the page (npm run build -> dist/) and publishes it to Cloudflare (wmp.ryancircelli.com) on every push to master.
 # workflow_dispatch from any other branch checks and builds only: the deploy step is master-only.
-# Secrets: CLOUDFLARE_API_KEY + CLOUDFLARE_EMAIL (Global API Key — rotate to a scoped token when possible), CLOUDFLARE_ACCOUNT_ID.
+# Secrets: CLOUDFLARE_API_KEY + CLOUDFLARE_EMAIL (Global API Key — rotate to a scoped token when possible), CLOUDFLARE_ACCOUNT_ID,
+# UPDATE_SIGNING_KEY (signs dist/update.json; tools/sign-update.js).
 name: deploy
 on:
   push:
@@ -16,6 +17,9 @@ on:
       - 'eslint.config.*'
       - 'public/**'
       - 'wrangler.jsonc'
+      - 'tools/sign-update.js'
+      # the host's sources set update.json's `host`, which tells older exes a new one is out
+      - 'deno-webview/**'
       - '.github/workflows/deploy.yml'
   workflow_dispatch:
 concurrency: { group: pages-deploy, cancel-in-progress: true }
@@ -34,6 +38,13 @@ jobs:
       - name: Build site
         env: { GITHUB_SHA: '${{ github.sha }}' }
         run: npm run build && ls -l dist
+      # The exes take a page update only when this signature verifies (deno-webview/update.ts);
+      # the key is a secret, so an unsigned or foreign manifest on the site is ignored by them.
+      - name: Sign the page update manifest
+        if: github.ref == 'refs/heads/master'
+        env:
+          UPDATE_SIGNING_KEY: ${{ secrets.UPDATE_SIGNING_KEY }}
+        run: node tools/sign-update.js
       - name: Deploy to Cloudflare (Worker with static assets, custom domain wmp.ryancircelli.com)
         if: github.ref == 'refs/heads/master'
         env:

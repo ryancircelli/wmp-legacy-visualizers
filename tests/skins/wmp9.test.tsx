@@ -3,6 +3,7 @@
 import { act, cleanup, fireEvent, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { LIKED, type Track } from '../../src/model';
+import { announceHostUpdate } from '../../src/adapters/host';
 import { LINKS } from '../../src/ui';
 import { fakeData, mountSkinNow, settle, type FakeData } from './harness';
 
@@ -98,6 +99,35 @@ describe('menus', () => {
     act(() => S().actions.setAuth({ mode: 'screensaver' }));
     expect(labels()).toEqual(['About Windows Media Player']);
     open.mockRestore();
+  });
+
+  it('a newer exe: Help offers the download through the host, and the dialog asks at most once a day', () => {
+    const { $ } = setup('spotify');
+    const opened: string[] = [];
+    window.alchemyOpenUrl = (u: string) => void opened.push(u);
+    const labels = () => {
+      press($('#mtops [data-menu=help]')!);
+      const r = [...menu(0)!.querySelectorAll('[role^=menuitem]')].map((b) => b.children[1]!.textContent);
+      press($('#mtops [data-menu=help]')!);
+      return r;
+    };
+    act(() => S().actions.setAuth({ mode: 'app' }));
+    expect(labels()).toEqual(['Keyboard Shortcuts', 'About Windows Media Player']);
+    localStorage.removeItem('wmp.updateAsked');
+    window.alchemyHostUpdate = true;
+    act(() => announceHostUpdate(h.store));
+    expect([S().auth.hostUpdate, S().ui.dialog]).toEqual([true, 'update']);
+    expect($('#dlgUpdate')!.textContent).toContain('A newer version of WMP Spotify is available.');
+    fireEvent.click(within($('#dlgUpdate')!).getByText('Download'));
+    expect([opened, S().ui.dialog]).toEqual([[LINKS.spotify], null]);
+    act(() => announceHostUpdate(h.store));
+    expect(S().ui.dialog).toBeNull();                                  // asked today already
+    expect(labels()[0]).toBe('Download the New Version...');
+    press($('#mtops [data-menu=help]')!);
+    fireEvent.click(item(0, 'Download the New Version...'));
+    expect(opened).toEqual([LINKS.spotify, LINKS.spotify]);
+    delete window.alchemyHostUpdate;
+    delete window.alchemyOpenUrl;
   });
 
   it('Spotify: File, View, Play and Help carry the engine\'s entries and accelerators', () => {

@@ -3,7 +3,7 @@
 // and wake back to the host. The Spotify adapter reuses startHost() for the same socket.
 import type { AppStore, Commands, TimedLevel } from '../../model';
 import { noCommands, positionNow } from '../../model';
-import { detectMode, followFullscreen, hostWindow, openSocket, socketUrl, win, type HostSocket, type MediaFrame } from '../host';
+import { announceHostUpdate, detectMode, followFullscreen, hostWindow, openSocket, socketUrl, win, type HostSocket, type MediaFrame } from '../host';
 import { idleStatus, onLyricsFrame, onMediaFrame, optimistic, pausedPatch, setSession, sourceStatus, MSG_LOCAL } from '../host/media';
 import { makeLevel, createAnalyserGraph, createPcmLevel, type AnalyserGraph } from './audio';
 
@@ -232,6 +232,7 @@ export function createLocalAdapter(store: AppStore): { start(): void; stop(): vo
     start() {
       const { actions } = store.getState();
       actions.setAuth({ engine: 'local', loggedIn: true, mode: detectMode(), hostWindow: hostWindow(), canLogout: false });
+      announceHostUpdate(store);
       const h = (host = startHost(store));
       const pb = () => store.getState().playback;
       actions.setCommands({

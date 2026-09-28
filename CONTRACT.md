@@ -170,6 +170,18 @@ Page (src/95-spotify.js):
 Terms: /api/token is what the web player itself calls; Spotify's response notes that third-party use of it breaks the
 Developer Terms. This is a personal tool; the token never leaves the page.
 
+## v7 — page updates (`deno-webview/update.ts`)
+Every build writes dist/update.json {version, built (commit time), needs, host, files: {name: sha256}};
+deploy signs it (dist/update.json.sig, Ed25519, tools/sign-update.js with the UPDATE_SIGNING_KEY secret)
+and the exes fetch it, with index.html (screensaver) or spotify-inject.js (WmpSpotify), from
+wmp.ryancircelli.com. A copy is used when the signature verifies with the key baked into update.ts,
+the file matches its hash, `built` is newer than the exe's own page, and `needs` <= the exe's
+HOST_API. **deno-webview/host-api.json is the contract version: bump it in the same commit as any
+page change that needs something older exes lack** (a new binding, a changed message); older exes
+then keep their built-in page. A page may still feature-detect optional bindings (alchemyOpenUrl)
+without a bump. `host` hashes the host's own sources; another value tells an exe a newer one is out
+(window.alchemyHostUpdate = true; the page offers the download).
+
 ## Dev-only (`--dev`; never in a release exe) — hot reload for the Spotify overlay
 `npm run dev:spotify` (deno-webview/dev.mjs) rebuilds dist/spotify-inject.js on every change and starts the host with
 `--mode=spotify --dev`. The injected bootstrap (deno-webview/spotify.ts) then fetches the bundle at mount time from the

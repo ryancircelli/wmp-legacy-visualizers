@@ -3,7 +3,7 @@
 // drives it through the channels the web player itself uses, never its DOM and never the public
 // Web API. The host socket (PCM, lyrics, GSMTC as a fallback) comes from the local adapter's startHost.
 import { noCommands, type AppStore } from '../../model';
-import { detectMode, hostWindow, win } from '../host';
+import { announceHostUpdate, detectMode, hostWindow, win } from '../host';
 import { hostTransport, startHost, type HostLink } from '../local';
 import * as C from './connect';
 import { openLink, parseLink } from './links';
@@ -89,6 +89,7 @@ export function createSpotifyAdapter(store: AppStore): { start(): void; stop(): 
     start() {
       const { actions } = store.getState();
       actions.setAuth({ engine: 'spotify', loggedIn: null, mode: detectMode(), hostWindow: hostWindow(), canLogout: canLogout() });
+      announceHostUpdate(store);
       // The slider is the player's volume here: 0..100, not the 0..200 capture range.
       if (store.getState().settings.volume > 100) actions.setSettings({ volume: 100 });
       const sp = newSp(store);

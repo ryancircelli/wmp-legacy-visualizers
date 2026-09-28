@@ -24,6 +24,13 @@ Both Windows downloads are rebuilt on every push, need only the WebView2 runtime
 Windows 11 and current Windows 10), and are self-contained single files — nothing has to stay next to
 them.
 
+**Updates arrive by themselves.** Fixes to the player (the skin, the Spotify features, the
+visualizers) reach an installed app at its next launch, with no new download. The app fetches the
+page from wmp.ryancircelli.com and uses it only when its signature checks out, and only when it was
+built for that version of the app; offline, it keeps the last good copy. A change to the app itself
+still needs the new download, and the app says so: a dialog once a day, and Help > Download the
+New Version.
+
 - **Retired:** the system-audio application `WmpVisualizers.exe` (release `app-latest`) was retired on
   2026-09-24 and is no longer built; the screensaver's settings window (`Alchemy.scr /c`) is the same
   player window.

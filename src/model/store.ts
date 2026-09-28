@@ -46,6 +46,8 @@ export interface AppState {
     canLogout: boolean;
     /** window.alchemyWin* are bound (the desktop host draws no frame of its own) */
     hostWindow: boolean;
+    /** a newer exe is out (window.alchemyHostUpdate): Help offers the download */
+    hostUpdate?: boolean;
   };
   playback: Playback;
   queue: { next: Track[] };

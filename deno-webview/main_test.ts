@@ -1,5 +1,14 @@
 import { assertEquals } from "@std/assert";
-import { appIdOf, devOf, iconPath, modeOf, SPOTIFY_LOGOUT, UNPACK, winPath } from "./main.ts";
+import {
+  allowedUrl,
+  appIdOf,
+  devOf,
+  iconPath,
+  modeOf,
+  SPOTIFY_LOGOUT,
+  UNPACK,
+  winPath,
+} from "./main.ts";
 import { claim, fits, ncTop } from "./win32.ts";
 import { frameAligner, lines, relay } from "./audio.ts";
 import { closest, parseLrc } from "./lyrics.ts";
@@ -727,6 +736,28 @@ Deno.test("native/webview.dll needs nothing Windows does not ship", async () => 
   );
   assertEquals(pe.match(/(vcruntime|msvcp)\d+[_\w]*\.dll/gi), null);
   assertEquals(pe.includes("webview_create"), true);
+});
+
+// Bindings are callable by any script in the window (open.spotify.com's included): the browser
+// opens only the project's own pages.
+Deno.test("allowedUrl: the project's downloads, repo and site only", () => {
+  for (
+    const u of [
+      "https://github.com/ryancircelli/wmp-legacy-visualizers",
+      "https://github.com/ryancircelli/wmp-legacy-visualizers/releases/download/spotify-latest/WmpSpotify-win64.zip",
+      "https://wmp.ryancircelli.com/",
+    ]
+  ) assertEquals(allowedUrl(u), true, u);
+  for (
+    const u of [
+      "http://wmp.ryancircelli.com/",
+      "https://github.com/ryancircelli/wmp-legacy-visualizers-re",
+      "https://github.com/someone/else",
+      "https://evil.example/?https://wmp.ryancircelli.com/",
+      "file:///C:/Windows/System32/calc.exe",
+      "not a url",
+    ]
+  ) assertEquals(allowedUrl(u), false, u);
 });
 
 // Dev mode is an argument, never baked.

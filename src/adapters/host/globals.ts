@@ -30,6 +30,10 @@ declare global {
     alchemyWinSize?: () => void;
     alchemyWinFull?: (on: boolean) => void;
     alchemySpotifyLogout?: () => void;
+    /** a newer exe is out (deno-webview/update.ts): offer the download */
+    alchemyHostUpdate?: boolean;
+    /** open one of the project's own URLs in the user's browser */
+    alchemyOpenUrl?: (url: string) => void;
     __wmpSpotify?: SpotifyObserved;
   }
 }

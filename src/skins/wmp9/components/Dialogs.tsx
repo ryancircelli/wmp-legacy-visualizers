@@ -4,7 +4,7 @@ import { useState, type CSSProperties, type ReactNode } from 'react';
 import emblemSpotify from '../assets/emblem-spotify.svg';
 import emblemWmp from '../assets/emblem-wmp.svg';
 import { FPS_OPTS, SCALE_OPTS, type Scale, type Settings } from '../../../model';
-import { cx, Dialog, DialogHost, LINKS, LYRICS_SOURCE, useApp, useCloseDialog, useShell, useShortcuts, type DialogClasses } from '../../../ui';
+import { appDownload, cx, Dialog, DialogHost, LINKS, LYRICS_SOURCE, openLink, useApp, useCloseDialog, useShell, useShortcuts, type DialogClasses } from '../../../ui';
 
 const DLG: DialogClasses = {
   title: 'flex-none flex items-center gap-6 h-24 pr-3 pl-6 bg-dlg-title text-white font-bold [text-shadow:0_1px_1px_rgba(0,0,0,.45)]',
@@ -24,7 +24,7 @@ function Dlg(p: { id: string; title: string; label: string; className?: string; 
 export function Modal() {
   return (
     <DialogHost id="modal" className="fixed inset-0 z-80 grid place-items-center bg-[rgba(0,0,0,.34)]"
-                dialogs={{ options: Options, about: About, keys: Shortcuts, link: OpenLink }} />
+                dialogs={{ options: Options, about: About, keys: Shortcuts, link: OpenLink, update: UpdateAvailable }} />
   );
 }
 
@@ -153,6 +153,21 @@ export function Shortcuts() {
             </tr>
           ))}
         </tbody></table>
+      </div>
+    </Dlg>
+  );
+}
+
+/** A newer exe is out (the host found another host build): the download, or later (Help has it too). */
+export function UpdateAvailable() {
+  const close = useCloseDialog(), spotify = useApp((st) => st.auth.engine === 'spotify');
+  const name = spotify ? 'WMP Spotify' : 'the Alchemy screensaver';
+  const download = () => { openLink(appDownload(spotify)); close(); };
+  return (
+    <Dlg id="dlgUpdate" title="Player Update" label="Player Update" buttons={[['Download', download], ['Later', close]]}>
+      <div className={BODY}>
+        <p className="m-0 mb-8">A newer version of {name} is available.</p>
+        <p className={HINT}>Fixes to the player arrive by themselves. This one changes the app itself, so it needs the new download. Help has the link too.</p>
       </div>
     </Dlg>
   );

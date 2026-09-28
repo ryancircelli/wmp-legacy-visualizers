@@ -3,7 +3,7 @@
 // MenuBar / Dropdown.
 import { FPS_OPTS, type AppState, type RepeatMode } from '../model';
 import {
-  detailsPaneOn, isPlaying, libraryView, LINKS, openLink, playingTrack, prevNext, toggleSaved, uiSettings, VIEW_LABELS, VOL_STEP, type AddToApi, type MenuEntry,
+  appDownload, detailsPaneOn, isPlaying, libraryView, LINKS, openLink, playingTrack, prevNext, toggleSaved, uiSettings, VIEW_LABELS, VOL_STEP, type AddToApi, type MenuEntry,
   type MenuItem, type Shell,
 } from '../ui';
 export type { MenuEntry, MenuItem } from '../ui';
@@ -109,7 +109,8 @@ export function menuItems(name: MenuName, sh: Shell, addTo?: AddToApi): MenuEntr
     case 'tools':
       return [{ label: 'Options...', act: dialog('options') }];
     case 'help':
-      return [...(spotify ? [{ label: 'Keyboard Shortcuts', act: dialog('keys') }] : []),
+      return [...(s.auth.hostUpdate ? [{ label: 'Download the New Version...', act: () => openLink(appDownload(spotify)) }, SEP] : []),
+        ...(spotify ? [{ label: 'Keyboard Shortcuts', act: dialog('keys') }] : []),
         // the website's way to the Windows apps and the source (WMP 9's own Help went online too)
         ...(!spotify && s.auth.mode === 'web' ? [
           { label: 'Download WMP Spotify for Windows', act: () => openLink(LINKS.spotify) },

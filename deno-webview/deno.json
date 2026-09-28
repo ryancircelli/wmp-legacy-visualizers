@@ -5,7 +5,7 @@
     "compile:spotify": "deno task page && deno task audio && deno compile -A --unstable-ffi --target x86_64-pc-windows-msvc --icon assets/icon-spotify.ico --output dist/WmpSpotify.exe --include native --include assets/icon.ico --include assets/icon-spotify.ico --include server.ts --include ../dist main.ts --mode=spotify && deno run --allow-read --allow-write gui_subsystem.ts dist/WmpSpotify.exe",
     "dev:spotify": "deno run -A --unstable-ffi main.ts --mode=spotify --dev",
     "audio": "cd audio && cargo build --release --target x86_64-pc-windows-gnu && cp target/x86_64-pc-windows-gnu/release/alchemy-audio.exe ../native/",
-    "check": "deno check main.ts server.ts webview_ffi.ts win32.ts spotify.ts dev.ts",
+    "check": "deno check main.ts server.ts webview_ffi.ts win32.ts spotify.ts dev.ts update.ts",
     "test": "deno test -A && node --test rebuild.test.mjs"
   },
   "fmt": {

@@ -751,6 +751,25 @@ shared `localStorage`. One window covering `SM_CXVIRTUALSCREEN` x `SM_CYVIRTUALS
 monitor from one process instead, with the visualizer stretched across the desktop rather than
 repeated per screen.
 
+## Page updates
+
+The page an exe runs can be newer than the exe (`update.ts`, CONTRACT.md v7). Each deploy publishes
+`update.json` and its Ed25519 signature beside `index.html` and `spotify-inject.js`; CI signs with
+the `UPDATE_SIGNING_KEY` secret, and the public half is a constant in `update.ts`. At launch the
+host asks for the manifest while WebView2 starts, and waits at most half a second more once it has.
+A copy is used only when the signature verifies, the file matches the manifest's sha256, it is newer
+than the page built in, and it needs no more than this exe's `HOST_API`. The good copy is cached in
+`%LOCALAPPDATA%\WmpLegacyVisualizers\update` and verified again from disk at every launch, so a
+late answer serves the next launch and an offline one keeps the last. The screensaver serves the
+cached `index.html` through the same `wmp.localhost` virtual host, so its settings stay. Dev mode
+never updates.
+
+The latest verified manifest is cached as well. When its `host` differs from this exe's own (a hash
+of the host's sources), a newer exe is out: the page is told (`window.alchemyHostUpdate`), shows a
+dialog at most once a day, and adds Help > Download the New Version. `alchemyOpenUrl` opens that
+download in the user's browser and nothing else: any script in the window can call a binding, so
+the host allows only the project's own GitHub and website addresses.
+
 ## Implementation notes
 
 `jsr:@webview/webview` is **not** used, though `native/WebView2Loader.dll` is its 0.9.0 release
