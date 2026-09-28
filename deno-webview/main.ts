@@ -16,16 +16,21 @@ import { cached as cachedUpdate, type Manifest, type Page } from "./update.ts";
 import { type Bundle, type Dev, SPOTIFY_LOGIN, spotifyScript } from "./spotify.ts";
 import { DEV_BUNDLE_PATH, DEV_SOCKET_PATH } from "./dev.ts";
 import {
+  bringToFront,
   caption,
   claim,
+  closeWindow,
   coInit,
   createHost,
   errorBox,
+  fileBusy,
   frameless,
   fullBox,
   fullscreen,
   fullToggle,
   type Geom,
+  type HostWindow,
+  hostWindows,
   openInBrowser,
   placement,
   resizeWebview,
@@ -329,20 +334,77 @@ async function unpackPage(): Promise<string> {
  * open that no other process can repeat, and that the kernel releases when this one exits however
  * it exits, so there is no stale lock to recognise and nothing to clean up.
  *
+ * WmpSpotify keeps the Spotify login in that profile, so a second instance with a throwaway one
+ * starts logged out, and the log showed it happening: every launch of a new download while the old
+ * one (or the dev window) was open. So a second WmpSpotify does not open one any more
+ * (`planSecond`): the same program brings its window to the front and exits, and another copy of
+ * WmpSpotify (a new download) closes the old one and takes the profile over. The dev window keeps a
+ * profile of its own (`spotify-dev`), so it never holds the app's login.
+ *
  * ponytail: a throwaway profile per concurrent second instance, keyed on its PID and never swept.
  * That is now only ever a genuinely simultaneous second window, not every launch; sweep
  * `%LOCALAPPDATA%\\WmpLegacyVisualizers\\WebView2-*` on startup if they ever add up again.
  */
-function profileDir(spotify: boolean): string {
-  // WmpSpotify.exe keeps Spotify's login in a profile of its own, never mixed with the visualizers'.
-  if (spotify) {
-    return claim(`${APPDIR}\\spotify.lock`)
-      ? `${APPDIR}\\spotify`
-      : `${APPDIR}\\spotify-${Deno.pid}`;
+async function profileDir(spotify: boolean, dev: boolean): Promise<string> {
+  if (!spotify) {
+    return claim(`${APPDIR}\\profile.lock`)
+      ? `${APPDIR}\\WebView2`
+      : `${APPDIR}\\WebView2-${Deno.pid}`;
   }
-  return claim(`${APPDIR}\\profile.lock`)
-    ? `${APPDIR}\\WebView2`
-    : `${APPDIR}\\WebView2-${Deno.pid}`;
+  const name = dev ? "spotify-dev" : "spotify", dir = `${APPDIR}\\${name}`;
+  const lock = `${APPDIR}\\${name}.lock`, throwaway = `${APPDIR}\\spotify-${Deno.pid}`;
+  if (claim(lock)) return await idle(dir);
+  if (dev) return throwaway;
+  const others = hostWindows(SPOTIFY_TITLE), plan = planSecond(others, Deno.execPath());
+  if (plan.kind === "focus") {
+    bringToFront(plan.window.hwnd);
+    log(`already running (pid ${plan.window.pid}): brought it to the front`);
+    Deno.exit(0);
+  }
+  if (plan.kind === "takeover") {
+    for (const o of plan.windows) closeWindow(o.hwnd);
+    log(
+      `another copy holds the profile (${
+        plan.windows.map((o) => o.exe).join(", ")
+      }): asked it to close`,
+    );
+    for (let i = 0; i < 50; i++) {
+      if (claim(lock)) return await idle(dir);
+      await new Promise((ok) => setTimeout(ok, 100));
+    }
+  }
+  log(
+    `profile ${dir} is in use (${others.map((o) => o.exe).join(", ") || "no window found"}): ` +
+      "a throwaway profile, logged out",
+  );
+  return throwaway;
+}
+
+/** The window title the Spotify host gives its window (and looks for in another instance). */
+const SPOTIFY_TITLE = "WMP Spotify";
+
+/**
+ * What a second WmpSpotify does when the profile is taken. The same program: activate that window
+ * (a second double-click). Another copy of WmpSpotify: close it and take over (a new download).
+ * Anything else holding it (a dev window): nothing to do but a throwaway profile.
+ */
+export function planSecond(others: HostWindow[], self: string):
+  | { kind: "focus"; window: HostWindow }
+  | { kind: "takeover"; windows: HostWindow[] }
+  | { kind: "throwaway" } {
+  const same = others.find((o) => o.exe && o.exe.toLowerCase() === self.toLowerCase());
+  if (same) return { kind: "focus", window: same };
+  const copies = others.filter((o) => /(^|\\)WmpSpotify[^\\]*\.exe$/i.test(o.exe));
+  return copies.length ? { kind: "takeover", windows: copies } : { kind: "throwaway" };
+}
+
+/** The profile, once no WebView2 browser from a previous instance still holds it (it outlives its
+ * host by about 0.3 s, measured); at most 3 s. */
+async function idle(dir: string): Promise<string> {
+  for (let i = 0; i < 30 && fileBusy(`${dir}\\EBWebView\\lockfile`); i++) {
+    await new Promise((ok) => setTimeout(ok, 100));
+  }
+  return dir;
 }
 
 /**
@@ -570,7 +632,7 @@ if (import.meta.main) {
   // server got: see profileDir(). This one stays in front of the window because it is a single
   // CreateFileW and because a WebView2 that has already been told the wrong folder cannot be told
   // again.
-  const profile = profileDir(mode === "spotify");
+  const profile = await profileDir(mode === "spotify", dev);
   Deno.env.set("WEBVIEW2_USER_DATA_FOLDER", profile);
   mark(`profile: ${profile}`);
 
@@ -665,7 +727,7 @@ if (import.meta.main) {
 
   hwnd = createHost({
     // No native caption in either window, so this is what the taskbar and Alt+Tab show.
-    title: mode === "spotify" ? "WMP Spotify" : "Alchemy screensaver",
+    title: mode === "spotify" ? SPOTIFY_TITLE : "Alchemy screensaver",
     icon: iconPath(mode, devOf(Deno.args) && mode === "spotify", NATIVE_DIR, import.meta.url),
     appId: appIdOf(mode),
     saver: mode === "s",

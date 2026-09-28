@@ -31,6 +31,9 @@ const KERNEL_SYMBOLS = {
   },
   GetModuleHandleW: { parameters: ["pointer"], result: "pointer" },
   SetThreadExecutionState: { parameters: ["u32"], result: "u32" },
+  OpenProcess: { parameters: ["u32", "i32", "u32"], result: "pointer" },
+  QueryFullProcessImageNameW: { parameters: ["pointer", "u32", "buffer", "buffer"], result: "i32" },
+  CloseHandle: { parameters: ["pointer"], result: "i32" },
 } as const;
 
 const DWM_SYMBOLS = {
@@ -80,6 +83,10 @@ const SYMBOLS = {
     result: "pointer",
   },
   SetForegroundWindow: { parameters: ["pointer"], result: "i32" },
+  FindWindowExW: { parameters: ["pointer", "pointer", "buffer", "buffer"], result: "pointer" },
+  GetWindowThreadProcessId: { parameters: ["pointer", "buffer"], result: "u32" },
+  PostMessageW: { parameters: ["pointer", "u32", "usize", "isize"], result: "i32" },
+  IsIconic: { parameters: ["pointer"], result: "i32" },
   ReleaseCapture: { parameters: [], result: "i32" },
   SendMessageW: { parameters: ["pointer", "u32", "usize", "isize"], result: "isize" },
   ShowWindow: { parameters: ["pointer", "i32"], result: "i32" },
@@ -142,6 +149,57 @@ function wstr(s: string): Uint8Array {
   const dv = new DataView(b.buffer);
   for (let i = 0; i < s.length; i++) dv.setUint16(i * 2, s.charCodeAt(i), true);
   return b;
+}
+
+/** Another instance's window: our class and this title, with the program its process runs. */
+export type HostWindow = { hwnd: Deno.PointerValue; pid: number; exe: string };
+
+function imagePath(pid: number): string {
+  const k = kernel32(), hp = k.OpenProcess(0x1000, 0, pid); // PROCESS_QUERY_LIMITED_INFORMATION
+  if (!hp) return "";
+  const buf = new Uint16Array(1024), len = new Uint32Array([1024]);
+  const ok = k.QueryFullProcessImageNameW(hp, 0, buf, len);
+  k.CloseHandle(hp);
+  return ok ? String.fromCharCode(...buf.subarray(0, len[0])) : "";
+}
+
+/** The other processes' top-level host windows titled `title`. */
+export function hostWindows(title: string): HostWindow[] {
+  const u = user32(), out: HostWindow[] = [], name = wstr(title), pid = new Uint32Array(1);
+  let h: Deno.PointerValue = null;
+  while ((h = u.FindWindowExW(null, h, CLASS, name))) {
+    u.GetWindowThreadProcessId(h, pid);
+    if (pid[0] !== Deno.pid) out.push({ hwnd: h, pid: pid[0]!, exe: imagePath(pid[0]!) });
+  }
+  return out;
+}
+
+/** Asks a window to close, as its own close button would. */
+export function closeWindow(hwnd: Deno.PointerValue) {
+  user32().PostMessageW(hwnd, 0x0010, 0n, 0n); // WM_CLOSE
+}
+
+/** Restores (if minimized) and activates a window. */
+export function bringToFront(hwnd: Deno.PointerValue) {
+  const u = user32();
+  if (u.IsIconic(hwnd)) u.ShowWindow(hwnd, SW_RESTORE);
+  u.SetForegroundWindow(hwnd);
+}
+
+/** Whether a file is held open without sharing (WebView2's EBWebView\lockfile while its browser
+ * runs). A missing file is not busy. */
+export function fileBusy(path: string): boolean {
+  const k = kernel32(), h = k.CreateFileW(wstr(path), 0x80000000, 0, null, 3, 0, null); // GENERIC_READ, OPEN_EXISTING
+  if (h && Deno.UnsafePointer.value(h) !== INVALID_HANDLE) {
+    k.CloseHandle(h);
+    return false;
+  }
+  try {
+    Deno.statSync(path);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /** Opens a URL in the user's default browser. */

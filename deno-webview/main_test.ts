@@ -5,6 +5,7 @@ import {
   devOf,
   iconPath,
   modeOf,
+  planSecond,
   SPOTIFY_LOGOUT,
   UNPACK,
   winPath,
@@ -758,6 +759,31 @@ Deno.test("allowedUrl: the project's downloads, repo and site only", () => {
       "not a url",
     ]
   ) assertEquals(allowedUrl(u), false, u);
+});
+
+// A second WmpSpotify must not open a throwaway (logged-out) profile when it can help it.
+Deno.test("planSecond: same program -> front; another WmpSpotify copy -> take over; else throwaway", () => {
+  const w = (pid: number, exe: string) => ({ hwnd: null, pid, exe });
+  const self = "C:\\Users\\u\\Downloads\\WmpSpotify-app (1)\\WmpSpotify.exe";
+  const old = w(1, "C:\\Users\\u\\Downloads\\WmpSpotify-app\\WmpSpotify.exe");
+  const dev = w(2, "C:\\Users\\u\\.deno\\bin\\deno.exe");
+  assertEquals(planSecond([w(3, self.toUpperCase())], self), {
+    kind: "focus",
+    window: w(3, self.toUpperCase()),
+  });
+  assertEquals(planSecond([old], self), { kind: "takeover", windows: [old] });
+  assertEquals(planSecond([dev, old], self), { kind: "takeover", windows: [old] });
+  assertEquals(planSecond([dev], self), { kind: "throwaway" });
+  assertEquals(
+    planSecond([w(4, "")], self),
+    { kind: "throwaway" },
+    "unreadable process: leave it alone",
+  );
+  assertEquals(
+    planSecond([w(5, "C:\\WmpSpotify\\other.exe")], self),
+    { kind: "throwaway" },
+    "a folder name is not the app",
+  );
 });
 
 // Dev mode is an argument, never baked.

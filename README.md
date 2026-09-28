@@ -60,7 +60,9 @@ player runs inside it, hidden under the skin:
 
 - **Log in once.** The first launch shows Spotify's login page as it is. When you are signed in,
   the WMP skin comes up over it and stays up. The login lives in the app's own profile
-  (`%LOCALAPPDATA%\WmpLegacyVisualizers\spotify\`), so it survives restarts.
+  (`%LOCALAPPDATA%\WmpLegacyVisualizers\spotify\`), so it survives restarts and new downloads.
+  Opening WmpSpotify again while it runs brings its window forward; opening a new download while
+  the old one runs closes the old one and keeps your login.
 - **Now Playing** shows the track, the artist, the album art and the position, and synced lyrics
   when LRCLIB has them, as in the application. It follows whatever your account is playing, on
   any device. The visualizers follow the music.

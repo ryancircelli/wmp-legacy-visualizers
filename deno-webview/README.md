@@ -751,6 +751,23 @@ shared `localStorage`. One window covering `SM_CXVIRTUALSCREEN` x `SM_CYVIRTUALS
 monitor from one process instead, with the visualizer stretched across the desktop rather than
 repeated per screen.
 
+## One Spotify window, one login
+
+The Spotify login lives in the WebView2 profile `%LOCALAPPDATA%\WmpLegacyVisualizers\spotify`, and
+one profile can be open in one process only (`spotify.lock`, `claim()`). A second instance used to
+get a throwaway `spotify-<pid>` profile, which is logged out, and the log showed that happening on
+every launch of a new download while the old one, or the dev window, was open. Now a second
+WmpSpotify finds the other instance's window (class `AlchemyHost`, title `WMP Spotify`) and the
+program its process runs (`planSecond` in `main.ts`):
+
+- **The same program** brings that window to the front and exits.
+- **Another copy of WmpSpotify**, such as a new download, sends the old one `WM_CLOSE`, waits for
+  its lock and then for WebView2's `EBWebView\lockfile` (the browser outlives its host by about
+  0.3 s, measured), and opens the same profile, login included.
+- **Anything else** holding the profile still gets a throwaway one, and the log says which program.
+
+The dev window (`--dev`) has a profile of its own, `spotify-dev`, so it never holds the app's login.
+
 ## Page updates
 
 The page an exe runs can be newer than the exe (`update.ts`, CONTRACT.md v7). Each deploy publishes
