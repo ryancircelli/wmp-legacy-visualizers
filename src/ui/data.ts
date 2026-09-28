@@ -4,7 +4,7 @@
 // search results, home, radio and artists are queries, cached per key across view switches.
 import { infiniteQueryOptions, queryOptions, useInfiniteQuery, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect } from 'react';
-import { LIKED, type CollectionMeta, type LibraryItem, type RadioSeed, type SearchPage, type SearchType, type Track } from '../model';
+import { LIKED, type CollectionMeta, type HomeFeed, type LibraryItem, type RadioSeed, type SearchPage, type SearchType, type Track } from '../model';
 import { forgetQueries } from './persist';
 import { useApp, useShell } from './shell';
 import type { Shell } from './types';
@@ -146,6 +146,20 @@ export function useWarm(): (uri: string | null | undefined) => void {
 /** Collections fetched ahead after login: the playing one, Liked Songs, the library's first few. */
 const AHEAD = 6;
 
+/** Media Guide's first screen of covers into the browser's cache: the first four rows, eight covers
+ *  each. The feed alone leaves them to load as the (lazy) tiles appear. Low priority; the prefetch
+ *  after it waits 3 s at most. */
+function warmCovers(feed: HomeFeed | undefined): Promise<void> {
+  const urls = (feed?.sections ?? []).slice(0, 4).flatMap((s) => s.items.slice(0, 8).map((i) => i.img)).filter((u): u is string => !!u);
+  const loads = urls.map((src) => new Promise<void>((ok) => {
+    const img = new Image();
+    img.onload = img.onerror = () => ok();
+    img.fetchPriority = 'low';
+    img.src = src;
+  }));
+  return Promise.race([Promise.all(loads).then(() => {}), new Promise<void>((ok) => setTimeout(ok, 3000))]);
+}
+
 /** After login, one at a time and only while the page is idle: the library, Media Guide, Radio
  *  Tuner and the first page of the collections most likely opened next. */
 export function useIdlePrefetch(): void {
@@ -162,6 +176,7 @@ export function useIdlePrefetch(): void {
       await new Promise((ok) => setTimeout(ok, 2000)); // the views opened first go first
       await later(() => c.prefetchQuery(libraryQuery(q)))();
       await later(() => c.prefetchQuery(homeQuery(q)))();
+      await later(() => warmCovers(c.getQueryData(homeQuery(q).queryKey)))();
       const seeds = q.radioSeeds();
       if (seeds.length) await later(() => c.prefetchQuery(radioQuery(q, seeds)))();
       const lib = c.getQueryData(libraryQuery(q).queryKey) ?? [];

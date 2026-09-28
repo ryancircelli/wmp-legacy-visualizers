@@ -211,6 +211,28 @@ describe('loading ahead', () => {
     expect(h.queries.fetchCollectionPage).not.toHaveBeenCalled();       // nothing is asked before the login
   });
 
+  it('after Media Guide\'s feed, its first screen of covers: four rows, eight covers each', async () => {
+    vi.useFakeTimers();
+    const real = globalThis.Image, srcs: string[] = [];
+    globalThis.Image = class {
+      onload: (() => void) | null = null;
+      onerror: (() => void) | null = null;
+      fetchPriority = '';
+      set src(v: string) { srcs.push(v); }
+    } as unknown as typeof Image;
+    try {
+      const home = { greeting: '', sections: Array.from({ length: 6 }, (_, s) => ({ title: 'Row ' + s, items: Array.from({ length: 10 }, (_, i) =>
+        ({ uri: 'spotify:playlist:' + s + '-' + i, name: 'P', sub: '', img: `https://i/${s}-${i}.jpg` })) })) };
+      const Ahead = () => { useIdlePrefetch(); return null; };
+      h = mountSkinNow('spotify', { ...data(), home }, <Ahead />);
+      await act(() => vi.advanceTimersByTimeAsync(20_000));
+      expect(srcs).toEqual(home.sections.slice(0, 4).flatMap((s) => s.items.slice(0, 8).map((i) => i.img)));
+    } finally {
+      globalThis.Image = real;
+      vi.useRealTimers();
+    }
+  });
+
   it('after login, while idle: the library, Media Guide and the first collections, one at a time', async () => {
     vi.useFakeTimers();
     try {
