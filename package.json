@@ -12,6 +12,7 @@
     "build": "vite build && vite build --config vite.inject.config.ts && vite build --config vite.engine.config.ts && node tools/postbuild.js",
     "build:engine": "vite build --config vite.engine.config.ts",
     "test": "vitest run",
+    "test:golden": "GOLDEN=full vitest run tests/engine/golden",
     "lint": "eslint .",
     "typecheck": "tsc -b",
     "smoke": "node tests/shell-smoke.js"
