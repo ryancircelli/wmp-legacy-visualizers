@@ -5,17 +5,26 @@ import { onState } from './state';
 import { deviceVolume } from './connect';
 import { W, type PlayerState, type Sp } from './sp';
 
-/** The overlay shows only while /api/token said isAnonymous === false; otherwise Spotify's own
- *  page (its login) is what the user sees. The host element is outside the shadow root. */
+/** The overlay shows while /api/token says isAnonymous === false, and before it says anything when
+ *  the last session here was logged in (the skin comes up at once, with what ui/persist.ts kept;
+ *  a session that turns out anonymous goes to the login page anyway). Otherwise Spotify's own page
+ *  is what the user sees. The host element is outside the shadow root. */
 function show(on: boolean): void {
   const h = document.getElementById('wmp-root');
   if (h) h.style.display = on ? '' : 'none';
 }
 
+const HINT = 'wmp.loggedIn';
+/** Whether the last session in this profile was logged in. */
+export function wasLoggedIn(): boolean {
+  try { return localStorage.getItem(HINT) === '1'; } catch { return false; }
+}
+
 export function onAuth(sp: Sp, loggedIn: unknown): void {
-  const on = loggedIn === true;
-  sp.store.getState().actions.setAuth({ loggedIn: on });
-  show(on);
+  if (typeof loggedIn !== 'boolean') { show(wasLoggedIn()); return; } // not known yet
+  sp.store.getState().actions.setAuth({ loggedIn });
+  try { if (loggedIn) localStorage.setItem(HINT, '1'); else localStorage.removeItem(HINT); } catch { /* no storage: no head start */ }
+  show(loggedIn);
 }
 
 export function onDevices(sp: Sp, list: unknown): void {
@@ -33,7 +42,7 @@ export function observe(sp: Sp): () => void {
     ['wmp-spotify-state', (e) => onState(sp, (e as CustomEvent<PlayerState>).detail)],
     ['wmp-spotify-devices', (e) => onDevices(sp, (e as CustomEvent<unknown>).detail)],
   ];
-  show(false);
+  show(wasLoggedIn());
   for (const [t, f] of on) window.addEventListener(t, f);
   onDevices(sp, W().devices);
   if (W().state) onState(sp, W().state as PlayerState);

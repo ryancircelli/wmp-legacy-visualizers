@@ -958,8 +958,10 @@ System audio, same machine, September 2026 (helper 270 KB, screensaver 80.7 MB):
 
 `--mode=spotify` navigates to https://open.spotify.com/ in its own profile
 (`%LOCALAPPDATA%\WmpLegacyVisualizers\spotify`) and injects `spotify.ts`'s script: token capture at
-document creation, then at DOMContentLoaded `#wmp-root` (open shadow root, adopted sheet, html) and the
-bundle's JS. Measured on the user's machine (WebView2 153):
+document creation, then, as soon as `document.body` exists, `#wmp-root` (open shadow root, adopted sheet,
+html) and the bundle's JS. It used to wait for DOMContentLoaded, which waits for Spotify's deferred
+scripts: measured 2026-09-28 from source on Windows, navigate -> overlay mounted went from 4.1 s to
+0.24-0.38 s, while Spotify's own token still came at 4.3-5.5 s. Measured on the user's machine (WebView2 153):
 
 - open.spotify.com's CSP is `script-src` (with `'unsafe-eval'`) + `frame-ancestors` only; Trusted Types
   are not enforced. No violation from the overlay; `wmp.localhost` and the `ws://127.0.0.1` audio socket

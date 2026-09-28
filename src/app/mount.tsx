@@ -4,6 +4,8 @@
 import { createRoot } from 'react-dom/client';
 import { createLocalAdapter } from '../adapters/local';
 import { createSpotifyAdapter } from '../adapters/spotify';
+import { wasLoggedIn } from '../adapters/spotify/observers';
+import { persistQueries } from '../ui';
 import { detectMode, hostWindow } from '../adapters/host';
 import { idleStatus } from '../adapters/host/media';
 import { createAppStore, SCALE_OPTS, type Scale, type VisKind } from '../model';
@@ -20,7 +22,7 @@ declare global {
   }
 }
 
-export function mount(): void {
+export async function mount(): Promise<void> {
   window.alchemyMarks?.push('mount=' + Math.round(performance.now()));
   const store = createAppStore();
   const { actions } = store.getState();
@@ -29,8 +31,9 @@ export function mount(): void {
   // Known before the first render (the layout differs); the adapter confirms them when it starts.
   actions.setAuth({ engine: spotify ? 'spotify' : 'local', mode: detectMode(), hostWindow: hostWindow() });
   if (detectMode() === "screensaver") actions.setUi({ bare: true });
-  // Spotify's own page (its login) shows until the web player says we are logged in.
-  if (spotify) { const h = document.getElementById('wmp-root'); if (h) h.style.display = 'none'; }
+  // Spotify's own page (its login) shows until the web player says we are logged in, unless the
+  // last session here was: then the skin comes up now (adapters/spotify/observers.ts).
+  if (spotify && !wasLoggedIn()) { const h = document.getElementById('wmp-root'); if (h) h.style.display = 'none'; }
 
   // CI / screenshot hooks: ?vis=alchemy|bars|battery&preset=N&scale=0.25|0.5|0.75|1
   const q = (re: RegExp) => re.exec(location.search);
@@ -51,6 +54,8 @@ export function mount(): void {
     (root instanceof Document ? root.body : root).appendChild(el);
   }
   const client = createQueryClient(getQueries());
+  // Spotify: the last session's library, Media Guide, radio and playlists before the first render
+  if (spotify) await persistQueries(client);
   createRoot(el).render(<App store={store} ticker={ticker} root={root} client={client} />);
   window.Alchemy = shim(store, ticker, client);
 }

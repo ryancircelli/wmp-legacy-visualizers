@@ -515,6 +515,58 @@ Deno.test("spotifyScript runs the bundle after the root is mounted, even behind 
   assertEquals(win.seen, ["spotify", true]);
 });
 
+// The skin goes up as soon as there is a body, not at DOMContentLoaded (seconds later on a cold start).
+Deno.test("spotifyScript mounts as soon as the body exists, before DOMContentLoaded", () => {
+  const s = spotifyScript({ html: "", css: "", js: "window.mountedAt = window.stage;" });
+  const win: Record<string, unknown> = { alchemyLog() {}, fetch() {}, WebSocket: function () {} };
+  win.top = win;
+  let watcher: (() => void) | null = null, dcl = false;
+  const doc: Record<string, unknown> = {
+    readyState: "loading",
+    body: null,
+    getElementById: () => null,
+    addEventListener: (t: string) => {
+      if (t === "DOMContentLoaded") dcl = true;
+    },
+    createElement: () => ({ style: {}, attachShadow: () => ({ innerHTML: "" }) }),
+  };
+  class Watch {
+    constructor(private f: (m: unknown, o: { disconnect(): void }) => void) {}
+    observe() {
+      watcher = () => this.f([], { disconnect() {} });
+    }
+  }
+  new Function(
+    "window",
+    "location",
+    "document",
+    "CSSStyleSheet",
+    "performance",
+    "XMLHttpRequest",
+    "MutationObserver",
+    s,
+  )(
+    win,
+    { hostname: "open.spotify.com" },
+    doc,
+    class {
+      replaceSync() {}
+    },
+    {},
+    class {},
+    Watch,
+  );
+  assertEquals(win.mountedAt, undefined, "no body yet: nothing mounted");
+  win.stage = "body parsed";
+  doc.body = { appendChild() {} };
+  watcher!();
+  assertEquals(
+    [win.mountedAt, dcl],
+    ["body parsed", false],
+    "mounted by the body, never waiting for DOMContentLoaded",
+  );
+});
+
 // The real bundle (skipped until `npm run build` has made it): a classic script, as the
 // document-created script can only be. Also prints what injecting it costs.
 const INJECT = new URL("../dist/spotify-inject.js", import.meta.url);

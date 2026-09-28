@@ -26,8 +26,9 @@ export type Bundle = { html: string; css: string; js: string };
  *
  * Order on open.spotify.com:
  *   1. at document creation: fetch/XHR/WebSocket observed (window.__wmpSpotify, events), `common` runs;
- *   2. at DOMContentLoaded (document.body exists): #wmp-root + open shadow root mounted, sheet
- *      adopted, html set, window.alchemyEngine/alchemyRoot set, then `js` runs synchronously.
+ *   2. as soon as document.body exists (0.2-0.5 s in, measured; DOMContentLoaded waits 1-4 s more
+ *      for Spotify's own scripts): #wmp-root + open shadow root mounted, sheet adopted, html set,
+ *      window.alchemyEngine/alchemyRoot set, then `js` runs synchronously.
  * A token can arrive before step 2 (the page's first API calls start early): our JS must read
  * window.__wmpSpotify first and then listen for "wmp-spotify-token".
  */
@@ -299,7 +300,13 @@ ${b.js}
       try { mount(B); } catch (e) { log('mount failed: ' + (e && e.stack || e)); }
     }, function (e) { log('dev bundle unavailable (' + e + '), using the built-in one'); mount(null); });
   }
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', go);
-  else go();
+  // As soon as there is a body, not at DOMContentLoaded: that waits for Spotify's deferred scripts,
+  // seconds on a cold start, and the skin (with what the last session kept) needs none of them.
+  if (document.body) go();
+  else if (typeof MutationObserver === 'function') {
+    new MutationObserver(function (_, o) {
+      if (document.body) { o.disconnect(); go(); }
+    }).observe(document, { childList: true, subtree: true });
+  } else document.addEventListener('DOMContentLoaded', go);
 })();`;
 }

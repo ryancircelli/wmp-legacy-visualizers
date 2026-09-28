@@ -7,6 +7,7 @@ import { LIKED, mss, type Device, type HomeItem, type HomeSection, type Station,
 import type { TreeNode } from './hooks';
 import type { MenuEntry } from './Menu';
 import { deviceKind, deviceName, isBare, isContext, isSpotify, type DeviceKind } from './selectors';
+import { useWarm } from './data';
 import { useApp, useShell } from './shell';
 
 const on = (b: boolean | undefined) => b || undefined;
@@ -34,11 +35,12 @@ export function Tree({ nodes, selected, onSelect, className, id, nodeClassName }
   nodes: TreeNode[]; selected: string | null; onSelect: (target: string) => void;
   className?: string; id?: string; nodeClassName?: string;
 }) {
+  const warm = useWarm(); // a resting pointer loads the playlist before the click
   return (
     <div className={className} id={id}>
       {nodes.map((n) => (
         <button key={n.key} type="button" title={n.label} className={nodeClassName} data-top={on(n.top)}
-                data-on={on(!!n.target && n.target === selected)} onClick={n.target ? () => onSelect(n.target!) : undefined}>{n.label}</button>
+                data-on={on(!!n.target && n.target === selected)} onClick={n.target ? () => onSelect(n.target!) : undefined} onPointerEnter={() => warm(n.target)}>{n.label}</button>
       ))}
     </div>
   );
@@ -126,6 +128,7 @@ export function TileGrid({ sections, selected, onClick, onDoubleClick, onPlay, c
   cover?: (it: TileItem) => ReactNode;
 }) {
   const isCurrent = (it: TileItem) => !!current?.uri && current.uri === it.uri;
+  const warm = useWarm();
   const play = (it: TileItem) => { if (isCurrent(it)) current!.toggle(); else onPlay?.(it); };
   return (
     <div id={id} className={className} tabIndex={onEscape ? -1 : undefined}
@@ -140,6 +143,7 @@ export function TileGrid({ sections, selected, onClick, onDoubleClick, onPlay, c
                 <button key={it.key} type="button" className={classes.tile} title={it.name + (it.sub ? '\n' + it.sub : '')}
                         data-sel={on(!!selected && selected === it.uri)} data-uri={it.uri} data-current={on(cur)}
                         onClick={(e) => onClick(it, e.detail === 0)} onDoubleClick={onDoubleClick && (() => onDoubleClick(it))}
+                        onPointerEnter={() => warm(it.uri)}
                         onKeyDown={onPlay && it.openable ? (e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); play(it); } } : undefined}>
                   {it.img ? <img className={classes.img} src={it.img} alt="" loading="lazy" /> : cover?.(it) ?? <span className={classes.img} />}
                   <span className={classes.name}>{it.name}</span>

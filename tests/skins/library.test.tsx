@@ -3,7 +3,8 @@
 import { act, cleanup, fireEvent, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { LIKED, type Track } from '../../src/model';
-import { fakeData, mountSkin, type FakeData } from './harness';
+import { useIdlePrefetch } from '../../src/ui';
+import { fakeData, mountSkin, mountSkinNow, settle, type FakeData } from './harness';
 
 let h: Awaited<ReturnType<typeof mountSkin>>, cmd: typeof h.cmd;
 const S = () => h.S();
@@ -194,5 +195,36 @@ describe('tiles view', () => {
     fireEvent.click(al, { detail: 0 });                            // Enter opens at once
     await h.settle();
     expect([S().ui.libNode, $('#mltitle')!.textContent]).toEqual([AL, 'LP']);
+  });
+});
+
+describe('loading ahead', () => {
+  it('a playlist kept from the last session shows before the login is known, and nothing is fetched', async () => {
+    h = mountSkinNow('spotify', data());
+    act(() => S().actions.setAuth({ loggedIn: null }));
+    const page = await h.queries.fetchCollectionPage(PL, 0);
+    h.queries.fetchCollectionPage.mockClear();
+    act(() => { h.client.setQueryData(h.sh.queries.keys.collection(PL), { pages: [page], pageParams: [0] }); });
+    act(() => { S().actions.setView('library'); S().actions.setUi({ libNode: PL }); });
+    await settle();
+    expect($('#mlrows')!.textContent).toContain('Track 2');
+    expect(h.queries.fetchCollectionPage).not.toHaveBeenCalled();       // nothing is asked before the login
+  });
+
+  it('after login, while idle: the library, Media Guide and the first collections, one at a time', async () => {
+    vi.useFakeTimers();
+    try {
+      const Ahead = () => { useIdlePrefetch(); return null; };
+      h = mountSkinNow('spotify', data(), <Ahead />);
+      act(() => S().actions.setAuth({ loggedIn: null }));
+      await act(() => vi.advanceTimersByTimeAsync(10_000));
+      expect(h.queries.fetchHome).not.toHaveBeenCalled();               // not before the login
+      act(() => S().actions.setAuth({ loggedIn: true }));
+      await act(() => vi.advanceTimersByTimeAsync(10_000));
+      expect([h.queries.fetchLibraryList.mock.calls.length > 0, h.queries.fetchHome.mock.calls.length]).toEqual([true, 1]);
+      expect(h.queries.fetchCollectionPage.mock.calls.map((c) => c[0])).toEqual(expect.arrayContaining([LIKED, PL, AL]));
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

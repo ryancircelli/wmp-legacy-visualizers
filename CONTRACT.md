@@ -148,7 +148,10 @@ Host (deno-webview/spotify.ts) maintains window.__wmpSpotify = { token, at, clie
   SPOTIFY_LOGIN, the login page, at most once a minute per session),
   "wmp-spotify-hash" {op, sha}, "wmp-spotify-state" (detail = player_state; from dealer cluster messages and from the
   page's own PUT connect-state/v1/devices/hobs_* response at load). Observers start at document creation; the overlay's
-  JS runs at DOMContentLoaded, so the page reads window.__wmpSpotify first, then listens.
+  JS runs as soon as document.body exists (before DOMContentLoaded, which waits for Spotify's scripts), so the
+  page reads window.__wmpSpotify first, then listens. The skin shows before the login is known when the last
+  session in this profile was logged in (localStorage wmp.loggedIn), with the query results TanStack Query's
+  persister kept in IndexedDB (src/ui/persist.ts); data is fetched only once the login is confirmed.
 Page (src/95-spotify.js):
   - Login gate: loggedIn === true shows the overlay; false/unknown keeps Spotify's own page visible.
   - State: player_state → the same internal `media` message shape (title/artist/album/art from track.metadata,

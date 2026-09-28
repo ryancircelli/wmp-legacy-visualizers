@@ -2,5 +2,5 @@
 // mounting the shadow root, so the DOM is already there).
 import { mount } from './app/mount';
 
-if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', mount);
-else mount();
+if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', () => void mount());
+else void mount();

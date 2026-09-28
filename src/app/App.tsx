@@ -9,7 +9,9 @@ import { getQueries, type Queries } from '../adapters';
 import { PRESETS } from '../engine';
 import type { AppStore } from '../model';
 import { skinFor } from '../skins/registry';
-import { runShortcut, ShellContext, useApp, useLyricsFor, WMP9_SHORTCUTS, type Shell, type Shortcut } from '../ui';
+import {
+  runShortcut, ShellContext, useApp, useForgetOnLogout, useIdlePrefetch, useLyricsFor, WMP9_SHORTCUTS, type Shell, type Shortcut,
+} from '../ui';
 import '../ui/theme.css';
 import { TickerContext } from './Visualizer';
 import type { Ticker } from './ticker';
@@ -38,6 +40,7 @@ export function App({ store, ticker, root, client: given }: {
           <Skin />
         </TickerContext.Provider>
         {engine === 'spotify' && <SpotifyLyrics />}
+        {engine === 'spotify' && <SpotifyAhead />}
       </ShellContext.Provider>
       {Devtools && <Suspense fallback={null}><Devtools initialIsOpen={false} /></Suspense>}
     </QueryClientProvider>
@@ -49,6 +52,13 @@ export function App({ store, ticker, root, client: given }: {
 function SpotifyLyrics() {
   const { uri, art } = useApp((s) => ({ uri: s.playback.track?.uri ?? null, art: s.playback.track?.art ?? null }));
   useLyricsFor(uri, art);
+  return null;
+}
+
+/** Spotify mode: fetch ahead while idle after login, and forget the account's results on logout. */
+function SpotifyAhead() {
+  useIdlePrefetch();
+  useForgetOnLogout();
   return null;
 }
 

@@ -2,10 +2,12 @@
 // hands in through the shell (Shell.queries: the Spotify adapter's, or the local engine's empty
 // ones). The store keeps only the selection (ui.libNode, ui.libSel, ui.searchQ); lists, pages,
 // search results, home, radio and artists are queries, cached per key across view switches.
-import { useInfiniteQuery, useQueries, useQuery } from '@tanstack/react-query';
+import { infiniteQueryOptions, queryOptions, useInfiniteQuery, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect } from 'react';
-import type { CollectionMeta, LibraryItem, RadioSeed, SearchPage, SearchType, Track } from '../model';
+import { LIKED, type CollectionMeta, type LibraryItem, type RadioSeed, type SearchPage, type SearchType, type Track } from '../model';
+import { forgetQueries } from './persist';
 import { useApp, useShell } from './shell';
+import type { Shell } from './types';
 
 const COLLECTION = /^spotify:(playlist:|album:|collection:tracks$)/;
 /** a uri fetchCollectionPage serves (a playlist, an album, Liked Songs) */
@@ -16,6 +18,21 @@ const isArtistUri = (uri: string | null | undefined): uri is string => !!uri && 
 export const STALE = { collection: 60_000, home: 5 * 60_000, list: 5 * 60_000, search: 5 * 60_000, artist: 5 * 60_000 };
 
 const useQ = () => useShell().queries;
+type Q = Shell['queries'];
+
+// One set of options per query, for the view that reads it and the prefetch that fills it alike.
+const libraryQuery = (q: Q) => queryOptions({ queryKey: q.keys.libraryList(), queryFn: () => q.fetchLibraryList(), staleTime: STALE.list });
+const collectionQuery = (q: Q, uri: string) => infiniteQueryOptions({
+  queryKey: q.keys.collection(uri),
+  queryFn: ({ pageParam }) => q.fetchCollectionPage(uri, pageParam),
+  initialPageParam: 0,
+  getNextPageParam: (last) => last.nextOffset,
+  staleTime: STALE.collection,
+});
+const homeQuery = (q: Q) => queryOptions({ queryKey: q.keys.home(), queryFn: () => q.fetchHome(), staleTime: STALE.home });
+const artistQuery = (q: Q, uri: string) => queryOptions({ queryKey: q.keys.artist(uri), queryFn: () => q.fetchArtist(uri), staleTime: STALE.artist });
+const radioQuery = (q: Q, seeds: RadioSeed[]) =>
+  queryOptions({ queryKey: q.keys.radio(seeds.map((s) => s.seed)), queryFn: () => q.fetchRadio(seeds), staleTime: STALE.collection });
 /** The catalogue answers only once the engine runs (the Spotify adapter binds its query functions
  *  at start, after the first frame, and knows the login): until then nothing is asked. */
 const useReady = () => useApp((s) => s.auth.engine !== 'spotify' || s.auth.loggedIn === true);
@@ -23,7 +40,7 @@ const useReady = () => useApp((s) => s.auth.engine !== 'spotify' || s.auth.logge
 /** The library's playlists and saved albums, in library order. */
 export function useLibraryList(): { items: LibraryItem[]; loading: boolean } {
   const q = useQ(), ready = useReady();
-  const r = useQuery({ queryKey: q.keys.libraryList(), queryFn: () => q.fetchLibraryList(), staleTime: STALE.list, enabled: ready });
+  const r = useQuery({ ...libraryQuery(q), enabled: ready });
   return { items: r.data ?? [], loading: r.isPending };
 }
 
@@ -44,15 +61,9 @@ export interface CollectionData {
 
 /** A playlist / album / Liked Songs, paged (null or another kind of uri: nothing, not fetched). */
 export function useCollection(uri: string | null | undefined): CollectionData {
-  const q = useQ(), ready = useReady(), on = isCollectionUri(uri) && ready;
-  const r = useInfiniteQuery({
-    queryKey: q.keys.collection(on ? uri : ''),
-    queryFn: ({ pageParam }) => q.fetchCollectionPage(uri!, pageParam),
-    initialPageParam: 0,
-    getNextPageParam: (last) => last.nextOffset,
-    enabled: on,
-    staleTime: STALE.collection,
-  });
+  // keyed by the uri even before the login is known: a result kept from the last session shows now
+  const q = useQ(), ready = useReady(), is = isCollectionUri(uri), on = is && ready;
+  const r = useInfiniteQuery({ ...collectionQuery(q, is ? uri : ''), enabled: on });
   const pages = r.data?.pages ?? [];
   return {
     rows: pages.flatMap((p) => p.tracks),
@@ -60,9 +71,9 @@ export function useCollection(uri: string | null | undefined): CollectionData {
     total: pages[0]?.total ?? 0,
     hasMore: !!r.hasNextPage,
     loadMore: () => { if (r.hasNextPage && !r.isFetchingNextPage) void r.fetchNextPage(); },
-    loading: on && r.isPending,
+    loading: is && r.isPending,
     loadingMore: r.isFetchingNextPage,
-    loaded: on && r.isSuccess,
+    loaded: is && r.isSuccess,
   };
 }
 
@@ -76,15 +87,15 @@ export function useCollectionFirstPages(uris: string[]): Record<string, Track[] 
 
 /** An artist page: details, top tracks, discography. */
 export function useArtist(uri: string | null | undefined) {
-  const q = useQ(), ready = useReady(), on = isArtistUri(uri) && ready;
-  const r = useQuery({ queryKey: q.keys.artist(on ? uri : ''), queryFn: () => q.fetchArtist(uri!), enabled: on, staleTime: STALE.artist });
-  return { page: r.data, loading: on && r.isPending };
+  const q = useQ(), ready = useReady(), is = isArtistUri(uri);
+  const r = useQuery({ ...artistQuery(q, is ? uri : ''), enabled: is && ready });
+  return { page: r.data, loading: is && r.isPending };
 }
 
 /** An album's details alone (the details pane's track mode: release, label). */
 export function useAlbumMeta(uri: string | null | undefined): CollectionMeta | undefined {
-  const q = useQ(), ready = useReady(), on = !!uri && uri.startsWith('spotify:album:') && ready;
-  return useQuery({ queryKey: q.keys.album(on ? uri : ''), queryFn: () => q.fetchAlbumMeta(uri!), enabled: on, staleTime: STALE.artist }).data;
+  const q = useQ(), ready = useReady(), is = !!uri && uri.startsWith('spotify:album:');
+  return useQuery({ queryKey: q.keys.album(is ? uri : ''), queryFn: () => q.fetchAlbumMeta(uri!), enabled: is && ready, staleTime: STALE.artist }).data;
 }
 
 export type Bucket = Exclude<SearchType, 'all'>;
@@ -121,10 +132,56 @@ export function useSearch(q: string, type: Bucket | null) {
   };
 }
 
+/** Warms a playlist, album or artist the pointer rests on, so the click finds it loaded (nothing
+ *  is asked for what is still fresh). */
+export function useWarm(): (uri: string | null | undefined) => void {
+  const sh = useShell(), q = sh.queries, c = sh.client, ready = useReady();
+  return (uri) => {
+    if (!ready || !c) return;
+    if (isCollectionUri(uri)) void c.prefetchInfiniteQuery(collectionQuery(q, uri));
+    else if (isArtistUri(uri)) void c.prefetchQuery(artistQuery(q, uri));
+  };
+}
+
+/** Collections fetched ahead after login: the playing one, Liked Songs, the library's first few. */
+const AHEAD = 6;
+
+/** After login, one at a time and only while the page is idle: the library, Media Guide, Radio
+ *  Tuner and the first page of the collections most likely opened next. */
+export function useIdlePrefetch(): void {
+  const sh = useShell(), q = useQ(), c = useQueryClient(), ready = useApp((s) => s.auth.engine === 'spotify' && s.auth.loggedIn === true);
+  useEffect(() => {
+    if (!ready) return;
+    let stop = false;
+    const idle = () => new Promise<void>((ok) => {
+      if (typeof window.requestIdleCallback === 'function') window.requestIdleCallback(() => ok(), { timeout: 2000 });
+      else setTimeout(ok, 200);
+    });
+    const later = (f: () => Promise<unknown>) => async () => { if (stop) return; await idle(); if (!stop) await f(); };
+    void (async () => {
+      await new Promise((ok) => setTimeout(ok, 2000)); // the views opened first go first
+      await later(() => c.prefetchQuery(libraryQuery(q)))();
+      await later(() => c.prefetchQuery(homeQuery(q)))();
+      const seeds = q.radioSeeds();
+      if (seeds.length) await later(() => c.prefetchQuery(radioQuery(q, seeds)))();
+      const lib = c.getQueryData(libraryQuery(q).queryKey) ?? [];
+      const uris = [sh.store.getState().playback.track?.ctx, LIKED, ...lib.slice(0, AHEAD).map((i) => i.uri)].filter(isCollectionUri);
+      for (const u of new Set(uris)) await later(() => c.prefetchInfiniteQuery(collectionQuery(q, u)))();
+    })();
+    return () => { stop = true; };
+  }, [ready, sh, q, c]);
+}
+
+/** Logged out: that account's results go, from memory and from IndexedDB (ui/persist.ts). */
+export function useForgetOnLogout(): void {
+  const c = useQueryClient(), out = useApp((s) => s.auth.engine === 'spotify' && s.auth.loggedIn === false);
+  useEffect(() => { if (out) { c.clear(); void forgetQueries(); } }, [out, c]);
+}
+
 /** Media Guide: the home feed. */
 export function useHome() {
   const q = useQ(), ready = useReady();
-  const r = useQuery({ queryKey: q.keys.home(), queryFn: () => q.fetchHome(), staleTime: STALE.home, enabled: ready });
+  const r = useQuery({ ...homeQuery(q), enabled: ready });
   return { sections: r.data?.sections ?? null, greeting: r.data?.greeting ?? '' };
 }
 
@@ -138,7 +195,7 @@ export function useRadioSeeds(): RadioSeed[] {
 /** Radio Tuner: the stations for these seeds (null = still tuning). */
 export function useRadio(seeds: RadioSeed[]) {
   const q = useQ(), ready = useReady();
-  const r = useQuery({ queryKey: q.keys.radio(seeds.map((s) => s.seed)), queryFn: () => q.fetchRadio(seeds), staleTime: STALE.collection, enabled: ready });
+  const r = useQuery({ ...radioQuery(q, seeds), enabled: ready });
   return { stations: r.data ?? null };
 }
 

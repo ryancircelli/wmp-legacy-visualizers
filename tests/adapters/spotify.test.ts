@@ -35,11 +35,12 @@ const pathfinderFixtures = (env: ReturnType<typeof boot>) => env.route(/pathfind
 
 describe('1. login gate (wmp-spotify-auth)', () => {
   it('shows the overlay only while logged in; never calls the public Web API', async () => {
+    localStorage.removeItem('wmp.loggedIn');
     const env = boot({ loggedIn: undefined });
     env.start();
     await settle();
     expect(env.host().style.display).toBe('none');
-    expect(env.S.auth.loggedIn).toBe(false);
+    expect(env.S.auth.loggedIn).toBe(null);                          // not known yet: nothing asked, nothing shown
     env.fire('wmp-spotify-auth', { loggedIn: !FX.apiToken.isAnonymous });
     await settle();
     expect(env.host().style.display).toBe('');

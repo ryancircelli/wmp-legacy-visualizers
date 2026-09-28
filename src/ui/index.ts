@@ -14,3 +14,4 @@ export * from './scrub';
 export * from './data';
 export * from './AddTo';
 export * from './links';
+export * from './persist';
