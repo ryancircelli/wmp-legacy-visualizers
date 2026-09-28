@@ -348,13 +348,14 @@ async function unpackPage(): Promise<string> {
  */
 async function profileDir(spotify: boolean, dev: boolean): Promise<string> {
   if (!spotify) {
-    return claim(`${APPDIR}\\profile.lock`)
+    const lock = `${APPDIR}\\profile.lock`;
+    return claim(lock) || await restarted(lock)
       ? `${APPDIR}\\WebView2`
       : `${APPDIR}\\WebView2-${Deno.pid}`;
   }
   const name = dev ? "spotify-dev" : "spotify", dir = `${APPDIR}\\${name}`;
   const lock = `${APPDIR}\\${name}.lock`, throwaway = `${APPDIR}\\spotify-${Deno.pid}`;
-  if (claim(lock)) return await idle(dir);
+  if (claim(lock) || await restarted(lock)) return await idle(dir);
   if (dev) return throwaway;
   const self = imagePath(Deno.pid),
     others = hostWindows(SPOTIFY_TITLE),
@@ -380,6 +381,18 @@ async function profileDir(spotify: boolean, dev: boolean): Promise<string> {
       "a throwaway profile, logged out",
   );
   return throwaway;
+}
+
+/** A relaunch (alchemyRestart passes RESTART): the previous instance is on its way out, so its lock
+ * is waited for (10 s at most) rather than treated as a second window. */
+const RESTART = "--restart";
+async function restarted(lock: string): Promise<boolean> {
+  if (!Deno.args.includes(RESTART)) return false;
+  for (let i = 0; i < 100; i++) {
+    if (claim(lock)) return true;
+    await new Promise((ok) => setTimeout(ok, 100));
+  }
+  return false;
 }
 
 /** The window title the Spotify host gives its window (and looks for in another instance). */
@@ -885,6 +898,12 @@ if (import.meta.main) {
     }` +
       `${hostUpdate ? "; a newer exe is out" : ""}`,
   );
+  // Help > Check for Player Updates asks the worker (server.ts /update): the same check, on demand.
+  if (updateOpts) {
+    worker.postMessage({
+      update: { ...updateOpts, running: update?.manifest.version ?? OWN.version },
+    });
+  }
   const pageDir = update && mode !== "spotify" ? UPDATE_DIR : PAGE_DIR;
   const vhost = w.virtualHost(VHOST, pageDir);
   const remoteUrl = await remote;
@@ -898,6 +917,24 @@ if (import.meta.main) {
 
   w.bind("alchemyQuit", (a) => quit(String(a[0] ?? "page")));
   w.bind("alchemyLog", (a) => log(String(a[0] ?? "")));
+  // Restart Now (a checked page update is cached): the same program again, told to wait for this
+  // one's profile, then this one quits. Not in dev mode, whose page reloads on its own.
+  if (!dev) {
+    w.bind("alchemyRestart", () => {
+      log("restart: relaunching for a page update");
+      // a release exe is its own program; from source the program is deno, which needs the script
+      const source = /(^|[\\/])deno(\.exe)?$/i.test(Deno.execPath())
+        ? ["run", "-A", "--unstable-ffi", import.meta.url]
+        : [];
+      new Deno.Command(Deno.execPath(), {
+        args: [...source, ...Deno.args.filter((a) => a !== RESTART), RESTART],
+        stdin: "null",
+        stdout: "null",
+        stderr: "null",
+      }).spawn().unref();
+      quit("restart");
+    });
+  }
   // The Help menu's downloads and GitHub, in the user's browser: only the project's own addresses
   // (any script on open.spotify.com can call a binding too).
   w.bind("alchemyOpenUrl", (a) => {

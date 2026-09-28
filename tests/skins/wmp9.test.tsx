@@ -88,7 +88,7 @@ describe('menus', () => {
       return r;
     };
     expect(labels()).toEqual(['Download WMP Spotify for Windows', 'Download the Alchemy Screensaver', 'Source Code on GitHub',
-      'About Windows Media Player']);
+      'Check for Player Updates...', 'About Windows Media Player']);
     press($('#mtops [data-menu=help]')!);
     fireEvent.click(item(0, 'Download WMP Spotify for Windows'));
     expect(open).toHaveBeenCalledWith(LINKS.spotify, '_blank', 'noopener');
@@ -97,7 +97,7 @@ describe('menus', () => {
       .toEqual([LINKS.spotify, LINKS.screensaver, LINKS.repo]);
     act(() => S().actions.setUi({ dialog: null }));
     act(() => S().actions.setAuth({ mode: 'screensaver' }));
-    expect(labels()).toEqual(['About Windows Media Player']);
+    expect(labels()).toEqual(['Check for Player Updates...', 'About Windows Media Player']);
     open.mockRestore();
   });
 
@@ -112,7 +112,7 @@ describe('menus', () => {
       return r;
     };
     act(() => S().actions.setAuth({ mode: 'app' }));
-    expect(labels()).toEqual(['Keyboard Shortcuts', 'About Windows Media Player']);
+    expect(labels()).toEqual(['Keyboard Shortcuts', 'Check for Player Updates...', 'About Windows Media Player']);
     localStorage.removeItem('wmp.updateAsked');
     window.alchemyHostUpdate = true;
     act(() => announceHostUpdate(h.store));
@@ -130,6 +130,32 @@ describe('menus', () => {
     delete window.alchemyOpenUrl;
   });
 
+  it('Help > Check for Player Updates: latest, ready (Restart Now), a new exe (the download), or no answer', async () => {
+    const { $ } = setup('spotify');
+    act(() => S().actions.setAuth({ mode: 'app' }));
+    const restarts: number[] = [];
+    window.alchemyRestart = () => void restarts.push(1);
+    const open = async (answer: object) => {
+      cmd.checkForUpdates.mockResolvedValueOnce(answer);
+      act(() => S().actions.setUi({ dialog: 'checkUpdates' }));
+      await settle();
+    };
+    await open({ state: 'latest' });
+    expect($('#checkmsg')!.textContent).toBe('You have the latest version of WMP Spotify.');
+    fireEvent.click(within($('#dlgCheck')!).getByText('OK'));
+    await open({ state: 'ready' });
+    expect($('#checkmsg')!.textContent).toBe('A player update has been downloaded. Restart WMP Spotify to use it.');
+    fireEvent.click(within($('#dlgCheck')!).getByText('Restart Now'));
+    expect(restarts).toEqual([1]);
+    act(() => S().actions.setUi({ dialog: null }));
+    await open({ state: 'error', message: 'The update site could not be reached.' });
+    expect($('#checkmsg')!.textContent).toBe('Could not check for updates. The update site could not be reached.');
+    act(() => S().actions.setUi({ dialog: null }));
+    await open({ state: 'app' });
+    expect([S().ui.dialog, S().auth.hostUpdate]).toEqual(['update', true]);    // the download dialog takes over
+    delete window.alchemyRestart;
+  });
+
   it('Spotify: File, View, Play and Help carry the engine\'s entries and accelerators', () => {
     const { $ } = setup('spotify');
     const labels = (name: string) => {
@@ -144,7 +170,7 @@ describe('menus', () => {
       'Full Screen|Alt+Enter']);
     expect(labels('play')).toEqual(['Play|Ctrl+P', 'Stop|Ctrl+S', 'Previous|Ctrl+B', 'Next|Ctrl+F', 'Shuffle|Ctrl+H', 'Repeat|▶',
       'Like|Ctrl+D', 'Add to Playlist|▶', 'Rewind|Ctrl+Shift+B', 'Fast Forward|Ctrl+Shift+F', 'Volume Up|F9', 'Volume Down|F8', 'Mute|F7']);
-    expect(labels('help')).toEqual(['Keyboard Shortcuts|', 'About Windows Media Player|']);
+    expect(labels('help')).toEqual(['Keyboard Shortcuts|', 'Check for Player Updates...|', 'About Windows Media Player|']);
     // checks are real ARIA: toggles menuitemcheckbox, one-of-a-set menuitemradio, aria-checked; the ✓ stays
     const roles = (name: string) => {
       press($(`#mtops [data-menu=${name}]`)!);

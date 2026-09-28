@@ -14,7 +14,8 @@
 import { handler } from "../deno/main.ts";
 import { AUDIO_PATH, serveAudio } from "./audio.ts";
 import { placement } from "./win32.ts";
-import { serveDev } from "./dev.ts";
+import { CORS, serveDev } from "./dev.ts";
+import { check, type Options } from "./update.ts";
 
 // Set by main.ts once the helper has been unpacked; empty when there is none, and then /audio is
 // a plain 404 and the page animates on silence.
@@ -64,6 +65,7 @@ function serve() {
   }, (req) => {
     const dev = devInject ? serveDev(req, devInject, log) : null;
     if (dev) return dev;
+    if (new URL(req.url).pathname === UPDATE_PATH) return checkUpdate(req);
     if (audioExe && new URL(req.url).pathname === AUDIO_PATH) {
       return serveAudio(
         req,
@@ -83,6 +85,24 @@ try {
 }
 
 /**
+ * Help > Check for Player Updates: the page asks here, since the main thread is inside the message
+ * pump and can run no fetch. The same signed check a launch makes (update.ts); a newer page is
+ * cached for the next launch, which the page can start at once (alchemyRestart). Dev mode and a
+ * build without updates answer that there is nothing to check.
+ */
+export const UPDATE_PATH = "/update";
+let updates: (Pick<Options, "dir" | "name" | "own"> & { running: string }) | null = null;
+async function checkUpdate(req: Request): Promise<Response> {
+  if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: CORS });
+  const body = updates
+    ? await check({ ...updates, log })
+    : { running: "", ready: null, hostUpdate: false, error: "This build does not update." };
+  return new Response(JSON.stringify(body), {
+    headers: { ...CORS, "content-type": "application/json" },
+  });
+}
+
+/**
  * Remember where the player window is left. This lives here, off the main thread, because the main
  * thread is inside webview_run() — the Win32 message pump — for the whole life of the window and
  * runs no timer until it returns, by which time the window is gone. A poll also covers every way
@@ -96,6 +116,10 @@ let full = false; // the F-key desktop-covering box is not one to remember
 self.onmessage = (e) => {
   if ("full" in e.data) {
     full = !!e.data.full;
+    return;
+  }
+  if ("update" in e.data) {
+    updates = e.data.update;
     return;
   }
   const { geom, hwnd } = e.data as { geom: string; hwnd: string };

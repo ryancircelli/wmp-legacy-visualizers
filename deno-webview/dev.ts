@@ -14,8 +14,8 @@ export const DEV_SOCKET_PATH = "/dev";
 const POLL_MS = 300; // also the debounce: a file must hold still for one poll before it is read
 
 // Cross-origin from https://open.spotify.com to http://127.0.0.1: CORS, and Chromium's
-// private-network preflight answered yes.
-const CORS = {
+// private-network preflight answered yes. (server.ts's /update answers the same way.)
+export const CORS = {
   "access-control-allow-origin": "*",
   "access-control-allow-private-network": "true",
   "access-control-allow-headers": "*",

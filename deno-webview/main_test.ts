@@ -838,6 +838,13 @@ Deno.test("planSecond: same program -> front; another WmpSpotify copy -> take ov
   );
 });
 
+// A relaunch's flag is not a screensaver verb.
+Deno.test("modeOf: --restart changes nothing", () => {
+  assertEquals(modeOf(["--restart"]), "c");
+  assertEquals(modeOf(["/s", "--restart"]), "s");
+  assertEquals(modeOf(["--mode=spotify", "--restart"]), "spotify");
+});
+
 // Dev mode is an argument, never baked.
 Deno.test("devOf: --dev only", () => {
   assertEquals(devOf(["--mode=spotify"]), false);

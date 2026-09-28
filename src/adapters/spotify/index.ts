@@ -3,7 +3,7 @@
 // drives it through the channels the web player itself uses, never its DOM and never the public
 // Web API. The host socket (PCM, lyrics, GSMTC as a fallback) comes from the local adapter's startHost.
 import { noCommands, type AppStore } from '../../model';
-import { announceHostUpdate, detectMode, hostWindow, win } from '../host';
+import { announceHostUpdate, checkForUpdates, detectMode, hostWindow, win } from '../host';
 import { hostTransport, startHost, type HostLink } from '../local';
 import * as C from './connect';
 import { openLink, parseLink } from './links';
@@ -39,6 +39,7 @@ export function spotifyCommands(sp: Sp, host: HostLink | null) {
   const T = host ? hostTransport(store, host) : null;
   return {
     ...noCommands,
+    checkForUpdates,
     playPause: () => C.transport(sp, 'playpause'),
     play: () => C.transport(sp, 'play'),
     pause: () => C.transport(sp, 'pause'),

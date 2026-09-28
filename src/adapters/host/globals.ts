@@ -34,6 +34,8 @@ declare global {
     alchemyHostUpdate?: boolean;
     /** open one of the project's own URLs in the user's browser */
     alchemyOpenUrl?: (url: string) => void;
+    /** relaunch the app (a checked page update is cached for the next launch) */
+    alchemyRestart?: () => void;
     __wmpSpotify?: SpotifyObserved;
   }
 }

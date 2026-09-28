@@ -1,10 +1,10 @@
 // The XP dialogs' bodies: Options, About, Keyboard Shortcuts, Open Spotify Link. The frame, the
 // backdrop and closing are src/ui's Dialog / DialogHost.
-import { useState, type CSSProperties, type ReactNode } from 'react';
+import { useEffect, useState, type CSSProperties, type ReactNode } from 'react';
 import emblemSpotify from '../assets/emblem-spotify.svg';
 import emblemWmp from '../assets/emblem-wmp.svg';
-import { FPS_OPTS, SCALE_OPTS, type Scale, type Settings } from '../../../model';
-import { appDownload, cx, Dialog, DialogHost, LINKS, LYRICS_SOURCE, openLink, useApp, useCloseDialog, useShell, useShortcuts, type DialogClasses } from '../../../ui';
+import { FPS_OPTS, SCALE_OPTS, type Scale, type Settings, type UpdateCheck } from '../../../model';
+import { appDownload, cx, Dialog, DialogHost, LINKS, LYRICS_SOURCE, openLink, restartApp, useApp, useCloseDialog, useShell, useShortcuts, type DialogClasses } from '../../../ui';
 
 const DLG: DialogClasses = {
   title: 'flex-none flex items-center gap-6 h-24 pr-3 pl-6 bg-dlg-title text-white font-bold [text-shadow:0_1px_1px_rgba(0,0,0,.45)]',
@@ -24,7 +24,7 @@ function Dlg(p: { id: string; title: string; label: string; className?: string; 
 export function Modal() {
   return (
     <DialogHost id="modal" className="fixed inset-0 z-80 grid place-items-center bg-[rgba(0,0,0,.34)]"
-                dialogs={{ options: Options, about: About, keys: Shortcuts, link: OpenLink, update: UpdateAvailable }} />
+                dialogs={{ options: Options, about: About, keys: Shortcuts, link: OpenLink, update: UpdateAvailable, checkUpdates: CheckUpdates }} />
   );
 }
 
@@ -168,6 +168,39 @@ export function UpdateAvailable() {
       <div className={BODY}>
         <p className="m-0 mb-8">A newer version of {name} is available.</p>
         <p className={HINT}>Fixes to the player arrive by themselves. This one changes the app itself, so it needs the new download. Help has the link too.</p>
+      </div>
+    </Dlg>
+  );
+}
+
+/** Help > Check for Player Updates: asks now, then says what it found. A newer exe hands over to the
+ *  Player Update dialog (the download); a newer page offers Restart Now (the apps) or Reload. */
+export function CheckUpdates() {
+  const sh = useShell(), close = useCloseDialog();
+  const { spotify, web } = useApp((st) => ({ spotify: st.auth.engine === 'spotify', web: st.auth.mode === 'web' }));
+  const [r, setR] = useState<UpdateCheck | null>(null);
+  useEffect(() => {
+    let live = true;
+    void sh.store.getState().commands.checkForUpdates().then((x) => {
+      if (!live) return;
+      if (x.state !== 'app') { setR(x); return; }
+      const a = sh.store.getState().actions;
+      a.setAuth({ hostUpdate: true });
+      a.setUi({ dialog: 'update' });
+    });
+    return () => { live = false; };
+  }, [sh]);
+  const name = spotify ? 'WMP Spotify' : web ? 'the player' : 'the Alchemy screensaver';
+  const buttons: [string, () => void][] = r?.state === 'ready' ? [[web ? 'Reload' : 'Restart Now', restartApp], ['Later', close]] : [['OK', close]];
+  return (
+    <Dlg id="dlgCheck" title="Player Update" label="Check for Player Updates" buttons={buttons}>
+      <div className={BODY} id="checkmsg">
+        {!r && <p className="m-0">Checking for updates…</p>}
+        {r?.state === 'latest' && <p className="m-0">You have the latest version of {name}.</p>}
+        {r?.state === 'error' && <p className="m-0">Could not check for updates. {r.message}</p>}
+        {r?.state === 'ready' && (web
+          ? <p className="m-0">A newer version of the player is available. Reload the page to use it.</p>
+          : <p className="m-0">A player update has been downloaded. Restart {spotify ? 'WMP Spotify' : 'the screensaver settings'} to use it.</p>)}
       </div>
     </Dlg>
   );

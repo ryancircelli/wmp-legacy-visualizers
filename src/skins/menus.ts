@@ -116,6 +116,8 @@ export function menuItems(name: MenuName, sh: Shell, addTo?: AddToApi): MenuEntr
           { label: 'Download WMP Spotify for Windows', act: () => openLink(LINKS.spotify) },
           { label: 'Download the Alchemy Screensaver', act: () => openLink(LINKS.screensaver) },
           { label: 'Source Code on GitHub', act: () => openLink(LINKS.repo) }, SEP] : []),
+        { label: 'Check for Player Updates...', act: dialog('checkUpdates') },
+        SEP,
         { label: 'About Windows Media Player', act: dialog('about') }];
   }
 }

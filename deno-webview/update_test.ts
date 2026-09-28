@@ -1,5 +1,5 @@
 import { assertEquals } from "@std/assert";
-import { cached, HOST_API, type Manifest, refresh, sha256hex, verify } from "./update.ts";
+import { cached, check, HOST_API, type Manifest, refresh, sha256hex, verify } from "./update.ts";
 
 const b64 = (b: ArrayBuffer | Uint8Array) => btoa(String.fromCharCode(...new Uint8Array(b)));
 const enc = (s: string) => new TextEncoder().encode(s);
@@ -132,12 +132,20 @@ Deno.test("refresh: not newer, or for a newer host, keeps the built-in page; a n
 Deno.test("refresh: a bad signature, a file that does not match, or no network change nothing", () =>
   withDir(async (dir) => {
     const forged = await site({}, { sig: await sign(enc("something else")) });
-    assertEquals(await refresh(opts(dir, forged.f)), { page: null, hostUpdate: false });
+    assertEquals(await refresh(opts(dir, forged.f)), {
+      page: null,
+      hostUpdate: false,
+      error: "The update's signature does not verify.",
+    });
     const swapped = await site({}, { file: enc("evil") });
     assertEquals((await refresh(opts(dir, swapped.f))).page, null);
     assertEquals((await cached(opts(dir, swapped.f))).page, null, "nothing cached");
     const offline = (() => Promise.reject(new TypeError("offline"))) as typeof fetch;
-    assertEquals(await refresh(opts(dir, offline)), { page: null, hostUpdate: false });
+    assertEquals(await refresh(opts(dir, offline)), {
+      page: null,
+      hostUpdate: false,
+      error: "The update site could not be reached.",
+    });
   }));
 
 Deno.test("refresh: an older signed manifest (a replay) does not replace a newer cache", () =>
@@ -146,6 +154,25 @@ Deno.test("refresh: an older signed manifest (a replay) does not replace a newer
     const replay = await site({ built: 200, version: "d".repeat(40) });
     assertEquals((await refresh(opts(dir, replay.f))).page?.manifest.built, 300);
     assertEquals((await cached(opts(dir, replay.f))).page?.manifest.built, 300);
+  }));
+
+Deno.test("check (Help > Check for Player Updates): ready when a newer page than the running one is cached", () =>
+  withDir(async (dir) => {
+    const s = await site();
+    const running = "a".repeat(40);
+    assertEquals(await check({ ...opts(dir, s.f), running }), {
+      running,
+      ready: "b".repeat(40),
+      hostUpdate: false,
+      error: null,
+    });
+    // already running that page (a launch that took it): the latest
+    assertEquals((await check({ ...opts(dir, s.f), running: "b".repeat(40) })).ready, null);
+    const offline = (() => Promise.reject(new TypeError("offline"))) as typeof fetch;
+    assertEquals(
+      (await check({ ...opts(dir, offline), running })).error,
+      "The update site could not be reached.",
+    );
   }));
 
 Deno.test("cached: a cached file changed on disk no longer counts", () =>

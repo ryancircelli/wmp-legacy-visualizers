@@ -114,9 +114,11 @@ export async function cached(o: Options): Promise<{ page: Page | null; hostUpdat
 /**
  * Asks the site for its manifest; caches it when it verifies, and fetches and caches the page file
  * when it is usable here. Never throws. `page`: the newer page, if one arrived; `hostUpdate`: the
- * site's build is a newer exe.
+ * site's build is a newer exe; `error`: why the site could not be asked or believed.
  */
-export async function refresh(o: Options): Promise<{ page: Page | null; hostUpdate: boolean }> {
+export async function refresh(
+  o: Options,
+): Promise<{ page: Page | null; hostUpdate: boolean; error?: string }> {
   const key = o.key ?? PUBLIC_KEY, origin = o.origin ?? UPDATE_ORIGIN, f = o.fetch ?? fetch;
   const log = o.log ?? (() => {});
   const get = async (path: string) => {
@@ -130,7 +132,7 @@ export async function refresh(o: Options): Promise<{ page: Page | null; hostUpda
     const m = await verify(mb, sig, key);
     if (!m) {
       log("update: the site's manifest does not verify; ignored");
-      return { page: null, hostUpdate: false };
+      return { page: null, hostUpdate: false, error: "The update's signature does not verify." };
     }
     await Deno.mkdir(o.dir, { recursive: true });
     await Deno.writeFile(`${o.dir}/latest.json`, mb);
@@ -149,7 +151,7 @@ export async function refresh(o: Options): Promise<{ page: Page | null; hostUpda
     const bytes = await get(o.name === "index.html" ? "" : o.name);
     if (await sha256hex(bytes) !== m.files[o.name]) {
       log(`update: ${o.name} does not match the manifest; ignored`);
-      return { page: null, hostUpdate };
+      return { page: null, hostUpdate, error: "The update does not match its manifest." };
     }
     // the file first, its manifest last: an interrupted write leaves nothing that verifies
     await Deno.writeFile(`${o.dir}/${o.name}`, bytes);
@@ -159,6 +161,26 @@ export async function refresh(o: Options): Promise<{ page: Page | null; hostUpda
     return { page: { bytes, manifest: m }, hostUpdate };
   } catch (e) {
     log(`update: ${e instanceof Error ? e.message : e}`);
-    return { page: null, hostUpdate: false };
+    return { page: null, hostUpdate: false, error: "The update site could not be reached." };
   }
+}
+
+/** Help > Check for Player Updates (server.ts /update): what the page is told. `ready`: a newer page
+ * than the one running is cached, for the next launch; `hostUpdate`: a newer exe is out. */
+export type CheckResult = {
+  running: string;
+  ready: string | null;
+  hostUpdate: boolean;
+  error: string | null;
+};
+
+export async function check(o: Options & { running: string }): Promise<CheckResult> {
+  const r = await refresh(o);
+  const v = r.page?.manifest.version;
+  return {
+    running: o.running,
+    ready: v && v !== o.running ? v : null,
+    hostUpdate: r.hostUpdate,
+    error: r.error ?? null,
+  };
 }

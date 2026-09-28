@@ -6,6 +6,10 @@ import type { RepeatMode } from './types';
 
 export type WinAction = 'drag' | 'min' | 'max' | 'close' | 'size';
 
+/** Help > Check for Player Updates. `ready`: a newer page is cached (the apps: restart to use it) or
+ *  deployed (the website: reload); `app`: a newer exe is out; `error`: the check could not be made. */
+export type UpdateCheck = { state: 'latest' | 'ready' | 'app' | 'error'; message?: string };
+
 export interface Commands {
   // transport: the promises settle when the player has answered (Spotify) or at once (host SMTC)
   playPause(): Promise<void>;
@@ -57,6 +61,8 @@ export interface Commands {
 
   /** the desktop host's window (auth.hostWindow); a no-op in a browser */
   win(action: WinAction): void;
+  /** Help > Check for Player Updates */
+  checkForUpdates(): Promise<UpdateCheck>;
 }
 
 const none = () => {};
@@ -67,4 +73,5 @@ export const noCommands: Commands = {
   search: none,
   openInLibrary: none, openAlbum: none, openArtist: none, openFrom: none, transfer: resolved, setLiked: resolved, addTo: resolved,
   openLink: () => false, logout: none, startCapture: resolved, win: none,
+  checkForUpdates: () => Promise.resolve({ state: 'error', message: 'The check could not be made.' }),
 };
