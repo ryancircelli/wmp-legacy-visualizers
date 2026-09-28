@@ -35,6 +35,7 @@ function fromOverview(a: any, uri: string): { name: string; meta: CollectionMeta
     || bigImage(a.headerImage && a.headerImage.data && a.headerImage.data.sources);
   if (image) meta.image = image;
   if (a.stats && typeof a.stats.followers === 'number') meta.followers = a.stats.followers;
+  if (typeof a.saved === 'boolean') meta.saved = a.saved;             // followed
   if (bio) meta.description = plain(bio);
   if (a.sharingInfo && a.sharingInfo.shareUrl) meta.shareUrl = a.sharingInfo.shareUrl;
   return { name, meta, tracks, albums: uniq(albums) };

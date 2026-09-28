@@ -74,7 +74,7 @@ describe('details pane', () => {
     await act(async () => { answer(); await Promise.resolve(); });
     await h.settle();
     expect(lines()).toEqual(expect.arrayContaining(['Band', '1 track · 2 min', 'Released 2015-07-15', 'Warp', '© 2015 Warp', 'Album · Single']));
-    expect($('#dsave')!.textContent).toBe('Saved ✓');                    // saved: the Save button says so
+    expect($('#mlinfo #daddto')!.getAttribute('aria-pressed')).toBe('true');   // saved: the heart is filled
     act(() => S().actions.setUi({ libNode: LIKED }));
     await h.settle();
     expect(lines()).toEqual(expect.arrayContaining(['Liked Songs', '0 tracks']));

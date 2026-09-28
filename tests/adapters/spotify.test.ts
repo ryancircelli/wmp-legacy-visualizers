@@ -731,7 +731,7 @@ describe('13. artist collections and typed search against spike 4\'s captured pa
     const dg = env.pf().find((c) => c.body.operationName === 'queryArtistDiscographyAll')!;
     expect(dg.body.extensions.persistedQuery.sha256Hash).toBe('5e07d323febb57b4a56a42abbf781490e58764aa45feb6e3dc0591564fc56599');
     expect(dg.body.variables).toMatchObject({ uri: AR, offset: 0, order: 'DATE_DESC' });
-    expect(c.meta).toMatchObject({ kind: 'artist', name: 'Queen', total: 3, followers: 58_588_896,
+    expect(c.meta).toMatchObject({ kind: 'artist', name: 'Queen', total: 3, followers: 58_588_896, saved: false,
       image: 'https://i.scdn.co/image/ab6761610000e5eb73e4d22612ac8d944b5789b4',
       shareUrl: 'https://open.spotify.com/artist/1dfeR4HaWDbWqFHLkxsg1d?si=0000000000000000000000' });
     expect(c.meta.description).toMatch(/^Queen epitomize all the glittery excess/);

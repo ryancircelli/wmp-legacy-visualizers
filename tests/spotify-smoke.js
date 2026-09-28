@@ -33,7 +33,9 @@ const B = JSON.parse(fs.readFileSync(path.resolve(__dirname, '..', 'dist', 'spot
       const j = op === 'libraryV3' ? { data: { me: { libraryV3: { totalCount: 1, items: [{ item: { data: { name: 'Mix A', uri: 'spotify:playlist:a',
             currentUserCapabilities: { canEditItems: true } } } }] } } } }
         // saved flags (track 2 is liked) and the playlists holding a track (Mix A)
-        : op === 'areEntitiesInLibrary' ? { data: { lookup: b.variables.uris.map((u) => ({ data: { saved: u === 'spotify:track:2' } })) } }
+        // (a playlist's entry carries no flag, as captured live)
+        : op === 'areEntitiesInLibrary' ? { data: { lookup: b.variables.uris.map((u) => u.startsWith('spotify:playlist:')
+            ? { __typename: 'PlaylistResponseWrapper' } : { data: { saved: u === 'spotify:track:2' } }) } }
         : op === 'isCuratedEntities' ? { data: { curated: ['spotify:playlist:a'] } }
         : op === 'fetchPlaylist' ? { data: { playlistV2: { name: 'Mix A', description: 'Road trip <b>songs</b>', followers: 12345,
             ownerV2: { data: { name: 'ryan', uri: 'spotify:user:ryan' } }, sharingInfo: { shareUrl: 'https://open.spotify.com/playlist/a' },
@@ -145,6 +147,7 @@ const B = JSON.parse(fs.readFileSync(path.resolve(__dirname, '..', 'dist', 'spot
   await page.waitForFunction(() => /♥ 12,345 followers/.test(document.getElementById('wmp-root').shadowRoot.getElementById('mlinfo').textContent));
   assert.ok(await R((r) => /by ryan/.test(r.getElementById('mlinfo').textContent) && /2 tracks · 4 min/.test(r.getElementById('mlinfo').textContent)),
             'details pane: owner and stats');
+  assert.strictEqual(await R((r) => r.querySelector('#mlinfo #daddto')), null, 'your own (editable) playlist: no heart');
   await page.locator('#wmp-root #mlrows tr >> nth=0').click();
   assert.strictEqual(await R((r) => r.getElementById('mlinfo').dataset.mode), 'track', 'a row puts the pane in track mode');
   // Add to: the rows' saved flags (one batched areEntitiesInLibrary), the pane's button and its menu

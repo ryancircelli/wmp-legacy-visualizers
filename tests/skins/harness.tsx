@@ -77,7 +77,9 @@ export function fakeQueries(data: FakeData): FakeQueries {
       radio: (seeds: readonly string[]) => k('radio', ...seeds), artist: (uri: string) => k('artist', uri), album: (uri: string) => k('album', uri),
       lyrics: (id: string) => k('lyrics', id), saved: (uris: readonly string[]) => k('saved', ...uris),
     },
-    fetchSaved: vi.fn((uris: string[]) => Promise.resolve(Object.fromEntries(uris.map((u) => [u, !!data.saved[u]])))),
+    // as areEntitiesInLibrary: a flag for tracks, albums and artists, none for a playlist
+    fetchSaved: vi.fn((uris: string[]) => Promise.resolve(Object.fromEntries(uris.filter((u) => !u.startsWith('spotify:playlist:'))
+      .map((u) => [u, !!data.saved[u]])))),
     savedKey: (uri: string) => k('saved', uri),
     fetchEditablePlaylists: vi.fn(() => Promise.resolve(data.editable)),
     fetchMembership: vi.fn((track: string, pls: string[]) => Promise.resolve(Object.fromEntries(pls.filter((p) => p in (data.membership[track] ?? {}))

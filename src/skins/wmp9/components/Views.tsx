@@ -198,7 +198,9 @@ function ListBody({ lib }: { lib: Lib }) {
 function Pane() {
   return (
     <DetailsPane id="mlinfo" placeholder={<NoArt className="block w-full h-auto" />}
-                 addTo={(uri) => canSave(uri) ? <AddTo uri={uri} owner="addto:details" id="daddto" classes={ADDTO} menuClasses={MENU} /> : null} classes={{
+                 addTo={(uri, saved) => canSave(uri)
+                   ? <AddTo uri={uri} saved={saved} menu={saved === undefined} owner="addto:details" id="daddto" classes={ADDTO} menuClasses={MENU} />
+                   : null} classes={{
       root: 'flex-none flex min-h-0 w-12 data-open:w-228 bg-white border-l border-xp-edge lt-900:hidden',
       column: 'flex-auto min-w-0 flex flex-col',
       // the band level with the list's header row (same height, gradient and rule)

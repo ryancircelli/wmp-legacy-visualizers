@@ -5,7 +5,7 @@
 import { useState, type ReactNode } from 'react';
 import { LIKED, mss, totalMs, type CollectionMeta, type Commands } from '../model';
 import { canSave, useSaved } from './AddTo';
-import { useAlbumMeta, useArtist, useCollection } from './data';
+import { useAlbumMeta, useArtist, useCollection, useLibraryList } from './data';
 import { useLibrary } from './hooks';
 import {
   count, detailsPaneOn, hmm, isAlbum, isContext, shareUrl, uiSettings, type TrackInfo,
@@ -79,9 +79,16 @@ export function useDetails() {
     share: meta?.shareUrl ?? shareUrl(cUri),
     playable: isContext(cUri) || cUri === LIKED || kind === 'artist',
   };
-  // a playlist / album / artist can be saved (followed): Save / Saved ✓
-  const savable = canSave(cUri) && (kind === 'playlist' || kind === 'album' || kind === 'artist');
-  const savedNow = useSaved(savable ? [cUri] : [])(cUri) ?? meta?.saved;
+  // A playlist / album / artist can be saved (followed), except a playlist the user can edit: their
+  // own (or one they collaborate on), where Spotify offers no save, and "removing" their own deletes it.
+  // Saved: areEntitiesInLibrary answers albums and artists but never playlists, then the collection's
+  // own flag (albums, artists), then whether the library list holds it (playlists, albums).
+  // ponytail: the list is libraryV3's first 400; a playlist past that reads as not saved.
+  const libList = useLibraryList();
+  const listed = libList.loading ? undefined : libList.items.find((p) => p.uri === cUri);
+  const savable = canSave(cUri) && (kind === 'playlist' || kind === 'album' || kind === 'artist') && !listed?.editable;
+  const savedNow = useSaved(savable ? [cUri] : [])(cUri) ?? meta?.saved
+    ?? (kind !== 'artist' && !libList.loading ? !!listed : undefined);
   const opt = c() as Commands & Optional;
   // an artist plays as a context (its top tracks); a playlist / album / Liked Songs from its first track
   const playWhole = () => (kind === 'artist' ? c().playContext(context.uri, null) : c().playAll(context.uri));
@@ -89,9 +96,9 @@ export function useDetails() {
     open: st.open,
     toggle: () => get().actions.setSettings(uiSettings({ detailsPane: !st.open })),
     mode: track ? 'track' as const : 'context' as const,
-    /** context mode: null = not savable (Liked Songs, the headings), else whether it is saved */
-    saved: savable ? !!savedNow : null,
-    save: () => { if (savable) void c().addTo(cUri, LIKED, !savedNow); },
+    /** context mode: null = no save control (Liked Songs, the headings, the user's own playlists, or
+     *  not known yet), else whether it is saved */
+    saved: savable && savedNow !== undefined ? savedNow : null,
     context, track: track ?? null, albumMeta,
     /** leave track mode (the "back to" link, Esc in the table) */
     back: () => get().actions.setUi({ libSel: null }),
@@ -131,8 +138,9 @@ function artistLinks(t: TrackInfo): { name: string; uri?: string }[] {
  *  data-open, data-mode. `placeholder` stands in for a missing cover. */
 export function DetailsPane({ id, classes: k, placeholder, addTo }: {
   id?: string; classes: DetailsClasses; placeholder?: ReactNode;
-  /** track mode: the skin's Add to control for the track, beside the title */
-  addTo?: (uri: string) => ReactNode;
+  /** the skin's Add to control beside the title: the track's (saved undefined: it asks, with its
+   *  menu), or the playlist's / album's / artist's with its saved state (no menu) */
+  addTo?: (uri: string, saved?: boolean) => ReactNode;
 }) {
   const d = useDetails(), [more, setMore] = useState(false), x = d.context, t = d.track;
   const art = (src?: string) => <div className={k.art}>{src ? <img className={k.img} src={src} alt="" /> : placeholder}</div>;
@@ -174,7 +182,10 @@ export function DetailsPane({ id, classes: k, placeholder, addTo }: {
       ) : (
         <div className={k.body} data-mode="context">
           {art(x.image)}
-          <div className={k.name}>{x.name}</div>
+          <div className={k.titleRow}>
+            <div className={k.name}>{x.name}</div>
+            {d.saved !== null && addTo?.(x.uri, d.saved)}
+          </div>
           {x.owner && line(<>{x.owner.avatar && <img className={k.avatar} src={x.owner.avatar} alt="" />}by {x.owner.name}</>)}
           {x.artists?.length ? line(x.artists.map((a) => a.name).join(', ')) : null}
           {x.followers != null && line('♥ ' + count(x.followers) + (x.followers === 1 ? ' follower' : ' followers'))}
@@ -193,11 +204,10 @@ export function DetailsPane({ id, classes: k, placeholder, addTo }: {
             {x.copyright && <div className={k.small}>{x.copyright}</div>}
             {line(x.kindLine)}
           </div>
-          {(x.playable || x.share || d.saved !== null) && (
+          {(x.playable || x.share) && (
             <div className={k.buttons}>
               {x.playable && btn('Play all', d.playAll, 'dplayall')}
               {x.playable && btn('Shuffle play', d.shufflePlay, 'dshuffle')}
-              {d.saved !== null && btn(d.saved ? 'Saved ✓' : 'Save', d.save, 'dsave')}
               {x.share && btn('Copy link', d.copyLink, 'dcopy')}
             </div>
           )}

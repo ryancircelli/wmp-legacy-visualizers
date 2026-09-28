@@ -171,20 +171,44 @@ describe('the playing track', () => {
 });
 
 describe('context mode', () => {
-  it('a playlist / album has Save / Saved ✓ (the same command); Liked Songs has none', async () => {
+  it('a playlist / album / artist has the heart beside its name, saved as the library says; none for Liked Songs or your own playlists', async () => {
+    const FOUND = 'spotify:playlist:f', AR = 'spotify:artist:b';
     const d = data();
     d.saved[AL] = true;
+    d.list.push({ uri: MINE, name: 'Mine', editable: true });
+    d.collections[MINE] = { tracks: [track(4)], meta: { kind: 'playlist', name: 'Mine', total: 1 } };
+    d.collections[FOUND] = { tracks: [track(5)], meta: { kind: 'playlist', name: 'Found', total: 1 } };
     await setup(d);
-    expect($('#dsave')!.textContent).toBe('Save');
-    fireEvent.click($('#dsave')!);
-    expect(cmd.addTo.mock.calls.at(-1)).toEqual([PL, LIKED, true]);
+    const heart = () => $('#mlinfo #daddto');
+    const state = () => [heart()!.getAttribute('aria-label'), heart()!.getAttribute('aria-pressed')];
+    // a followed playlist: in the library list, though areEntitiesInLibrary never answers playlists
+    expect(state()).toEqual(['Remove from Your Library', 'true']);
+    expect($('#mlinfo [aria-label="Add to"]')).toBeNull();               // no ▾: a playlist goes in no playlist
+    fireEvent.click(heart()!);
+    expect(cmd.addTo.mock.calls.at(-1)).toEqual([PL, LIKED, false]);
+    // one found elsewhere (search, an artist page): not in the library
+    act(() => S().actions.setUi({ libNode: FOUND }));
+    await h.settle();
+    expect(state()).toEqual(['Save to Your Library', 'false']);
+    fireEvent.click(heart()!);
+    expect(cmd.addTo.mock.calls.at(-1)).toEqual([FOUND, LIKED, true]);
+    // your own: no heart (removing it from the library would delete it)
+    act(() => S().actions.setUi({ libNode: MINE }));
+    await h.settle();
+    expect(heart()).toBeNull();
     act(() => S().actions.setUi({ libNode: AL }));
     await h.settle();
-    expect($('#dsave')!.textContent).toBe('Saved ✓');
-    fireEvent.click($('#dsave')!);
+    expect(state()).toEqual(['Remove from Your Library', 'true']);
+    fireEvent.click(heart()!);
     expect(cmd.addTo.mock.calls.at(-1)).toEqual([AL, LIKED, false]);
+    // an artist: the flag areEntitiesInLibrary gives
+    d.artists[AR] = { meta: { kind: 'artist', name: 'Band', total: 0 }, tracks: [], albums: [] };
+    d.saved[AR] = true;
+    act(() => S().actions.setUi({ libNode: AR }));
+    await h.settle();
+    expect(state()).toEqual(['Remove from Your Library', 'true']);
     act(() => S().actions.setUi({ libNode: LIKED }));
     await h.settle();
-    expect($('#dsave')).toBeNull();
+    expect(heart()).toBeNull();
   });
 });

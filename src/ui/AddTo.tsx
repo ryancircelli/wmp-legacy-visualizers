@@ -114,11 +114,13 @@ export function AddTo({ uri, saved, menu = true, owner, classes, menuClasses, id
   saved?: boolean | null; menu?: boolean; owner: string; classes: AddToClasses; menuClasses: MenuClasses; id?: string;
 }) {
   const a = useAddTo(uri, saved), m = useMenus(), on = !!a.saved;
+  // a track is liked; a playlist, album or artist is saved to the library (Spotify's words)
+  const label = uri.startsWith('spotify:track:') ? (on ? 'Unlike' : 'Like') : on ? 'Remove from Your Library' : 'Save to Your Library';
   const stop = (e: MouseEvent) => e.stopPropagation();
   return (
     <span className={classes.root} onClick={stop} onDoubleClick={stop} data-addto="">
       <button type="button" id={id} className={typeof classes.button === 'function' ? classes.button(on) : classes.button}
-              data-on={on || undefined} aria-pressed={on} title={on ? 'Unlike' : 'Like'} aria-label={on ? 'Unlike' : 'Like'}
+              data-on={on || undefined} aria-pressed={on} title={label} aria-label={label}
               onClick={a.toggle} onContextMenu={menu ? (e) => { e.preventDefault(); m.set(owner); } : undefined}><Heart on={on} /></button>
       {menu && (
         <Dropdown owner={owner} items={a.entries} classes={menuClasses}>
