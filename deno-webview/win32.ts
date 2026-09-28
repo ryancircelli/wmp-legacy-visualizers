@@ -43,6 +43,7 @@ const GDI_SYMBOLS = {
 } as const;
 
 const SYMBOLS = {
+  MessageBoxW: { parameters: ["pointer", "buffer", "buffer", "u32"], result: "i32" },
   RegisterClassExW: { parameters: ["buffer"], result: "u32" },
   CreateWindowExW: {
     parameters: [
@@ -137,6 +138,12 @@ function wstr(s: string): Uint8Array {
   const dv = new DataView(b.buffer);
   for (let i = 0; i < s.length; i++) dv.setUint16(i * 2, s.charCodeAt(i), true);
   return b;
+}
+
+/** A modal error box on top of everything: the only way a GUI-subsystem exe can say why it is
+ * about to exit, since it has no console for the error to go to. */
+export function errorBox(text: string, title: string) {
+  user32().MessageBoxW(null, wstr(text), wstr(title), 0x10 | 0x40000); // MB_ICONERROR | MB_TOPMOST
 }
 
 /** A handle as a struct field: WNDCLASSEXW holds pointers, not `Deno.PointerValue`s. */

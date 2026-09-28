@@ -12,13 +12,14 @@
 // (The system-audio application, WmpVisualizers.exe / `--mode=app`, was retired 2026-09-24.)
 import { AUDIO_PATH } from "./audio.ts";
 import { Webview } from "./webview_ffi.ts";
-import { type Bundle, type Dev, spotifyScript } from "./spotify.ts";
+import { type Bundle, type Dev, SPOTIFY_LOGIN, spotifyScript } from "./spotify.ts";
 import { DEV_BUNDLE_PATH, DEV_SOCKET_PATH } from "./dev.ts";
 import {
   caption,
   claim,
   coInit,
   createHost,
+  errorBox,
   frameless,
   fullBox,
   fullscreen,
@@ -64,10 +65,7 @@ const LS_KEY = "alchemy.settings";
  * on the anonymous web player, not the login page; no cookie manager is needed either way.
  */
 export const SPOTIFY_LOGOUT = "https://accounts.spotify.com/logout?continue=" +
-  encodeURIComponent(
-    "https://accounts.spotify.com/login?continue=" +
-      encodeURIComponent("https://open.spotify.com/"),
-  );
+  encodeURIComponent(SPOTIFY_LOGIN);
 
 const APPDIR = `${Deno.env.get("LOCALAPPDATA")}\\WmpLegacyVisualizers`;
 
@@ -505,6 +503,24 @@ if (import.meta.main) {
   const pageMode = mode === "s" ? "screensaver" : mode === "c" ? "config" : "app";
   log(`argv ${JSON.stringify(Deno.args)} -> ${mode}`);
   if (mode === "p") Deno.exit(0); // preview pane: draw nothing, exit cleanly
+
+  // Anything that escapes (a DLL Windows will not load, WebView2 refusing to start) used to end the
+  // process without a word: the window flashed and was gone. Now it is logged and shown, except
+  // by the running screensaver, which nobody is looking at.
+  const fatal = (e: unknown) => {
+    log(`fatal: ${e instanceof Error ? e.stack ?? e.message : String(e)}`);
+    if (mode !== "s") {
+      errorBox(
+        `${
+          e instanceof Error ? e.message : String(e)
+        }\n\nThe log has the details:\n${APPDIR}\\alchemy-scr.log`,
+        mode === "spotify" ? "WMP Spotify" : "Alchemy",
+      );
+    }
+    Deno.exit(1);
+  };
+  globalThis.addEventListener("error", (e) => (e.preventDefault(), fatal(e.error ?? e.message)));
+  globalThis.addEventListener("unhandledrejection", (e) => (e.preventDefault(), fatal(e.reason)));
 
   // Pinned so /c and /s share one profile whatever the exe is called or wherever it sits, and so
   // the application and the screensaver come up with the same settings. Set before this instance's

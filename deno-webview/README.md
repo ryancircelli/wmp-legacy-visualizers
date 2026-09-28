@@ -753,13 +753,20 @@ repeated per screen.
 
 ## Implementation notes
 
-`jsr:@webview/webview` is **not** used, though `native/webview.dll` and `native/WebView2Loader.dll`
-are its 0.9.0 release artifacts — the C library inside is webview **0.12.0**, which is what
-`webview_version` and the disassembly above are about — and `webview_ffi.ts` declares the same
-symbols. Its loader downloads both DLLs from GitHub on first run and copies `WebView2Loader.dll`
-into the process's _current working directory_ — which for a screensaver launched by Windows is
-`C:\Windows\System32`, and is not writable. Here the DLLs are embedded by
-`deno compile --include native` and unpacked once into `%LOCALAPPDATA%`.
+`jsr:@webview/webview` is **not** used, though `native/WebView2Loader.dll` is its 0.9.0 release
+artifact and `webview_ffi.ts` declares the same symbols. Its loader downloads both DLLs from GitHub
+on first run and copies `WebView2Loader.dll` into the process's _current working directory_ — which
+for a screensaver launched by Windows is `C:\Windows\System32`, and is not writable. Here the DLLs
+are embedded by `deno compile --include native` and unpacked once into `%LOCALAPPDATA%`.
+
+`native/webview.dll` is the same C library its release ships, webview **0.12.0** (what
+`webview_version` and the disassembly above are about), but built by `native/build-webview.sh`:
+MinGW-w64 with the C++ runtime linked in. The release DLL is an MSVC `/MD` build that imports
+`MSVCP140.dll`, `VCRUNTIME140.dll` and `VCRUNTIME140_1.dll` from the Visual C++ Redistributable,
+which a freshly installed Windows 11 does not have: there the window flashed blue and the process
+died loading the DLL, without a word. The rebuilt DLL imports only what Windows ships (a test in
+`main_test.ts` keeps it that way), and anything that still escapes startup is now logged and shown
+in a message box, except by the running screensaver.
 
 What the host injects into the page, before any page script: `window.alchemyElectron`
 (`{loopback, mode}`, the name the page has always looked for) and `window.alchemyScreensaver`

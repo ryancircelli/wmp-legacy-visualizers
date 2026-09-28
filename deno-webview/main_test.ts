@@ -3,7 +3,7 @@ import { appIdOf, devOf, iconPath, modeOf, SPOTIFY_LOGOUT, UNPACK, winPath } fro
 import { claim, fits, ncTop } from "./win32.ts";
 import { frameAligner, lines, relay } from "./audio.ts";
 import { closest, parseLrc } from "./lyrics.ts";
-import { devChange, spotifyScript } from "./spotify.ts";
+import { devChange, SPOTIFY_LOGIN, spotifyScript } from "./spotify.ts";
 
 // Every argument form that was actually observed coming from Windows 11 (see the doc comment on
 // modeOf). The /S case is the one that matters most: it is what the shell's own .scr verb passes,
@@ -590,6 +590,54 @@ Deno.test("spotifyScript observers: auth boolean, spclient, full device id befor
   assertEquals(W.state, ps, "the bare player_state");
 });
 
+// Logged out: an anonymous /api/token answer replaces the page with the login page, once a minute at
+// most (sessionStorage survives the round trip through accounts.spotify.com); logged in never does.
+Deno.test("spotifyScript: an anonymous token goes to the login page, once a minute at most", async () => {
+  const run = (anonymous: boolean, store: Map<string, string>) => {
+    const went: string[] = [];
+    const win: Record<string, unknown> = {
+      dispatchEvent() {},
+      WebSocket: function () {},
+      sessionStorage: {
+        getItem: (k: string) => store.get(k) ?? null,
+        setItem: (k: string, v: string) => void store.set(k, v),
+      },
+      fetch: () =>
+        Promise.resolve(new Response(JSON.stringify({ isAnonymous: anonymous, accessToken: "t" }))),
+    };
+    win.top = win;
+    new Function(
+      "window",
+      "location",
+      "document",
+      "XMLHttpRequest",
+      "WebSocket",
+      "performance",
+      spotifyScript({ html: "", css: "", js: "" }),
+    )(
+      win,
+      { hostname: "open.spotify.com", replace: (u: string) => void went.push(u) },
+      { readyState: "loading", addEventListener() {} },
+      class {},
+      win.WebSocket,
+      {},
+    );
+    return (win.fetch as (u: string) => Promise<Response>)(
+      "https://open.spotify.com/api/token?reason=init",
+    )
+      .then(() => new Promise((r) => setTimeout(r, 10))).then(() => went);
+  };
+  const store = new Map<string, string>();
+  assertEquals(await run(true, store), [SPOTIFY_LOGIN]);
+  assertEquals(await run(true, store), [], "back again inside the minute: stays");
+  store.set("wmp-login-redirect", String(Date.now() - 61000));
+  assertEquals(await run(true, store), [SPOTIFY_LOGIN], "a minute later: goes again");
+  assertEquals(await run(false, new Map()), [], "logged in: never");
+  const u = new URL(SPOTIFY_LOGIN);
+  assertEquals(u.origin + u.pathname, "https://accounts.spotify.com/login");
+  assertEquals(u.searchParams.get("continue"), "https://open.spotify.com/");
+});
+
 // Idle: the cluster comes without active_device_id (field absent, as measured), and a stale id from
 // an earlier cluster must not survive it; the state event still fires.
 Deno.test("spotifyScript: a cluster without active_device_id clears W.activeDeviceId", async () => {
@@ -669,6 +717,16 @@ Deno.test("SPOTIFY_LOGOUT ends on the login page, then open.spotify.com", () => 
   const next = new URL(u.searchParams.get("continue")!);
   assertEquals(next.origin + next.pathname, "https://accounts.spotify.com/login");
   assertEquals(next.searchParams.get("continue"), "https://open.spotify.com/");
+});
+
+// A fresh Windows has no Visual C++ runtime (MSVCP140, VCRUNTIME140*): a webview.dll that imports
+// it fails to load there, and the window flashes and is gone. native/build-webview.sh links it in.
+Deno.test("native/webview.dll needs nothing Windows does not ship", async () => {
+  const pe = new TextDecoder("latin1").decode(
+    await Deno.readFile(new URL("./native/webview.dll", import.meta.url)),
+  );
+  assertEquals(pe.match(/(vcruntime|msvcp)\d+[_\w]*\.dll/gi), null);
+  assertEquals(pe.includes("webview_create"), true);
 });
 
 // Dev mode is an argument, never baked.

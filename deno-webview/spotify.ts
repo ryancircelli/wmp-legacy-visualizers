@@ -8,6 +8,11 @@
 
 export const SPOTIFY_HOST = "open.spotify.com";
 
+/** Spotify's login page, which returns to the web player once signed in. Shown instead of the
+ * anonymous web player, which is no use here; File > Log out lands on it too (main.ts). */
+export const SPOTIFY_LOGIN = "https://accounts.spotify.com/login?continue=" +
+  encodeURIComponent("https://open.spotify.com/");
+
 /** What this window is called in Spotify Connect (the web player would say "Web Player (Microsoft Edge)"). */
 export const DEVICE_NAME = "WMP Spotify";
 
@@ -145,6 +150,18 @@ export function spotifyScript(b: Bundle, common = "", dev: Dev | null = null): s
     W.state = c.player_state;
     emit('wmp-spotify-state', c.player_state);
   }
+  // Logged out: Spotify's login page instead of the anonymous web player. At most once a minute,
+  // so a session that is still anonymous after signing in cannot bounce between the two; without
+  // sessionStorage there is no guard, so no redirect either.
+  function toLogin() {
+    try {
+      var k = 'wmp-login-redirect', ss = window.sessionStorage;
+      if (Date.now() - (+ss.getItem(k) || 0) < 60000) return;
+      ss.setItem(k, String(Date.now()));
+      log('logged out: to the login page');
+      location.replace(${J(SPOTIFY_LOGIN)});
+    } catch (e) {}
+  }
   function seenResponse(url, res) {
     url = String(url);
     if (/^https:\\/\\/open\\.spotify\\.com\\/api\\/token/.test(url)) {
@@ -154,6 +171,7 @@ export function spotifyScript(b: Bundle, common = "", dev: Dev | null = null): s
         if (j.accessToken && j.accessToken !== W.token) { W.token = j.accessToken; W.at = Date.now(); emit('wmp-spotify-token', { token: W.token }); }
         var li = j.isAnonymous === false;
         if (li !== W.loggedIn) { W.loggedIn = li; emit('wmp-spotify-auth', { loggedIn: li }); }
+        if (j.isAnonymous === true) toLogin();
       }).catch(function () {});
     } else if (/\\/connect-state\\/v1\\/devices\\//.test(url) && res.ok) {
       res.clone().json().then(seenCluster).catch(function () {}); // the PUT answers with the cluster

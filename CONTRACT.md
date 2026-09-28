@@ -144,7 +144,8 @@ injected script therefore observes the page's own traffic and exposes it; the pa
 Host (deno-webview/spotify.ts) maintains window.__wmpSpotify = { token, at, clientToken, loggedIn, expiresAt, clientId,
   deviceId (this web player's 40-hex connect id), activeDeviceId, connectionId, hashes: {operationName: sha256},
   state: <last player_state>, cluster: <last cluster> } and dispatches CustomEvents on window:
-  "wmp-spotify-token" {token} (only on change), "wmp-spotify-auth" {loggedIn} (from /api/token isAnonymous),
+  "wmp-spotify-token" {token} (only on change), "wmp-spotify-auth" {loggedIn} (from /api/token isAnonymous; an anonymous token also replaces the page with
+  SPOTIFY_LOGIN, the login page, at most once a minute per session),
   "wmp-spotify-hash" {op, sha}, "wmp-spotify-state" (detail = player_state; from dealer cluster messages and from the
   page's own PUT connect-state/v1/devices/hobs_* response at load). Observers start at document creation; the overlay's
   JS runs at DOMContentLoaded, so the page reads window.__wmpSpotify first, then listens.
