@@ -154,7 +154,9 @@ function wstr(s: string): Uint8Array {
 /** Another instance's window: our class and this title, with the program its process runs. */
 export type HostWindow = { hwnd: Deno.PointerValue; pid: number; exe: string };
 
-function imagePath(pid: number): string {
+/** The program a process runs, as QueryFullProcessImageNameW spells it (compare like with like:
+ * Deno.execPath() spelled the same file differently when run from a \\wsl.localhost share). */
+export function imagePath(pid: number): string {
   const k = kernel32(), hp = k.OpenProcess(0x1000, 0, pid); // PROCESS_QUERY_LIMITED_INFORMATION
   if (!hp) return "";
   const buf = new Uint16Array(1024), len = new Uint32Array([1024]);

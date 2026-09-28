@@ -31,6 +31,7 @@ import {
   type Geom,
   type HostWindow,
   hostWindows,
+  imagePath,
   openInBrowser,
   placement,
   resizeWebview,
@@ -355,7 +356,9 @@ async function profileDir(spotify: boolean, dev: boolean): Promise<string> {
   const lock = `${APPDIR}\\${name}.lock`, throwaway = `${APPDIR}\\spotify-${Deno.pid}`;
   if (claim(lock)) return await idle(dir);
   if (dev) return throwaway;
-  const others = hostWindows(SPOTIFY_TITLE), plan = planSecond(others, Deno.execPath());
+  const self = imagePath(Deno.pid),
+    others = hostWindows(SPOTIFY_TITLE),
+    plan = planSecond(others, self);
   if (plan.kind === "focus") {
     bringToFront(plan.window.hwnd);
     log(`already running (pid ${plan.window.pid}): brought it to the front`);
@@ -364,9 +367,8 @@ async function profileDir(spotify: boolean, dev: boolean): Promise<string> {
   if (plan.kind === "takeover") {
     for (const o of plan.windows) closeWindow(o.hwnd);
     log(
-      `another copy holds the profile (${
-        plan.windows.map((o) => o.exe).join(", ")
-      }): asked it to close`,
+      `another copy holds the profile (${plan.windows.map((o) => o.exe).join(", ")}; ` +
+        `this is ${self}): asked it to close`,
     );
     for (let i = 0; i < 50; i++) {
       if (claim(lock)) return await idle(dir);
