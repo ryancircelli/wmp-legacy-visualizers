@@ -928,6 +928,8 @@ if (import.meta.main) {
         : [];
       new Deno.Command(Deno.execPath(), {
         args: [...source, ...Deno.args.filter((a) => a !== RESTART), RESTART],
+        // Deno ends its children when it exits unless they are detached (measured on Windows)
+        detached: true,
         stdin: "null",
         stdout: "null",
         stderr: "null",
