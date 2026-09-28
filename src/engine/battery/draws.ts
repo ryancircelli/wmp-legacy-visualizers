@@ -531,8 +531,9 @@ function Stroke(buf: Uint8Array, W: number, H: number, x0: number, y0: number, x
   var half = F(PI_ / F(2.0 * F(n)));                // float32: pi_f / (2n)
   if (n < 1) return;                                // cmp ebp,1 / jl — signed, after the setup
   var ang = th0, env = 0.0, prevX = x0, prevY = y0, k;
+  var envSin = (n | 0) === n && n <= 1024 ? strokeEnvelope(n, half) : null;
   for (k = 0; k < n; k++) {
-    var rr = sin(env) * (r1 - r0) + r0;
+    var rr = (envSin ? envSin[k] : sin(env)) * (r1 - r0) + r0;
     var X = cvt(cos(ang) * rr + px);
     var Y = cvt(sin(ang) * rr + py);
     var c = cvt(col) & 0xff;
@@ -542,6 +543,19 @@ function Stroke(buf: Uint8Array, W: number, H: number, x0: number, y0: number, x
   }
 }
 prim.Stroke = Stroke;
+// sin(env) in Stroke depends on n alone (env accumulates `half`, itself a function of n, from 0),
+// so each integer n's envelope is the same sin() calls on the same arguments every stroke: they
+// are made once per n and reused. CJDar always strokes n = 100; CGalaxy's n is trunc(dbl3).
+var ENVELOPES = new Map<number, Float64Array>();
+function strokeEnvelope(n: number, half: number): Float64Array {
+  var t = ENVELOPES.get(n);
+  if (!t) {
+    t = new Float64Array(n);
+    for (var k = 0, env = 0.0; k < n; k++) { t[k] = sin(env); env += half; }
+    ENVELOPES.set(n, t);
+  }
+  return t;
+}
 
 // ------------------------------------------------------------------ CGalaxy (idx 8)
 // ctor 0x180416414 (inline in 0x18040f470), Randomize 0x180416a60, Draw 0x180417c70,
