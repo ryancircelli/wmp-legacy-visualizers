@@ -184,6 +184,11 @@ Measured on 2026-09-24 and re-run on the TypeScript engine on 2026-09-25 with th
 - **The C runtime is cloned.** `sin`, `cos` and `atan2` are operation-for-operation copies of
   `ucrtbase`'s own, because `Math.*` rounds differently often enough to change pixels. They match
   the DLL on CPUs with FMA3, which is every x64 CPU since about 2013.
+- **Guarded since.** Any faster engine code must match the verified engine frame for frame:
+  `npm run test:golden` renders 45 runs across all three visualizers, seeds, presets and sizes and
+  compares each frame's hash with the recorded output of the engine as verified; `npm test` runs a
+  short slice of it. The 2026-09-28 speedups (Alchemy about 20%, Battery 16 to 37%, the heavier Bars
+  and Waves presets about 18% per frame) passed it byte for byte.
 - **What is not compared.** Battery's final stretch to the window is GDI's, not the DLL's, so its
   runs compare the 8-bit image and the whole palette state instead. Bars and Waves ships the colours
   WMP's skin shows. The runs restore the DLL's own preset colours.
