@@ -167,13 +167,33 @@ function line(buf: Uint8Array, w: number, h: number, x0: number, y0: number, x1:
 // row's last pixel); only rows 0 and h-1 wrap, and row 0's x+1 at x=w-1 is the linear next byte.
 function blur(src: Uint8Array, dst: Uint8Array, w: number, h: number): void {
   var lut = BLUR_LUT, p: number, x: number, base = (h - 1) * w, end = base;
-  for (p = w; p < end; p++) dst[p] = lut[src[p - w] + src[p - 1] + src[p] + src[p + 1] + src[p + w]];
+  if (LE && (w & 3) === 0 && end > w && src.byteOffset % 4 === 0 && dst.byteOffset % 4 === 0) blurRows4(src, dst, w, end);
+  else for (p = w; p < end; p++) dst[p] = lut[src[p - w] + src[p - 1] + src[p] + src[p + 1] + src[p + w]];
   dst[0] = lut[src[1] + src[w] + src[base] + src[w - 1] + src[0]];
   for (x = 1; x < w; x++) dst[x] = lut[src[x] + src[x + w] + src[x - 1] + src[x + 1] + src[x + base]];
   for (x = 0; x < w - 1; x++)
     dst[base + x] = lut[src[base - w + x] + src[base + x] + src[x] + src[base + x + 1] + src[base + x - 1]];
   p = h * w - 1;
   dst[p] = lut[src[p] + src[p - 1] + src[base] + src[w - 1] + src[p - w]];
+}
+// blur()'s rows 1..h-2, four pixels per 32-bit word (w % 4 == 0, little-endian): the even and odd
+// bytes are summed in two 16-bit lanes each (5 * 255 fits), then looked up in the same LUT. The
+// linear left/right neighbours come from the adjacent words, exactly as the byte loop reads them.
+var LE = new Uint8Array(new Uint32Array([1]).buffer)[0] === 1;
+var M_EVEN = 0x00FF00FF;
+function blurRows4(src: Uint8Array, dst: Uint8Array, w: number, end: number): void {
+  var lut = BLUR_LUT;
+  var s = new Uint32Array(src.buffer, src.byteOffset, src.length >> 2);
+  var d = new Uint32Array(dst.buffer, dst.byteOffset, dst.length >> 2);
+  var w4 = w >> 2, e4 = end >> 2, prev = s[w4 - 1], cur = s[w4];
+  for (var j = w4; j < e4; j++) {
+    var next = s[j + 1], up = s[j - w4], dn = s[j + w4];
+    var L = (cur << 8) | (prev >>> 24), R = (cur >>> 8) | (next << 24);
+    var se = (up & M_EVEN) + (L & M_EVEN) + (cur & M_EVEN) + (R & M_EVEN) + (dn & M_EVEN);
+    var so = ((up >>> 8) & M_EVEN) + ((L >>> 8) & M_EVEN) + ((cur >>> 8) & M_EVEN) + ((R >>> 8) & M_EVEN) + ((dn >>> 8) & M_EVEN);
+    d[j] = lut[se & 0xFFFF] | (lut[so & 0xFFFF] << 8) | (lut[se >>> 16] << 16) | (lut[so >>> 16] << 24);
+    prev = cur; cur = next;
+  }
 }
 
 // ---------------------------------------------------------------- the warp-map framework (§4)
