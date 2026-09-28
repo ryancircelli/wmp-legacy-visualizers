@@ -4,7 +4,7 @@ import { useState, type CSSProperties, type ReactNode } from 'react';
 import emblemSpotify from '../assets/emblem-spotify.svg';
 import emblemWmp from '../assets/emblem-wmp.svg';
 import { FPS_OPTS, SCALE_OPTS, type Scale, type Settings } from '../../../model';
-import { cx, Dialog, DialogHost, LYRICS_SOURCE, useApp, useCloseDialog, useShell, useShortcuts, type DialogClasses } from '../../../ui';
+import { cx, Dialog, DialogHost, LINKS, LYRICS_SOURCE, useApp, useCloseDialog, useShell, useShortcuts, type DialogClasses } from '../../../ui';
 
 const DLG: DialogClasses = {
   title: 'flex-none flex items-center gap-6 h-24 pr-3 pl-6 bg-dlg-title text-white font-bold [text-shadow:0_1px_1px_rgba(0,0,0,.45)]',
@@ -124,12 +124,15 @@ export function Options() {
 
 export function About() {
   const close = useCloseDialog(), spotify = useApp((st) => st.auth.engine === 'spotify');
+  const web = useApp((st) => st.auth.engine !== 'spotify' && st.auth.mode === 'web');
+  const a = (href: string, text: string) => <a className="text-xp-link underline" href={href} target="_blank" rel="noopener">{text}</a>;
   return (
     <Dlg id="dlgAbout" title="About Windows Media Player" label="About" style={{ width: 340 }} buttons={[['OK', close]]}>
       <div className={cx(BODY, 'text-left')}>
         <img className="float-left w-48 h-48 mt-0 mr-10 mb-6 ml-0" id="aboutemblem" alt="" src={spotify ? emblemSpotify : emblemWmp} />
         <p className="m-0 mb-8 overflow-hidden"><b id="aboutname">{spotify ? 'WMP Spotify' : 'WMP Legacy Visualizers'}</b></p>
         <p className="m-0 mb-8 overflow-hidden">Alchemy, Bars and Waves and Battery ported 1:1 from the decompiled Windows Media Player visualizers{spotify ? ', over Spotify.' : '.'}</p>
+        {web && <p className="m-0 mb-8 overflow-hidden" id="aboutlinks">Windows apps: {a(LINKS.spotify, 'WMP Spotify')} · {a(LINKS.screensaver, 'Alchemy Screensaver')}<br />Source code on {a(LINKS.repo, 'GitHub')}</p>}
         <p className="m-0 overflow-hidden text-xp-hint">Rendered in JavaScript from the original DLL semantics. Not affiliated with Microsoft{spotify ? ' or Spotify' : ''}.</p>
       </div>
     </Dlg>

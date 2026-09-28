@@ -1,8 +1,9 @@
 // The WMP 9 skin against a real store and spy commands (no adapter, no engine loop).
 // The fetched data (library, home, radio) are fake query functions: tests/skins/harness.
 import { act, cleanup, fireEvent, screen, within } from '@testing-library/react';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { LIKED, type Track } from '../../src/model';
+import { LINKS } from '../../src/ui';
 import { fakeData, mountSkinNow, settle, type FakeData } from './harness';
 
 let h: ReturnType<typeof mountSkinNow>, cmd: typeof h.cmd;
@@ -74,6 +75,29 @@ describe('menus', () => {
     await act(() => new Promise((r) => setTimeout(r, 0)));     // Radix listens for outside presses from the next tick
     press(document.body);
     expect(menu(0)).toBeNull();
+  });
+
+  it('the website\'s Help menu and About link the Windows downloads and GitHub; the apps\' do not', () => {
+    const { $ } = setup();
+    const open = vi.spyOn(window, 'open').mockReturnValue(null);
+    const labels = () => {
+      press($('#mtops [data-menu=help]')!);
+      const r = [...menu(0)!.querySelectorAll('[role^=menuitem]')].map((b) => b.children[1]!.textContent);
+      press($('#mtops [data-menu=help]')!);
+      return r;
+    };
+    expect(labels()).toEqual(['Download WMP Spotify for Windows', 'Download the Alchemy Screensaver', 'Source Code on GitHub',
+      'About Windows Media Player']);
+    press($('#mtops [data-menu=help]')!);
+    fireEvent.click(item(0, 'Download WMP Spotify for Windows'));
+    expect(open).toHaveBeenCalledWith(LINKS.spotify, '_blank', 'noopener');
+    act(() => S().actions.setUi({ dialog: 'about' }));
+    expect([...document.querySelectorAll<HTMLAnchorElement>('#aboutlinks a')].map((x) => x.href))
+      .toEqual([LINKS.spotify, LINKS.screensaver, LINKS.repo]);
+    act(() => S().actions.setUi({ dialog: null }));
+    act(() => S().actions.setAuth({ mode: 'screensaver' }));
+    expect(labels()).toEqual(['About Windows Media Player']);
+    open.mockRestore();
   });
 
   it('Spotify: File, View, Play and Help carry the engine\'s entries and accelerators', () => {

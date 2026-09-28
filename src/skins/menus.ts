@@ -3,7 +3,7 @@
 // MenuBar / Dropdown.
 import { FPS_OPTS, type AppState, type RepeatMode } from '../model';
 import {
-  detailsPaneOn, isPlaying, libraryView, playingTrack, prevNext, toggleSaved, uiSettings, VIEW_LABELS, VOL_STEP, type AddToApi, type MenuEntry,
+  detailsPaneOn, isPlaying, libraryView, LINKS, openLink, playingTrack, prevNext, toggleSaved, uiSettings, VIEW_LABELS, VOL_STEP, type AddToApi, type MenuEntry,
   type MenuItem, type Shell,
 } from '../ui';
 export type { MenuEntry, MenuItem } from '../ui';
@@ -110,6 +110,11 @@ export function menuItems(name: MenuName, sh: Shell, addTo?: AddToApi): MenuEntr
       return [{ label: 'Options...', act: dialog('options') }];
     case 'help':
       return [...(spotify ? [{ label: 'Keyboard Shortcuts', act: dialog('keys') }] : []),
+        // the website's way to the Windows apps and the source (WMP 9's own Help went online too)
+        ...(!spotify && s.auth.mode === 'web' ? [
+          { label: 'Download WMP Spotify for Windows', act: () => openLink(LINKS.spotify) },
+          { label: 'Download the Alchemy Screensaver', act: () => openLink(LINKS.screensaver) },
+          { label: 'Source Code on GitHub', act: () => openLink(LINKS.repo) }, SEP] : []),
         { label: 'About Windows Media Player', act: dialog('about') }];
   }
 }
