@@ -36,6 +36,45 @@ function a29c(lo: number, hi: number, n: number): number {
   return m;
 }
 
+// ShiftMoveBits' blur, one output pixel: m = avg of the 4 neighbours (per channel, truncating),
+// out = (3m + centre) / 4 (truncating); R and B share one 32-bit lane pair, G has its own.
+// The rows are computed as the DLL's single linear pass over i = W .. (H-1)*W-1 is: rows 1..H-2,
+// with x = 0 reading the previous row's last pixel and x = W-1 the next row's first. dst is only
+// read, so each tap is loaded once and carried in locals (already masked) to the pixels that
+// share it: a pixel's left/centre are the previous pixel's centre/right, and in a row pair the
+// upper row's centre is the lower row's up tap and vice versa. Same ops, same order, same pixels.
+function blurRow(src: Uint32Array, dst: Uint32Array, W: number, i: number) {
+  const e = i + W;
+  let lRB = dst[i - 1] & RB, lGM = dst[i - 1] & GM, cRB = dst[i] & RB, cGM = dst[i] & GM;
+  for (; i < e; i++) {
+    const a = dst[i - W], b = dst[i + W], r = dst[i + 1];
+    const rRB = r & RB, rGM = r & GM;
+    const m1 = ((((a & RB) + (b & RB) + lRB + rRB) >>> 2) & RB);
+    const m2 = ((((a & GM) + (b & GM) + lGM + rGM) >>> 2) & GM);
+    src[i] = ((((m1 * 3 + cRB) >>> 2) & RB) | (((m2 * 3 + cGM) >>> 2) & GM));
+    lRB = cRB; lGM = cGM; cRB = rRB; cGM = rGM;
+  }
+}
+function blurRowPair(src: Uint32Array, dst: Uint32Array, W: number, i: number) {   // rows i/W and i/W + 1
+  const e = i + W;
+  let p = dst[i - 1], q = dst[i];
+  let ulRB = p & RB, ulGM = p & GM, ucRB = q & RB, ucGM = q & GM;         // upper row: left, centre
+  p = dst[i + W - 1]; q = dst[i + W];
+  let vlRB = p & RB, vlGM = p & GM, vcRB = q & RB, vcGM = q & GM;         // lower row: left, centre
+  for (; i < e; i++) {
+    const a = dst[i - W], d = dst[i + 2 * W], ur = dst[i + 1], vr = dst[i + W + 1];
+    const urRB = ur & RB, urGM = ur & GM, vrRB = vr & RB, vrGM = vr & GM;
+    let m1 = ((((a & RB) + vcRB + ulRB + urRB) >>> 2) & RB);
+    let m2 = ((((a & GM) + vcGM + ulGM + urGM) >>> 2) & GM);
+    src[i] = ((((m1 * 3 + ucRB) >>> 2) & RB) | (((m2 * 3 + ucGM) >>> 2) & GM));
+    m1 = (((ucRB + (d & RB) + vlRB + vrRB) >>> 2) & RB);
+    m2 = (((ucGM + (d & GM) + vlGM + vrGM) >>> 2) & GM);
+    src[i + W] = ((((m1 * 3 + vcRB) >>> 2) & RB) | (((m2 * 3 + vcGM) >>> 2) & GM));
+    ulRB = ucRB; ulGM = ucGM; ucRB = urRB; ucGM = urGM;
+    vlRB = vcRB; vlGM = vcGM; vcRB = vrRB; vcGM = vrGM;
+  }
+}
+
 function newTable(): WarpTable { return { buf: null, dirty: true, cursorY: 0 }; }
 function tabAlloc(t: WarpTable, w: number, h: number) {
   if (w >= MAX_DIM || h >= MAX_DIM) return;   // 18000cb44 bails before touching anything
@@ -356,17 +395,9 @@ export class Shift extends A.Effect {
     for (let i = 0; i < n; i++) dst[i] = src[tab[i]];   // nearest neighbour, unclamped
 
     const end = (H - 1) * W;
-    // A pixel's left and centre taps are the previous pixel's centre and right (dst is only read
-    // here), so they ride along already masked instead of being re-read: same ops, same result.
-    let lRB = dst[W - 1] & RB, lGM = dst[W - 1] & GM, cRB = dst[W] & RB, cGM = dst[W] & GM;
-    for (let i = W; i < end; i++) {
-      const a = dst[i - W], b = dst[i + W], r = dst[i + 1];
-      const rRB = r & RB, rGM = r & GM;
-      const m1 = ((((a & RB) + (b & RB) + lRB + rRB) >>> 2) & RB);
-      const m2 = ((((a & GM) + (b & GM) + lGM + rGM) >>> 2) & GM);
-      src[i] = ((((m1 * 3 + cRB) >>> 2) & RB) | (((m2 * 3 + cGM) >>> 2) & GM));
-      lRB = cRB; lGM = cGM; cRB = rRB; cGM = rGM;
-    }
+    let y = 1;
+    for (; y + 1 < H - 1; y += 2) blurRowPair(src, dst, W, y * W);
+    if (y < H - 1) blurRow(src, dst, W, y * W);
 
     const bg = (ctx.bgColor || 0) >>> 0;
     src.fill(bg, 0, W - 1);          // 1800125e0 paints W-1 pixels per border row (spec 07)
