@@ -29,7 +29,8 @@ visualizers) reach an installed app at its next launch, with no new download. Th
 page from wmp.ryancircelli.com and uses it only when its signature checks out, and only when it was
 built for that version of the app; offline, it keeps the last good copy. A change to the app itself
 still needs the new download, and the app says so: a dialog once a day, and Help > Download the
-New Version.
+New Version. Help > Check for Player Updates checks right away, and offers to restart with the new
+player when there is one.
 
 - **Retired:** the system-audio application `WmpVisualizers.exe` (release `app-latest`) was retired on
   2026-09-24 and is no longer built; the screensaver's settings window (`Alchemy.scr /c`) is the same

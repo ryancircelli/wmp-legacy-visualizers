@@ -783,6 +783,14 @@ late answer serves the next launch and an offline one keeps the last. The screen
 cached `index.html` through the same `wmp.localhost` virtual host, so its settings stay. Dev mode
 never updates.
 
+**Help > Check for Player Updates** asks the same question on demand. By then the main thread is
+inside the message pump, so the page asks the server worker instead: `/update` on its loopback port,
+with the same CORS answers as the dev bundle. The worker runs `update.ts`'s `check`, caches a newer
+page, and answers `{running, ready, hostUpdate, error}`. Restart Now calls `alchemyRestart`: the host
+spawns itself again with `--restart` and quits, and the new instance waits up to 10 s for the old
+one's profile lock instead of treating it as a second window. The spawn has to be detached: Deno ends
+its children when it exits otherwise (measured), and the relaunch died with the old window.
+
 The latest verified manifest is cached as well. When its `host` differs from this exe's own (a hash
 of the host's sources), a newer exe is out: the page is told (`window.alchemyHostUpdate`), shows a
 dialog at most once a day, and adds Help > Download the New Version. `alchemyOpenUrl` opens that
