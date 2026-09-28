@@ -3,6 +3,7 @@
 // only adds what the old shell (src/90-shell.js) did around them: engine choice, the native-size and
 // scale rules, the 0x00RRGGBB -> RGBA blit, and presenting onto a canvas.
 import { A, type Surface, type TimedLevel } from './ns';
+import { glPresenter, type Sampling } from './gl';
 import './rand';
 import './effect';
 import './kernels';
@@ -159,8 +160,12 @@ export function createEngine(kind: VisKind, canvas: CanvasLike, opts: CreateEngi
   const clampPreset = (n: number) => Math.min(max, Math.max(0, n | 0));
   const raw = makeRaw(kind, clampPreset(opts.preset ?? 0), options);
   let scale: Scale = opts.scale ?? 'original';
-  const view = canvas.getContext('2d');
-  const buf = makeBuffer();
+  // WebGL2 when there is one (engine/gl.ts): no conversion loop, no hidden canvas, the GPU scales.
+  // Otherwise the 2D path: convert, putImageData into a hidden canvas, drawImage it stretched.
+  const gl = glPresenter(canvas, LITTLE_ENDIAN);
+  const sampling: Sampling = kind === 'battery' ? 'nearest' : 'smooth';
+  const view = gl ? null : canvas.getContext('2d');
+  const buf = gl ? { canvas: null, ctx: null } : makeBuffer();
   let img: ImageData | null = null, img32: Uint32Array | null = null;
   let bw = 0, bh = 0, last: Surface | null = null;
 
@@ -185,7 +190,9 @@ export function createEngine(kind: VisKind, canvas: CanvasLike, opts: CreateEngi
     },
     present() {
       const s = last;
-      if (!s || s.w !== bw || s.h !== bh || !img || !img32 || !buf.ctx || !view) return;
+      if (!s || s.w !== bw || s.h !== bh) return;
+      if (gl) { gl.draw(s.px, bw, bh, sampling); return; }
+      if (!img || !img32 || !buf.ctx || !buf.canvas || !view) return;
       blit(s.px, img32);
       buf.ctx.putImageData(img, 0, 0);
       view.drawImage(buf.canvas, 0, 0, canvas.width, canvas.height);
@@ -208,8 +215,10 @@ export function createEngine(kind: VisKind, canvas: CanvasLike, opts: CreateEngi
       if (w === bw && h === bh) return;
       bw = w;
       bh = h;
-      buf.canvas.width = w;
-      buf.canvas.height = h;
+      if (buf.canvas) {
+        buf.canvas.width = w;
+        buf.canvas.height = h;
+      }
       img = buf.ctx ? buf.ctx.createImageData(w, h) : null;
       img32 = img ? new Uint32Array(img.data.buffer) : null;
       raw.resize(w, h);
@@ -225,7 +234,7 @@ export function createEngine(kind: VisKind, canvas: CanvasLike, opts: CreateEngi
       raw.seed(n);
     },
     debug() {
-      return raw.debug();
+      return { ...raw.debug(), present: gl ? 'webgl2' : view ? '2d' : 'none', sampling: gl ? sampling : view?.imageSmoothingEnabled ? 'smooth' : 'nearest' };
     },
   };
   eng.resize();

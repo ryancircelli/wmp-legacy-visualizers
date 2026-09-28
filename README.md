@@ -156,7 +156,8 @@ Each `compile*` task runs `npm run build` first (so `npm ci` must have been run 
 WASAPI helper build (`cargo` + mingw). CI does the same on every push to master: `deploy.yml`
 (website), `screensaver-release.yml` and `spotify-release.yml`, each running
 typecheck, lint and the unit tests before building. The Playwright smokes
-(`NODE_PATH=$(npm root -g) node tests/shell-smoke.js`, `tests/spotify-smoke.js`) run locally only.
+(`NODE_PATH=$(npm root -g) node tests/shell-smoke.js`, `tests/spotify-smoke.js`, `tests/gl.smoke.js`)
+run locally only.
 
 ## Fidelity
 

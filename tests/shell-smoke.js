@@ -150,11 +150,15 @@ const MOCK = () => {
     const s = S.engine.render(S.level);          // the engine's own surface, which present() paints
     s.px.fill(0x123456);
     S.engine.present();
-    const c = document.getElementById('view').getContext('2d');
-    const d = c.getImageData(c.canvas.width >> 1, c.canvas.height >> 1, 1, 1).data;
+    // read in the same task as the draw: WebGL2 (engine/gl.ts) where there is one, else the 2D path
+    const view = document.getElementById('view'), gl = view.getContext('webgl2');
+    let d;
+    if (gl) { d = new Uint8Array(4); gl.readPixels(view.width >> 1, view.height >> 1, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, d); }
+    else { const c = view.getContext('2d'); d = c.getImageData(view.width >> 1, view.height >> 1, 1, 1).data; }
     S.paused = was;
     return [d[0], d[1], d[2], d[3]];
   });
+  // (headless WebGL is software, which the page declines: this is the 2D path; tests/gl.smoke.js has the GPU one)
   assert.deepStrictEqual(px, [0x12, 0x34, 0x56, 255], 'RGBA conversion: got ' + px);
 
   // 2. the ticker runs, ?src=tone reaches the analysers, the engine reacts to it.
@@ -275,14 +279,14 @@ const MOCK = () => {
     wh: [Alchemy.Shell.engine.width, Alchemy.Shell.engine.height],
     n: document.querySelectorAll('#visList [data-vis=battery]').length,
     d: Alchemy.Shell.engine.debug(),
-    smooth: document.getElementById('view').getContext('2d').imageSmoothingEnabled,
+    sampling: Alchemy.Shell.engine.debug().sampling,
     label: document.querySelector('#scale option[value=original]').textContent,
     viz: document.getElementById('vizlabel').textContent
   }));
   assert.deepStrictEqual(bat.wh, [384, 288], 'Battery "original" is the DLL\'s 384x288: ' + bat.wh);
   assert.strictEqual(bat.n, 26, 'Battery exposes 26 presets');
   assert.strictEqual(bat.d.presetName, 'relatively calm', 'Battery preset 18 not selected');
-  assert.strictEqual(bat.smooth, false, 'Battery must blit with imageSmoothingEnabled = false');
+  assert.strictEqual(bat.sampling, 'nearest', 'Battery must stretch nearest-neighbour (STRETCH_DELETESCANS)');
   assert.strictEqual(bat.label, 'Original 384x288', 'the scale label follows the engine: ' + bat.label);
   assert.strictEqual(bat.viz, 'Battery : relatively calm', 'viz label: ' + bat.viz);
   await page.evaluate(() => Alchemy.store.getState().actions.setUi({ dialog: null }));
