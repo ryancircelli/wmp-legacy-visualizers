@@ -184,12 +184,19 @@ export const RUNS: Run[] = [
   { id: 'alchemy-640x480-s1555000777', vis: 'alchemy', w: 640, h: 480, frames: 6000, short: 0, seed: 1555000777 },
   { id: 'alchemy-800x450-s42', vis: 'alchemy', w: 800, h: 450, frames: 2000, short: 100, seed: 42 },
   { id: 'alchemy-intended-360x640-s7', vis: 'alchemy', w: 360, h: 640, frames: 2000, short: 100, seed: 7, intended: true },
+  // odd interior row counts (the blur pairs rows), odd widths
+  { id: 'alchemy-640x479-s99', vis: 'alchemy', w: 640, h: 479, frames: 1000, short: 100, seed: 99 },
+  { id: 'alchemy-intended-333x251-s5', vis: 'alchemy', w: 333, h: 251, frames: 1000, short: 0, seed: 5, intended: true },
   ...[0, 1, 2, 3].flatMap((p): Run[] => [
     { id: `bars-p${p}-354x345`, vis: 'bars', w: 354, h: 345, frames: 3000, short: 300, preset: p },
     { id: `bars-p${p}-1100x200`, vis: 'bars', w: 1100, h: 200, frames: 1500, short: 100, preset: p },
   ]),
   { id: 'battery-p0-384x288-s1700000000', vis: 'battery', w: 384, h: 288, frames: 6000, short: 300, seed: 1700000000, preset: 0 },
   { id: 'battery-p0-384x288-s1234567890', vis: 'battery', w: 384, h: 288, frames: 4000, short: 0, seed: 1234567890, preset: 0 },
+  // the other two DLL resolutions, and a width that is not a multiple of 4
+  { id: 'battery-p0-512x384-s1700000000', vis: 'battery', w: 512, h: 384, frames: 1000, short: 0, seed: 1700000000, preset: 0 },
+  { id: 'battery-p7-256x192-s1700000000', vis: 'battery', w: 256, h: 192, frames: 1000, short: 0, seed: 1700000000, preset: 7 },
+  { id: 'battery-p0-382x287-s1700000000', vis: 'battery', w: 382, h: 287, frames: 1000, short: 100, seed: 1700000000, preset: 0 },
   ...Array.from({ length: 25 }, (_, i): Run => ({
     id: `battery-p${i + 1}-384x288-s1700000000`, vis: 'battery', w: 384, h: 288, frames: 1500,
     short: BATTERY_SHORT.has(i + 1) ? 200 : 0, seed: 1700000000, preset: i + 1,
