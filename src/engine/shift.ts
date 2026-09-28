@@ -356,12 +356,16 @@ export class Shift extends A.Effect {
     for (let i = 0; i < n; i++) dst[i] = src[tab[i]];   // nearest neighbour, unclamped
 
     const end = (H - 1) * W;
+    // A pixel's left and centre taps are the previous pixel's centre and right (dst is only read
+    // here), so they ride along already masked instead of being re-read: same ops, same result.
+    let lRB = dst[W - 1] & RB, lGM = dst[W - 1] & GM, cRB = dst[W] & RB, cGM = dst[W] & GM;
     for (let i = W; i < end; i++) {
-      const c = dst[i];
-      const a = dst[i - W], b = dst[i + W], l = dst[i - 1], r = dst[i + 1];
-      const m1 = ((((a & RB) + (b & RB) + (l & RB) + (r & RB)) >>> 2) & RB);
-      const m2 = ((((a & GM) + (b & GM) + (l & GM) + (r & GM)) >>> 2) & GM);
-      src[i] = ((((m1 * 3 + (c & RB)) >>> 2) & RB) | (((m2 * 3 + (c & GM)) >>> 2) & GM));
+      const a = dst[i - W], b = dst[i + W], r = dst[i + 1];
+      const rRB = r & RB, rGM = r & GM;
+      const m1 = ((((a & RB) + (b & RB) + lRB + rRB) >>> 2) & RB);
+      const m2 = ((((a & GM) + (b & GM) + lGM + rGM) >>> 2) & GM);
+      src[i] = ((((m1 * 3 + cRB) >>> 2) & RB) | (((m2 * 3 + cGM) >>> 2) & GM));
+      lRB = cRB; lGM = cGM; cRB = rRB; cGM = rGM;
     }
 
     const bg = (ctx.bgColor || 0) >>> 0;
