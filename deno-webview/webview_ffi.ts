@@ -107,12 +107,9 @@ export class Webview {
    * alpha, refuses it (`put_DefaultBackgroundColor` takes only 0 or 255 — measured: `E_INVALIDARG`,
    * and the control keeps its default opaque white), which is the fringe this was meant to remove.
    *
-   * `a = 0` is the one other value it accepts, and it is what the player window uses: a fully
-   * transparent WebView2 hands the pixels the page did not paint to the host window's own surface,
-   * which `win32.ts glass()` has made a sheet of DWM glass — so the page's own anti-aliased rounded
-   * corners composite straight over the desktop, with no window region to cut and nothing of the
-   * host's own to show through. Alpha is honoured only while the host window is not `WS_EX_LAYERED`
-   * and DWM is composing, which on Windows 11 is always.
+   * `a = 0` is the one other value it accepts: a fully transparent WebView2 hands the pixels the
+   * page did not paint to the host window's own surface. Neither window uses it any more (the
+   * per-pixel glass it served was removed); both pass an opaque colour (main.ts).
    *
    * Returns false on a runtime older than 1.0.774.44, which has no `ICoreWebView2Controller2`.
    */

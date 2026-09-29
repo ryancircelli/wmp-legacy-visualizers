@@ -263,8 +263,7 @@ export function fullscreen(hwnd: Deno.PointerValue) {
  * cannot see it and only a screen capture can. Two attributes turn it off: square corners instead
  * of Windows 11's rounded ones, which were clipping the page's own top corners away, and no 1 px
  * border, which was a grey line across the top row. DWM's corner is the wrong corner — a different
- * radius, and on all four corners — so the rounding the skin does want is drawn by the page itself
- * and shown through the glass `glass()` makes of the client area.
+ * radius, and on all four corners — so the rounding the skin does want is drawn by the page itself.
  *
  * `DWMWA_NCRENDERING_POLICY = DWMNCRP_DISABLED` is deliberately *not* set, though it is the obvious
  * third call. Measured: it makes DWM stop compositing the non-client area, and Windows falls back to
