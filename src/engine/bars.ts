@@ -66,8 +66,9 @@ function fillRect(S: Surface, x1: number, y1: number, x2: number, y2: number, c:
   if (y1 < 0) y1 = 0;
   if (x2 > S.w - 1) x2 = S.w - 1;
   if (y2 > S.h - 1) y2 = S.h - 1;
-  var W = S.w, px = S.px, n = x2 - x1;
-  for (var o = y1 * W + x1, e = y2 * W + x1; o <= e; o += W)
+  var W = S.w, px = S.px, n = x2 - x1, o = y1 * W + x1, e = y2 * W + x1;
+  if (n === 0) { for (; o <= e; o += W) px[o] = c; return; }   // a one-pixel column (Ocean Mist, Fire Storm)
+  for (; o <= e; o += W)
     for (var i = o, ie = o + n; i <= ie; i++) px[i] = c;
 }
 // FUN_18044a7a0: NOT the symmetric Bresenham. Endpoints are ordered left to right, a line with
