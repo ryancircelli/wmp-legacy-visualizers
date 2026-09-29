@@ -39,9 +39,17 @@ fn data_root() -> Option<PathBuf> {
 /// deno-webview/README.md for the two seconds a `.local` name cost).
 fn page(query: &str) -> WebviewUrl {
     #[cfg(target_os = "windows")]
-    return WebviewUrl::External(format!("https://wmp.localhost/index.html?{query}").parse().unwrap());
+    return WebviewUrl::External(
+        format!("https://wmp.localhost/index.html?{query}")
+            .parse()
+            .unwrap(),
+    );
     #[cfg(not(target_os = "windows"))]
-    WebviewUrl::CustomProtocol(format!("wmp://localhost/index.html?{query}").parse().unwrap())
+    WebviewUrl::CustomProtocol(
+        format!("wmp://localhost/index.html?{query}")
+            .parse()
+            .unwrap(),
+    )
 }
 
 /// Serves `../dist`, embedded at compile time, for `page()`.
@@ -89,8 +97,15 @@ const SAVER_JS: &str = "(function () {
 
 #[tauri::command]
 fn painted(window: WebviewWindow) {
-    let epoch = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_millis();
-    log::info!("{}: page painted t+{}ms (epoch {epoch})", window.label(), START.elapsed().as_millis());
+    let epoch = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis();
+    log::info!(
+        "{}: page painted t+{}ms (epoch {epoch})",
+        window.label(),
+        START.elapsed().as_millis()
+    );
 }
 
 #[tauri::command]
@@ -101,7 +116,11 @@ fn dismiss(window: WebviewWindow) {
     }
 }
 
-fn builder<'a, R: Runtime>(app: &'a AppHandle<R>, label: &str, url: WebviewUrl) -> WebviewWindowBuilder<'a, R, AppHandle<R>> {
+fn builder<'a, R: Runtime>(
+    app: &'a AppHandle<R>,
+    label: &str,
+    url: WebviewUrl,
+) -> WebviewWindowBuilder<'a, R, AppHandle<R>> {
     let b = WebviewWindowBuilder::new(app, label, url)
         .title("Alchemy screensaver")
         .use_https_scheme(true)
@@ -114,7 +133,9 @@ fn builder<'a, R: Runtime>(app: &'a AppHandle<R>, label: &str, url: WebviewUrl) 
 }
 
 /// The union of every monitor, in physical pixels: the virtual screen.
-fn virtual_screen<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<(PhysicalPosition<i32>, PhysicalSize<u32>)> {
+fn virtual_screen<R: Runtime>(
+    app: &AppHandle<R>,
+) -> tauri::Result<(PhysicalPosition<i32>, PhysicalSize<u32>)> {
     let (mut l, mut t, mut r, mut b) = (i32::MAX, i32::MAX, i32::MIN, i32::MIN);
     for m in app.available_monitors()? {
         let (p, s) = (m.position(), m.size());
@@ -124,13 +145,20 @@ fn virtual_screen<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<(PhysicalPosi
     if l > r {
         return Err(tauri::Error::WindowNotFound); // no monitor at all
     }
-    Ok((PhysicalPosition::new(l, t), PhysicalSize::new((r - l) as u32, (b - t) as u32)))
+    Ok((
+        PhysicalPosition::new(l, t),
+        PhysicalSize::new((r - l) as u32, (b - t) as u32),
+    ))
 }
 
 /// Open the window a mode asks for, or bring it forward if this process already has it: a second
 /// launch lands here too, through the single-instance plugin.
 fn open<R: Runtime>(app: &AppHandle<R>, mode: Mode) -> tauri::Result<()> {
-    let label = if mode == Mode::Saver { "saver" } else { "player" };
+    let label = if mode == Mode::Saver {
+        "saver"
+    } else {
+        "player"
+    };
     if let Some(w) = app.get_webview_window(label) {
         w.unminimize()?;
         w.show()?;
@@ -176,9 +204,14 @@ fn main() {
     }
     let root = data_root();
 
-    let mut log = tauri_plugin_log::Builder::new().clear_targets().level(log::LevelFilter::Info);
+    let mut log = tauri_plugin_log::Builder::new()
+        .clear_targets()
+        .level(log::LevelFilter::Info);
     log = log.target(Target::new(match &root {
-        Some(r) => TargetKind::Folder { path: r.clone(), file_name: Some("alchemy".into()) },
+        Some(r) => TargetKind::Folder {
+            path: r.clone(),
+            file_name: Some("alchemy".into()),
+        },
         None => TargetKind::LogDir { file_name: None },
     }));
     if cfg!(debug_assertions) {
@@ -206,7 +239,10 @@ fn main() {
         .register_uri_scheme_protocol("wmp", serve)
         .invoke_handler(tauri::generate_handler![painted, dismiss])
         .setup(move |app| {
-            log::info!("argv {args:?} -> {mode:?}, t+{}ms", START.elapsed().as_millis());
+            log::info!(
+                "argv {args:?} -> {mode:?}, t+{}ms",
+                START.elapsed().as_millis()
+            );
             Ok(open(app.handle(), mode)?)
         })
         .run(tauri::generate_context!())

@@ -11,8 +11,9 @@ use std::path::PathBuf;
 ///
 /// In a `tauri` folder of its own while both hosts exist, because one WebView2 profile cannot be
 /// open in two programs at once. The page's origin is already the Deno host's (`main.rs` `page`),
-/// so once that host is retired, dropping `tauri` here is the whole settings carry-over: its
-/// `WebView2` profile holds the user's settings under the same origin.
+/// so once that host is retired, dropping `tauri` here is the whole settings carry-over: the Deno
+/// host's `WebView2` profile holds the user's settings under that same origin.
 pub fn data_root() -> Option<PathBuf> {
-    std::env::var_os("LOCALAPPDATA").map(|d| PathBuf::from(d).join("WmpLegacyVisualizers").join("tauri"))
+    std::env::var_os("LOCALAPPDATA")
+        .map(|d| PathBuf::from(d).join("WmpLegacyVisualizers").join("tauri"))
 }

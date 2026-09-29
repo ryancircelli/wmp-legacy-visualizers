@@ -1,3 +1,9 @@
+# The Windows exe (target/[x86_64-pc-windows-msvc/]release/alchemy.exe):
+#   on Windows, and in CI (.github/workflows/tauri.yml):  npx tauri build --no-bundle
+#   from WSL or Linux:  npm run build:win  (cargo-xwin, which fetches the MSVC CRT and SDK once;
+#     it needs `lld-link` on PATH, from apt's lld or a symlink to rustup's rust-lld, and uses
+#     mingw's windres for the icon resource). MSVC, not windows-gnu: the gnu target cannot link
+#     the WebView2 loader statically and would need WebView2Loader.dll beside the exe.
 [package]
 name = "alchemy"
 version = "0.1.0"

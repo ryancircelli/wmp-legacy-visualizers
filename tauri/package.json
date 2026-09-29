@@ -3,7 +3,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "build:win": "RC_x86_64_pc_windows_msvc=x86_64-w64-mingw32-windres tauri build --runner cargo-xwin --target x86_64-pc-windows-msvc --no-bundle"
   },
   "devDependencies": {
     "@tauri-apps/cli": "2.12.0"
