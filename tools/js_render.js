@@ -9,12 +9,15 @@ const fs = require('fs'), vm = require('vm'), path = require('path'), zlib = req
 const ENGINE = process.env.ALCHEMY_ENGINE || path.join(__dirname, '..', 'dist', 'engine.js');
 const sandbox = {
   window: {}, Math, Date, console, Object, Array, Number, String, JSON,
-  Uint8Array, Uint32Array, Int32Array, Float32Array, Float64Array, Uint8ClampedArray
+  Uint8Array, Uint32Array, Int32Array, Float32Array, Float64Array, Uint8ClampedArray,
+  atob   // decodes Shift's embedded WebAssembly (WebAssembly itself is built into every vm context)
 };
 sandbox.globalThis = sandbox;
 vm.createContext(sandbox);
 vm.runInContext(fs.readFileSync(ENGINE, 'utf8'), sandbox, { filename: ENGINE });
 const AL = sandbox.window.Alchemy;
+// Shift's gather + blur: auto (WebAssembly, else JS) | wasm | js. Both paths are byte-identical.
+AL.moveBitsMode = process.env.ALCHEMY_MOVEBITS || 'auto';
 
 const W = 640, H = 480, PER = 4100;
 const [binPath, outDir] = process.argv.slice(2);
