@@ -1,0 +1,65 @@
+# The Tauri host (tauri/): builds the Windows x64 exe on every push to the `tauri` branch and keeps
+# it as a workflow artifact. No release: the Deno host's workflows (master only) still ship those.
+#
+# Built on windows-latest with MSVC, Tauri's supported Windows toolchain. The WebView2 loader and
+# the VC runtime are linked statically, so the exe runs on a fresh Windows 11 with nothing else.
+name: tauri
+on:
+  push:
+    branches: [tauri]
+  workflow_dispatch:
+concurrency:
+  group: tauri-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            tauri/package-lock.json
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: tauri
+
+      - name: Install
+        run: |
+          npm ci
+          npm ci --prefix tauri
+
+      - name: Test the argument parser
+        working-directory: tauri
+        run: |
+          rustc --edition 2024 --test src/mode.rs -o mode-test.exe
+          ./mode-test.exe
+
+      # beforeBuildCommand (tauri.conf.json) builds the page into ../dist first.
+      - name: Build
+        working-directory: tauri
+        env:
+          GITHUB_SHA: ${{ github.sha }}
+        run: npx tauri build --no-bundle
+
+      # The old webview.dll imported the VC++ Redistributable and died on a fresh PC: fail on any
+      # import Windows does not ship.
+      - name: Check the exe imports only system DLLs
+        working-directory: tauri
+        shell: pwsh
+        run: |
+          $dlls = & "$env:ProgramFiles\LLVM\bin\llvm-objdump.exe" -p target/release/Alchemy.exe |
+            Select-String 'DLL Name: (.+)' | ForEach-Object { $_.Matches[0].Groups[1].Value }
+          $dlls
+          $bad = $dlls | Where-Object { $_ -match '^(vcruntime|msvcp|ucrtbased|webview2loader)' }
+          if ($bad) { throw "not shipped with Windows: $bad" }
+          (Get-Item target/release/Alchemy.exe).Length
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Alchemy-tauri-win64
+          path: tauri/target/release/Alchemy.exe
+          retention-days: 30
