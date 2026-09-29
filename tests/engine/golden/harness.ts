@@ -203,8 +203,14 @@ export const RUNS: Run[] = [
   })),
 ];
 
-/** Alchemy's gather + blur path (A.moveBitsMode): forced WASM, forced JS, or flipping every 37 frames. */
+/** The WebAssembly kernels' path (A.moveBitsMode for Alchemy's gather + blur, A.batteryKernel for
+ * Battery's warp/blur/palette): forced WASM, forced JS, or flipping every 37 frames. */
 export type MoveBitsPath = 'wasm' | 'js' | 'alternate';
+
+function setPath(path: MoveBitsPath | undefined, f: number): void {
+  if (!path) return;
+  A.moveBitsMode = A.batteryKernel = path === 'alternate' ? (((f / 37) | 0) % 2 ? 'js' : 'wasm') : path;
+}
 
 interface Renderer { render(L: TimedLevel): Surface | null; frameHash(s: Surface | null): number; }
 
@@ -251,11 +257,12 @@ function makeRenderer(run: Run): Renderer {
 /** One entry per BLOCK frames: "<hash of the block's frame hashes + rand counts>:<rand() draws in the block>". */
 export function runGolden(run: Run, frames: number, path?: MoveBitsPath): string[] {
   const gen = new InputGen();
+  setPath(path, 0);                                    // Battery places its buffers at construction
   const r = makeRenderer(run);
   const out: string[] = [];
   let bh = 0, br = 0;
   for (let f = 0; f < frames; f++) {
-    if (path) A.moveBitsMode = path === 'alternate' ? (((f / 37) | 0) % 2 ? 'js' : 'wasm') : path;
+    setPath(path, f);
     const L = gen.next();
     const r0 = randN;
     const s = r.render(L);
@@ -267,7 +274,7 @@ export function runGolden(run: Run, frames: number, path?: MoveBitsPath): string
       bh = 0; br = 0;
     }
   }
-  A.moveBitsMode = 'auto';
+  A.moveBitsMode = A.batteryKernel = 'auto';
   return out;
 }
 

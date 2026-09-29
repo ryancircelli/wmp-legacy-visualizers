@@ -4,7 +4,8 @@
 //   npm run test:golden    -> every run in full (GOLDEN=full)
 //   GOLDEN_UPDATE=1 npx vitest run tests/engine/golden
 //                          -> rewrite ./fixtures (only ever from a known-exact engine)
-// Alchemy runs three times, once per gather + blur path: WASM, JS, and flipping between the two.
+// Alchemy and Battery run three times, once per WebAssembly kernel path: WASM, JS, and flipping
+// between the two.
 import { afterAll, describe, expect, it } from 'vitest';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';

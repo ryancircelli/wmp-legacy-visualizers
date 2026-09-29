@@ -10,6 +10,7 @@ import '../effect'; // A.makeSurface
 import './warps';
 import './draws';
 import './draws-a';
+import { newArena, warpWasm, blurWasm, paletteWasm } from './kernel';
 import type { BatteryShift } from './warps';
 import type { BatteryDrawEffect, BatteryDrawCtx, BatteryDrawCtor } from './draws';
 
@@ -167,7 +168,8 @@ function line(buf: Uint8Array, w: number, h: number, x0: number, y0: number, x1:
 // row's last pixel); only rows 0 and h-1 wrap, and row 0's x+1 at x=w-1 is the linear next byte.
 function blur(src: Uint8Array, dst: Uint8Array, w: number, h: number): void {
   var lut = BLUR_LUT, p: number, x: number, base = (h - 1) * w, end = base;
-  if (LE && (w & 3) === 0 && end > w && src.byteOffset % 4 === 0 && dst.byteOffset % 4 === 0) blurRows4(src, dst, w, end);
+  if (blurWasm(src, dst, w, h)) { /* rows 1..h-2 done in WebAssembly (kernel.ts) */ }
+  else if (LE && (w & 3) === 0 && end > w && src.byteOffset % 4 === 0 && dst.byteOffset % 4 === 0) blurRows4(src, dst, w, end);
   else for (p = w; p < end; p++) dst[p] = lut[src[p - w] + src[p - 1] + src[p] + src[p + 1] + src[p + w]];
   dst[0] = lut[src[1] + src[w] + src[base] + src[w - 1] + src[0]];
   for (x = 1; x < w; x++) dst[x] = lut[src[x] + src[x + w] + src[x - 1] + src[x + 1] + src[x + base]];
@@ -568,9 +570,11 @@ class Battery {
   resize(w: number, h: number): void {
     this.w = Math.max(2, w | 0);
     this.h = Math.max(2, h | 0);
-    this.front = new Uint8Array(this.w * this.h);
-    this.back = new Uint8Array(this.w * this.h);
-    this.surface = A.makeSurface(this.w, this.h, 0);
+    // In the WebAssembly kernel's memory when there is one (kernel.ts), zeroed either way.
+    var ar = newArena(this.w * this.h);
+    this.front = ar ? ar.front : new Uint8Array(this.w * this.h);
+    this.back = ar ? ar.back : new Uint8Array(this.w * this.h);
+    this.surface = ar ? { w: this.w, h: this.h, px: ar.px } : A.makeSurface(this.w, this.h, 0);
     this.dctx.w = this.w; this.dctx.h = this.h;
     for (var i = 0; i < this.presets.length; i++) this.presets[i].setSize(this.w, this.h);
     for (i = 0; i < this.draws.length; i++) this.draws[i].setSize(this.w, this.h);
@@ -593,7 +597,7 @@ class Battery {
     if (!s.map) return;
     this.swap();
     var m = selectMap(s)!, dst = this.front, src = this.back, n = this.w * this.h;
-    for (var i = 0; i < n; i++) dst[i] = src[m[i]];
+    if (!warpWasm(src, m, dst, n)) for (var i = 0; i < n; i++) dst[i] = src[m[i]];
   }
 
   // ---------------------------------------------------------------- palette (§5)
@@ -725,7 +729,7 @@ class Battery {
     }
     this.presetChanged = false;               // the DLL returns S_FALSE once here; a port may ignore it
     var px = this.surface.px, pal = this.LIVE32, src = this.front, n = this.w * this.h;
-    for (var i = 0; i < n; i++) px[i] = pal[src[i]];
+    if (!paletteWasm(src, pal, px, n)) for (var i = 0; i < n; i++) px[i] = pal[src[i]];
     return (this.last = this.surface);
   }
 
