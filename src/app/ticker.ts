@@ -45,8 +45,11 @@ export function createTicker(store: AppStore, onFirstFrame: () => void): Ticker 
       options: { intended: S().intended, fps: S().fps, backgroundColor: S().bg } });
   }
 
+  // Held: nothing on screen to render into (a library view covers it); full screen always shows it.
+  const held = () => store.getState().vis.hold && !full();
   function frame(now: number) {
-    if (occluded()) { raf = 0; fps = 0; return; }  // covered: the engine pauses as it does minimized
+    // covered: the engine pauses as it does minimized; held: no frames asked for until it is shown
+    if (occluded() || held()) { raf = 0; fps = 0; return; }
     raf = requestAnimationFrame(frame);
     let dt = now - last;
     last = now;
@@ -57,9 +60,7 @@ export function createTicker(store: AppStore, onFirstFrame: () => void): Ticker 
     let runs = 0, drew = false;
     while (acc >= step && runs < 3) {             // hard cap: no spiral of death
       acc -= step; runs++;
-      // Held: nothing on screen to render into (a library view covers it), so the engine is not
-      // run at all; full screen always shows it.
-      if (eng && !paused && !(st.vis.hold && !full())) { eng.render(fillLevel()); drew = true; }
+      if (eng && !paused) { eng.render(fillLevel()); drew = true; }
     }
     if (acc > step * 3) acc = 0;
     if (drew && eng) {
@@ -101,7 +102,9 @@ export function createTicker(store: AppStore, onFirstFrame: () => void): Ticker 
       ro.observe(c);
       last = fpsAt = performance.now();
       raf = requestAnimationFrame(frame);
-      const offSeen = onSeen(() => { if (!raf) { last = fpsAt = performance.now(); raf = requestAnimationFrame(frame); } });
+      const start = () => { if (!raf && !occluded() && !held()) { last = fpsAt = performance.now(); raf = requestAnimationFrame(frame); } };
+      const offSeen = onSeen(start);
+      offs.push(store.subscribe((s) => s.vis.hold && !(s.ui.bare || s.ui.fullscreen), (h) => { if (!h) start(); }));
       return () => {
         cancelAnimationFrame(raf); ro.disconnect(); clearTimeout(tm); offSeen();
         for (const off of offs) off();
