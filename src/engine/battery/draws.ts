@@ -117,6 +117,9 @@ var atan2 = A.atan2 || Math.atan2;
 // Stroke's first pixel and the warp diagonals sit exactly on those ulps.
 // eslint-disable-next-line @typescript-eslint/unbound-method -- A.sin/A.cos never read `this`; hoisted once, not per-call, on purpose
 var sin = A.sin || Math.sin, cos = A.cos || Math.cos;
+// sincos(x, SC): SC[0] = sin(x), SC[1] = cos(x), the same bits (00-rand.js), one reduction for both.
+// eslint-disable-next-line @typescript-eslint/unbound-method -- A.sincos never reads `this`; hoisted once on purpose
+var sincos = A.sincos, SC = new Float64Array(2);
 // Both 2pi constants in Battery are (double)(float)6.2831855f, not 2*Math.PI; pi likewise.
 var TAU = 6.2831854820251465;      // 0x18088c468 (f64) == 0x18088c598 (f32) widened
 var PI_ = 3.1415927410125732;      // 0x18088c4c8 (f32) / 0x18088c440 (f64)
@@ -371,7 +374,9 @@ class CEdgeTrace extends BatteryDraw {
 class CCircleWaveform extends BatteryDraw {
   declare baseRadius: number;
   declare phase: number;
-  constructor() { super(2); this.dbl1 = 1.0; this.baseRadius = 20; this.phase = 0.0; }
+  declare _n: number;
+  declare _cs: Float64Array;
+  constructor() { super(2); this.dbl1 = 1.0; this.baseRadius = 20; this.phase = 0.0; this._n = -1; this._cs = new Float64Array(0); }
   randomize(): void {
     var r1 = A.rand(), r2 = A.rand(), r3 = A.rand();          // order matters for replay
     this.dbl0 = r3 % 4;                                       // from the THIRD draw
@@ -398,9 +403,16 @@ class CCircleWaveform extends BatteryDraw {
       var n;
       if (this.dbl2 > 1.0) { this.dbl2 = 1.0; n = 1024; }     // writes the parameter back
       else { n = cvt(this.dbl2 * 1024.0); if (n <= 0) continue; }
+      // cos(a)/sin(a) depend on i and n alone: made once per n, the same calls on the same arguments.
+      if (n !== this._n) {
+        var cs = this._cs = new Float64Array(2 * n);
+        for (var j = 0; j < n; j++) { var aj = F(F(j / n) * PI_); cs[2 * j] = cos(aj); cs[2 * j + 1] = sin(aj); }
+        this._n = n;
+      }
+      var csT = this._cs;
 
       for (var i = 0; i < n; i++) {
-        var a = F(F(i / n) * PI_);                            // HALF a turn over the whole run
+        var ca = csT[2 * i], sa = csT[2 * i + 1];            // a = F(F(i / n) * PI_): HALF a turn over the run
         switch (Math.trunc(this.dbl0)) {
           case 0:
             c1 = (2 * Math.abs(w0[i] - 128)) & 0xff;          // 256 -> 0 when the sample is 0
@@ -417,13 +429,13 @@ class CCircleWaveform extends BatteryDraw {
           default: break;
         }
         var r1 = F(F(F(amp) * F(F(w0[i]) * INV256)) + F(this.baseRadius));
-        var x1 = cvt(cos(a) * r1) + cx;
-        var y1 = cvt(sin(a) * r1) + cy;
+        var x1 = cvt(ca * r1) + cx;
+        var y1 = cvt(sa * r1) + cy;
         if (i !== 0) prim.LineClamped(buf, sw, sh, p1x, p1y, x1, y1, c1);
 
         var r2 = F(F(F(amp) * F(F(w1[i]) * INV256)) + F(this.baseRadius));
-        var x2 = cvt(cos(a) * r2) + cx;
-        var y2 = cy - cvt(sin(a) * r2);                  // SUBTRACTION: mirrored in Y
+        var x2 = cvt(ca * r2) + cx;
+        var y2 = cy - cvt(sa * r2);                      // SUBTRACTION: mirrored in Y
         if (i !== 0) prim.LineClamped(buf, sw, sh, p2x, p2y, x2, y2, c2);
 
         p1x = x1; p1y = y1; p2x = x2; p2y = y2;
@@ -442,7 +454,10 @@ class CCircleWaveform extends BatteryDraw {
 // dbl4 phase increment, dbl5 never read, dbl6 == 9 selects line mode.
 class CJiggyScribble extends BatteryDraw {
   declare phase: number;
-  constructor() { super(2); this.phase = 0.0; }
+  declare _d2: number;
+  declare _d3: number;
+  declare _tt: Float64Array;
+  constructor() { super(2); this.phase = 0.0; this._d2 = NaN; this._d3 = NaN; this._tt = new Float64Array(0); }
   randomize(): void {
     this.dbl0 = A.rand() % 100 + 4;        // 4 .. 103
     this.dbl1 = A.rand() % 200 + 40;       // 40 .. 239
@@ -476,21 +491,32 @@ class CJiggyScribble extends BatteryDraw {
       py = sin(th) * r + cy;
     }
 
-    var t = 0.0, n = Math.trunc(this.dbl2);
+    var n = Math.trunc(this.dbl2), tt = this._tt;
+    // t = 0, stepA, 2*stepA... (accumulated): cos/sin of t and of t*dbl3 depend on dbl2 and dbl3
+    // alone, so they are made once per pair of values, the same calls on the same arguments.
+    if (this.dbl2 !== this._d2 || this.dbl3 !== this._d3) {
+      tt = this._tt = new Float64Array(4 * (n > 0 ? n : 0));
+      for (var j = 0, t = 0.0; j < n; j++) {
+        tt[4 * j] = cos(t); tt[4 * j + 1] = sin(t);
+        tt[4 * j + 2] = cos(t * this.dbl3); tt[4 * j + 3] = sin(t * this.dbl3);
+        t += stepA;
+      }
+      this._d2 = this.dbl2; this._d3 = this.dbl3;
+    }
     for (var i = 0; i < n; i++) {
-      ax = radMod * cos(t) + this.dbl0 * cos(t * this.dbl3);
-      ay = radMod * sin(t) + this.dbl0 * sin(t * this.dbl3);
+      ax = radMod * tt[4 * i] + this.dbl0 * tt[4 * i + 2];
+      ay = radMod * tt[4 * i + 1] + this.dbl0 * tt[4 * i + 3];
       r = Math.sqrt(ax * ax + ay * ay);
       th = atan2(ax, ay) + ph;             // ARGUMENTS SWAPPED — not a typo, keep them
-      var X = cos(th) * r + cx;
-      var Y = sin(th) * r + cy;
+      sincos(th, SC);
+      var X = SC[1] * r + cx;
+      var Y = SC[0] * r + cy;
       if (lineMode) {
         prim.LineClamped(buf, sw, sh, cvt(px), cvt(py), cvt(X), cvt(Y), 0xff);
         px = X; py = Y;
       } else {
         prim.plot(buf, sw, sh, X, Y, 0xff);   // compares in double, then truncates
       }
-      t += stepA;
     }
   }
 }
@@ -534,8 +560,9 @@ function Stroke(buf: Uint8Array, W: number, H: number, x0: number, y0: number, x
   var envSin = (n | 0) === n && n <= 1024 ? strokeEnvelope(n, half) : null;
   for (k = 0; k < n; k++) {
     var rr = (envSin ? envSin[k] : sin(env)) * (r1 - r0) + r0;
-    var X = cvt(cos(ang) * rr + px);
-    var Y = cvt(sin(ang) * rr + py);
+    sincos(ang, SC);
+    var X = cvt(SC[1] * rr + px);
+    var Y = cvt(SC[0] * rr + py);
     var c = cvt(col) & 0xff;
     if (bLine) { prim.LineClamped(buf, W, H, prevX, prevY, X, Y, c); prevX = X; prevY = Y; }
     else if (X >= 0 && X < W && Y >= 0 && Y < H) buf[Y * W + X] = c;

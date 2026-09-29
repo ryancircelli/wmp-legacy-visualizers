@@ -264,7 +264,7 @@ A.atan2 = function (y, x) {
   return neg ? -res : res;
 };
 
-A.sin = function (x) {
+function ucrtSin(x: number): number {
   var ax = abs(x);
   if (ax < PIO4) {
     if (ax >= TWO_M13) {                                        // 0x1800abe40
@@ -278,9 +278,10 @@ A.sin = function (x) {
   var r = reduce(ax), q = reg_;
   var y = (q & 1) ? cosPoly(r, RR[0]) : sinPoly(r, RR[0]);
   return ((q & 2) !== 0) !== (x < 0) ? -y : y;
-};
+}
+A.sin = ucrtSin;
 
-A.cos = function (x) {
+function ucrtCos(x: number): number {
   var ax = abs(x);
   if (ax <= PIO4) {
     if (ax >= TWO_M13) {                                        // 0x1800a7b25
@@ -295,4 +296,23 @@ A.cos = function (x) {
   var r = reduce(ax), q = reg_;
   var y = (q & 1) ? sinPoly(r, RR[0]) : cosPoly(r, RR[0]);
   return ((q + 1) & 2) ? -y : y;
+}
+A.cos = ucrtCos;
+
+// out[0] = sin(x), out[1] = cos(x), bit for bit what A.sin / A.cos return: where both reduce
+// (|x| > pi/4), they reduce identically and each takes one of the same two polynomials on the
+// same (r, rr), so one reduction and one evaluation of each polynomial serve both. The results go
+// out through a typed array: a double returned from a call that is not inlined is a heap
+// allocation, and these run per pixel of a stroke.
+A.sincos = function (x, out) {
+  var ax = abs(x);
+  if (ax > PIO4 && ax <= 1.7976931348623157e308) {
+    var r = reduce(ax), q = reg_, rr = RR[0];
+    var s = sinPoly(r, rr), c = cosPoly(r, rr);
+    var ys = (q & 1) ? c : s, yc = (q & 1) ? s : c;
+    out[0] = ((q & 2) !== 0) !== (x < 0) ? -ys : ys;
+    out[1] = ((q + 1) & 2) ? -yc : yc;
+  } else {
+    out[0] = ucrtSin(x); out[1] = ucrtCos(x);
+  }
 };

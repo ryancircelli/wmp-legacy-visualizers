@@ -64,6 +64,18 @@ describe('trig: bit agreement with ucrtbase fixtures', () => {
   it('fixture still discriminates (V8 Math.* disagrees on plenty of them)', () => {
     expect(v8).toBeGreaterThan(2000);
   });
+
+  it('sincos: the bits of sin and cos on every fixture argument and the branch edges', () => {
+    const xs = [0, -0, NaN, Infinity, -Infinity, 3e7, -3e7, 1e-9, 1e-5];
+    for (const p of [Math.PI / 4, 0.7853981633974483]) xs.push(p, -p, p * (1 + 2 ** -52), p * (1 - 2 ** -53));
+    for (let i = 0; i < nS + nC; i++) xs.push(F[2 + 2 * i]!);   // the sin and cos fixture arguments
+    const out = new Float64Array(2), failures: string[] = [];
+    for (const x of xs) {
+      A.sincos(x, out);
+      if (!same(out[0]!, A.sin(x)) || !same(out[1]!, A.cos(x))) failures.push(hex(x));
+    }
+    expect(failures).toEqual([]);
+  });
 });
 
 describe('fma: exact BigInt reference', () => {
