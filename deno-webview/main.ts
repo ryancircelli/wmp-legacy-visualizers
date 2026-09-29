@@ -207,6 +207,9 @@ function checkUpdates(
   });
 }
 
+/** Asked of every /audio connection (server.ts): only the page is told it, in the URL it is given. */
+const AUDIO_KEY = crypto.randomUUID();
+
 /** The only addresses the page may open in the browser (alchemyOpenUrl): the project's own. */
 export function allowedUrl(url: string): boolean {
   try {
@@ -493,7 +496,7 @@ function initScript(
   window.alchemyHostUpdate = ${hostUpdate};
   // The page prefers this over getDisplayMedia when audio is true: ws://.../audio carries the
   // helper's PCM (deno-webview/audio.ts, src/90-shell.js Shell.useLocalAudio).
-  window.alchemyScreensaver = { audio: ${audio}, url: "ws://127.0.0.1:${port}${AUDIO_PATH}" };
+  window.alchemyScreensaver = { audio: ${audio}, url: "ws://127.0.0.1:${port}${AUDIO_PATH}?k=${AUDIO_KEY}" };
   // Where the page's own share of startup goes. Milliseconds since this document started loading
   // (performance.now()'s origin in a page is navigationStart), collected here and sent over in one
   // line at the first painted frame — src/90-shell.js pushes its own boot stages into the same
@@ -797,6 +800,7 @@ if (import.meta.main) {
   const audioExe = await Deno.stat(`${NATIVE_DIR}\\${AUDIO_EXE}`)
     .then(() => `${NATIVE_DIR}\\${AUDIO_EXE}`, () => "");
   if (audioExe) Deno.env.set("ALCHEMY_AUDIO_EXE", audioExe); // read by server.ts in the worker
+  Deno.env.set("ALCHEMY_AUDIO_KEY", AUDIO_KEY); // ditto: /audio answers only with it
   log(`audio helper: ${audioExe || "none in this build"}`);
 
   // Set before the first webview_create, because that is when the loader reads it — which is why it

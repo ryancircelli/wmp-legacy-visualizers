@@ -20,6 +20,10 @@ import { check, type Options } from "./update.ts";
 // Set by main.ts once the helper has been unpacked; empty when there is none, and then /audio is
 // a plain 404 and the page animates on silence.
 const audioExe = Deno.env.get("ALCHEMY_AUDIO_EXE") ?? "";
+/** The per-launch key /audio must be asked with (main.ts puts it in the URL it gives the page). The
+ * port is findable by any local page that tries them all, and /audio is the system's sound, what is
+ * playing, and transport and wake commands: without the key, nothing is served. */
+const audioKey = Deno.env.get("ALCHEMY_AUDIO_KEY") ?? "";
 // Dev mode only: the spotify-inject.js to serve and watch (dev.ts); unset in a release build.
 const devInject = Deno.env.get("ALCHEMY_DEV_INJECT") ?? "";
 
@@ -66,7 +70,11 @@ function serve() {
     const dev = devInject ? serveDev(req, devInject, log) : null;
     if (dev) return dev;
     if (new URL(req.url).pathname === UPDATE_PATH) return checkUpdate(req);
-    if (audioExe && new URL(req.url).pathname === AUDIO_PATH) {
+    const u = new URL(req.url);
+    if (audioExe && u.pathname === AUDIO_PATH) {
+      if (!audioKey || u.searchParams.get("k") !== audioKey) {
+        return new Response("", { status: 403 });
+      }
       return serveAudio(
         req,
         audioExe,
