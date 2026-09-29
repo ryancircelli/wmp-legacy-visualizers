@@ -3,7 +3,7 @@
 import { Fragment, useRef } from 'react';
 import { Visualizer } from '../../../app/Visualizer';
 import {
-  AddTo, cx, Dropdown, Karaoke, playingTrack, useCaption, useDebugText, useFullscreen, useLyricScroll, useLyrics, useMenus, useNowPlaying,
+  AddTo, cx, Dropdown, Karaoke, playingTrack, useCaption, useDebugText, useFullscreen, useLyricScroll, usePlainLyrics, useMenus, useNowPlaying,
   usePaneLibrary, usePresetList, useScreenShown, useShell, useView, useVisControl, TransportButton, useApp,
 } from '../../../ui';
 import { nowPlayingMenu, visMenu } from '../../menus';
@@ -93,7 +93,7 @@ const GROUP = 'py-3 px-7 bg-list-group text-pl-group-ink font-bold border-t bord
 const ITEM = 'block w-full py-2 pr-7 pl-16 bg-transparent bg-none border-0 text-left text-pl-ink truncate hover:bg-pl-hot hover:text-white focus:bg-pl-hot focus:text-white data-on:bg-list-on data-on:text-white data-on:font-bold data-sub:pl-28';
 
 export function PlaylistPane() {
-  const np = useNowPlaying(), { plain } = useLyrics(), pllyr = useRef<HTMLDivElement>(null);
+  const np = useNowPlaying(), plain = usePlainLyrics(), pllyr = useRef<HTMLDivElement>(null);
   useLyricScroll(pllyr, plain !== null);
   return (
     <div className="flex-none w-202 flex flex-col min-w-0 overflow-hidden bg-pl-bg border-l border-black max-620:hidden max-620:spotify:flex nopl:hidden! bare:hidden!" id="playlist">

@@ -12,7 +12,7 @@ import {
   artOk, clockText, duration, isAlbum, searchCollections, isBare, isContext, isSpotify, libraryView, uiSettings,
   type LibraryView, type ListItem,
 } from './selectors';
-import { cyclePreset, isPlaying, presetLabel, useApp, useFrame, useRaf, useShell, VIEW_LABELS } from './shell';
+import { cyclePreset, isPlaying, presetLabel, useApp, useClock, useFrame, useShell, VIEW_LABELS } from './shell';
 
 const useGet = () => {
   const sh = useShell();
@@ -107,13 +107,16 @@ export function useLyrics(): { synced: KaraokeLine | null; plain: string | null 
   return { synced, plain: shown === 'plain' ? plain : null };
 }
 
+/** The unsynced lyrics alone (null unless they show): no clock, so no per-frame re-render. */
+export const usePlainLyrics = () => useApp((s) => (lyricsShown(s) === 'plain' ? s.lyrics.plain : null));
+
 /** Unsynced lyrics: scroll `ref` with the track position while `on`. */
 export function useLyricScroll(ref: RefObject<HTMLElement | null>, on: boolean) {
   const get = useGet();
-  useRaf(() => {
+  useClock(() => {
     const b = ref.current, s = get(), d = duration(s);
     if (b && on) b.scrollTop = (b.scrollHeight - b.clientHeight) * (d > 0 ? positionNow(s) / d : 0);
-  });
+  }, on);
 }
 
 /** Full screen: bare = the chrome-free view (full screen, the fallback, the screensaver). */

@@ -87,6 +87,22 @@ describe('Slider', () => {
 });
 
 describe('transport', () => {
+  it('the clock asks for frames only while playing; paused, a store change still shows', () => {
+    let queue: FrameRequestCallback[] = [];
+    vi.stubGlobal('requestAnimationFrame', (f: FrameRequestCallback) => queue.push(f));
+    vi.stubGlobal('cancelAnimationFrame', () => { queue = []; });
+    try {
+      mount(<Clock id="c" />, { engine: 'spotify' });
+      session();                                              // paused at 00:25
+      expect(queue).toHaveLength(0);
+      session({ position: 61000 });                           // a seek while paused
+      expect($('#c')!.textContent).toBe('01:01');
+      session({ status: 'playing' });
+      expect(queue.length).toBeGreaterThan(0);
+      session();
+      expect(queue).toHaveLength(0);
+    } finally { vi.unstubAllGlobals(); }
+  });
   it('SeekBar: holding pauses, the thumb and the clock follow, the release seeks then resumes; Escape cancels', async () => {
     const order: string[] = [];
     let seekDone: () => void = () => {};

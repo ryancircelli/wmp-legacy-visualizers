@@ -156,13 +156,14 @@ export function SeekBar({ className, id, pillClassName, track, rewind, forward }
   const sh = useShell(), get = () => sh.store.getState();
   const { media, canSeek, spotify } = usePlayback();
   const [hold] = useState(() => seekHold(sh));
-  const held = useScrub();
-  const f = usePosition((_, s) => seekFraction(s));
+  const held = useScrub(), box = useRef<HTMLDivElement>(null);
+  // in whole pixels of the row (wider than the track): a re-render is a visible move, not one per frame
+  const f = usePosition((_, s) => { const x = seekFraction(s), w = box.current?.clientWidth || 1000; return x < 0 ? x : Math.round(x * w) / w; });
   const d = duration(get());
   const pill = (sec: number, title: string) => (spotify
     ? { 'aria-hidden': false, title, onClick: () => get().commands.skip(sec) } : { 'aria-hidden': true });
   return (
-    <div className={className} id={id}>
+    <div className={className} id={id} ref={box}>
       <span className={pillClassName} {...pill(-10, 'Rewind 10 seconds')}>{rewind}</span>
       <Slider {...track} label="Seek" value={held !== null && d > 0 ? held / d : f} disabled={!media || !canSeek || !(d > 0)}
               onStart={hold.start} onMove={hold.move} onCommit={hold.commit} onCancel={hold.cancel}

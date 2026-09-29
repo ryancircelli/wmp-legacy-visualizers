@@ -74,17 +74,27 @@ if (typeof window !== 'undefined') {
   window.alchemyOccluded = (on) => { covered = on; if (!on) for (const f of [...seen]) f(); };
 }
 
-/** Run `cb` on every animation frame while mounted (and not covered). */
-export function useRaf(cb: () => void): void {
+/** Run `cb` on every animation frame while mounted, `on` and not covered. */
+export function useRaf(cb: () => void, on = true): void {
   const ref = useRef(cb);
   useLayoutEffect(() => { ref.current = cb; });
   useEffect(() => {
+    if (!on) return;
     let id = 0;
     const tick = () => { if (covered) { id = 0; return; } ref.current(); id = requestAnimationFrame(tick); };
     id = requestAnimationFrame(tick);
     const off = onSeen(() => { if (!id) id = requestAnimationFrame(tick); });
     return () => { off(); cancelAnimationFrame(id); };
-  }, []);
+  }, [on]);
+}
+
+/** Run `cb` whenever the clock may have moved: every frame while it runs (isPlaying) and `on`, and
+ *  on every store change (a seek or a state event while paused). A stopped clock asks for no frames. */
+export function useClock(cb: () => void, on = true): void {
+  const store = useShell().store, ref = useRef(cb), playing = useApp(isPlaying);
+  useLayoutEffect(() => { ref.current = cb; });
+  useEffect(() => store.subscribe(() => ref.current()), [store]);
+  useRaf(() => ref.current(), on && playing);
 }
 
 /** A value derived from the clock (position, capture time): computed in render, and re-rendered on
@@ -93,7 +103,7 @@ export function useFrame<T extends string | number | boolean>(fn: () => T): T {
   const [, force] = useReducer((x: number) => x + 1, 0);
   const v = fn(), last = useRef(v), f = useRef(fn);
   useLayoutEffect(() => { last.current = v; f.current = fn; });
-  useRaf(() => { if (f.current() !== last.current) force(); });
+  useClock(() => { if (f.current() !== last.current) force(); });
   return v;
 }
 
