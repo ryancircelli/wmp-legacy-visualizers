@@ -19,10 +19,19 @@ let persister: ReturnType<typeof createAsyncStoragePersister> | null = null;
 function spotifyPersister() {
   if (persister) return persister;
   const store = createStore('wmp-cache', 'queries');
-  return (persister = createAsyncStoragePersister({
+  const p = createAsyncStoragePersister({
     storage: { getItem: (k) => get<string>(k, store), setItem: (k, v: string) => set(k, v, store), removeItem: (k) => del(k, store) },
     key: 'spotify',
-  }));
+  });
+  // Every cache event asks for a save (a saved flag, lyrics, a fetch starting), and each save writes
+  // the whole cache: only write when something kept has new data.
+  let kept = '';
+  return (persister = { ...p, persistClient: (c) => {
+    const sig = c.clientState.queries.map((q) => q.queryHash + ':' + q.state.dataUpdatedAt).join();
+    if (sig === kept) return;
+    kept = sig;
+    return p.persistClient(c);
+  } });
 }
 
 /** Restores the last session's results into `client` (waiting `wait` ms at most) and keeps saving. */
