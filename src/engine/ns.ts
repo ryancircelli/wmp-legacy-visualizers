@@ -16,6 +16,10 @@ export interface Surface {
   w: number;
   h: number;
   px: Uint32Array;
+  /** Battery's (battery/index.ts Frame): the frame as 8-bit indices into `pal` until px is first read,
+   *  null after; px would be pal[idx]. gl.ts draws from these while they are there. */
+  readonly idx?: Uint8Array | null;
+  readonly pal?: Uint32Array;
 }
 
 /** One WMP Render() call's audio. state 2 = playing (WMP's value); wave bytes centred on 128. */

@@ -7,7 +7,7 @@
 // or throw (tests use it to prove the path ran). A Battery's front/back buffers and its surface
 // live in an arena (newArena): a kernel instance of its own whose memory is sized once, at resize,
 // and never grown, so the passes work on them in place. Arrays from anywhere else (the tests'
-// internals calls) take the JS ('wasm' mode refuses them). The palette (1 KB) is copied in per frame.
+// internals calls) take the JS ('wasm' mode refuses them). The palette (1 KB) is copied in per pass.
 // The module is under 1 KB, so it compiles synchronously; any refusal (no WebAssembly, no SIMD, a
 // CSP without wasm-unsafe-eval, memory.grow failing) leaves the JS in charge for good.
 import { A } from '../ns';

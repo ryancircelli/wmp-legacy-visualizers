@@ -6,7 +6,6 @@
 // Wrapped verbatim from src/75-battery.js (ARCHITECTURE.md "Engine"): same code, the IIFE opened into module scope.
 import { A, type Surface, type TimedLevel } from '../ns';
 import '../rand';
-import '../effect'; // A.makeSurface
 import './warps';
 import './draws';
 import './draws-a';
@@ -447,6 +446,36 @@ class Preset {
   }
 }
 
+// ---------------------------------------------------------------- the frame render() returns
+// front shown through LIVE32, which the DLL expands into its 32-bit DIB every frame (§1). Here px is
+// expanded when something reads it (the 2D presenter, a hash, a test): the WebGL2 presenter looks
+// the colours up itself from idx and pal (engine/gl.ts), so on that path the pass never runs. front
+// and LIVE32 change only in render() and resize(), so a late expansion is still the last frame.
+class Frame implements Surface {
+  declare eng: Battery;
+  declare w: number;
+  declare h: number;
+  declare out: Uint32Array;
+  declare stale: boolean;                // out is not this frame yet: the next read of px expands it
+
+  constructor(eng: Battery, w: number, h: number, out: Uint32Array) {
+    this.eng = eng; this.w = w; this.h = h; this.out = out; this.stale = false;
+  }
+
+  get px(): Uint32Array {
+    if (this.stale) {
+      this.stale = false;
+      var px = this.out, pal = this.eng.LIVE32, src = this.eng.front, n = this.w * this.h;
+      if (!paletteWasm(src, pal, px, n)) for (var i = 0; i < n; i++) px[i] = pal[src[i]];
+    }
+    return this.out;
+  }
+
+  // null once px has been read: whoever read it may have written it, and it is the frame from then on
+  get idx(): Uint8Array | null { return this.stale ? this.eng.front : null; }
+  get pal(): Uint32Array { return this.eng.LIVE32; }
+}
+
 // ---------------------------------------------------------------- CBattery
 interface BatteryDebugInfo {
   engine: string; preset: number; presetName: string;
@@ -491,7 +520,7 @@ class Battery {
   declare h: number;
   declare front: Uint8Array;
   declare back: Uint8Array;
-  declare surface: Surface;
+  declare surface: Frame;
   declare last: Surface;
   declare allocPending: boolean;
   declare presetNames: string[];
@@ -571,10 +600,11 @@ class Battery {
     this.w = Math.max(2, w | 0);
     this.h = Math.max(2, h | 0);
     // In the WebAssembly kernel's memory when there is one (kernel.ts), zeroed either way.
+    if (this.surface) void this.surface.px;                     // the old frame keeps its last image
     var ar = newArena(this.w * this.h);
     this.front = ar ? ar.front : new Uint8Array(this.w * this.h);
     this.back = ar ? ar.back : new Uint8Array(this.w * this.h);
-    this.surface = ar ? { w: this.w, h: this.h, px: ar.px } : A.makeSurface(this.w, this.h, 0);
+    this.surface = new Frame(this, this.w, this.h, ar ? ar.px : new Uint32Array(this.w * this.h));
     this.dctx.w = this.w; this.dctx.h = this.h;
     for (var i = 0; i < this.presets.length; i++) this.presets[i].setSize(this.w, this.h);
     for (i = 0; i < this.draws.length; i++) this.draws[i].setSize(this.w, this.h);
@@ -708,6 +738,7 @@ class Battery {
     switch (L.state) {
       case 0:                                                    // STOPPED
         if (this.idleDecay < 1) {
+          this.surface.stale = false;                            // px itself is the frame here
           this.surface.px.fill(this.LIVE32[1]);                   // FillRect(LIVE[1]) and no blit
           return (this.last = this.surface);
         }
@@ -728,8 +759,7 @@ class Battery {
       default: return this.last;
     }
     this.presetChanged = false;               // the DLL returns S_FALSE once here; a port may ignore it
-    var px = this.surface.px, pal = this.LIVE32, src = this.front, n = this.w * this.h;
-    if (!paletteWasm(src, pal, px, n)) for (var i = 0; i < n; i++) px[i] = pal[src[i]];
+    this.surface.stale = true;                // the palette pass runs when px is read (Frame)
     return (this.last = this.surface);
   }
 
