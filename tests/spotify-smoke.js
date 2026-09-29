@@ -98,6 +98,8 @@ const B = JSON.parse(fs.readFileSync(path.resolve(__dirname, '..', 'dist', 'spot
     getComputedStyle(document.querySelector('h1')).marginTop, getComputedStyle(document.body).margin]),
     ['40px', '26.8px', '8px'], 'the overlay\'s css leaked into the host page');
   await page.waitForFunction(() => /Mix A/.test(document.getElementById('wmp-root').shadowRoot.getElementById('spLib').textContent));
+  assert.strictEqual(await page.evaluate(() => getComputedStyle(document.querySelector('h1')).display), 'none',
+                     'Spotify\'s page is not rendered under the overlay');
 
   // Now Playing from the web player's player_state
   await page.waitForFunction(() => document.getElementById('wmp-root').shadowRoot.getElementById('pltitle').textContent === 'Song',
