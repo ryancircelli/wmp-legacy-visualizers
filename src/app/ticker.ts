@@ -1,9 +1,11 @@
 // The render loop the old shell ran (src/90-shell.js frame()): a fixed-fps accumulator on rAF,
 // at most 3 engine steps a frame, paused while the capture is, held while a non-visualizer view
-// covers the screen (full screen always shows the visualizer), and the first painted frame
-// reported once. The engine and the canvas come and go with the <Visualizer/> that shows them.
+// covers the screen (full screen always shows the visualizer), stopped while the desktop host's
+// window is covered (ui/shell.ts occluded), and the first painted frame reported once.
+// The engine and the canvas come and go with the <Visualizer/> that shows them.
 import { createEngine, makeLevel, nativeSize, type TimedLevel, type VisEngine } from '../engine';
 import type { AppStore } from '../model';
+import { occluded, onSeen } from '../ui/shell';
 
 export interface Ticker {
   attach(canvas: HTMLCanvasElement): () => void;
@@ -44,6 +46,7 @@ export function createTicker(store: AppStore, onFirstFrame: () => void): Ticker 
   }
 
   function frame(now: number) {
+    if (occluded()) { raf = 0; fps = 0; return; }  // covered: the engine pauses as it does minimized
     raf = requestAnimationFrame(frame);
     let dt = now - last;
     last = now;
@@ -98,8 +101,9 @@ export function createTicker(store: AppStore, onFirstFrame: () => void): Ticker 
       ro.observe(c);
       last = fpsAt = performance.now();
       raf = requestAnimationFrame(frame);
+      const offSeen = onSeen(() => { if (!raf) { last = fpsAt = performance.now(); raf = requestAnimationFrame(frame); } });
       return () => {
-        cancelAnimationFrame(raf); ro.disconnect(); clearTimeout(tm);
+        cancelAnimationFrame(raf); ro.disconnect(); clearTimeout(tm); offSeen();
         for (const off of offs) off();
         canvas = null; eng = null;
       };

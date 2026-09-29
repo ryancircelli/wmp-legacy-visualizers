@@ -820,6 +820,15 @@ What the host injects into the page, before any page script: `window.alchemyElec
 system audio in preference to asking for a display-media loopback. `?audio=ws` does the same thing
 in a plain browser against any server that serves `/audio`. See `../NOTES-ui.md`.
 
+A window nobody can see does not draw. WebView2 tracks no occlusion for a window it is embedded in:
+measured 2026-09-29, the player under an opaque window drew at 60 fps, 27 % of a core. `win32.ts
+occluded()` asks four times a second, and whenever the window is activated, whether it is minimized,
+cloaked (another virtual desktop), on no monitor, behind the lock screen, or covered pixel for pixel
+by visible, non-layered windows above it. Layered and click-through windows never count: the
+full-screen GeForce and Game Bar overlays are both. The host tells the page on each change
+(`window.alchemyOccluded`), and every frame loop in it (the visualizer's, `useRaf`) stops until the
+window is seen again. Covered: 0.2 % of a core. Half covered or under an overlay: unchanged.
+
 `gui_subsystem.ts` flips two bytes in the compiled PE header, `Subsystem` 3 (console) -> 2 (GUI).
 `deno compile` has no flag for it and a console-subsystem screensaver opens a console window next to
 itself.

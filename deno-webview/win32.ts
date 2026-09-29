@@ -43,6 +43,9 @@ const DWM_SYMBOLS = {
 
 const GDI_SYMBOLS = {
   CreateSolidBrush: { parameters: ["u32"], result: "pointer" },
+  CreateRectRgn: { parameters: ["i32", "i32", "i32", "i32"], result: "pointer" },
+  CombineRgn: { parameters: ["pointer", "pointer", "pointer", "i32"], result: "i32" },
+  DeleteObject: { parameters: ["pointer"], result: "i32" },
 } as const;
 
 const SYMBOLS = {
@@ -98,6 +101,12 @@ const SYMBOLS = {
   GetWindowPlacement: { parameters: ["pointer", "buffer"], result: "i32" },
   GetWindowRect: { parameters: ["pointer", "buffer"], result: "i32" },
   ClientToScreen: { parameters: ["pointer", "buffer"], result: "i32" },
+  IsWindowVisible: { parameters: ["pointer"], result: "i32" },
+  GetWindowLongPtrW: { parameters: ["pointer", "i32"], result: "isize" },
+  MonitorFromWindow: { parameters: ["pointer", "u32"], result: "pointer" },
+  OpenInputDesktop: { parameters: ["u32", "i32", "u32"], result: "pointer" },
+  CloseDesktop: { parameters: ["pointer"], result: "i32" },
+  SetTimer: { parameters: ["pointer", "usize", "u32", "pointer"], result: "usize" },
 } as const;
 
 const SHELL_SYMBOLS = {
@@ -131,7 +140,7 @@ const SM_CXSCREEN = 0, SM_CYSCREEN = 1;
 const WM_NCLBUTTONDOWN = 0xA1, HTCAPTION = 2n, HTBOTTOMRIGHT = 17n;
 const WM_NCCALCSIZE = 0x83, WM_SIZE = 0x05, WM_DPICHANGED = 0x02E0;
 const WM_GETMINMAXINFO = 0x24, WM_CLOSE = 0x10, WM_DESTROY = 0x02;
-const WM_ACTIVATE = 0x06, WA_INACTIVE = 0;
+const WM_ACTIVATE = 0x06, WA_INACTIVE = 0, WM_TIMER = 0x113;
 const WM_KEYDOWN = 0x100, WM_SYSKEYDOWN = 0x104;
 const WM_LBUTTONDOWN = 0x201, WM_RBUTTONDOWN = 0x204, WM_MBUTTONDOWN = 0x207;
 const SIZE_RESTORED = 0, SIZE_MINIMIZED = 1, SIZE_MAXIMIZED = 2;
@@ -370,6 +379,8 @@ export type HostOpts = {
   onActivate: () => void;
   /** The window went to or came back from maximized; the page squares its own corners to match. */
   onMaximize?: (maximized: boolean) => void;
+  /** The window stopped or started being seen at all (`occluded`); asked four times a second. */
+  onOccluded?: (hidden: boolean) => void;
 };
 
 /**
@@ -462,6 +473,7 @@ export function createHost(o: HostOpts): Deno.PointerValue {
     null,
   );
   if (!hwnd) throw new Error("CreateWindowExW failed");
+  if (o.onOccluded) u.SetTimer(hwnd, BigInt(OCCLUSION_TIMER), 250, null);
   host = { hwnd, shown: false, max: false, onMaximize: o.onMaximize };
   noDwmChrome(hwnd);
   appIcon(hwnd, o.icon);
@@ -499,6 +511,12 @@ function hostProc(o: HostOpts) {
     try {
       f();
     } catch { /* one failed callback is not worth the window */ }
+  };
+  let hidden = false;
+  const seen = (h: Deno.PointerValue) => {
+    if (!o.onOccluded) return;
+    const now = occluded(h);
+    if (now !== hidden) safe(() => o.onOccluded!(hidden = now));
   };
   return new Deno.UnsafeCallback(
     { parameters: ["pointer", "u32", "usize", "pointer"], result: "isize" } as const,
@@ -552,7 +570,13 @@ function hostProc(o: HostOpts) {
         // top-level window, the page is in a child of it, and a key goes to whatever has the focus:
         // without this the screensaver cannot be dismissed with the keyboard.
         case WM_ACTIVATE:
-          if (Number(wp) !== WA_INACTIVE) safe(o.onActivate);
+          if (Number(wp) !== WA_INACTIVE) {
+            safe(o.onActivate);
+            safe(() => seen(h)); // brought to the front: resume now, not at the next tick
+          }
+          return 0n;
+        case WM_TIMER:
+          if (Number(wp) === OCCLUSION_TIMER) safe(() => seen(h));
           return 0n;
         case WM_DPICHANGED: {
           // Per-monitor v2 hands over the box the window should take on the new monitor and expects
@@ -874,4 +898,62 @@ export function fullToggle(hwnd: Deno.PointerValue, on: boolean) {
     u.SetWindowPos(hwnd, HWND_NOTOPMOST, g.x, g.y, g.w, g.h, SWP_FRAMECHANGED);
     if (g.max) u.ShowWindow(hwnd, SW_MAXIMIZE);
   }
+}
+
+const OCCLUSION_TIMER = 0x0cc1;
+const GWL_EXSTYLE = -20, WS_EX_LAYERED = 0x80000, WS_EX_TRANSPARENT = 0x20;
+const GW_HWNDPREV = 3, DWMWA_EXTENDED_FRAME_BOUNDS = 9, DWMWA_CLOAKED = 14;
+const DESKTOP_SWITCHDESKTOP = 0x100, RGN_DIFF = 4, NULLREGION = 1;
+
+const cloaked = (h: Deno.PointerValue) => {
+  const v = new Uint32Array(1);
+  return dwmapi().DwmGetWindowAttribute(h, DWMWA_CLOAKED, new Uint8Array(v.buffer), 4) === 0 &&
+    v[0] !== 0;
+};
+
+/** What of a window is drawn on screen: DWM's frame, without the invisible resize borders that
+ * `GetWindowRect` counts (7 px a side on Windows 11, and transparent). */
+function frameBounds(h: Deno.PointerValue): Int32Array | null {
+  const r = new Int32Array(4), b = new Uint8Array(r.buffer);
+  if (dwmapi().DwmGetWindowAttribute(h, DWMWA_EXTENDED_FRAME_BOUNDS, b, 16) === 0) return r;
+  return user32().GetWindowRect(h, b) ? r : null;
+}
+
+/**
+ * Whether nothing of the window can be seen: minimized, on another virtual desktop (cloaked), on no
+ * monitor, behind the lock screen (the input desktop is Winlogon's, which we may not open), or every
+ * pixel of it under windows above it in the z-order. WebView2 tracks none of this for a window it is
+ * embedded in — measured 2026-09-29: a window under an opaque one drew at 60 fps, 27 % of a core.
+ *
+ * A window above counts only if it is visible, not minimized or cloaked, and neither layered nor
+ * click-through: those can be see-through (the GeForce and Game Bar overlays are full-screen,
+ * topmost and transparent), so they are never taken for a cover. Rectangles only: the few corner
+ * pixels a rounded window above leaves uncovered are not worth drawing 60 frames a second for.
+ */
+export function occluded(hwnd: Deno.PointerValue): boolean {
+  const u = user32(), g = gdi32();
+  if (u.IsIconic(hwnd) || cloaked(hwnd) || !u.MonitorFromWindow(hwnd, 0)) return true;
+  const desk = u.OpenInputDesktop(0, 0, DESKTOP_SWITCHDESKTOP);
+  if (!desk) return true;
+  u.CloseDesktop(desk);
+  const own = frameBounds(hwnd);
+  if (!own) return false;
+  const left = g.CreateRectRgn(own[0], own[1], own[2], own[3]);
+  let gone = false;
+  try {
+    for (let w = u.GetWindow(hwnd, GW_HWNDPREV); w && !gone; w = u.GetWindow(w, GW_HWNDPREV)) {
+      if (!u.IsWindowVisible(w) || u.IsIconic(w) || cloaked(w)) continue;
+      if (Number(u.GetWindowLongPtrW(w, GWL_EXSTYLE)) & (WS_EX_LAYERED | WS_EX_TRANSPARENT)) {
+        continue;
+      }
+      const r = frameBounds(w);
+      if (!r) continue;
+      const cover = g.CreateRectRgn(r[0], r[1], r[2], r[3]);
+      gone = g.CombineRgn(left, left, cover, RGN_DIFF) === NULLREGION;
+      g.DeleteObject(cover);
+    }
+  } finally {
+    g.DeleteObject(left);
+  }
+  return gone;
 }

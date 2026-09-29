@@ -739,6 +739,13 @@ if (import.meta.main) {
     zoomed = max;
     webview?.eval(`document.body.classList.toggle('maximized', ${max});`);
   };
+  /** Whether the window can be seen at all (win32.ts `occluded`): the page stops drawing while it
+   * cannot. Remembered for the same reason, and pushed again by `alchemyReady`. */
+  let covered = false;
+  const tellOccluded = (on: boolean) => {
+    covered = on;
+    webview?.eval(`window.alchemyOccluded?.(${on});`);
+  };
 
   hwnd = createHost({
     // No native caption in either window, so this is what the taskbar and Alt+Tab show.
@@ -750,6 +757,7 @@ if (import.meta.main) {
     onClose: () => quit("window closed"),
     onActivate: () => void webview?.focus(),
     onMaximize: mode === "s" ? undefined : tellMaximized,
+    onOccluded: mode === "s" ? undefined : tellOccluded,
   });
   mark("host window created");
   // Placed before it is shown, so the size, the position and the frame without a top border are all
@@ -953,6 +961,7 @@ if (import.meta.main) {
   w.bind("alchemyReady", () => {
     mark(`page painted ${Date.now() - navigated} ms after navigate`);
     tellMaximized(zoomed);
+    if (covered) tellOccluded(true);
   });
   w.bind("alchemyCarried", (a) => {
     log(`settings carried from ${VHOST_OLD}: ${a[0]} chars`);

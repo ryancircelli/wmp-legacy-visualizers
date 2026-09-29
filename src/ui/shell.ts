@@ -58,15 +58,32 @@ export const VIEW_LABELS = [
   ['now', 'Now Playing'], ['guide', 'Media Guide'], ['library', 'Media Library'], ['search', 'Search'], ['radio', 'Radio Tuner'],
 ] as const;
 
-/** Run `cb` on every animation frame while mounted. */
+// Covered: the desktop host calls window.alchemyOccluded when its window stops or starts being seen
+// (deno-webview/win32.ts occluded). WebView2 runs rAF at 60 fps for a window nobody can see, so every
+// frame loop stops asking while it is covered and is restarted when it is not, as minimized does.
+let covered = false;
+const seen = new Set<() => void>();
+/** Whether the host's window is covered; a frame loop that finds it so stops and waits for onSeen. */
+export const occluded = (): boolean => covered;
+/** Runs `f` each time the window is seen again; returns the unsubscribe. */
+export function onSeen(f: () => void): () => void {
+  seen.add(f);
+  return () => { seen.delete(f); };
+}
+if (typeof window !== 'undefined') {
+  window.alchemyOccluded = (on) => { covered = on; if (!on) for (const f of [...seen]) f(); };
+}
+
+/** Run `cb` on every animation frame while mounted (and not covered). */
 export function useRaf(cb: () => void): void {
   const ref = useRef(cb);
   useLayoutEffect(() => { ref.current = cb; });
   useEffect(() => {
     let id = 0;
-    const tick = () => { ref.current(); id = requestAnimationFrame(tick); };
+    const tick = () => { if (covered) { id = 0; return; } ref.current(); id = requestAnimationFrame(tick); };
     id = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(id);
+    const off = onSeen(() => { if (!id) id = requestAnimationFrame(tick); });
+    return () => { off(); cancelAnimationFrame(id); };
   }, []);
 }
 

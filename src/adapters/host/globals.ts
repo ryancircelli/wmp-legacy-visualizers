@@ -29,6 +29,8 @@ declare global {
     alchemyWinClose?: () => void;
     alchemyWinSize?: () => void;
     alchemyWinFull?: (on: boolean) => void;
+    /** set by the ticker; the desktop host calls it when its window stops or starts being seen */
+    alchemyOccluded?: (on: boolean) => void;
     alchemySpotifyLogout?: () => void;
     /** a newer exe is out (deno-webview/update.ts): offer the download */
     alchemyHostUpdate?: boolean;
