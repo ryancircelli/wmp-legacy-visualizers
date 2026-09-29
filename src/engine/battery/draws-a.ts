@@ -23,6 +23,9 @@ import type { BatteryDrawCtx } from './draws';
 
 // eslint-disable-next-line @typescript-eslint/unbound-method -- A.sin/A.cos never read `this`; hoisted once, not per-call, on purpose
 var F = Math.fround, trunc = Math.trunc, sin = A.sin || Math.sin, cos = A.cos || Math.cos, sqrt = Math.sqrt;
+// SC[0] = sin, SC[1] = cos of one angle: the same bits as the two calls, one reduction.
+// eslint-disable-next-line @typescript-eslint/unbound-method -- A.sincos never reads `this`; hoisted once on purpose
+var sincos = A.sincos, SC = new Float64Array(2);
 
 // DLL literals — never "fix" these to Math.PI / 2*Math.PI.
 var TWO_PI_F = 6.2831854820251465;    // 0x18088c468 = (double)(float)2pi
@@ -438,8 +441,9 @@ class CJDar extends BatteryDraw {
       else if (mode === 1) { this.toggle = (this.toggle + 1) % 2; negate = this.toggle === 0; }
       else negate = A.rand() % 2 === 1;
       ang = this.phase + (negate ? -delta : delta);        // reloaded from phase, never accumulated
-      x1 = trunc(cos(ang) * rad) + cx;
-      y1 = trunc(sin(ang) * rad) + cy;
+      sincos(ang, SC);
+      x1 = trunc(SC[1] * rad) + cx;
+      y1 = trunc(SC[0] * rad) + cy;
 
       stroke(buf, W, H, x0, y0, x1, y1, this.ax, this.ay, 100, this.colour, 0xff, useLines, 3);
       if (mirror)
