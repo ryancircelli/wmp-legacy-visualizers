@@ -18,6 +18,9 @@ export interface Ticker {
   debugText(): string;
 }
 
+/** ms: rAF timestamps jitter by about half a millisecond; any display under 500 Hz has vsyncs further apart than this. */
+const SLACK = 2;
+
 function mark(n: string) {
   window.alchemyMarks?.push(n + '=' + Math.round(performance.now()));
 }
@@ -58,7 +61,10 @@ export function createTicker(store: AppStore, onFirstFrame: () => void): Ticker 
     const paused = t.paused || !!st.playback.capture?.paused;
     acc += dt;
     let runs = 0, drew = false;
-    while (acc >= step && runs < 3) {             // hard cap: no spiral of death
+    // SLACK: a step due within 2 ms is taken on this vsync. Without it a 120 Hz display (two vsyncs
+    // per 60 fps step) sums two rAF intervals to a hair under or over the step, and the steps land
+    // 8 and 25 ms apart instead of every 16.7 (measured 2026-09-29: 5-59% of presents per run; 0-1% with it).
+    while (acc >= step - SLACK && runs < 3) {     // hard cap: no spiral of death
       acc -= step; runs++;
       if (eng && !paused) { eng.render(fillLevel()); drew = true; }
     }
