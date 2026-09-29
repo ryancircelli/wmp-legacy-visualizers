@@ -67,6 +67,26 @@ describe('movebits: WebAssembly vs JavaScript', () => {
     }
   });
 
+  it('an Engine resized mid-run (surfaces and tables move to a new arena) matches the JS path', async () => {
+    await import('../../src/engine/alchemy');
+    const { InputGen } = await import('./golden/harness');
+    const run = (mode: 'js' | 'wasm'): Uint32Array[] => {
+      A.moveBitsMode = mode;
+      A.srand(1);
+      const e = new A.Engine({ width: 64, height: 48 }), gen = new InputGen(), out: Uint32Array[] = [];
+      e.seed(5);
+      for (const [w, h] of [[64, 48], [80, 60], [64, 48]] as const) {
+        e.resize(w, h);
+        for (let f = 0; f < 150; f++) e.render(gen.next());
+        out.push(e.A.px.slice());
+        expect(e.A.px.buffer.byteLength > e.A.px.byteLength).toBe(mode === 'wasm');   // resident only on WASM
+      }
+      return out;
+    };
+    const want = run('js'), got = run('wasm');
+    for (let k = 0; k < want.length; k++) expect(bytes(got[k]!).equals(bytes(want[k]!))).toBe(true);
+  });
+
   it('is small enough for a synchronous compile on a browser main thread (< 4 KB)', () => {
     expect(atob(MOVEBITS_WASM).length).toBeLessThan(4096);
   });
