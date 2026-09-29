@@ -110,6 +110,7 @@ export class Shift extends A.Effect {
   declare _intended: boolean;
   declare _p: WarpPoint;
   declare _cur: (Int32Array | null)[];
+  declare _row: Int32Array | null;
   declare _arena: Arena | null;
   constructor() {
     super();
@@ -141,6 +142,7 @@ export class Shift extends A.Effect {
 
     this._p = { x: 0, y: 0 };                 // the one point object; no per-pixel alloc
     this._cur = new Array<Int32Array | null>(NLADDER);   // scratch: ladder buffers for the build
+    this._row = null;                         // scratch: a row's (ox, oy, iX, iY) for the ladder
     this._arena = null;                       // A.px, B.px and every table, resident for the kernel
   }
 
@@ -292,6 +294,11 @@ export class Shift extends A.Effect {
   }
 
   // ---- 18000cd20 ShiftBackgroundBuild: exactly 3 scanlines per call --------
+  // Per destination pixel the DLL writes the back table, then that pixel's entry in each of the 22
+  // ladder tables. Each entry depends only on the pixel's own (sx, sy, ox, oy), so here a row's
+  // pixels are mapped first (their four values kept in _row) and then each ladder table's row is
+  // written in one run: the same values into the same entries, a table at a time instead of 22
+  // tables a pixel.
   _build3() {
     const back = this.back, front = this.front;
     if (!back.buf || !back.dirty || !this.rowOff) return;
@@ -310,11 +317,13 @@ export class Shift extends A.Effect {
       }
     }
     const ramp = this.ramp!, half = this._rampHalf, p = this._p;
+    let row = this._row;
+    if (ladder && (!row || row.length !== 4 * W)) row = this._row = new Int32Array(4 * W);
     let y = back.cursorY;
     for (let pass = 0; pass < 3; pass++) {
       if (y === H) { back.dirty = false; break; }
-      let o = rowOff[y];
-      for (let x = 0; x < W; x++, o++) {
+      const o0 = rowOff[y];
+      for (let x = 0, o = o0; x < W; x++, o++) {
         this._map2(F1, F2, x, y);
         const sx = p.x | 0, sy = p.y | 0;
         dst[o] = rowOff[sy] + sx;
@@ -322,12 +331,18 @@ export class Shift extends A.Effect {
           const s = old![o] >>> 0;
           const ox = W > 0 ? s % W : 0;
           const oy = (s / W) | 0;                 // unsigned divide
-          const iY = half + (sy - oy), iX = half + (sx - ox);
-          for (let k = 0; k < NLADDER; k++) {
-            const r = ramp[k];
+          const q = 4 * x;
+          row![q] = ox; row![q + 1] = oy;
+          row![q + 2] = half + (sx - ox); row![q + 3] = half + (sy - oy);   // iX, iY
+        }
+      }
+      if (ladder) {
+        for (let k = 0; k < NLADDER; k++) {
+          const r = ramp[k], b = cur[k]!;
+          for (let x = 0, q = 0, o = o0; x < W; x++, q += 4, o++) {
             // `| 0` keeps an out-of-range ramp read (the portrait bug) from
             // poisoning the table with NaN; it degrades to "no displacement".
-            cur[k]![o] = rowOff[oy + (r[iY] | 0)] + ox + (r[iX] | 0);
+            b[o] = rowOff[row![q + 1] + (r[row![q + 3]] | 0)] + row![q] + (r[row![q + 2]] | 0);
           }
         }
       }
