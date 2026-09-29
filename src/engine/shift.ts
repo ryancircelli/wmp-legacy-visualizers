@@ -7,6 +7,7 @@ import { A } from './ns';
 import './rand';
 import './effect';
 import './kernels';
+import { moveBitsWasm } from './movebits';
 import type { WarpKernel, WarpPoint, EffectCtx } from './effect';
 // mpvis.DLL's sin/cos are ucrtbase's (_o_sin/_o_cos -> 0x1800aba70/0x1800a7730): the clones in 00-rand.js.
 // eslint-disable-next-line @typescript-eslint/unbound-method, @typescript-eslint/no-unused-vars -- A.sin/A.cos never read `this`, hoisted once on purpose (see 00-rand.js); cos is verbatim from the DLL wrapper and genuinely unused here
@@ -392,12 +393,14 @@ export class Shift extends A.Effect {
     if (!intended && (n % 4) !== 0) { ctx.A = sb; ctx.B = sa; return; }
 
     const tab = t.buf!, src = sa.px, dst = sb.px;
-    for (let i = 0; i < n; i++) dst[i] = src[tab[i]];   // nearest neighbour, unclamped
+    if (!moveBitsWasm(src, tab, dst, W, H)) {            // the same gather + blur in WASM SIMD
+      for (let i = 0; i < n; i++) dst[i] = src[tab[i]];   // nearest neighbour, unclamped
+      let y = 1;
+      for (; y + 1 < H - 1; y += 2) blurRowPair(src, dst, W, y * W);
+      if (y < H - 1) blurRow(src, dst, W, y * W);
+    }
 
     const end = (H - 1) * W;
-    let y = 1;
-    for (; y + 1 < H - 1; y += 2) blurRowPair(src, dst, W, y * W);
-    if (y < H - 1) blurRow(src, dst, W, y * W);
 
     const bg = (ctx.bgColor || 0) >>> 0;
     src.fill(bg, 0, W - 1);          // 1800125e0 paints W-1 pixels per border row (spec 07)

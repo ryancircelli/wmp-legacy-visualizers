@@ -40,6 +40,8 @@ export interface AlchemyNS {
   Effect: typeof Effect;
   WarpKernel: typeof WarpKernel;
   // Alchemy (mpvis.DLL)
+  /** Shift's gather + blur: 'auto' = WebAssembly when available, else JS (movebits.ts). */
+  moveBitsMode: 'auto' | 'js' | 'wasm';
   Shift: typeof Shift;
   Kernels: typeof Kernels;
   Draw: typeof Draw;

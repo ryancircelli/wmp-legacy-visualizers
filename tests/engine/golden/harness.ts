@@ -203,6 +203,9 @@ export const RUNS: Run[] = [
   })),
 ];
 
+/** Alchemy's gather + blur path (A.moveBitsMode): forced WASM, forced JS, or flipping every 37 frames. */
+export type MoveBitsPath = 'wasm' | 'js' | 'alternate';
+
 interface Renderer { render(L: TimedLevel): Surface | null; frameHash(s: Surface | null): number; }
 
 function withClock<T>(seed: number, f: () => T): T {
@@ -246,12 +249,13 @@ function makeRenderer(run: Run): Renderer {
 }
 
 /** One entry per BLOCK frames: "<hash of the block's frame hashes + rand counts>:<rand() draws in the block>". */
-export function runGolden(run: Run, frames: number): string[] {
+export function runGolden(run: Run, frames: number, path?: MoveBitsPath): string[] {
   const gen = new InputGen();
   const r = makeRenderer(run);
   const out: string[] = [];
   let bh = 0, br = 0;
   for (let f = 0; f < frames; f++) {
+    if (path) A.moveBitsMode = path === 'alternate' ? (((f / 37) | 0) % 2 ? 'js' : 'wasm') : path;
     const L = gen.next();
     const r0 = randN;
     const s = r.render(L);
@@ -263,6 +267,7 @@ export function runGolden(run: Run, frames: number): string[] {
       bh = 0; br = 0;
     }
   }
+  A.moveBitsMode = 'auto';
   return out;
 }
 
