@@ -204,12 +204,13 @@ export const RUNS: Run[] = [
 ];
 
 /** The WebAssembly kernels' path (A.moveBitsMode for Alchemy's gather + blur, A.batteryKernel for
- * Battery's blur/palette): forced WASM, forced JS, or flipping every 37 frames. */
+ * Battery's blur/palette, A.trigMode for both engines' sin/cos): forced WASM, forced JS, or flipping
+ * every 37 frames. */
 export type MoveBitsPath = 'wasm' | 'js' | 'alternate';
 
 function setPath(path: MoveBitsPath | undefined, f: number): void {
   if (!path) return;
-  A.moveBitsMode = A.batteryKernel = path === 'alternate' ? (((f / 37) | 0) % 2 ? 'js' : 'wasm') : path;
+  A.moveBitsMode = A.batteryKernel = A.trigMode = path === 'alternate' ? (((f / 37) | 0) % 2 ? 'js' : 'wasm') : path;
 }
 
 interface Renderer { render(L: TimedLevel): Surface | null; frameHash(s: Surface | null): number; }
@@ -274,7 +275,7 @@ export function runGolden(run: Run, frames: number, path?: MoveBitsPath): string
       bh = 0; br = 0;
     }
   }
-  A.moveBitsMode = A.batteryKernel = 'auto';
+  A.moveBitsMode = A.batteryKernel = A.trigMode = 'auto';
   return out;
 }
 

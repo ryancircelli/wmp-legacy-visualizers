@@ -3,6 +3,7 @@
 // in engine code.
 // Wrapped verbatim from src/00-rand.js (ARCHITECTURE.md "Engine"): same code, the IIFE opened into module scope.
 import { A } from './ns';
+import { TRIG_WASM } from './trig-wasm';
 var seed = 1; // MSVC starts at 1
 
 A.srand = function (s) { seed = s | 0; };
@@ -279,7 +280,6 @@ function ucrtSin(x: number): number {
   var y = (q & 1) ? cosPoly(r, RR[0]) : sinPoly(r, RR[0]);
   return ((q & 2) !== 0) !== (x < 0) ? -y : y;
 }
-A.sin = ucrtSin;
 
 function ucrtCos(x: number): number {
   var ax = abs(x);
@@ -297,14 +297,13 @@ function ucrtCos(x: number): number {
   var y = (q & 1) ? sinPoly(r, RR[0]) : cosPoly(r, RR[0]);
   return ((q + 1) & 2) ? -y : y;
 }
-A.cos = ucrtCos;
 
 // out[0] = sin(x), out[1] = cos(x), bit for bit what A.sin / A.cos return: where both reduce
 // (|x| > pi/4), they reduce identically and each takes one of the same two polynomials on the
 // same (r, rr), so one reduction and one evaluation of each polynomial serve both. The results go
 // out through a typed array: a double returned from a call that is not inlined is a heap
 // allocation, and these run per pixel of a stroke.
-A.sincos = function (x, out) {
+function ucrtSincos(x: number, out: Float64Array): void {
   var ax = abs(x);
   if (ax > PIO4 && ax <= 1.7976931348623157e308) {
     var r = reduce(ax), q = reg_, rr = RR[0];
@@ -315,4 +314,67 @@ A.sincos = function (x, out) {
   } else {
     out[0] = ucrtSin(x); out[1] = ucrtCos(x);
   }
+}
+
+// ---------------------------------------------------------------- the same sin/cos in WebAssembly
+// assembly/trig.ts (embedded as ./trig-wasm.ts) is the clone above, op for op: the same f64
+// arithmetic and the same emulated fma, so it returns the same bits, in about half the time; and its
+// doubles stay unboxed where the JavaScript's, returned from calls V8 does not inline, are heap
+// allocations. Only |x| < 2e7 goes there: the Payne-Hanek reduction, NaN and the infinities stay here.
+//
+// A.trigMode: 'auto' (default) = WASM when it loads, else JS; 'js' = always JS; 'wasm' = WASM or throw
+// (tests use it to prove the path ran). The engines hoist A.sin/A.cos/A.sincos once, so these three
+// stay the same functions and read the mode per call. The module (2 KB) compiles synchronously on
+// the first call that wants it; any refusal (no WebAssembly, a CSP without wasm-unsafe-eval) leaves
+// the JavaScript in charge for good.
+interface TrigKernel {
+  memory: WebAssembly.Memory;
+  heapBase: () => number;
+  sin: (x: number) => number;
+  cos: (x: number) => number;
+  sincos: (x: number, out: number) => void;
+}
+var trigMode: 'auto' | 'js' | 'wasm' = 'auto', K: TrigKernel | null = null, tried = false, on = false;
+var ksin = ucrtSin, kcos = ucrtCos, ksc: TrigKernel['sincos'] = function () {}, KO = 0, KF = F64;
+function trigKernel(): TrigKernel | null {
+  if (tried) return K;
+  tried = true;
+  try {
+    var bin = atob(TRIG_WASM), bytes = new Uint8Array(bin.length);
+    for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    var k = new WebAssembly.Instance(new WebAssembly.Module(bytes), {}).exports as unknown as TrigKernel;
+    KO = k.heapBase();
+    if (k.memory.buffer.byteLength < KO + 16) k.memory.grow(1);         // it starts empty; never grown again
+    KF = new Float64Array(k.memory.buffer, KO, 2);
+    ksin = k.sin; kcos = k.cos; ksc = k.sincos; K = k;
+  } catch {
+    K = null;                                        // no WebAssembly / CSP: JS from now on
+  }
+  return K;
+}
+function settle(): void { on = trigMode !== 'js' && trigKernel() !== null; }
+Object.defineProperty(A, 'trigMode', {
+  enumerable: true,
+  get: function () { return trigMode; },
+  set: function (m: 'auto' | 'js' | 'wasm') {
+    if (m === 'wasm' && !trigKernel()) throw new Error('trig: the WebAssembly sin/cos is unavailable here');
+    trigMode = m; settle();
+  },
+});
+
+A.sin = function (x) {
+  if (on) { if (x < 2e7 && x > -2e7) return ksin(x); }
+  else if (!tried && trigMode !== 'js') settle();
+  return ucrtSin(x);
+};
+A.cos = function (x) {
+  if (on) { if (x < 2e7 && x > -2e7) return kcos(x); }
+  else if (!tried && trigMode !== 'js') settle();
+  return ucrtCos(x);
+};
+A.sincos = function (x, out) {
+  if (on) {
+    if (x < 2e7 && x > -2e7) { ksc(x, KO); out[0] = KF[0]; out[1] = KF[1]; return; }
+  } else if (!tried && trigMode !== 'js') settle();
+  ucrtSincos(x, out);
 };

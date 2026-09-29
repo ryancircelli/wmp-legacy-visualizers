@@ -126,8 +126,8 @@ npm ci                      # once, and after package-lock.json changes
 npm run dev                 # Vite dev server with hot reload
 npm run typecheck && npm run lint && npm test   # tsc, eslint, vitest
 npm run build               # -> dist/ (below) and alchemy.html at the root
-npm run build:wasm          # after editing assembly/movebits.ts (AssemblyScript): regenerates
-                            # src/engine/movebits-wasm.ts, which npm test checks is current
+npm run build:wasm          # after editing assembly/*.ts (AssemblyScript): regenerates the
+                            # src/engine/**/*-wasm.ts modules, which npm test checks are current
 ```
 
 `npm run build` writes everything the four formats are made from:
@@ -189,8 +189,9 @@ Measured on 2026-09-24 and re-run on the TypeScript engine on 2026-09-25 with th
 - **Guarded since.** Any faster engine code must match the verified engine frame for frame:
   `npm run test:golden` renders 45 runs across all three visualizers, seeds, presets and sizes and
   compares each frame's hash with the recorded output of the engine as verified; `npm test` runs a
-  short slice of it. Alchemy's runs go three times: on its WebAssembly (SIMD) gather and blur, on
-  the JavaScript one that stays as the fallback, and switching between the two mid-run. The
+  short slice of it. Alchemy's and Battery's runs go three times: on WebAssembly (the SIMD
+  passes and the `sin`/`cos` clone), on the JavaScript that stays as the fallback, and switching
+  between the two mid-run. The
   2026-09-28 speedups (Alchemy about 20%, Battery 16 to 37%, the heavier Bars and Waves presets
   about 18% per frame) passed it byte for byte.
 - **What is not compared.** Battery's final stretch to the window is GDI's, not the DLL's, so its
