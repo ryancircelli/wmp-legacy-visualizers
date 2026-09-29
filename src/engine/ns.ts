@@ -49,7 +49,7 @@ export interface AlchemyNS {
   Draw: typeof Draw;
   Engine: typeof Engine;
   // Bars and Waves, Battery (wmp.dll)
-  /** Battery's warp, blur and palette passes: 'auto' = WebAssembly when available, else JS (battery/kernel.ts). */
+  /** Battery's blur and palette passes: 'auto' = WebAssembly when available, else JS (battery/kernel.ts). */
   batteryKernel: 'auto' | 'js' | 'wasm';
   Bars: typeof Bars;
   BatteryWarps: typeof BatteryWarps;

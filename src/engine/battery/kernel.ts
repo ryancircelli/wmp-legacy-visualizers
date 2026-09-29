@@ -1,4 +1,4 @@
-// Battery's warp, blur and palette passes in WebAssembly (assembly/battery.ts, embedded as
+// Battery's blur and palette passes in WebAssembly (assembly/battery.ts, embedded as
 // ./kernel-wasm.ts), with index.ts's JavaScript as the fallback. Both run the same integer ops, so
 // the output is identical whichever runs, frame by frame (tests/engine/golden runs every Battery
 // fixture on each path and on a path that flips between them).
@@ -7,8 +7,7 @@
 // or throw (tests use it to prove the path ran). A Battery's front/back buffers and its surface
 // live in an arena (newArena): a kernel instance of its own whose memory is sized once, at resize,
 // and never grown, so the passes work on them in place. Arrays from anywhere else (the tests'
-// internals calls) always take the JS. The palette (1 KB) and the warp map (4 bytes a pixel) are
-// copied in per call; the map is rebuilt in place by recalc(), so caching it would need a version.
+// internals calls) take the JS ('wasm' mode refuses them). The palette (1 KB) is copied in per frame.
 // The module is under 1 KB, so it compiles synchronously; any refusal (no WebAssembly, no SIMD, a
 // CSP without wasm-unsafe-eval, memory.grow failing) leaves the JS in charge for good.
 import { A } from '../ns';
@@ -17,7 +16,6 @@ import { BATTERY_WASM } from './kernel-wasm';
 interface Kernel {
   memory: WebAssembly.Memory;
   heapBase(): number;
-  warp(src: number, map: number, dst: number, n: number): void;
   blur(src: number, dst: number, w: number, h: number): void;
   palette(src: number, pal: number, dst: number, n: number): void;
 }
@@ -29,7 +27,6 @@ export interface Arena {
   back: Uint8Array;
   px: Uint32Array;
   pal: Uint32Array;
-  map: Int32Array;
 }
 
 A.batteryKernel = 'auto';
@@ -47,7 +44,7 @@ export function newArena(n: number): Arena | null {
       M = new WebAssembly.Module(bytes);
     }
     const k = new WebAssembly.Instance(M, {}).exports as unknown as Kernel;
-    const s8 = (n + 15) & ~15, at = k.heapBase(), bytes = at + 2 * s8 + 4 * s8 + 1024 + 4 * s8;
+    const s8 = (n + 15) & ~15, at = k.heapBase(), bytes = at + 2 * s8 + 4 * s8 + 1024;
     const have = k.memory.buffer.byteLength;
     if (have < bytes) k.memory.grow(Math.ceil((bytes - have) / 65536));
     const buf = k.memory.buffer;                     // never grown again: views of it stay attached
@@ -57,7 +54,6 @@ export function newArena(n: number): Arena | null {
       back: new Uint8Array(buf, at + s8, n),
       px: new Uint32Array(buf, at + 2 * s8, n),
       pal: new Uint32Array(buf, at + 6 * s8, 256),
-      map: new Int32Array(buf, at + 6 * s8 + 1024, n),
     };
     RESIDENT.set(buf, ar);
     return ar;
@@ -74,15 +70,6 @@ function arenaOf(a: ArrayBufferView): Arena | null {
   const ar = RESIDENT.get(a.buffer as ArrayBuffer) || null;
   if (!ar && mode === 'wasm') throw new Error('Battery: the WebAssembly kernel is unavailable here');
   return ar;
-}
-
-/** dst = src[map] in WASM; false when the caller must run the JavaScript. */
-export function warpWasm(src: Uint8Array, map: Int32Array, dst: Uint8Array, n: number): boolean {
-  const ar = arenaOf(src);
-  if (!ar || dst.buffer !== src.buffer || map.length !== n) return false;
-  ar.map.set(map);
-  ar.k.warp(src.byteOffset, ar.map.byteOffset, dst.byteOffset, n);
-  return true;
 }
 
 /** blur's rows 1..h-2 (src -> dst) in WASM; false when the caller must run the JavaScript. */

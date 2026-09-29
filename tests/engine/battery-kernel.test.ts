@@ -1,11 +1,10 @@
 // @vitest-environment node
-// Battery's warp/blur/palette on the WebAssembly path (src/engine/battery/kernel.ts) against the
-// JavaScript in src/engine/battery/index.ts, on random and saturated bytes, odd sizes and map entries
-// outside [0, n). The golden guard (tests/engine/golden) covers whole engine runs on both paths.
+// Battery's blur/palette on the WebAssembly path (src/engine/battery/kernel.ts) against the
+// JavaScript in src/engine/battery/index.ts, on random and saturated bytes and odd sizes. The golden guard (tests/engine/golden) covers whole engine runs on both paths.
 import { afterEach, describe, expect, it } from 'vitest';
 import { A } from '../../src/engine/ns';
 import '../../src/engine/battery/index';
-import { newArena, warpWasm, paletteWasm } from '../../src/engine/battery/kernel';
+import { newArena, paletteWasm } from '../../src/engine/battery/kernel';
 
 type Internals = { BLUR_LUT: Uint8Array; blur(s: Uint8Array, d: Uint8Array, w: number, h: number): void };
 const I = (A.Battery as unknown as { internals: Internals }).internals;
@@ -27,25 +26,21 @@ describe('battery kernel: WebAssembly vs JavaScript', () => {
     }
   });
 
-  it('warp, blur and palette give the JS bytes on every size', () => {
+  it('blur and palette give the JS bytes on every size', () => {
     for (const [w, h] of SIZES) {
       const n = w * h, r = lcg(w * 31 + h), ar = newArena(n)!;
       for (const fill of [() => r() & 255, () => 255, () => 0, (i: number) => (i & 1) * 255]) {
-        const src = new Uint8Array(n), map = new Int32Array(n), pal = new Uint32Array(256);
-        for (let i = 0; i < n; i++) { src[i] = fill(i); map[i] = r() % n; }
-        for (const bad of [-1, n, 0x7fffffff]) map[r() % n] = bad;
+        const src = new Uint8Array(n), pal = new Uint32Array(256);
+        for (let i = 0; i < n; i++) src[i] = fill(i);
         for (let i = 0; i < 256; i++) pal[i] = r() & 0xffffff;
 
         A.batteryKernel = 'js';
-        const jsWarp = new Uint8Array(n), jsBlur = new Uint8Array(n), jsPx = new Uint32Array(n);
-        for (let i = 0; i < n; i++) jsWarp[i] = src[map[i]!]!;
+        const jsBlur = new Uint8Array(n), jsPx = new Uint32Array(n);
         I.blur(src, jsBlur, w, h);
         for (let i = 0; i < n; i++) jsPx[i] = pal[src[i]!]!;
 
         A.batteryKernel = 'wasm';
         ar.back.set(src);
-        expect(warpWasm(ar.back, map, ar.front, n)).toBe(true);
-        expect([w, h, Buffer.from(ar.front).equals(Buffer.from(jsWarp))]).toEqual([w, h, true]);
         I.blur(ar.back, ar.front, w, h);
         expect([w, h, Buffer.from(ar.front).equals(Buffer.from(jsBlur))]).toEqual([w, h, true]);
         ar.front.set(src);

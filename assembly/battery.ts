@@ -1,7 +1,6 @@
 // AssemblyScript source of src/engine/battery/kernel-wasm.ts (npm run build:wasm regenerates it).
-// Battery's three whole-buffer passes (src/engine/battery/index.ts), the same integer results as
-// the JavaScript there:
-//   warp     dst[i] = src[map[i]] for i < n (a map entry outside [0, n) reads 0, as a JS typed array does)
+// Two of Battery's whole-buffer passes (src/engine/battery/index.ts), the same integer results as
+// the JavaScript there (its third, the warp gather, is no faster here than in JS, so it stays there):
 //   blur     dst[p] = lut[src[p-w] + src[p-1] + src[p] + src[p+1] + src[p+w]] for p in [w, (h-1)*w):
 //            rows 1..h-2 as one linear run, so x = 0 reads the previous row's last byte and x = w-1
 //            the next row's first, exactly like the JS; rows 0 and h-1 stay with the JS.
@@ -13,15 +12,6 @@
 /** First byte the glue may use (16-aligned). */
 export function heapBase(): usize {
   return (__heap_base + 15) & ~(<usize>15);
-}
-
-export function warp(src: usize, map: usize, dst: usize, n: i32): void {
-  for (let i = 0; i < n; i++) {
-    const t = load<i32>(map + (<usize>i << 2));
-    const ok = <u32>t < <u32>n;
-    const v = load<u8>(src + <usize>(ok ? t : 0));        // never load outside src
-    store<u8>(dst + <usize>i, ok ? v : 0);
-  }
 }
 
 @inline function lut(s: i32): u8 {

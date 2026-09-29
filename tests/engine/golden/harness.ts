@@ -204,7 +204,7 @@ export const RUNS: Run[] = [
 ];
 
 /** The WebAssembly kernels' path (A.moveBitsMode for Alchemy's gather + blur, A.batteryKernel for
- * Battery's warp/blur/palette): forced WASM, forced JS, or flipping every 37 frames. */
+ * Battery's blur/palette): forced WASM, forced JS, or flipping every 37 frames. */
 export type MoveBitsPath = 'wasm' | 'js' | 'alternate';
 
 function setPath(path: MoveBitsPath | undefined, f: number): void {

@@ -10,7 +10,7 @@ import '../effect'; // A.makeSurface
 import './warps';
 import './draws';
 import './draws-a';
-import { newArena, warpWasm, blurWasm, paletteWasm } from './kernel';
+import { newArena, blurWasm, paletteWasm } from './kernel';
 import type { BatteryShift } from './warps';
 import type { BatteryDrawEffect, BatteryDrawCtx, BatteryDrawCtor } from './draws';
 
@@ -597,7 +597,7 @@ class Battery {
     if (!s.map) return;
     this.swap();
     var m = selectMap(s)!, dst = this.front, src = this.back, n = this.w * this.h;
-    if (!warpWasm(src, m, dst, n)) for (var i = 0; i < n; i++) dst[i] = src[m[i]];
+    for (var i = 0; i < n; i++) dst[i] = src[m[i]];
   }
 
   // ---------------------------------------------------------------- palette (§5)
