@@ -30,7 +30,12 @@ export function createTicker(store: AppStore, onFirstFrame: () => void): Ticker 
   let canvas: HTMLCanvasElement | null = null, eng: VisEngine | null = null, level: TimedLevel = silent;
   let acc = 0, last = 0, frames = 0, fpsAt = 0, fps = 0, raf = 0, first = true;
   const S = () => store.getState().settings;
-  const full = () => !!document.fullscreenElement || store.getState().ui.bare || store.getState().auth.mode === 'screensaver';
+  const full = (s = store.getState()) => !!document.fullscreenElement || s.ui.bare || s.auth.mode === 'screensaver';
+  /** Nothing to draw: held (a library view covers the visualizer; full screen always shows it), or
+   *  the capture is paused. The loop stops asking for frames then, as it does covered: every rAF is
+   *  a whole Chromium frame even when the callback does nothing (measured 2026-09-29 at 120 Hz: an
+   *  empty rAF loop cost ~3% of a core across the page and GPU processes). */
+  const idle = (s = store.getState()) => (s.vis.hold && !full(s)) || !!s.playback.capture?.paused;
 
   function fillLevel(): TimedLevel {
     const f = store.getState().vis.level;
@@ -48,11 +53,9 @@ export function createTicker(store: AppStore, onFirstFrame: () => void): Ticker 
       options: { intended: S().intended, fps: S().fps, backgroundColor: S().bg } });
   }
 
-  // Held: nothing on screen to render into (a library view covers it); full screen always shows it.
-  const held = () => store.getState().vis.hold && !full();
   function frame(now: number) {
-    // covered: the engine pauses as it does minimized; held: no frames asked for until it is shown
-    if (occluded() || held()) { raf = 0; fps = 0; return; }
+    // covered: the engine pauses as it does minimized; idle: no frames asked for until there is one to draw
+    if (occluded() || idle()) { raf = 0; fps = 0; return; }
     raf = requestAnimationFrame(frame);
     let dt = now - last;
     last = now;
@@ -108,9 +111,9 @@ export function createTicker(store: AppStore, onFirstFrame: () => void): Ticker 
       ro.observe(c);
       last = fpsAt = performance.now();
       raf = requestAnimationFrame(frame);
-      const start = () => { if (!raf && !occluded() && !held()) { last = fpsAt = performance.now(); raf = requestAnimationFrame(frame); } };
+      const start = () => { if (!raf && !occluded() && !idle()) { last = fpsAt = performance.now(); raf = requestAnimationFrame(frame); } };
       const offSeen = onSeen(start);
-      offs.push(store.subscribe((s) => s.vis.hold && !(s.ui.bare || s.ui.fullscreen), (h) => { if (!h) start(); }));
+      offs.push(store.subscribe(idle, (v) => { if (!v) start(); }));
       return () => {
         cancelAnimationFrame(raf); ro.disconnect(); clearTimeout(tm); offSeen();
         for (const off of offs) off();
