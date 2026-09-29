@@ -44,6 +44,9 @@ function moveBits(S: typeof Shift, W: number, H: number, seed: number, intended:
   return [ctx.A.px, ctx.B.px];
 }
 
+// A surface can be a view into a kernel's memory (Shift keeps them resident): compare its own bytes.
+const bytes = (a: Uint32Array): Buffer => Buffer.from(a.buffer, a.byteOffset, a.byteLength);
+
 const SIZES: [number, number][] = [[1, 1], [2, 2], [3, 1], [1, 5], [5, 2], [7, 3], [13, 5], [16, 9], [33, 17],
   [640, 480], [641, 3], [9, 4], [333, 251], [4, 4]];   // grows, then small again on the grown memory
 
@@ -58,8 +61,8 @@ describe('movebits: WebAssembly vs JavaScript', () => {
         const want = moveBits(Shift, W, H, W * 31 + H, intended);
         A.moveBitsMode = 'wasm';
         const got = moveBits(Shift, W, H, W * 31 + H, intended);
-        expect([W, H, intended, Buffer.from(got[0]!.buffer).equals(Buffer.from(want[0]!.buffer))]).toEqual([W, H, intended, true]);
-        expect([W, H, intended, Buffer.from(got[1]!.buffer).equals(Buffer.from(want[1]!.buffer))]).toEqual([W, H, intended, true]);
+        expect([W, H, intended, bytes(got[0]!).equals(bytes(want[0]!))]).toEqual([W, H, intended, true]);
+        expect([W, H, intended, bytes(got[1]!).equals(bytes(want[1]!))]).toEqual([W, H, intended, true]);
       }
     }
   });
@@ -97,8 +100,8 @@ describe('movebits: fallback', () => {
       vi.stubGlobal('WebAssembly', stub);
       const fresh = await freshShift();
       const got = moveBits(fresh.Shift, 64, 48, 7, false);
-      expect(Buffer.from(got[0]!.buffer).equals(Buffer.from(want[0]!.buffer))).toBe(true);
-      expect(Buffer.from(got[1]!.buffer).equals(Buffer.from(want[1]!.buffer))).toBe(true);
+      expect(bytes(got[0]!).equals(bytes(want[0]!))).toBe(true);
+      expect(bytes(got[1]!).equals(bytes(want[1]!))).toBe(true);
       fresh.A.moveBitsMode = 'wasm';
       expect(() => moveBits(fresh.Shift, 64, 48, 7, false)).toThrow(/WebAssembly/);
     });

@@ -7,8 +7,9 @@ import { A } from './ns';
 import './rand';
 import './effect';
 import './kernels';
-import { moveBitsWasm } from './movebits';
+import { moveBitsWasm, newArena, type Arena } from './movebits';
 import type { WarpKernel, WarpPoint, EffectCtx } from './effect';
+import type { Surface } from './ns';
 // mpvis.DLL's sin/cos are ucrtbase's (_o_sin/_o_cos -> 0x1800aba70/0x1800a7730): the clones in 00-rand.js.
 // eslint-disable-next-line @typescript-eslint/unbound-method, @typescript-eslint/no-unused-vars -- A.sin/A.cos never read `this`, hoisted once on purpose (see 00-rand.js); cos is verbatim from the DLL wrapper and genuinely unused here
 var sin = A.sin || Math.sin, cos = A.cos || Math.cos;
@@ -27,6 +28,7 @@ interface WarpTable {
   buf: Int32Array | null;
   dirty: boolean;
   cursorY: number;
+  slot: number;          // its place in the arena (surfaces A, B are slots 0, 1)
 }
 
 // 18000a260 / 18000a29c
@@ -76,10 +78,11 @@ function blurRowPair(src: Uint32Array, dst: Uint32Array, W: number, i: number) {
   }
 }
 
-function newTable(): WarpTable { return { buf: null, dirty: true, cursorY: 0 }; }
-function tabAlloc(t: WarpTable, w: number, h: number) {
+function adopt<T extends Uint32Array | Int32Array>(to: T, from: T): T { to.set(from); return to; }
+function newTable(slot: number): WarpTable { return { buf: null, dirty: true, cursorY: 0, slot }; }
+function tabAlloc(t: WarpTable, w: number, h: number, ar: Arena | null) {
   if (w >= MAX_DIM || h >= MAX_DIM) return;   // 18000cb44 bails before touching anything
-  t.buf = new Int32Array(w * h);
+  t.buf = ar && ar.n === w * h ? ar.i32(t.slot).fill(0) : new Int32Array(w * h);
   t.cursorY = 0; t.dirty = true;
 }
 function tabFree(t: WarpTable) { t.buf = null; t.cursorY = 0; t.dirty = true; }
@@ -107,6 +110,7 @@ export class Shift extends A.Effect {
   declare _intended: boolean;
   declare _p: WarpPoint;
   declare _cur: (Int32Array | null)[];
+  declare _arena: Arena | null;
   constructor() {
     super();
     this.name = 'Shift';
@@ -120,11 +124,11 @@ export class Shift extends A.Effect {
     this.F1 = null; this.F2 = null;        // +0x70 / +0x78 live kernels
     this.F1next = null; this.F2next = null; // +0x80 / +0x88 pending kernels
 
-    this._tabA = newTable(); this._tabB = newTable();
+    this._tabA = newTable(2); this._tabB = newTable(3);
     this.front = this._tabA;    // +0x510 rendered from
     this.back = this._tabB;     // +0x518 being built
     this.trans = new Array<WarpTable>(NLADDER);
-    for (let k = 0; k < NLADDER; k++) this.trans[k] = newTable();
+    for (let k = 0; k < NLADDER; k++) this.trans[k] = newTable(4 + k);
 
     this.allowTransition = true;  // +0x520, always 1 in retail
     this.transitionActive = false; // +0x521
@@ -137,6 +141,7 @@ export class Shift extends A.Effect {
 
     this._p = { x: 0, y: 0 };                 // the one point object; no per-pixel alloc
     this._cur = new Array<Int32Array | null>(NLADDER);   // scratch: ladder buffers for the build
+    this._arena = null;                       // A.px, B.px and every table, resident for the kernel
   }
 
   // ---- 18000ae60 SetSize -> 18000dbd0 Init ---------------------------------
@@ -150,6 +155,7 @@ export class Shift extends A.Effect {
     tabFree(this._tabA); tabFree(this._tabB);
     for (let k = 0; k < NLADDER; k++) tabFree(this.trans[k]);
     this.rowOff = null; this.ramp = null;
+    this._arena = null;
   }
 
   _init(intended: boolean) {
@@ -157,8 +163,8 @@ export class Shift extends A.Effect {
     this.rowOff = new Int32Array(H + 1);
     for (let y = 0; y <= H; y++) this.rowOff[y] = y * W;
     this._buildRamps(intended);
-    tabAlloc(this._tabA, W, H);
-    tabAlloc(this._tabB, W, H);
+    tabAlloc(this._tabA, W, H, this._arena);
+    tabAlloc(this._tabB, W, H, this._arena);
     for (let k = 0; k < NLADDER; k++) tabFree(this.trans[k]);
   }
 
@@ -374,7 +380,7 @@ export class Shift extends A.Effect {
       }
       if (this.F1next && this.back.buf) {
         if (this.allowTransition && !this.trans[0].buf) {
-          for (let k = 0; k < NLADDER; k++) tabAlloc(this.trans[k], this.w, this.h);
+          for (let k = 0; k < NLADDER; k++) tabAlloc(this.trans[k], this.w, this.h, this._arena);
         }
         this._build3();
       }
@@ -382,6 +388,17 @@ export class Shift extends A.Effect {
       this._buildAll(this.front, this.F1, this.F2);  // first frame after Init
     }
     return this.front;
+  }
+
+  // Moves A.px, B.px and every allocated table into one arena (movebits.ts), unless they are all
+  // there already: a copy each, once per size. Tables allocated later go straight in (tabAlloc).
+  _resident(sa: Surface, sb: Surface, n: number) {
+    const ar = this._arena;
+    if (ar && ar.n === n && sa.px.buffer === ar.buf && sb.px.buffer === ar.buf) return;
+    const nr = this._arena = sa.px.length === n && sb.px.length === n ? newArena(n, 4 + NLADDER) : null;
+    if (!nr) return;
+    sa.px = adopt(nr.u32(0), sa.px); sb.px = adopt(nr.u32(1), sb.px);
+    for (const t of [this._tabA, this._tabB, ...this.trans]) if (t.buf && t.buf.length === n) t.buf = adopt(nr.i32(t.slot), t.buf);
   }
 
   // ---- 18000d940 ShiftMoveBits: gather + 5-tap blur + background rows ------
@@ -392,6 +409,7 @@ export class Shift extends A.Effect {
     // observable through the %4 bailout below.
     if (!intended && (n % 4) !== 0) { ctx.A = sb; ctx.B = sa; return; }
 
+    this._resident(sa, sb, n);
     const tab = t.buf!, src = sa.px, dst = sb.px;
     if (!moveBitsWasm(src, tab, dst, W, H)) {            // the same gather + blur in WASM SIMD
       for (let i = 0; i < n; i++) dst[i] = src[tab[i]];   // nearest neighbour, unclamped

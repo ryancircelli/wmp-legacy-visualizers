@@ -9,11 +9,13 @@
 // the main thread, so it compiles synchronously right there; any refusal (no WebAssembly, no SIMD,
 // a CSP without wasm-unsafe-eval, memory.grow failing) leaves the JS path in charge for good.
 //
-// The kernel works on copies in its own memory: [src | dst | tab], each rounded up to 16 bytes.
-// A.px and the warp table are copied in, the gathered image (B.px) and the blurred interior rows
-// (A.px rows 1..H-2) are copied out; rows 0 and H-1 of A.px are left alone, as the JS leaves them.
-// The copies cost ~0.2 ms a frame at 640x480, a fifth of the WASM path. Memory only grows;
-// views are re-made whenever the buffer changes (a grow detaches the old one).
+// Resident: Shift keeps A.px, B.px and its warp tables as views into an arena (newArena), a kernel
+// instance of its own whose memory never grows after it is made, so the kernel works on them in
+// place. Otherwise (arrays from anywhere else, e.g. a test's) the shared kernel works on copies in
+// its memory, [src | dst | tab] each rounded up to 16 bytes: A.px and the table in, the gathered
+// image (B.px) and the blurred interior rows (A.px rows 1..H-2) out, rows 0 and H-1 of A.px left
+// alone as the JS leaves them. Those copies cost ~0.2 ms a frame at 640x480. The shared memory
+// only grows; its views are re-made whenever the buffer changes (a grow detaches the old one).
 import { A } from './ns';
 import { MOVEBITS_WASM } from './movebits-wasm';
 
@@ -27,20 +29,52 @@ interface Kernel {
 
 A.moveBitsMode = 'auto';
 
-let K: Kernel | null = null, broken = false, base = 0;
+let M: WebAssembly.Module | null = null, K: Kernel | null = null, broken = false, base = 0;
 let u32 = new Uint32Array(0), i32 = new Int32Array(0);
+const RESIDENT = new WeakMap<ArrayBuffer, Kernel>();   // arena memory -> its kernel
+
+function instance(): Kernel {
+  if (!M) {
+    const bin = atob(MOVEBITS_WASM), bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    M = new WebAssembly.Module(bytes);
+  }
+  return new WebAssembly.Instance(M, {}).exports as unknown as Kernel;
+}
 
 function kernel(): Kernel | null {
   if (K || broken) return K;
   try {
-    const bin = atob(MOVEBITS_WASM), bytes = new Uint8Array(bin.length);
-    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-    K = new WebAssembly.Instance(new WebAssembly.Module(bytes), {}).exports as unknown as Kernel;
+    K = instance();
     base = K.heapBase();
   } catch {
     broken = true;                                   // no WebAssembly / SIMD / CSP: JS from now on
   }
   return K;
+}
+
+/** `slots` arrays of n 32-bit words in a kernel instance's own memory, for moveBitsWasm to use in place. */
+export interface Arena {
+  n: number;
+  buf: ArrayBuffer;
+  u32(slot: number): Uint32Array;
+  i32(slot: number): Int32Array;
+}
+
+/** null in 'js' mode or without WebAssembly: the caller keeps plain arrays. */
+export function newArena(n: number, slots: number): Arena | null {
+  if (A.moveBitsMode === 'js' || broken) return null;
+  try {
+    const k = instance(), at = k.heapBase(), stride = ((n + 3) & ~3) * 4, bytes = at + slots * stride;
+    const have = k.memory.buffer.byteLength;
+    if (have < bytes) k.memory.grow(Math.ceil((bytes - have) / 65536));
+    const buf = k.memory.buffer;                     // never grown again: views of it stay attached
+    RESIDENT.set(buf, k);
+    return { n, buf, u32: (s) => new Uint32Array(buf, at + s * stride, n), i32: (s) => new Int32Array(buf, at + s * stride, n) };
+  } catch {
+    broken = true;                                   // as kernel(): JS from now on
+    return null;
+  }
 }
 
 /** Room for three n-pixel arrays; false if the memory cannot grow (then JS for good). */
@@ -60,7 +94,12 @@ function fit(k: Kernel, bytes: number): boolean {
 export function moveBitsWasm(src: Uint32Array, tab: Int32Array, dst: Uint32Array, W: number, H: number): boolean {
   const mode = A.moveBitsMode;
   if (mode === 'js') return false;
-  const n = W * H, stride = (n + 3) & ~3, k = kernel();
+  const n = W * H, rk = RESIDENT.get(src.buffer as ArrayBuffer);
+  if (rk && tab.buffer === src.buffer && dst.buffer === src.buffer && src.length === n && dst.length === n && tab.length === n) {
+    rk.moveBits(src.byteOffset, tab.byteOffset, dst.byteOffset, W, H);   // in place, no copies
+    return true;
+  }
+  const stride = (n + 3) & ~3, k = kernel();
   if (!k || src.length !== n || dst.length !== n || tab.length !== n || !fit(k, base + 12 * stride)) {
     if (mode === 'wasm') throw new Error('Alchemy: the WebAssembly moveBits path is unavailable here');
     return false;
