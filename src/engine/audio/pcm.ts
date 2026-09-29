@@ -31,8 +31,11 @@ const TWR = new Float32Array(N_FFT >> 1), TWI = new Float32Array(N_FFT >> 1);
 const FRE = new Float32Array(N_FFT), FIM = new Float32Array(N_FFT);
 
 // ring: N_FFT samples, `at` = where the next sample goes, which is also the oldest one.
+// Each stage runs twiddle-outer: the butterflies of a stage touch disjoint elements, so their order
+// cannot change a bit, and hoisting the twiddle pair makes the small stages' loops long. ~30% faster
+// than bin-outer, output identical (tests/engine/pcm.test.ts).
 export function fftMags(ring: Float32Array, at: number, gain: number, mags: Float32Array): void {
-  let i, j, k, size, half, step, tr, ti, ur, ui;
+  let i, j, k, size, half, step, tr, ti, ur, ui, wr, wi, x, y;
   for (i = 0; i < N_FFT; i++) {
     j = REV[i];
     FRE[i] = ring[(at + j) & N_MASK] * WIN[j] * gain;
@@ -41,10 +44,14 @@ export function fftMags(ring: Float32Array, at: number, gain: number, mags: Floa
   for (size = 2; size <= N_FFT; size <<= 1) {
     half = size >> 1;
     step = N_FFT / size;
-    for (i = 0; i < N_FFT; i += size) {
-      for (j = i, k = 0; j < i + half; j++, k += step) {
-        tr = TWR[k] * FRE[j + half] - TWI[k] * FIM[j + half];
-        ti = TWR[k] * FIM[j + half] + TWI[k] * FRE[j + half];
+    for (i = 0, k = 0; i < half; i++, k += step) {
+      wr = TWR[k];
+      wi = TWI[k];
+      for (j = i; j < N_FFT; j += size) {
+        x = FRE[j + half];
+        y = FIM[j + half];
+        tr = wr * x - wi * y;
+        ti = wr * y + wi * x;
         ur = FRE[j];
         ui = FIM[j];
         FRE[j] = ur + tr;
@@ -97,7 +104,10 @@ export function createPcmSource(opts: { smoothing?: number; dbWindow?: readonly 
   const ring: [Float32Array, Float32Array] = [new Float32Array(N_FFT), new Float32Array(N_FFT)];
   const mags = [new Float32Array(N_BIN), new Float32Array(N_BIN)] as const;
   const prev = [new Float32Array(N_BIN), new Float32Array(N_BIN)] as const;
-  let at = 0, fresh = 0;
+  // `dirty`: the ring changed since the magnitudes were last taken. With no new samples (nothing
+  // playing sends no packets at all; a frame loop catching up runs several fills per task) the FFT
+  // would only recompute the same magnitudes. magBytes still runs every fill: smoothing is stateful.
+  let at = 0, fresh = 0, dirty = true, zeroed = false, lastGain = NaN;
   const src: PcmLevelSource = {
     smoothing: opts.smoothing ?? 0,
     push(pcm) {
@@ -109,16 +119,21 @@ export function createPcmSource(opts: { smoothing?: number; dbWindow?: readonly 
         at = (at + 1) & N_MASK;
       }
       fresh = performance.now();
+      if (n) { dirty = true; zeroed = false; }
     },
     fill(level, gain) {
       // Nothing for a quarter second means the stream stalled or the helper died between
       // restarts: read silence rather than leave the last spectrum frozen on screen.
-      if (performance.now() - fresh > 250) {
+      if (performance.now() - fresh > 250 && !zeroed) {
         ring[0].fill(0);
         ring[1].fill(0);
+        dirty = zeroed = true;
       }
+      const fft = dirty || gain !== lastGain;
+      dirty = false;
+      lastGain = gain;
       for (let c = 0; c < 2; c++) {
-        fftMags(ring[c], at, gain, mags[c]);
+        if (fft) fftMags(ring[c], at, gain, mags[c]);
         magBytes(mags[c], prev[c], level.freq[c], src.smoothing, db);
         waveBytes(ring[c], at, gain, level.wave[c]);
       }

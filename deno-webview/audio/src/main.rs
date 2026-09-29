@@ -18,6 +18,7 @@
 // this process with backoff.
 use std::collections::VecDeque;
 use std::io::{BufRead, Write};
+use std::os::windows::io::AsHandle;
 mod media;
 
 use wasapi::{
@@ -46,9 +47,13 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     let event = client.set_get_eventhandle()?;
     let capture = client.get_audiocaptureclient()?;
 
-    let mut out = std::io::stdout().lock();
+    // A File on the stdout handle, not std::io::stdout(): Stdout is a LineWriter, and PCM is full of
+    // 0x0A bytes, so every period went out as two writes split at its last one (3712 + 128 bytes of a
+    // 3840-byte period with rustc 1.98). The host relays each pipe read as its own WebSocket message,
+    // and a read already pending when the first write lands returns with that write alone: two
+    // messages a period for the host, the browser and the page to handle. A File has no buffer.
+    let mut out = std::fs::File::from(std::io::stdout().as_handle().try_clone_to_owned()?);
     out.write_all(&rate.to_le_bytes())?;
-    out.flush()?;
 
     let mut q: VecDeque<u8> = VecDeque::with_capacity(4 * 2 * rate as usize); // 1 s of slack
     client.start_stream()?;
@@ -60,10 +65,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         let _ = event.wait_for_event(500);
         capture.read_from_device_to_deque(&mut q)?;
         if !q.is_empty() {
-            let (a, b) = q.as_slices();
-            out.write_all(a)?;
-            out.write_all(b)?;
-            out.flush()?;
+            out.write_all(q.make_contiguous())?;
             q.clear();
         }
     }
