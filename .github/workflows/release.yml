@@ -1,0 +1,192 @@
+# The two Windows downloads, built from the Tauri host (tauri/), each kept at one rolling link that
+# src/ui/links.ts and README.md point at:
+#   https://github.com/ryancircelli/wmp-legacy-visualizers/releases/download/screensaver-latest/AlchemyScreensaver-win64.zip
+#   https://github.com/ryancircelli/wmp-legacy-visualizers/releases/download/spotify-latest/WmpSpotify-win64.zip
+#
+# One program, built twice on windows-latest with MSVC, Tauri's supported Windows toolchain:
+#   Alchemy.scr      the screensaver and its player window
+#   WmpSpotify.exe   the same with the `wmp-spotify` feature: a launch that names no mode opens Spotify
+#                    (tauri/src/main.rs), and the Spotify icon
+# The WebView2 loader and the VC runtime are linked statically, so each runs on a fresh Windows 11.
+#
+# Publishes only on a push to master. A push to `tauri`, or workflow_dispatch from any branch, checks,
+# builds and keeps the zips as workflow artifacts, nothing else.
+#
+# Then it runs deploy.yml. A push that changes the host is left to this workflow by deploy.yml, so the
+# site's update.json names a new host (and every installed app offers the download) only once that
+# download is up. Secrets: none of its own; deploy.yml has the site's.
+name: release
+on:
+  push:
+    branches: [master, tauri, tauri-release] # TEMPORARY: tauri-release, to test the build before merge
+    paths:
+      - 'tauri/**'
+      - '!tauri/README.md'
+      - 'deno-webview/host-api.json'
+      - 'src/**'
+      - 'index.html'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'vite.*'
+      - 'tools/postbuild.js'
+      - 'tsconfig*.json'
+      - 'eslint.config.*'
+      - 'public/**'
+      - '.github/workflows/release.yml'
+  workflow_dispatch:
+concurrency:
+  group: release-${{ github.ref }}
+  # On master a newer push waits rather than cancelling this one halfway through replacing a release.
+  cancel-in-progress: ${{ github.ref != 'refs/heads/master' }}
+jobs:
+  # The page's checks, on Linux as deploy.yml runs them; its manifest, to hold the exes' against.
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '24', cache: npm }
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm test
+      - name: Build the page
+        env: { GITHUB_SHA: '${{ github.sha }}' }
+        run: npm run build
+      - uses: actions/upload-artifact@v4
+        with: { name: update-linux, path: dist/update.json, retention-days: 7 }
+
+  windows:
+    runs-on: windows-latest
+    steps:
+      # LF as committed, as on Linux: the page the exes embed is built from the same bytes as the site's.
+      - run: git config --global core.autocrlf false
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            tauri/package-lock.json
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: tauri
+
+      - name: Install
+        run: |
+          npm ci
+          npm ci --prefix tauri
+
+      # beforeBuildCommand (tauri.conf.json) builds the page into ../dist first, for each build.
+      - name: Build Alchemy.scr
+        working-directory: tauri
+        env: { GITHUB_SHA: '${{ github.sha }}' }
+        run: |
+          npx tauri build --no-bundle
+          New-Item -ItemType Directory -Force ../out/AlchemyScreensaver | Out-Null
+          Copy-Item target/release/Alchemy.exe ../out/AlchemyScreensaver/Alchemy.scr
+          Copy-Item ../dist/update.json ../out/update-windows.json
+
+      # The argument parser, page updates (update.rs, with the manifest just built into dist/), lyrics,
+      # Spotify's observers, the title bar.
+      - name: Test
+        working-directory: tauri
+        run: cargo test
+
+      - name: Build WmpSpotify.exe
+        working-directory: tauri
+        env: { GITHUB_SHA: '${{ github.sha }}' }
+        run: |
+          npx tauri build --no-bundle --features wmp-spotify --config tauri.spotify.conf.json
+          New-Item -ItemType Directory -Force ../out/WmpSpotify-app | Out-Null
+          Copy-Item target/release/Alchemy.exe ../out/WmpSpotify-app/WmpSpotify.exe
+
+      # The Deno host's first webview.dll imported the VC++ Redistributable and died on a fresh PC:
+      # fail on any import Windows does not ship.
+      - name: Check the exes import only system DLLs
+        shell: pwsh
+        run: |
+          foreach ($exe in 'out/AlchemyScreensaver/Alchemy.scr', 'out/WmpSpotify-app/WmpSpotify.exe') {
+            $dlls = & "$env:ProgramFiles\LLVM\bin\llvm-objdump.exe" -p $exe |
+              Select-String 'DLL Name: (.+)' | ForEach-Object { $_.Matches[0].Groups[1].Value }
+            "$exe ($((Get-Item $exe).Length) bytes): $($dlls -join ', ')"
+            $bad = $dlls | Where-Object { $_ -match '^(vcruntime|msvcp|ucrtbased|webview2loader)' }
+            if ($bad) { throw "$exe imports what Windows does not ship: $bad" }
+          }
+
+      # Windows only runs a screensaver called .scr. The rest of each zip is the README and the two
+      # install scripts; the executables are self-contained.
+      - name: Assemble the zips
+        working-directory: out
+        run: |
+          Copy-Item ../tauri/package/install.ps1, ../tauri/package/uninstall.ps1, ../tauri/package/README.md AlchemyScreensaver/
+          Copy-Item ../tauri/package/README.md WmpSpotify-app/
+          7z a -tzip -bso0 AlchemyScreensaver-win64.zip AlchemyScreensaver
+          7z a -tzip -bso0 WmpSpotify-win64.zip WmpSpotify-app
+          Get-ChildItem *.zip | Format-Table Name, Length
+
+      - uses: actions/upload-artifact@v4
+        with: { name: AlchemyScreensaver-win64, path: out/AlchemyScreensaver-win64.zip, retention-days: 30 }
+      - uses: actions/upload-artifact@v4
+        with: { name: WmpSpotify-win64, path: out/WmpSpotify-win64.zip, retention-days: 30 }
+      - uses: actions/upload-artifact@v4
+        with: { name: update-windows, path: out/update-windows.json, retention-days: 7 }
+
+  publish:
+    needs: [check, windows]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # the two releases
+      actions: write # running deploy.yml
+    steps:
+      - uses: actions/download-artifact@v4
+
+      # The exes compare update.json's `host` with the one they were built with; one that differs from
+      # the site's (deployed from Linux) would tell every user of this very build to download it again.
+      - name: The exes name the host the site will
+        run: |
+          jq -c '{host, needs}' update-linux/update.json update-windows/update-windows.json
+          [ "$(jq -c '{host, needs}' update-linux/update.json)" = "$(jq -c '{host, needs}' update-windows/update-windows.json)" ]
+
+      # Rolling tags: deleted and recreated so the download URLs never change.
+      - name: Update the screensaver-latest and spotify-latest releases
+        if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          # One quoted line per paragraph: a heredoc would carry this step's YAML indentation into the
+          # notes and render every paragraph as a code block.
+          common=(
+            '**Needs the WebView2 runtime**, which ships with Windows 11 and with current Windows 10. Nothing to install otherwise.'
+            ''
+            '**SmartScreen:** the exe is unsigned, so the first run shows "Windows protected your PC" - click *More info* > *Run anyway*. Nothing to do about that short of a code-signing certificate.'
+            ''
+            'Settings and the Spotify login live in `%LOCALAPPDATA%\WmpLegacyVisualizers\tauri\` and survive new downloads. The first launch of this version copies both over from the previous (Deno) version, whose folders it leaves as they were; close that version first, or it happens the launch after.'
+          )
+          printf '%s\n' \
+            "Windows x64 build of ${GITHUB_SHA::7}." \
+            '' \
+            'Unzip it anywhere and right-click `Alchemy.scr` > **Install**, or run `powershell -ExecutionPolicy Bypass -File .\install.ps1` (no admin rights; `-Timeout 300` for a 5 minute idle). `uninstall.ps1` restores the previous screensaver. The `.scr` is one self-contained file - nothing has to stay next to it.' \
+            '' \
+            '**System audio works.** The visualizers follow whatever the speakers are playing, with no picker and no permission prompt (WASAPI loopback, in the exe). Apps holding the endpoint in exclusive mode are the exception.' \
+            '' "${common[@]}" > screensaver.md
+          printf '%s\n' \
+            "Windows x64 build of ${GITHUB_SHA::7}." \
+            '' \
+            'Unzip it anywhere and run `WmpSpotify.exe`. It is one self-contained file - nothing has to stay next to it, and there is no installer. Spotify'"'"'s own web player runs beside the Windows Media Player 9 skin: log in once (File > Log out to switch accounts), and playback, the library, Radio Tuner and Play on Device are the Spotify ones.' \
+            '' "${common[@]}" > spotify.md
+          gh release delete screensaver-latest --yes --cleanup-tag || true
+          gh release create screensaver-latest AlchemyScreensaver-win64/AlchemyScreensaver-win64.zip \
+            --target "$GITHUB_SHA" --title "Alchemy screensaver (latest)" --notes-file screensaver.md
+          gh release delete spotify-latest --yes --cleanup-tag || true
+          gh release create spotify-latest WmpSpotify-win64/WmpSpotify-win64.zip \
+            --target "$GITHUB_SHA" --title "WMP Spotify (latest)" --notes-file spotify.md
+
+      - name: Deploy the site now that the downloads are up
+        if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: gh workflow run deploy.yml --ref master
