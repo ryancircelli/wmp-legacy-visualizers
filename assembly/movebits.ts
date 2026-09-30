@@ -16,8 +16,22 @@ export function heapBase(): usize {
   return (__heap_base + 15) & ~(<usize>15);
 }
 
+// Four table entries an iteration: their range test in one vector compare, an entry outside [0, n)
+// turned into index 0 (loaded, then masked to 0, as the scalar select does), the four loads by lane.
 export function gather(src: usize, tab: usize, dst: usize, n: i32): void {
-  for (let i = 0; i < n; i++) {
+  const nn = i32x4.splat(n);
+  let i = 0;
+  for (; i + 4 <= n; i += 4) {
+    const t = v128.load(tab + (<usize>i << 2));
+    const ok = i32x4.lt_u(t, nn);
+    const k = v128.and(t, ok);
+    let v = i32x4.splat(load<u32>(src + (<usize>i32x4.extract_lane(k, 0) << 2)));
+    v = i32x4.replace_lane(v, 1, load<u32>(src + (<usize>i32x4.extract_lane(k, 1) << 2)));
+    v = i32x4.replace_lane(v, 2, load<u32>(src + (<usize>i32x4.extract_lane(k, 2) << 2)));
+    v = i32x4.replace_lane(v, 3, load<u32>(src + (<usize>i32x4.extract_lane(k, 3) << 2)));
+    v128.store(dst + (<usize>i << 2), v128.and(v, ok));
+  }
+  for (; i < n; i++) {
     const t = load<i32>(tab + (<usize>i << 2));
     const ok = <u32>t < <u32>n;
     const k: u32 = ok ? <u32>t : 0;                     // never load outside src
