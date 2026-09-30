@@ -42,12 +42,17 @@
       });
     });
   });
+  // What the page is doing, twice after load (the Deno host's line, for the same log readers).
   function report() {
-    var saved = '(none)';
+    var S = window.Alchemy && window.Alchemy.Shell, saved = '(none)';
     try { saved = localStorage.getItem('alchemy.settings') || '(none)'; } catch (e) { /* none */ }
-    var st = ((window.alchemyRoot || document).getElementById('status') || {}).textContent || '';
-    window.alchemyLog('page: size=' + innerWidth + 'x' + innerHeight + ' dpr=' + devicePixelRatio +
-      ' status="' + st + '" saved=' + saved);
+    window.alchemyLog(
+      'page: source=' + (S && S.source ? S.source.label : 'none') +
+      ' vis=' + (S && S.settings ? S.settings.vis + ':' + S.settings.preset : '?') +
+      ' fps=' + (S ? S.fps : '?') + ' size=' + innerWidth + 'x' + innerHeight + ' dpr=' + devicePixelRatio +
+      ' status="' + (((window.alchemyRoot || document).getElementById('status') || {}).textContent || '') + '"' +
+      ' energy=' + (S && S.level ? S.level.freq[0].reduce(function (a, b) { return a + b; }, 0) : '?') +
+      ' saved=' + saved);
   }
   addEventListener('load', function () { setTimeout(report, 3000); setTimeout(report, 9000); });
 

@@ -66,14 +66,15 @@ pub fn chrome(h: isize) {
 }
 
 /// Full-screen visuals keep the machine and the display awake; off hands power back to the plan.
-/// Per thread: called from the main thread, which lives as long as the app.
-pub fn keep_awake(on: bool) {
+/// Per thread: called from the main thread, which lives as long as the app. Returns the state it
+/// replaced (for the log: `0x80000003` there means the display was being kept on).
+pub fn keep_awake(on: bool) -> u32 {
     let flags = if on {
         ES_CONTINUOUS | ES_SYSTEM_REQUIRED | ES_DISPLAY_REQUIRED
     } else {
         ES_CONTINUOUS
     };
-    unsafe { SetThreadExecutionState(flags) };
+    unsafe { SetThreadExecutionState(flags) }.0
 }
 
 /// A fatal error, where the user can see it (the log has the rest).

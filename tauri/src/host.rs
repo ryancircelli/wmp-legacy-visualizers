@@ -127,8 +127,13 @@ fn full<R: Runtime>(w: &WebviewWindow<R>, on: bool) -> tauri::Result<()> {
     }
     w.set_always_on_top(on)?;
     #[cfg(windows)]
-    crate::win::keep_awake(on);
-    log::info!("{}: full screen {on}", w.label());
+    let was = crate::win::keep_awake(on);
+    #[cfg(not(windows))]
+    let was = 0;
+    log::info!(
+        "{}: full screen {on} (execution state was {was:#x})",
+        w.label()
+    );
     Ok(())
 }
 
