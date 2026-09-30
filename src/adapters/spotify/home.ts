@@ -4,6 +4,7 @@ import type { HomeFeed, HomeItem, HomeSection } from '../../model';
 import { artists, plain } from './library';
 import { query } from './pathfinder';
 import type { Sp } from './sp';
+import { transport } from './transport';
 
 /** Image sources come as {url,width|maxWidth}: the smallest that still covers a 96 px tile (x1.5). */
 export function pic(sources: any): string | null {
@@ -64,19 +65,11 @@ export function parseHome(d: any): HomeSection[] {
   return out;
 }
 
-/** The page's own sp_t cookie (an opaque origin throws on document.cookie). */
-function cookie(n: string): string {
-  let c = '';
-  try { c = document.cookie || ''; } catch { /* opaque origin */ }
-  const m = new RegExp('(?:^|; )' + n + '=([^;]*)').exec(c);
-  return m ? decodeURIComponent(m[1]!) : '';
-}
-
 /** Spotify's home feed (pathfinder `home` as the web player sends it); remembered for the radio seeds. */
 export async function fetchHome(sp: Sp): Promise<HomeFeed> {
   let tz = '';
   try { tz = Intl.DateTimeFormat().resolvedOptions().timeZone || ''; } catch { /* no Intl zone */ }
-  const d = await query(sp, 'home', { homeEndUserIntegration: 'INTEGRATION_WEB_PLAYER', timeZone: tz, sp_t: cookie('sp_t'),
+  const d = await query(sp, 'home', { homeEndUserIntegration: 'INTEGRATION_WEB_PLAYER', timeZone: tz, sp_t: await transport().cookie('sp_t').catch(() => ''),
                                       facet: '', sectionItemsLimit: 10, includeEpisodeContentRatingsV2: true });
   const greeting: string = (d && d.home && d.home.greeting && d.home.greeting.transformedLabel) || '';
   return (sp.cache.home = { greeting, sections: parseHome(d) });

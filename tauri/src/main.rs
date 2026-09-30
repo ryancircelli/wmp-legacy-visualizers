@@ -1,0 +1,439 @@
+// Prevents additional console window on Windows in release, DO NOT REMOVE!!
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
+//! The WMP Legacy Visualizers desktop host on Tauri: the screensaver (`Alchemy.scr /s`) and its
+//! player window (`/c`, or no arguments). The page is the website's own build (`../dist`), embedded
+//! in the executable and served at the origin the Deno host used, `https://wmp.localhost/`.
+
+mod audio;
+#[cfg(target_os = "windows")]
+mod carry;
+mod host;
+mod mode;
+mod spotify;
+#[cfg(target_os = "windows")]
+mod titlebar;
+mod update;
+#[cfg(target_os = "windows")]
+mod win;
+
+use mode::Mode;
+use std::path::PathBuf;
+use std::sync::LazyLock;
+use std::time::Instant;
+use tauri::http::{Request, Response, header};
+use tauri::webview::Color;
+use tauri::{
+    AppHandle, LogicalPosition, LogicalSize, Manager, PhysicalPosition, PhysicalSize, Runtime,
+    UriSchemeContext, UriSchemeResponder, WebviewUrl, WebviewWindowBuilder,
+};
+use tauri_plugin_log::{Target, TargetKind};
+use tauri_plugin_window_state::StateFlags;
+
+static START: LazyLock<Instant> = LazyLock::new(Instant::now);
+
+/// A startup stage in the log, stamped with how long the process has been alive (the `t+` lines
+/// deno-webview/README.md "Startup" measured with).
+pub(crate) fn mark(stage: &str) {
+    log::info!("t+{}ms {stage}", START.elapsed().as_millis());
+}
+
+/// The one HTTP client (page updates, lyrics): reqwest, on the tokio runtime Tauri already runs,
+/// with the system's TLS (SChannel here, Security.framework on a Mac). LRCLIB asks every client to
+/// say who it is.
+pub(crate) static HTTP: LazyLock<reqwest::Client> = LazyLock::new(|| {
+    reqwest::Client::builder()
+        .user_agent("WmpLegacyVisualizers/1.0 (github.com/ryancircelli/wmp-legacy-visualizers)")
+        .build()
+        .expect("no TLS")
+});
+
+/// The folder everything is kept in, when it is not the one Tauri would pick (see `win.rs`).
+fn data_root() -> Option<PathBuf> {
+    #[cfg(target_os = "windows")]
+    return win::data_root();
+    #[cfg(not(target_os = "windows"))]
+    None
+}
+
+/// `browserArgs` from settings.json (beside the exe, else in the data folder; deno-webview/README.md
+/// "settings.json") replaces wry's WebView2 arguments (`--disable-features=msWebOOUI,msPdfOOUI,
+/// msSmartScreenProtection --autoplay-policy=no-user-gesture-required`): a switch can be tried, or a
+/// DevTools port opened, without a rebuild. Unlike the Deno host's webview.dll, WebView2 here does
+/// receive them. `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS` does not: the arguments wry passes win.
+///
+/// The Deno host's other setting, `pageUrl` (load a site instead of the embedded page), is not
+/// ported. Its purpose, a newer page without a new exe, is the signed page updates' now (update.rs),
+/// and an unsigned override at our origin would step round that signature. Loaded as itself, a site
+/// is a remote origin, which Tauri refuses every command this host defines (the saver's `dismiss`
+/// among them) unless a remote capability lists them all.
+fn browser_args() -> Option<String> {
+    let beside = std::env::current_exe()
+        .ok()
+        .and_then(|e| e.parent().map(PathBuf::from));
+    [beside, data_root()]
+        .into_iter()
+        .flatten()
+        .find_map(|d| std::fs::read(d.join("settings.json")).ok())
+        .and_then(|b| serde_json::from_slice::<serde_json::Value>(&b).ok())
+        .and_then(|v| v["browserArgs"].as_str().map(String::from))
+}
+
+/// The page, at the origin its settings (`localStorage`) are keyed by. A custom protocol and not
+/// Tauri's own `tauri.localhost`, so the origin is the one the Deno host's virtual host has always
+/// had and nothing has to be carried over to a new one. On Windows a custom protocol is served as
+/// `https://<name>.localhost/`; `.localhost` resolves inside the browser, with no DNS lookup (see
+/// deno-webview/README.md for the two seconds a `.local` name cost).
+fn page(query: &str) -> WebviewUrl {
+    #[cfg(target_os = "windows")]
+    return WebviewUrl::External(
+        format!("https://wmp.localhost/index.html?{query}")
+            .parse()
+            .unwrap(),
+    );
+    #[cfg(not(target_os = "windows"))]
+    WebviewUrl::CustomProtocol(
+        format!("wmp://localhost/index.html?{query}")
+            .parse()
+            .unwrap(),
+    )
+}
+
+/// Serves `../dist`, embedded at compile time, for `page()` — except `index.html`, which is the
+/// newest verified page update when there is one (update.rs).
+fn serve<R: Runtime>(ctx: UriSchemeContext<'_, R>, req: Request<Vec<u8>>, res: UriSchemeResponder) {
+    let app = ctx.app_handle().clone();
+    let path = match req.uri().path().trim_start_matches('/') {
+        "" => "index.html",
+        p => p,
+    }
+    .to_string();
+    tauri::async_runtime::spawn(async move {
+        let newer = match app.try_state::<update::Updates>() {
+            Some(u) if path == "index.html" => u.page().await,
+            _ => None,
+        };
+        let body = match newer {
+            Some(bytes) => Some(("text/html".to_string(), bytes)),
+            None => app
+                .asset_resolver()
+                .get(path.clone())
+                .map(|a| (a.mime_type, a.bytes)),
+        };
+        if path == "index.html" {
+            mark("page served");
+        }
+        res.respond(
+            match body {
+                Some((mime, bytes)) => Response::builder()
+                    .header(header::CONTENT_TYPE, mime)
+                    // a newer exe or page must never be shown an older cached copy
+                    .header(header::CACHE_CONTROL, "no-store")
+                    .body(bytes),
+                None => Response::builder().status(404).body(Vec::new()),
+            }
+            .unwrap(),
+        );
+    });
+}
+
+fn builder<'a, R: Runtime>(
+    app: &'a AppHandle<R>,
+    label: &str,
+    mode: Mode,
+) -> WebviewWindowBuilder<'a, R, AppHandle<R>> {
+    let query = if mode == Mode::Saver {
+        "mode=screensaver&ss=1"
+    } else {
+        "mode=config"
+    };
+    let host_update = app
+        .try_state::<update::Updates>()
+        .is_some_and(|u| u.host_update());
+    let b = WebviewWindowBuilder::new(app, label, page(query))
+        // what the taskbar and Alt+Tab show
+        .title(if mode == Mode::Spotify {
+            "WMP Spotify"
+        } else {
+            "Alchemy screensaver"
+        })
+        .use_https_scheme(true)
+        // On screen at once, at its final box and in the skin's colour, before WebView2 is started
+        // (which `build` then waits for): the window a native app gives, filled in a moment later.
+        .visible(true)
+        .initialization_script(host::script(mode, host_update));
+    let b = match browser_args() {
+        Some(args) => b.additional_browser_args(&args),
+        None => b,
+    };
+    match data_root() {
+        Some(root) => b.data_directory(root.join("WebView2")),
+        None => b,
+    }
+}
+
+/// A box in physical pixels as the logical one the builder takes, in the scale of the monitor it
+/// starts on — the scale tao converts it back with, so the window is created exactly there.
+fn logical<R: Runtime>(
+    app: &AppHandle<R>,
+    pos: PhysicalPosition<i32>,
+    size: PhysicalSize<u32>,
+) -> Option<(LogicalPosition<f64>, LogicalSize<f64>)> {
+    let m = app.available_monitors().ok()?.into_iter().find(|m| {
+        let (p, s) = (m.position(), m.size());
+        (p.x..p.x + s.width as i32).contains(&pos.x)
+            && (p.y..p.y + s.height as i32).contains(&pos.y)
+    })?;
+    let f = m.scale_factor();
+    Some((pos.to_logical(f), size.to_logical(f)))
+}
+
+/// Where the window `label` was left, from the window-state plugin's own file (`skip_initial_state`
+/// below: the plugin restores after the window and its WebView2 exist, which is a window that
+/// visibly moves; this is the same box before there is a window at all). None on a first run, or
+/// when the box no longer starts on a monitor.
+fn remembered<R: Runtime>(
+    app: &AppHandle<R>,
+    label: &str,
+) -> Option<(LogicalPosition<f64>, LogicalSize<f64>, bool)> {
+    let s: serde_json::Value = serde_json::from_slice(&std::fs::read(state_file()?).ok()?).ok()?;
+    let s = &s[label];
+    let max = s["maximized"].as_bool().unwrap_or(false);
+    let at = |k: &str| s[k].as_i64().map(|v| v as i32);
+    // maximized, x/y is the monitor's corner and prev_x/prev_y the box under it
+    let (x, y) = if max {
+        (at("prev_x")?, at("prev_y")?)
+    } else {
+        (at("x")?, at("y")?)
+    };
+    let (w, h) = (s["width"].as_u64()? as u32, s["height"].as_u64()? as u32);
+    if w == 0 || h == 0 {
+        return None;
+    }
+    let (p, z) = logical(app, PhysicalPosition::new(x, y), PhysicalSize::new(w, h))?;
+    Some((p, z, max))
+}
+
+fn state_file() -> Option<PathBuf> {
+    data_root().map(|r| r.join("window-state.json"))
+}
+
+/// Open the window a mode asks for, or bring it forward if this process already has it: a second
+/// launch lands here too, through the single-instance plugin.
+fn open<R: Runtime>(app: &AppHandle<R>, mode: Mode) -> tauri::Result<()> {
+    let label = match mode {
+        Mode::Saver => "saver",
+        Mode::Spotify => "spotify",
+        _ => "player",
+    };
+    if let Some(w) = app.get_webview_window(label) {
+        w.unminimize()?;
+        w.show()?;
+        return w.set_focus();
+    }
+    let w = match mode {
+        // One window over every monitor, topmost and off the taskbar.
+        // ponytail: one spanning window, as the Deno host; one per monitor if per-display framing is wanted.
+        Mode::Saver => {
+            let (pos, size) = host::virtual_screen(app)?;
+            // over the virtual screen from its creation; a key or a click ends it from then on
+            #[cfg(target_os = "windows")]
+            let _input = win::saver("AlchemySaver", (pos.x, pos.y, size.width, size.height));
+            let b = builder(app, label, mode)
+                .window_classname("AlchemySaver")
+                .decorations(false)
+                .resizable(false)
+                .shadow(false)
+                .always_on_top(true)
+                .skip_taskbar(true)
+                .background_color(Color(0, 0, 0, 255));
+            let w = match logical(app, pos, size) {
+                Some((p, z)) => b.position(p.x, p.y).inner_size(z.width, z.height),
+                None => b,
+            }
+            .build()?;
+            // in physical pixels again: monitors of different scales make the logical box approximate
+            w.set_position(pos)?;
+            w.set_size(size)?;
+            w
+        }
+        // The player: no frame of its own. The XP title bar is the host's on Windows (titlebar.rs,
+        // from the window's first frame) and the page's elsewhere (host.js).
+        _ => {
+            let at = remembered(app, label);
+            #[cfg(target_os = "windows")]
+            win::chrome_when_created("AlchemyHost");
+            #[cfg(target_os = "windows")]
+            let _title_bar = titlebar::hook(at.is_some_and(|(_, _, max)| max));
+            let b = builder(app, label, mode)
+                .window_classname("AlchemyHost") // the Deno host's class, for whatever looks for it
+                .decorations(false)
+                .min_inner_size(480.0, 360.0)
+                // under the title bar until the page paints (and WebView2's own background): the
+                // menu bar's face, the first row of the skin's content (deno-webview/README.md)
+                .background_color(Color(0xEC, 0xE9, 0xD8, 255));
+            let b = if mode == Mode::Spotify {
+                b.initialization_script(spotify::INIT_JS)
+            } else {
+                b
+            };
+            match at {
+                Some((p, z, max)) => b
+                    .position(p.x, p.y)
+                    .inner_size(z.width, z.height)
+                    .maximized(max),
+                None => b.inner_size(1100.0, 720.0).center(),
+            }
+            .build()?
+        }
+    };
+    host::attach(&w, mode);
+    if mode == Mode::Spotify {
+        spotify::attach(&w);
+    }
+    w.show()?;
+    w.set_focus()?;
+    mark(&format!("{label}: window and WebView2 up"));
+    Ok(())
+}
+
+/// Anything that ends the process early: in the log, and in front of the user unless the
+/// screensaver is running, which nobody is looking at.
+fn fatal(saver: bool, what: &str) -> ! {
+    log::error!("fatal: {what}");
+    #[cfg(target_os = "windows")]
+    if !saver {
+        let log = data_root().map(|r| r.join("alchemy.log").display().to_string());
+        win::error_box(
+            &format!(
+                "{what}\n\nThe log has the details:\n{}",
+                log.unwrap_or_default()
+            ),
+            "Alchemy",
+        );
+    }
+    let _ = saver;
+    std::process::exit(1)
+}
+
+/// WmpSpotify.exe is this program built with the `wmp-spotify` feature (.github/workflows/release.yml):
+/// with no mode asked for it opens Spotify, as the Deno host's had `--mode=spotify` compiled in. It asks
+/// for it out loud, starting itself again with the flag, because a launch the running instance takes
+/// over reaches that instance as the raw arguments (the single-instance plugin), and that instance may
+/// be Alchemy.scr's, for which no arguments mean the player. Returns only if it could not.
+#[cfg(feature = "wmp-spotify")]
+fn relaunch_as_spotify(args: &[String]) {
+    // the same standard handles, so ALCHEMY_CONSOLE's redirected log still arrives
+    let child = std::env::current_exe().and_then(|exe| {
+        std::process::Command::new(exe)
+            .args(args)
+            .arg("--mode=spotify")
+            .spawn()
+    });
+    if let Ok(c) = child {
+        // the shell let this process come to the front; the window will be the child's
+        #[cfg(target_os = "windows")]
+        unsafe {
+            let _ = windows::Win32::UI::WindowsAndMessaging::AllowSetForegroundWindow(c.id());
+        }
+        std::process::exit(0);
+    }
+}
+
+fn main() {
+    LazyLock::force(&START);
+    #[allow(unused_mut)]
+    let mut args: Vec<String> = std::env::args().skip(1).collect();
+    #[cfg(feature = "wmp-spotify")]
+    if mode::given(&args).is_none() {
+        relaunch_as_spotify(&args);
+        args.push("--mode=spotify".into());
+    }
+    let mode = mode::parse(&args);
+    if mode == Mode::Preview {
+        return; // the preview pane stays black: exit 0 before anything starts
+    }
+    let saver = mode == Mode::Saver;
+    std::panic::set_hook(Box::new(move |p| fatal(saver, &p.to_string())));
+    let root = data_root();
+
+    let mut log = tauri_plugin_log::Builder::new()
+        .clear_targets()
+        .level(log::LevelFilter::Info);
+    log = log.target(Target::new(match &root {
+        Some(r) => TargetKind::Folder {
+            path: r.clone(),
+            file_name: Some("alchemy".into()),
+        },
+        None => TargetKind::LogDir { file_name: None },
+    }));
+    // and on stdout in a debug build, or with ALCHEMY_CONSOLE set (the Deno host's switch; a release
+    // exe has no console, so a test redirects it)
+    if cfg!(debug_assertions) || std::env::var_os("ALCHEMY_CONSOLE").is_some() {
+        log = log.target(Target::new(TargetKind::Stdout));
+    }
+
+    // The plugin remembers the player's box; `open` puts the window there as it is created.
+    let mut state = tauri_plugin_window_state::Builder::new()
+        .with_state_flags(StateFlags::SIZE | StateFlags::POSITION | StateFlags::MAXIMIZED)
+        .with_denylist(&["saver"]);
+    if let Some(f) = state_file() {
+        // where `remembered` reads it; elsewhere (no data folder) the plugin restores as usual
+        state = state
+            .with_filename(f.to_string_lossy())
+            .skip_initial_state("player")
+            .skip_initial_state("spotify");
+    }
+
+    let run = tauri::Builder::default()
+        // First, as the plugin requires: a second launch hands its arguments to this process and exits.
+        .plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
+            let mode = mode::parse(argv.iter().skip(1));
+            log::info!("second launch {argv:?} -> {mode:?}");
+            if let Err(e) = open(app, mode) {
+                log::error!("second launch: {e}");
+            }
+        }))
+        .plugin(log.build())
+        .plugin(state.build())
+        .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_process::init())
+        .plugin(audio::init())
+        .register_asynchronous_uri_scheme_protocol("wmp", serve)
+        .invoke_handler(tauri::generate_handler![
+            host::ready,
+            host::host_log,
+            host::dismiss,
+            host::win_full,
+            host::check_update,
+            spotify::sp_snapshot,
+            spotify::sp_request,
+            spotify::sp_route,
+            spotify::sp_cookie,
+            spotify::sp_logout
+        ])
+        .setup(move |app| {
+            mark(&format!(
+                "argv {args:?} -> {mode:?}; browser args {}",
+                browser_args().as_deref().unwrap_or("wry's")
+            ));
+            // Page updates, asked for now, while WebView2 starts (never in a debug build, whose
+            // page is the working tree's).
+            let own = app.asset_resolver().get("update.json".into());
+            let own = own.and_then(|a| serde_json::from_slice(&a.bytes).ok());
+            if let (Some(own), Some(root), false) = (own, &root, cfg!(debug_assertions)) {
+                app.manage(update::Updates::start(root.join("update"), own));
+            }
+            // Before this process's WebView2 starts, and past the single-instance check: only the
+            // instance that keeps running touches the profile.
+            #[cfg(target_os = "windows")]
+            if let Some(root) = &root {
+                carry::settings(root);
+            }
+            Ok(open(app.handle(), mode)?)
+        })
+        .run(tauri::generate_context!());
+    if let Err(e) = run {
+        fatal(saver, &e.to_string());
+    }
+}

@@ -4,6 +4,9 @@
 import { positionNow, type Playback, type RepeatMode } from '../../model';
 import { optimistic, pausedPatch } from '../host/media';
 import { W, post, status, type Sp } from './sp';
+import { transport as via } from './transport';
+
+const authed = () => via().authed();
 
 const SPCLIENT = 'gue1-spclient.spotify.com';   // the host the web player used in spike 2
 
@@ -23,7 +26,7 @@ export type Cmd = { endpoint: string; value?: unknown } & Record<string, unknown
 /** true when the player took it (2xx); false after the fallback ran (refused, offline, no device). */
 export async function command(sp: Sp, cmd: Cmd, orElse?: (() => void) | null): Promise<boolean> {
   const w = W(), to = w.activeDeviceId || w.deviceId;
-  if (!w.token || !w.deviceId || !to) { orElse?.(); return false; }
+  if (!authed() || !w.deviceId || !to) { orElse?.(); return false; }
   const url = 'https://' + spclient() + '/connect-state/v1/player/command/from/' + w.deviceId + '/to/' + to;
   try {
     const r = await post(sp, url, { command: cmd });
@@ -66,7 +69,7 @@ export function stop(sp: Sp): Promise<void> {
  *  (the cluster's devices[id].volume has it). */
 export function volume(sp: Sp, pct: number): boolean {
   const w = W(), to = w.activeDeviceId || w.deviceId;
-  if (!sp.hasState || !w.token || !w.deviceId || !to) return false;
+  if (!sp.hasState || !authed() || !w.deviceId || !to) return false;
   const url = 'https://' + spclient() + '/connect-state/v1/connect/volume/from/' + w.deviceId + '/to/' + to;
   const value = Math.round((Math.max(0, Math.min(100, +pct || 0)) / 100) * 65535);
   const now = Date.now();
@@ -134,7 +137,7 @@ export function playContext(sp: Sp, ctx: string, track?: string | null): Promise
  *  that follows confirms it, a refusal puts the old device back. */
 export function transfer(sp: Sp, id: string): Promise<void> {
   const w = W();
-  if (!w.token || !w.deviceId) return Promise.resolve();
+  if (!authed() || !w.deviceId) return Promise.resolve();
   const url = 'https://' + spclient() + '/connect-state/v1/connect/transfer/from/' + w.deviceId + '/to/' + id;
   const light = () => {
     const { devices, actions } = sp.store.getState(), before = devices.list;

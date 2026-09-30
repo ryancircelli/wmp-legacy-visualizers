@@ -161,11 +161,12 @@ function warmCovers(feed: HomeFeed | undefined): Promise<void> {
 }
 
 /** After login, one at a time and only while the page is idle: the library, Media Guide, Radio
- *  Tuner and the first page of the collections most likely opened next. */
+ *  Tuner and the first page of the collections most likely opened next. Not on the Tauri host,
+ *  whose requests go out only when the user asks for something (CONTRACT.md v8). */
 export function useIdlePrefetch(): void {
   const sh = useShell(), q = useQ(), c = useQueryClient(), ready = useApp((s) => s.auth.engine === 'spotify' && s.auth.loggedIn === true);
   useEffect(() => {
-    if (!ready) return;
+    if (!ready || window.__TAURI__) return;
     let stop = false;
     const idle = () => new Promise<void>((ok) => {
       if (typeof window.requestIdleCallback === 'function') window.requestIdleCallback(() => ok(), { timeout: 2000 });

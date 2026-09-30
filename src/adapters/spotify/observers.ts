@@ -4,23 +4,13 @@ import type { Device } from '../../model';
 import { onState } from './state';
 import { deviceVolume } from './connect';
 import { W, type PlayerState, type Sp } from './sp';
+import { transport } from './transport';
 
-let under: CSSStyleSheet | null = null;
-/** The overlay shows while /api/token says isAnonymous === false, and before it says anything when
+/** Our player shows while /api/token says isAnonymous === false, and before it says anything when
  *  the last session here was logged in (the skin comes up at once, with what ui/persist.ts kept;
  *  a session that turns out anonymous goes to the login page anyway). Otherwise Spotify's own page
- *  is what the user sees. The host element is outside the shadow root. */
-function show(on: boolean): void {
-  const h = document.getElementById('wmp-root');
-  if (h) h.style.display = on ? '' : 'none';
-  // Spotify's own page is not rendered while the overlay covers it: its app, sockets and playback
-  // run on, only its style, layout and paint stop (display:none; content-visibility and visibility
-  // were measured to leave its animations ticking).
-  try {
-    if (!under) document.adoptedStyleSheets = [...document.adoptedStyleSheets, (under = new CSSStyleSheet())];
-    under.replaceSync(on ? 'body > :not(#wmp-root) { display: none !important; }' : '');
-  } catch { /* no constructed sheets: it keeps drawing under us */ }
-}
+ *  is what the user sees. */
+const show = (on: boolean) => transport().show(on);
 
 const HINT = 'wmp.loggedIn';
 /** Whether the last session in this profile was logged in. */

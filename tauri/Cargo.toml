@@ -1,0 +1,81 @@
+# The Windows exe (target/[x86_64-pc-windows-msvc/]release/alchemy.exe):
+#   on Windows, and in CI (.github/workflows/tauri.yml):  npx tauri build --no-bundle
+#   from WSL or Linux:  npm run build:win  (cargo-xwin, which fetches the MSVC CRT and SDK once;
+#     it needs `lld-link` on PATH, from apt's lld or a symlink to rustup's rust-lld, and uses
+#     mingw's windres for the icon resource). MSVC, not windows-gnu: the gnu target cannot link
+#     the WebView2 loader statically and would need WebView2Loader.dll beside the exe.
+[package]
+name = "alchemy"
+version = "0.1.0"
+description = "WMP Legacy Visualizers desktop host: the screensaver and its player window"
+authors = ["Ryan Circelli"]
+repository = "https://github.com/ryancircelli/wmp-legacy-visualizers"
+edition = "2024"
+rust-version = "1.90"
+
+[features]
+# WmpSpotify.exe: the same program, opening Spotify mode when no mode is asked for (main.rs)
+wmp-spotify = []
+
+[build-dependencies]
+tauri-build = { version = "=2.7.0", features = [] }
+
+[dependencies]
+tauri = { version = "=2.12.0", features = [] }
+tauri-plugin-single-instance = "=2.5.1"
+tauri-plugin-window-state = "=2.5.0"
+tauri-plugin-log = "=2.10.0"
+tauri-plugin-opener = "=2.7.0"
+tauri-plugin-process = "=2.4.0"
+log = "0.4"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# the one HTTP client (main.rs HTTP: page updates, lyrics), on the tokio runtime Tauri runs, as
+# Tauri's own http and updater plugins use it; the system's TLS, HTTP/1.1 only
+reqwest = { version = "0.13", default-features = false, features = ["native-tls"] }
+tokio = { version = "1", features = ["sync", "time"] }
+
+# page updates (update.rs): the signed manifest, and the two files it names
+ed25519-dalek = "3"
+sha2 = "0.11"
+base64 = "0.23"
+
+# audio (audio/): the keyed socket, lyrics' cache names
+tungstenite = "0.30"
+getrandom = "0.3"
+sha1 = "0.11"
+
+# Spotify mode (spotify/): a dealer push's gzip. The flate2 resvg's png already builds; its inflate
+# is 44 KB of the exe, which nothing else links.
+flate2 = "1"
+
+[target.'cfg(windows)'.dependencies]
+# the native title bar (titlebar.rs): the page's own SVGs, rasterised; nothing else of resvg's
+resvg = { version = "0.48.1", default-features = false }
+wasapi = "0.24.0"
+wry = { version = "=0.57.0", default-features = false }
+webview2-com = "=0.39.1"
+windows = { version = "0.62.2", features = [
+  "Foundation",
+  "Media_Control",
+  "Security_Cryptography",
+  "Storage_Streams",
+  "Win32_Graphics_Dwm",
+  "Win32_Graphics_DirectWrite",
+  "Win32_Graphics_Gdi",
+  "Win32_System_Power",
+  "Win32_System_StationsAndDesktops",
+  "Win32_System_Threading",
+  "Win32_UI_HiDpi",
+  "Win32_UI_Input_KeyboardAndMouse",
+  "Win32_UI_Shell",
+  "Win32_UI_WindowsAndMessaging",
+] }
+
+# Tauri's recommended size profile (https://v2.tauri.app/concept/size/).
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "s"
+panic = "abort"
+strip = true

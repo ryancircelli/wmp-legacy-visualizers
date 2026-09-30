@@ -1,18 +1,19 @@
-// The Spotify engine's page side (CONTRACT v6.1; port of src/95-spotify.js). Active when the host
-// set window.alchemyEngine = "spotify": this page is an overlay over Spotify's own web player and
-// drives it through the channels the web player itself uses, never its DOM and never the public
-// Web API. The host socket (PCM, lyrics, GSMTC as a fallback) comes from the local adapter's startHost.
+// The Spotify engine's page side (CONTRACT v6.1, v8; port of src/95-spotify.js). Active when the
+// host set window.alchemyEngine = "spotify": this page drives Spotify's own web player through the
+// channels the web player itself uses, never its DOM and never the public Web API; from inside its
+// page (the Deno host's overlay) or through the host (Tauri), whichever transport.ts finds. The host
+// socket (PCM, lyrics, GSMTC as a fallback) comes from the local adapter's startHost.
 import { noCommands, type AppStore } from '../../model';
 import { announceHostUpdate, checkForUpdates, detectMode, hostWindow, win } from '../host';
 import { hostTransport, startHost, type HostLink } from '../local';
 import * as C from './connect';
 import { openLink, parseLink } from './links';
-import { canLogout, logout } from './logout';
 import { observe } from './observers';
 import { openArtist } from './artist';
 import { bindQueries } from './queries';
 import { addTo, setLiked } from './saved';
 import { newCache, type Sp } from './sp';
+import { transport } from './transport';
 
 export function newSp(store: AppStore, fallback: Sp['fallback'] = () => {}): Sp {
   return { store, fallback, hasState: false, last: null, scanned: {}, bad: {}, read: {}, scan: null, routed: false, routes: {}, sentVolume: [], fromDevice: false,
@@ -79,7 +80,7 @@ export function spotifyCommands(sp: Sp, host: HostLink | null) {
       openLink(sp, uri).catch(() => {});
       return true;
     },
-    logout,
+    logout: () => transport().logout(),
     win,
   } satisfies typeof noCommands;
 }
@@ -89,7 +90,7 @@ export function createSpotifyAdapter(store: AppStore): { start(): void; stop(): 
   return {
     start() {
       const { actions } = store.getState();
-      actions.setAuth({ engine: 'spotify', loggedIn: null, mode: detectMode(), hostWindow: hostWindow(), canLogout: canLogout() });
+      actions.setAuth({ engine: 'spotify', loggedIn: null, mode: detectMode(), hostWindow: hostWindow(), canLogout: transport().canLogout() });
       announceHostUpdate(store);
       // The slider is the player's volume here: 0..100, not the 0..200 capture range.
       if (store.getState().settings.volume > 100) actions.setSettings({ volume: 100 });
@@ -100,6 +101,7 @@ export function createSpotifyAdapter(store: AppStore): { start(): void; stop(): 
       actions.setCommands(spotifyCommands(sp, h));
       offs = [
         store.subscribe((s) => (s.settings.muted ? 0 : s.settings.volume), (v) => { if (!sp.fromDevice) C.volume(sp, v); }),
+        transport().start(),   // first: the Tauri bridge sets up what observe reads
         observe(sp),
       ];
       bindQueries(sp);
