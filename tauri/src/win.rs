@@ -31,10 +31,11 @@ use windows::core::HSTRING;
 /// shell for the known folder and ignores the variable: a test points `LOCALAPPDATA` at a scratch
 /// folder and nothing lands in the real one.
 ///
-/// In a `tauri` folder of its own while both hosts exist, because one WebView2 profile cannot be
-/// open in two programs at once. The page's origin is already the Deno host's (`main.rs` `page`),
-/// so once that host is retired, dropping `tauri` here is the whole settings carry-over: the Deno
-/// host's `WebView2` profile holds the user's settings under that same origin.
+/// In a `tauri` folder of its own, because one WebView2 profile cannot be open in two programs at
+/// once and a Deno screensaver or WmpSpotify.exe may still run beside this host. The user's settings
+/// and Spotify login are copied over from the Deno host's profiles once (`carry.rs`). The folder
+/// stays where it is after that host is gone: the Spotify login lives in it, and moving it would
+/// log every user out.
 pub fn data_root() -> Option<PathBuf> {
     std::env::var_os("LOCALAPPDATA")
         .map(|d| PathBuf::from(d).join("WmpLegacyVisualizers").join("tauri"))
