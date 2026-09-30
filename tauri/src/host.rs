@@ -4,7 +4,9 @@
 
 use crate::{mark, mode::Mode, update::Updates};
 use std::sync::atomic::{AtomicBool, Ordering};
-use tauri::{AppHandle, Manager, Runtime, WebviewWindow, WindowEvent};
+use tauri::{
+    AppHandle, Manager, PhysicalPosition, PhysicalSize, Runtime, WebviewWindow, WindowEvent,
+};
 
 /// The init script every document gets before its own.
 pub fn script(mode: Mode, host_update: bool) -> String {
@@ -43,6 +45,8 @@ pub fn attach<R: Runtime>(w: &WebviewWindow<R>, mode: Mode) {
     let hwnd = w.hwnd().map(|h| h.0 as isize).unwrap_or_default();
     #[cfg(windows)]
     crate::win::chrome(hwnd);
+    #[cfg(windows)]
+    crate::win::animate(hwnd); // off while it was created maximized (win.rs `maximized`)
     if mode == Mode::Saver {
         return;
     }
@@ -120,11 +124,21 @@ fn full<R: Runtime>(w: &WebviewWindow<R>, on: bool) -> tauri::Result<()> {
     if on {
         // Then the whole virtual screen. Twice: tao keeps a full-screen window on the monitor a
         // new box mostly covers, so the first box moves its idea of "this monitor" to the one
-        // the whole desktop covers most, and the second, on that same monitor, is left alone.
-        let (pos, size) = crate::virtual_screen(w.app_handle())?;
+        // the whole desktop covers most, and the second, on that same monitor, is left alone. On
+        // Windows the position and the size go in one move: apart, each half is a box of its own,
+        // mostly on some other monitor, and with a small monitor left of a larger one they take
+        // turns clamping the window to one monitor or the other.
+        let (pos, size) = virtual_screen(w.app_handle())?;
+        #[cfg(windows)]
+        let hwnd = w.hwnd().map(|h| h.0 as isize).unwrap_or_default();
         for _ in 0..2 {
-            w.set_position(pos)?;
-            w.set_size(size)?;
+            #[cfg(windows)]
+            crate::win::place(hwnd, pos.x, pos.y, size.width, size.height);
+            #[cfg(not(windows))]
+            {
+                w.set_position(pos)?;
+                w.set_size(size)?;
+            }
         }
     }
     w.set_always_on_top(on)?;
@@ -139,6 +153,33 @@ fn full<R: Runtime>(w: &WebviewWindow<R>, on: bool) -> tauri::Result<()> {
     Ok(())
 }
 
+/// The union of every monitor, in physical pixels: the virtual screen, which the screensaver and
+/// full screen cover with one window (deno-webview/README.md "Trade-offs").
+pub fn virtual_screen<R: Runtime>(
+    app: &AppHandle<R>,
+) -> tauri::Result<(PhysicalPosition<i32>, PhysicalSize<u32>)> {
+    let monitors = app.available_monitors()?;
+    let all = span(monitors.iter().map(|m| (*m.position(), *m.size())));
+    all.ok_or(tauri::Error::WindowNotFound) // no monitor at all
+}
+
+/// The box round a set of boxes.
+fn span(
+    boxes: impl Iterator<Item = (PhysicalPosition<i32>, PhysicalSize<u32>)>,
+) -> Option<(PhysicalPosition<i32>, PhysicalSize<u32>)> {
+    let (mut l, mut t, mut r, mut b) = (i32::MAX, i32::MAX, i32::MIN, i32::MIN);
+    for (p, s) in boxes {
+        (l, t) = (l.min(p.x), t.min(p.y));
+        (r, b) = (r.max(p.x + s.width as i32), b.max(p.y + s.height as i32));
+    }
+    (l <= r).then(|| {
+        (
+            PhysicalPosition::new(l, t),
+            PhysicalSize::new((r - l) as u32, (b - t) as u32),
+        )
+    })
+}
+
 /// Help > Check for Player Updates (`alchemyCheckUpdate`): the launch's check, again, on demand.
 #[tauri::command]
 pub async fn check_update<R: Runtime>(app: AppHandle<R>) -> crate::update::CheckResult {
@@ -150,5 +191,41 @@ pub async fn check_update<R: Runtime>(app: AppHandle<R>) -> crate::update::Check
             host_update: false,
             error: Some("This build does not update.".into()),
         },
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::span;
+    use tauri::{PhysicalPosition as P, PhysicalSize as S};
+
+    fn of(boxes: &[(i32, i32, u32, u32)]) -> Option<(i32, i32, u32, u32)> {
+        span(
+            boxes
+                .iter()
+                .map(|&(x, y, w, h)| (P::new(x, y), S::new(w, h))),
+        )
+        .map(|(p, s)| (p.x, p.y, s.width, s.height))
+    }
+
+    #[test]
+    fn virtual_screen() {
+        assert_eq!(of(&[]), None);
+        assert_eq!(of(&[(0, 0, 2400, 1600)]), Some((0, 0, 2400, 1600)));
+        // side by side, a smaller one to the right, bottoms not lined up
+        assert_eq!(
+            of(&[(0, 0, 2560, 1440), (2560, 360, 1920, 1080)]),
+            Some((0, 0, 4480, 1440))
+        );
+        // left of the primary and above it: the corner is on neither monitor
+        assert_eq!(
+            of(&[(0, 0, 1920, 1080), (-1920, -300, 1920, 1080)]),
+            Some((-1920, -300, 3840, 1380))
+        );
+        // stacked, with a gap in the union's corner
+        assert_eq!(
+            of(&[(0, 0, 1920, 1080), (400, 1080, 3840, 2160)]),
+            Some((0, 0, 4240, 3240))
+        );
     }
 }

@@ -185,6 +185,110 @@ then keep their built-in page. A page may still feature-detect optional bindings
 without a bump. `host` hashes the host's own sources; another value tells an exe a newer one is out
 (window.alchemyHostUpdate = true; the page offers the download).
 
+## v8 — the Tauri host (`tauri/`, branch `tauri`; not released)
+One exe for every mode (tauri/src/mode.rs): `/s` the screensaver, `/c`, `/c:<hwnd>` or nothing the player
+window, `/p <hwnd>` exits 0, `--mode=spotify` the Spotify player (below). The page is the website's build,
+embedded, at `https://wmp.localhost/index.html?mode=screensaver&ss=1` (the saver) or `?mode=config` (the
+player and Spotify windows): a custom protocol, `wmp`, which Tauri serves on Windows as
+`https://wmp.localhost/`, so the origin, and the `localStorage` it keys, is the Deno host's
+(`wmp://localhost/` elsewhere). Data folder `%LOCALAPPDATA%\WmpLegacyVisualizers\tauri\` (WebView2
+profile, window-state.json, alchemy.log, update\, lyrics\): a WebView2 profile can be open in one program
+at a time, so the two hosts keep separate settings and logins while both exist.
+Globals (tauri/src/host.js, on every document of every Tauri window, before any page script):
+  - `alchemyElectron = { loopback: false, mode: "screensaver"|"config" }`. loopback is false (the Deno host
+    says true): with it true, a page without host audio (no socket, or off Windows) would call
+    getDisplayMedia, which WebView2 answers with a share picker, not a loopback.
+  - `alchemyScreensaver` is MERGED into, never replaced: `Object.assign({audio:false, url:''},
+    window.alchemyScreensaver)`. A plugin's init script runs before the window's own, and the audio
+    plugin's (tauri/src/audio/mod.rs) has already set `{audio: true, url: "ws://127.0.0.1:<port>/audio?k=<key>"}`
+    — only when location.hostname is `wmp.localhost` or `localhost` (the page off Windows), so a page
+    the web view is somehow navigated to is never handed the key.
+  - `alchemyHostUpdate`, `alchemyMarks`, `alchemyLog`, `alchemyOccluded` (called by the host) and
+    `alchemyWinDrag` / `Min` / `Max` / `Close` / `Size` / `Full`, as the Deno host; the window calls go
+    through Tauri's window API. `alchemyOpenUrl` goes through the opener plugin, scoped to the project's
+    site and repository (tauri/capabilities/default.json); any other URL is refused and logged.
+    `alchemyRestart` is the process plugin's restart.
+  - NEW, optional: `alchemyCheckUpdate(): Promise<{running, ready, hostUpdate, error}>` — Help > Check for
+    Player Updates. `running` is the page version this launch serves, `ready` a newer one now cached for
+    the next launch (else null), `hostUpdate` a newer exe is out, `error` why the site could not be
+    asked or believed (else null). The page uses it when present and the Deno host's worker `/update`
+    otherwise.
+  - NEW, optional: `alchemyNativeTitle = true` (Windows; the player and Spotify windows, never the saver):
+    the host draws the XP title bar itself (tauri/src/titlebar.rs). The page hides `#titlebar`
+    (`auth.nativeTitle` -> `#chrome[data-nativetitle]` -> the `nativetitle:` variant, as `bare:` does); the
+    alchemyWin* calls stay (the status-bar grip, full screen). The website and the Deno host never set it.
+  - `window.__TAURI__` (withGlobalTauri) exists in every Tauri window, so in our page; it NEVER exists in
+    Spotify's page (below). Not provided: `alchemyReady` (host.js reports the first painted frame
+    itself), `alchemySpotifyLogout` (the bridge's `sp_logout`), `alchemyQuit`, `alchemyCarried`.
+Page updates (v7) are the same contract in Rust (tauri/src/update.rs): same manifest, key and rules;
+`needs` is compared with deno-webview/host-api.json, one number for both hosts while both exist. Only
+`index.html` is updated: the Spotify window runs index.html too, there is no spotify-inject.js here.
+Cache `tauri\update\`.
+
+### v8 — the audio socket (both hosts)
+  - `/audio` answers only with the per-launch key, 128 random bits in hex: `ws://127.0.0.1:<port>/audio?k=<key>`;
+    without it, 403. The port is findable by anything local, and the socket is the system's sound, what
+    is playing, and transport and wake commands. The Deno host keys it the same way (server.ts).
+  - `{"rate":n}` is the first text frame, then PCM (binary, interleaved stereo f32, one message per
+    capture period: 3840 bytes at 48 kHz). The Tauri host sends the rate ONCE per socket, even when the
+    capture restarts after a default-device change and keeps streaming into the same socket; the Deno
+    host sends it again after a helper restart. The page attaches a socket's source once
+    (src/adapters/local/index.ts `openHostAudio`, since 2026-09-29), so either is safe; before that fix a
+    second rate replaced the source, and stopping the old one closed the socket it arrived on.
+  - `media`, `lyrics`, `mediaCmd`, `wake` as v4/v5. `lyricsPref` refetches only on a change (the page sends
+    "on" as it connects). A stalled page loses messages past 1 MB unsent; it never grows the host.
+    Lyrics cache `tauri\lyrics\`, the Deno host's file names.
+
+### v8 — the Spotify bridge (`--mode=spotify`, tauri/src/spotify, src/adapters/spotify/bridge.ts)
+Replaces v6's overlay for this host: our page is NOT inside Spotify's. Window "spotify" (title `WMP Spotify`,
+class `AlchemyHost`) loads our page, `https://wmp.localhost/index.html?mode=config`, with
+`window.alchemyEngine = 'spotify'` set before it. Spotify's web player, unmodified, is a child WebView2 in
+the same window that the host creates with wry itself: no Tauri IPC, no init script, no global of ours is
+ever in it. Same browser process, its own profile (`WebView2\EBWebView\WV2Profile_spotify`), the autoplay
+permission for https://open.spotify.com. It is parked (1x1 px just outside the window, never IsVisible=false)
+and covers the window, under the title bar, only while Spotify needs the user: any https page but the web
+player (its login, a captcha), or the web player logged out, which is sent to the login page at most once
+a minute. The host watches it through the DevTools Protocol (Network domain only; Runtime.enable is never
+called) and runs our requests in an isolated world of its page.
+The page picks its transport (src/adapters/spotify/transport.ts): the bridge when `window.__TAURI__` exists,
+else in-page (v6.1). Everything above the transport is shared: the bridge keeps `window.__wmpSpotify` and
+fires the same `wmp-spotify-auth` / `-hash` / `-state` / `-devices` events from what the host reports, by
+deno-webview/spotify.ts's rules. `__wmpSpotify.token` never exists; `hasToken` says whether the host has one.
+Host -> page (Tauri events, to the "spotify" window only):
+  - `sp:auth {loggedIn: true|false|null, hasToken: bool}` — the first bearer seen; /api/token's
+    isAnonymous changing; File > Log Out.
+  - `sp:hash {op, sha, scanned: bool}` — scanned false: a persisted-query hash the web player sent
+    (pathfinder v1 GET URL or v2 POST body); true: one declared in a script it loaded from
+    open.spotifycdn.com (v6.1's pattern), the search chunk's included once it has loaded.
+  - `sp:device {deviceId: 40-hex|null, hobs: hex|null, spclient: host|null}` — this web player's Connect id
+    (track-playback's registration body), the prefix connect-state's `devices/hobs_<hex>` URL carries and
+    that spclient host. A new registration drops an id that does not match its prefix.
+  - `sp:cluster <connect-state cluster>` — the devices PUT's answer, and each dealer push of
+    `hm://connect-state/v1/cluster` (JSON, or base64 of JSON, gzipped when its headers say so).
+Page -> host (`__TAURI__.core.invoke`):
+  - `sp_snapshot()` -> `{loggedIn, hasToken, expiresAt, deviceId, hobs, spclient, hashes, scanned, cluster}`:
+    all seen so far. The bridge subscribes to the events first, then asks, so nothing falls between.
+  - `sp_request({url, method?, body?, headers?})` -> `{status, text, retryAfter}`. Only
+    `https://api-partner.spotify.com/...` or a `*spclient*.spotify.com` host (never api.spotify.com: the Web
+    API answers this token with 429, v6.1); method GET (default), POST, PUT or DELETE; anything else
+    rejects. Of the page's headers only content-type, accept and app-platform are kept; the host adds
+    `authorization: Bearer <token>`, and client-token, app-platform and spotify-app-version as the web
+    player last sent them. Run as a fetch in the isolated world (Spotify's origin, none of its script),
+    30 s timeout. status 0: no bearer yet. Rejects on a network error, as fetch does.
+  - `sp_route({path})` — `/[A-Za-z0-9/_:-]*` only: history.pushState + popstate in the web player, which
+    loads that route's script chunk (its hashes then arrive as `sp:hash` scanned).
+  - `sp_cookie({name: "sp_t"})` -> string — sp_t only (home's variables carry it).
+  - `sp_logout()` — drops the bearer, `sp:auth {loggedIn: false, hasToken: false}`, and loads Spotify's
+    logout, which lands on its login page.
+On this host the page prefetches nothing while idle after login (src/ui/data.ts): its requests go out
+when the user asks for something.
+Privacy: the bearer is in Spotify's page and the host's memory only: never in our page, a file or the log
+(the log names a request's host and path and its pathfinder operation or player command, never its
+variables, its answer or the dealer socket's URL, which carries the token).
+Measured 2026-09-29, the logged-out web player 60 s in: our player window alone 253 MB private; with
+Spotify's view in the app's browser under its own profile 553-560 MB; in a browser of its own 655-667 MB,
+and slower to come up (0.7-0.8 s against 0.25-0.55 s). The shared browser it is.
+
 ## Dev-only (`--dev`; never in a release exe) — hot reload for the Spotify overlay
 `npm run dev:spotify` (deno-webview/dev.mjs) rebuilds dist/spotify-inject.js on every change and starts the host with
 `--mode=spotify --dev`. The injected bootstrap (deno-webview/spotify.ts) then fetches the bundle at mount time from the

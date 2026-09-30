@@ -49,6 +49,12 @@ fn data_root() -> Option<PathBuf> {
 /// msSmartScreenProtection --autoplay-policy=no-user-gesture-required`): a switch can be tried, or a
 /// DevTools port opened, without a rebuild. Unlike the Deno host's webview.dll, WebView2 here does
 /// receive them. `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS` does not: the arguments wry passes win.
+///
+/// The Deno host's other setting, `pageUrl` (load a site instead of the embedded page), is not
+/// ported. Its purpose, a newer page without a new exe, is the signed page updates' now (update.rs),
+/// and an unsigned override at our origin would step round that signature. Loaded as itself, a site
+/// is a remote origin, which Tauri refuses every command this host defines (the saver's `dismiss`
+/// among them) unless a remote capability lists them all.
 fn browser_args() -> Option<String> {
     let beside = std::env::current_exe()
         .ok()
@@ -134,7 +140,11 @@ fn builder<'a, R: Runtime>(
         .is_some_and(|u| u.host_update());
     let b = WebviewWindowBuilder::new(app, label, page(query))
         // what the taskbar and Alt+Tab show
-        .title(if mode == Mode::Spotify { "WMP Spotify" } else { "Alchemy screensaver" })
+        .title(if mode == Mode::Spotify {
+            "WMP Spotify"
+        } else {
+            "Alchemy screensaver"
+        })
         .use_https_scheme(true)
         // On screen at once, at its final box and in the skin's colour, before WebView2 is started
         // (which `build` then waits for): the window a native app gives, filled in a moment later.
@@ -148,25 +158,6 @@ fn builder<'a, R: Runtime>(
         Some(root) => b.data_directory(root.join("WebView2")),
         None => b,
     }
-}
-
-/// The union of every monitor, in physical pixels: the virtual screen.
-fn virtual_screen<R: Runtime>(
-    app: &AppHandle<R>,
-) -> tauri::Result<(PhysicalPosition<i32>, PhysicalSize<u32>)> {
-    let (mut l, mut t, mut r, mut b) = (i32::MAX, i32::MAX, i32::MIN, i32::MIN);
-    for m in app.available_monitors()? {
-        let (p, s) = (m.position(), m.size());
-        (l, t) = (l.min(p.x), t.min(p.y));
-        (r, b) = (r.max(p.x + s.width as i32), b.max(p.y + s.height as i32));
-    }
-    if l > r {
-        return Err(tauri::Error::WindowNotFound); // no monitor at all
-    }
-    Ok((
-        PhysicalPosition::new(l, t),
-        PhysicalSize::new((r - l) as u32, (b - t) as u32),
-    ))
 }
 
 /// A box in physical pixels as the logical one the builder takes, in the scale of the monitor it
@@ -185,15 +176,16 @@ fn logical<R: Runtime>(
     Some((pos.to_logical(f), size.to_logical(f)))
 }
 
-/// Where the player was left, from the window-state plugin's own file (`skip_initial_state` below:
-/// the plugin restores after the window and its WebView2 exist, which is a window that visibly
-/// moves; this is the same box before there is a window at all). None on a first run, or when the
-/// box no longer starts on a monitor.
+/// Where the window `label` was left, from the window-state plugin's own file (`skip_initial_state`
+/// below: the plugin restores after the window and its WebView2 exist, which is a window that
+/// visibly moves; this is the same box before there is a window at all). None on a first run, or
+/// when the box no longer starts on a monitor.
 fn remembered<R: Runtime>(
     app: &AppHandle<R>,
+    label: &str,
 ) -> Option<(LogicalPosition<f64>, LogicalSize<f64>, bool)> {
     let s: serde_json::Value = serde_json::from_slice(&std::fs::read(state_file()?).ok()?).ok()?;
-    let s = &s["player"];
+    let s = &s[label];
     let max = s["maximized"].as_bool().unwrap_or(false);
     let at = |k: &str| s[k].as_i64().map(|v| v as i32);
     // maximized, x/y is the monitor's corner and prev_x/prev_y the box under it
@@ -231,8 +223,12 @@ fn open<R: Runtime>(app: &AppHandle<R>, mode: Mode) -> tauri::Result<()> {
         // One window over every monitor, topmost and off the taskbar.
         // ponytail: one spanning window, as the Deno host; one per monitor if per-display framing is wanted.
         Mode::Saver => {
-            let (pos, size) = virtual_screen(app)?;
+            let (pos, size) = host::virtual_screen(app)?;
+            // over the virtual screen from its creation; a key or a click ends it from then on
+            #[cfg(target_os = "windows")]
+            let _input = win::saver("AlchemySaver", (pos.x, pos.y, size.width, size.height));
             let b = builder(app, label, mode)
+                .window_classname("AlchemySaver")
                 .decorations(false)
                 .resizable(false)
                 .shadow(false)
@@ -252,10 +248,11 @@ fn open<R: Runtime>(app: &AppHandle<R>, mode: Mode) -> tauri::Result<()> {
         // The player: no frame of its own. The XP title bar is the host's on Windows (titlebar.rs,
         // from the window's first frame) and the page's elsewhere (host.js).
         _ => {
+            let at = remembered(app, label);
             #[cfg(target_os = "windows")]
             win::chrome_when_created("AlchemyHost");
             #[cfg(target_os = "windows")]
-            let _title_bar = titlebar::hook();
+            let _title_bar = titlebar::hook(at.is_some_and(|(_, _, max)| max));
             let b = builder(app, label, mode)
                 .window_classname("AlchemyHost") // the Deno host's class, for whatever looks for it
                 .decorations(false)
@@ -268,7 +265,7 @@ fn open<R: Runtime>(app: &AppHandle<R>, mode: Mode) -> tauri::Result<()> {
             } else {
                 b
             };
-            match remembered(app) {
+            match at {
                 Some((p, z, max)) => b
                     .position(p.x, p.y)
                     .inner_size(z.width, z.height)
@@ -328,7 +325,9 @@ fn main() {
         },
         None => TargetKind::LogDir { file_name: None },
     }));
-    if cfg!(debug_assertions) {
+    // and on stdout in a debug build, or with ALCHEMY_CONSOLE set (the Deno host's switch; a release
+    // exe has no console, so a test redirects it)
+    if cfg!(debug_assertions) || std::env::var_os("ALCHEMY_CONSOLE").is_some() {
         log = log.target(Target::new(TargetKind::Stdout));
     }
 
@@ -340,7 +339,8 @@ fn main() {
         // where `remembered` reads it; elsewhere (no data folder) the plugin restores as usual
         state = state
             .with_filename(f.to_string_lossy())
-            .skip_initial_state("player");
+            .skip_initial_state("player")
+            .skip_initial_state("spotify");
     }
 
     let run = tauri::Builder::default()
