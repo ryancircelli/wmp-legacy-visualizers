@@ -1,10 +1,12 @@
-//! The XP title bar of the player and Spotify windows, drawn by the host (Windows only): a strip
-//! across the top of the window's own client area, painted from the window's first frame, with the
-//! web view kept below it. It is the page's `#titlebar` (src/skins/wmp9/components/Chrome.tsx) to
-//! the pixel where it can be: the same gradients (read from the skin's stylesheet), the same SVGs
-//! (the files the page draws, rasterised by resvg), Tahoma Bold through DirectWrite the way Chromium
-//! draws it, and the same layout rounded to device pixels the way Chromium rounds it. The page hides
-//! its own title bar under this host (`alchemyNativeTitle`, host.js).
+//! The XP window of the player and Spotify windows, drawn by the host (Windows only): a strip
+//! across the top of the window's own client area and the Luna frame down both sides and along the
+//! bottom, painted from the window's first frame, with the web view kept inside them. The strip is
+//! the page's `#titlebar` (src/skins/wmp9/components/Chrome.tsx) to the pixel where it can be: the
+//! same gradients (read from the skin's stylesheet), the same SVGs (the files the page draws,
+//! rasterised by resvg), Tahoma Bold through DirectWrite the way Chromium draws it, and the same
+//! layout rounded to device pixels the way Chromium rounds it. The frame is the page's (Root.tsx):
+//! `#chrome`'s blue past `#framebody`'s margin, and `#framebody`'s separator line. The page draws
+//! neither under this host (`alchemyNativeTitle`, host.js).
 //!
 //! **Why the client area.** tao keeps `WS_CAPTION` on a frameless window and gives the whole window
 //! to the client in `WM_NCCALCSIZE` (bar a DPI-scaled row or two at the top on Windows 11, which DWM
@@ -17,10 +19,12 @@
 //!
 //! **Why the window's own procedure and no child window.** The top-level window has to answer the
 //! hit test anyway, and painting its own client area needs no z-order: nothing is drawn over the
-//! strip but what is kept out of it. Every web view's container (wry's `WRY_WEBVIEW` child) is
-//! clamped below the strip as it is moved (`WM_WINDOWPOSCHANGING`), so no web view covers it even
-//! for the moment between wry's resize and ours, and its WebView2 controller is fitted to what is
-//! left (`adopt`). A live resize repaints the strip inside the resize (`RDW_UPDATENOW`).
+//! strip but what is kept out of it. Every web view's container (wry's `WRY_WEBVIEW` child) is put
+//! inside the frame whenever anything moves it (`WM_WINDOWPOSCHANGING`), whatever was asked for,
+//! and its WebView2 controller is fitted to it there and then: wry sizes the controller to the
+//! whole window first, and a move that changes nothing is never followed by `WM_WINDOWPOSCHANGED`
+//! (a web view as tall as the window in a container shorter by the strip, its bottom cut off). A
+//! live resize repaints the chrome inside the resize (`RDW_UPDATENOW`).
 //!
 //! **Why a hook.** The builder does not return until WebView2 is up, half a second after the window
 //! is on screen, and it pumps messages meanwhile. So the subclass goes on as the window is created —
@@ -70,7 +74,7 @@ const TITLE: &str = "Windows Media Player";
 type Stops = Vec<sk::GradientStop>;
 
 fn hex(s: &str) -> sk::Color {
-    let v = u32::from_str_radix(s.trim_start_matches('#'), 16).expect(s);
+    let v = u32::from_str_radix(s.trim().trim_start_matches('#'), 16).expect(s);
     sk::Color::from_rgba8((v >> 16) as u8, (v >> 8) as u8, v as u8, 255)
 }
 
@@ -103,6 +107,24 @@ fn token(name: &str) -> sk::Color {
     hex(&v.trim_start()[..7])
 }
 
+/// `--background-image-<name>` (src/ui/theme.css): a vertical gradient of two colours, top to bottom.
+fn two_stops(name: &str) -> [sk::Color; 2] {
+    let v = THEME_CSS
+        .split_once(&format!(
+            "--background-image-{name}: linear-gradient(180deg,"
+        ))
+        .expect(name)
+        .1;
+    let c: Vec<sk::Color> = v
+        .split_once(')')
+        .expect(name)
+        .0
+        .split(',')
+        .map(hex)
+        .collect();
+    [c[0], c[1]]
+}
+
 /// A caption button: minimize, maximize, close, left to right.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Btn {
@@ -117,6 +139,9 @@ struct Look {
     /// per button kind (blue, red) and state (normal, hover)
     face: [[Stops; 2]; 2],
     rim: [sk::Color; 2],
+    /// the frame: `#chrome`'s two colours, top and bottom, and `#framebody`'s border
+    luna: [sk::Color; 2],
+    sep: sk::Color,
     icon: usvg::Tree,
     glyphs: [usvg::Tree; 3],
     text: Option<Text>,
@@ -138,6 +163,8 @@ fn look() -> &'static Look {
                 [gradient(".wbtn.x"), gradient(".wbtn.x:hover")],
             ],
             rim: [token("caption-edge"), token("close-edge")],
+            luna: two_stops("luna-window"),
+            sep: token("luna-sep"),
             icon: svg(ICON),
             glyphs: GLYPHS.map(svg),
             text: Text::new()
@@ -168,6 +195,12 @@ fn px(v: f32) -> i32 {
 /// The strip's height at `s` (the scale, dpi / 96).
 fn bar_height(s: f32) -> i32 {
     px(30.0 * s)
+}
+
+/// The frame at `s`: the blue (`#framebody`'s 4 px margin, rounded) and the separator inside it (its
+/// 1 px border, which Blink snaps down to whole device pixels).
+fn frame_widths(s: f32) -> (i32, i32) {
+    (px(4.0 * s), s.floor().max(1.0) as i32)
 }
 
 /// Each button's box (left, top, right, bottom), snapped, and its unsnapped left edge.
@@ -615,6 +648,40 @@ pub fn render(
     paint(w, dpi, hot, down).map(|p| (p.width(), p.height(), p.data().to_vec()))
 }
 
+/// The frame's three bands in a client `w` x `h` under a strip `top` tall: left, right, bottom.
+fn bands(w: i32, h: i32, top: i32, s: f32) -> [RECT; 3] {
+    let (e, l) = frame_widths(s);
+    let side = e + l;
+    let r = |left, top, right, bottom| RECT {
+        left,
+        top,
+        right,
+        bottom,
+    };
+    [
+        r(0, top, side, h),
+        r(w - side, top, w, h),
+        r(side, h - side, w - side, h),
+    ]
+}
+
+/// A pixel of the frame at (x, y), as a DIB's 0x00RRGGBB: `#framebody`'s border where it is, else
+/// `#chrome`'s gradient, which spans the whole client height as `#chrome` does (Root.tsx). Rounded
+/// to 8 bits as Skia rounds; Chromium's dither of the gradient (a level either way) is not copied.
+fn frame_px(look: &Look, w: i32, h: i32, s: f32, x: i32, y: i32) -> u32 {
+    let (edge, line) = frame_widths(s);
+    let side = edge + line;
+    let sep = if y >= h - side {
+        y < h - edge && (edge..w - edge).contains(&x)
+    } else {
+        (edge..side).contains(&x) || (w - side..w - edge).contains(&x)
+    };
+    let [a, b] = if sep { [look.sep; 2] } else { look.luna };
+    let t = (y as f32 + 0.5) / h as f32;
+    let ch = |p: f32, q: f32| ((p + (q - p) * t) * 255.0 + 0.5).floor() as u32;
+    ch(a.red(), b.red()) << 16 | ch(a.green(), b.green()) << 8 | ch(a.blue(), b.blue())
+}
+
 // ---- the window --------------------------------------------------------------------------------
 
 #[derive(Default)]
@@ -665,6 +732,24 @@ fn client(h: HWND) -> RECT {
     r
 }
 
+/// Where the web views go: the client area inside the strip and the frame (all of it in full screen).
+fn inner(h: HWND) -> RECT {
+    let (c, top) = (client(h), height(h));
+    let side = match top {
+        0 => 0,
+        _ => {
+            let (e, l) = frame_widths(dpi(h) as f32 / 96.0);
+            e + l
+        }
+    };
+    RECT {
+        left: side,
+        top,
+        right: (c.right - side).max(side + 1),
+        bottom: (c.bottom - side).max(top + 1),
+    }
+}
+
 /// While it lives, every `CLASS` window this thread makes has the strip from its creation on: put
 /// it round the window builder. `max`: the window is being created maximized (win.rs `maximized`).
 pub fn hook(max: bool) -> Option<crate::win::OnCreate> {
@@ -678,7 +763,7 @@ pub fn hook(max: bool) -> Option<crate::win::OnCreate> {
     })
 }
 
-/// A WebView2 controller whose container lies in `h`: fitted below the strip from now on.
+/// A WebView2 controller whose container lies in `h`: fitted inside the chrome from now on.
 pub fn adopt(h: isize, controller: ICoreWebView2Controller) {
     let h = HWND(h as _);
     let mut container = HWND::default();
@@ -688,33 +773,60 @@ pub fn adopt(h: isize, controller: ICoreWebView2Controller) {
     }
 }
 
-/// Move a container to where it already is: the clamp and the controller's fit follow.
-fn fit(container: HWND) {
-    unsafe {
-        let mut r = RECT::default();
-        if GetWindowRect(container, &mut r).is_ok() {
-            let mut pts = [
-                POINT {
-                    x: r.left,
-                    y: r.top,
-                },
-                POINT {
-                    x: r.right,
-                    y: r.bottom,
-                },
-            ];
-            MapWindowPoints(None, GetParent(container).ok(), &mut pts);
-            let _ = SetWindowPos(
-                container,
-                None,
-                pts[0].x,
-                pts[0].y,
-                pts[1].x - pts[0].x,
-                pts[1].y - pts[0].y,
-                SWP_NOZORDER | SWP_NOACTIVATE,
-            );
+/// The WebView2 controllers in `h` (a copy: fitting one sends messages that look them up again).
+fn views(h: HWND) -> Vec<ICoreWebView2Controller> {
+    with(h, |st| st.views.clone()).unwrap_or_default()
+}
+
+/// Every web view in `h` to its place, after what it goes inside changed (size, DPI, full screen).
+fn place(h: HWND) {
+    for c in views(h) {
+        let mut container = HWND::default();
+        if unsafe { c.ParentWindow(&mut container) }.is_ok() {
+            fit(container);
         }
     }
+}
+
+/// A child's box in its parent's client coordinates.
+fn placed(child: HWND) -> RECT {
+    let mut r = RECT::default();
+    unsafe {
+        let _ = GetWindowRect(child, &mut r);
+        let mut pts = [
+            POINT {
+                x: r.left,
+                y: r.top,
+            },
+            POINT {
+                x: r.right,
+                y: r.bottom,
+            },
+        ];
+        MapWindowPoints(None, GetParent(child).ok(), &mut pts);
+        RECT {
+            left: pts[0].x,
+            top: pts[0].y,
+            right: pts[1].x,
+            bottom: pts[1].y,
+        }
+    }
+}
+
+/// Move a container to where it already is: `container` puts it in its place and fits its view.
+fn fit(container: HWND) {
+    let r = placed(container);
+    let _ = unsafe {
+        SetWindowPos(
+            container,
+            None,
+            r.left,
+            r.top,
+            r.right - r.left,
+            r.bottom - r.top,
+            SWP_NOZORDER | SWP_NOACTIVATE,
+        )
+    };
 }
 
 fn hit_button(h: HWND, x: i32) -> Option<Btn> {
@@ -739,14 +851,17 @@ fn from_code(c: usize) -> Option<Btn> {
     BTNS.into_iter().find(|b| code(*b) as usize == c)
 }
 
+/// Paint the chrome (everything outside `inner`) now.
 fn repaint(h: HWND) {
-    let r = RECT {
-        left: 0,
-        top: 0,
-        right: client(h).right,
-        bottom: height(h),
-    };
-    let _ = unsafe { RedrawWindow(Some(h), Some(&r), None, RDW_INVALIDATE | RDW_UPDATENOW) };
+    let (c, i) = (client(h), inner(h));
+    unsafe {
+        let all = CreateRectRgn(0, 0, c.right, c.bottom);
+        let hole = CreateRectRgn(i.left, i.top, i.right, i.bottom);
+        CombineRgn(Some(all), Some(all), Some(hole), RGN_DIFF);
+        let _ = RedrawWindow(Some(h), None, Some(all), RDW_INVALIDATE | RDW_UPDATENOW);
+        let _ = DeleteObject(hole.into());
+        let _ = DeleteObject(all.into());
+    }
 }
 
 fn set_state(h: HWND, hot: Option<Btn>, down: Option<Btn>) {
@@ -791,11 +906,60 @@ fn system_menu(h: HWND, lp: LPARAM) {
     }
 }
 
-/// Paint the strip into `dc` from the cache, re-rendering what changed.
+/// 32-bit top-down pixels (BGRA) onto `dc` at (x, y).
+fn put(dc: HDC, x: i32, y: i32, w: i32, h: i32, bits: *const std::ffi::c_void) {
+    let bmi = BITMAPINFO {
+        bmiHeader: BITMAPINFOHEADER {
+            biSize: size_of::<BITMAPINFOHEADER>() as u32,
+            biWidth: w,
+            biHeight: -h, // top-down
+            biPlanes: 1,
+            biBitCount: 32,
+            biCompression: BI_RGB.0,
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+    unsafe {
+        SetDIBitsToDevice(
+            dc,
+            x,
+            y,
+            w as u32,
+            h as u32,
+            0,
+            0,
+            0,
+            h as u32,
+            bits,
+            &bmi,
+            DIB_RGB_COLORS,
+        );
+    }
+}
+
+/// Paint the chrome into `dc`: the strip from the cache (re-rendering what changed), and the frame.
 fn blit(h: HWND, dc: HDC) {
-    let (w, top, d) = (client(h).right, height(h), dpi(h));
+    let (c, top, d) = (client(h), height(h), dpi(h));
+    let w = c.right;
     if top == 0 || w <= 0 {
         return;
+    }
+    let (s, lk) = (d as f32 / 96.0, look());
+    for r in bands(w, c.bottom, top, s) {
+        let px: Vec<u32> = (r.top..r.bottom)
+            .flat_map(|y| (r.left..r.right).map(move |x| frame_px(lk, w, c.bottom, s, x, y)))
+            .collect();
+        if !px.is_empty() {
+            put(
+                dc,
+                r.left,
+                r.top,
+                r.right - r.left,
+                r.bottom - r.top,
+                px.as_ptr() as _,
+            );
+        }
     }
     with(h, |st| {
         let key = (w, d, st.hot, st.down);
@@ -810,34 +974,7 @@ fn blit(h: HWND, dc: HDC) {
             st.cache = Some((key, bgra));
         }
         let bits = &st.cache.as_ref().expect("cache").1;
-        let bmi = BITMAPINFO {
-            bmiHeader: BITMAPINFOHEADER {
-                biSize: size_of::<BITMAPINFOHEADER>() as u32,
-                biWidth: w,
-                biHeight: -top, // top-down
-                biPlanes: 1,
-                biBitCount: 32,
-                biCompression: BI_RGB.0,
-                ..Default::default()
-            },
-            ..Default::default()
-        };
-        unsafe {
-            SetDIBitsToDevice(
-                dc,
-                0,
-                0,
-                w as u32,
-                top as u32,
-                0,
-                0,
-                0,
-                top as u32,
-                bits.as_ptr() as _,
-                &bmi,
-                DIB_RGB_COLORS,
-            );
-        }
+        put(dc, 0, 0, w, top, bits.as_ptr() as _);
     });
 }
 
@@ -858,8 +995,29 @@ unsafe extern "system" fn window(
                 y: ((lp.0 >> 16) & 0xFFFF) as i16 as i32,
             };
             let _ = unsafe { ScreenToClient(h, &mut p) };
-            if top == 0 || p.y < 0 || p.y >= top || p.x < 0 || p.x >= client(h).right {
+            let c = client(h);
+            if top == 0 || p.y < 0 || p.y >= c.bottom || p.x < 0 || p.x >= c.right {
                 return def();
+            }
+            if p.y >= top {
+                // the frame sizes the window, as XP's did (not maximized, nor when it cannot)
+                let i = inner(h);
+                let (l, r, b) = (p.x < i.left, p.x >= i.right, p.y >= i.bottom);
+                let style = unsafe { GetWindowLongW(h, GWL_STYLE) } as u32;
+                if !(l || r || b)
+                    || style & WS_THICKFRAME.0 == 0
+                    || unsafe { IsZoomed(h) }.as_bool()
+                {
+                    return def();
+                }
+                let ht = match (l, r, b) {
+                    (true, _, true) => HTBOTTOMLEFT,
+                    (_, true, true) => HTBOTTOMRIGHT,
+                    (true, _, _) => HTLEFT,
+                    (_, true, _) => HTRIGHT,
+                    _ => HTBOTTOM,
+                };
+                return LRESULT(ht as isize);
             }
             // the top edge resizes (tao answers HTTOP there) unless maximized
             let edge = unsafe { GetSystemMetricsForDpi(SM_CYFRAME, dpi(h)) };
@@ -917,11 +1075,12 @@ unsafe extern "system" fn window(
             LRESULT(0)
         }
         WM_ERASEBKGND => {
-            // tao fills the client area with the window's colour; not the strip's rows
+            // tao fills the client area with the window's colour; only inside the chrome
             let dc = HDC(wp.0 as _);
+            let i = inner(h);
             unsafe {
                 SaveDC(dc);
-                ExcludeClipRect(dc, 0, 0, client(h).right, height(h));
+                IntersectClipRect(dc, i.left, i.top, i.right, i.bottom);
                 let r = def();
                 let _ = RestoreDC(dc, -1);
                 r
@@ -936,7 +1095,16 @@ unsafe extern "system" fn window(
         }
         WM_SIZE => {
             let r = def();
+            if wp.0 != SIZE_MINIMIZED as usize {
+                place(h);
+            }
             repaint(h); // inside the live resize, not a frame after it
+            r
+        }
+        // what the web views go inside can change with no WM_SIZE: the strip's height, the frame
+        WM_DPICHANGED | WM_STYLECHANGED => {
+            let r = def();
+            place(h);
             r
         }
         WM_PARENTNOTIFY if (wp.0 & 0xFFFF) as u32 == WM_CREATE => {
@@ -965,7 +1133,8 @@ unsafe extern "system" fn window(
     }
 }
 
-/// A web view's container: never over the strip, and its controller the container's size.
+/// A web view's container: exactly inside the chrome whatever it is asked, and its controller the
+/// container's size.
 unsafe extern "system" fn container(
     h: HWND,
     msg: u32,
@@ -978,26 +1147,36 @@ unsafe extern "system" fn container(
     match msg {
         WM_WINDOWPOSCHANGING => {
             let p = unsafe { &mut *(lp.0 as *mut WINDOWPOS) };
-            let top = height(parent);
-            // only what would show in the strip (Spotify's view parks at -1,-1, 1x1: left there)
-            if p.flags.0 & SWP_NOMOVE.0 == 0 && p.y < top && p.y + p.cy > 0 {
-                let d = top - p.y;
-                p.y = top;
-                if p.flags.0 & SWP_NOSIZE.0 == 0 {
-                    p.cy = (p.cy - d).max(1);
-                }
-            }
-        }
-        WM_WINDOWPOSCHANGED => {
-            let r = client(h);
-            with(parent, |st| {
-                for c in &st.views {
+            let now = placed(h);
+            let (x, y) = match p.flags.0 & SWP_NOMOVE.0 {
+                0 => (p.x, p.y),
+                _ => (now.left, now.top),
+            };
+            let (cx, cy) = match p.flags.0 & SWP_NOSIZE.0 {
+                0 => (p.cx, p.cy),
+                _ => (now.right - now.left, now.bottom - now.top),
+            };
+            // Spotify's view parks 1x1 at -1,-1, out of the window: left there. Minimized, the
+            // window has no inside.
+            if x + cx > 0 && y + cy > 0 && !unsafe { IsIconic(parent) }.as_bool() {
+                let r = inner(parent);
+                let size = RECT {
+                    left: 0,
+                    top: 0,
+                    right: r.right - r.left,
+                    bottom: r.bottom - r.top,
+                };
+                (p.x, p.y, p.cx, p.cy) = (r.left, r.top, size.right, size.bottom);
+                p.flags = SET_WINDOW_POS_FLAGS(p.flags.0 & !(SWP_NOMOVE.0 | SWP_NOSIZE.0));
+                // now: wry has just sized the controller to the whole window, and a move that
+                // changes nothing brings no WM_WINDOWPOSCHANGED
+                for c in views(parent) {
                     let mut owner = HWND::default();
                     if unsafe { c.ParentWindow(&mut owner) }.is_ok() && owner == h {
-                        let _ = unsafe { c.SetBounds(r) };
+                        let _ = unsafe { c.SetBounds(size) };
                     }
                 }
-            });
+            }
         }
         WM_NCDESTROY => {
             let _ = unsafe { RemoveWindowSubclass(h, Some(container), ID) };
@@ -1042,6 +1221,52 @@ mod tests {
             assert!(tsx.contains(class), "Chrome.tsx no longer has {class}");
         }
         assert!(THEME_CSS.contains("--radius-sm: 3px;"));
+    }
+
+    /// The frame is still Root.tsx's `#framebody` inside `#chrome`, in theme.css's colours; the
+    /// page leaves it to this host (nativetitle), as it leaves the title bar.
+    #[test]
+    fn frame() {
+        let root = include_str!("../../src/skins/wmp9/Root.tsx");
+        for class in [
+            "absolute inset-0 flex flex-col overflow-hidden rounded-t-win bg-luna-window",
+            "mt-0 mx-4 mb-4 border border-t-0 border-luna-sep",
+            "nativetitle:m-0 nativetitle:border-0",
+        ] {
+            assert!(root.contains(class), "Root.tsx no longer has {class}");
+        }
+        assert!(THEME_CSS.contains(
+            "--background-image-luna-window: linear-gradient(180deg, #0058EE, #0046D5);"
+        ));
+        assert_eq!(two_stops("luna-window"), [hex("#0058EE"), hex("#0046D5")]);
+        assert_eq!(token("luna-sep"), hex("#7F90B5"));
+        assert_eq!(
+            [1.0, 1.25, 1.5, 1.75, 2.0].map(frame_widths),
+            [(4, 1), (5, 1), (6, 1), (7, 1), (8, 2)]
+        );
+        let b = bands(1000, 600, 45, 1.5).map(|r| (r.left, r.top, r.right, r.bottom));
+        assert_eq!(
+            b,
+            [(0, 45, 7, 600), (993, 45, 1000, 600), (7, 593, 993, 600)]
+        );
+        let at = |x, y| frame_px(look(), 1000, 600, 1.5, x, y);
+        // the separator on three sides, square at the bottom corners, none along the top
+        for (x, y) in [
+            (6, 45),
+            (6, 593),
+            (993, 300),
+            (7, 593),
+            (500, 593),
+            (992, 593),
+        ] {
+            assert_eq!(at(x, y), 0x7F90B5, "separator at {x},{y}");
+        }
+        for (x, y) in [(5, 300), (994, 300), (500, 594), (6, 594), (993, 599)] {
+            assert_ne!(at(x, y), 0x7F90B5, "blue at {x},{y}");
+        }
+        // the gradient over the whole client: its first and last rows are the two stops
+        assert_eq!((at(0, 0), at(0, 599)), (0x0058EE, 0x0046D5));
+        assert_eq!(at(0, 300), at(999, 300));
     }
 
     /// Chromium's rounding of the layout at the scales Windows offers.
