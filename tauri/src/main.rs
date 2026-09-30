@@ -49,6 +49,12 @@ fn data_root() -> Option<PathBuf> {
 /// msSmartScreenProtection --autoplay-policy=no-user-gesture-required`): a switch can be tried, or a
 /// DevTools port opened, without a rebuild. Unlike the Deno host's webview.dll, WebView2 here does
 /// receive them. `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS` does not: the arguments wry passes win.
+///
+/// The Deno host's other setting, `pageUrl` (load a site instead of the embedded page), is not
+/// ported. Its purpose, a newer page without a new exe, is the signed page updates' now (update.rs),
+/// and an unsigned override at our origin would step round that signature. Loaded as itself, a site
+/// is a remote origin, which Tauri refuses every command this host defines (the saver's `dismiss`
+/// among them) unless a remote capability lists them all.
 fn browser_args() -> Option<String> {
     let beside = std::env::current_exe()
         .ok()
@@ -319,7 +325,9 @@ fn main() {
         },
         None => TargetKind::LogDir { file_name: None },
     }));
-    if cfg!(debug_assertions) {
+    // and on stdout in a debug build, or with ALCHEMY_CONSOLE set (the Deno host's switch; a release
+    // exe has no console, so a test redirects it)
+    if cfg!(debug_assertions) || std::env::var_os("ALCHEMY_CONSOLE").is_some() {
         log = log.target(Target::new(TargetKind::Stdout));
     }
 
