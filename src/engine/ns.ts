@@ -59,6 +59,8 @@ export interface AlchemyNS {
   // Bars and Waves, Battery (wmp.dll)
   /** Battery's blur and palette passes: 'auto' = WebAssembly when available, else JS (battery/kernel.ts). */
   batteryKernel: 'auto' | 'js' | 'wasm';
+  /** Bars' bar drawing and trail sink: 'auto' = WebAssembly when available, else JS (bars-kernel.ts). */
+  barsKernel: 'auto' | 'js' | 'wasm';
   Bars: typeof Bars;
   BatteryWarps: typeof BatteryWarps;
   BatteryDraws: BatteryDrawsNS;

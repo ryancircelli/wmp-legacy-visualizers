@@ -189,9 +189,9 @@ Measured on 2026-09-24 and re-run on the TypeScript engine on 2026-09-25 with th
 - **Guarded since.** Any faster engine code must match the verified engine frame for frame:
   `npm run test:golden` renders 45 runs across all three visualizers, seeds, presets and sizes and
   compares each frame's hash with the recorded output of the engine as verified; `npm test` runs a
-  short slice of it. Alchemy's and Battery's runs go three times: on WebAssembly (the SIMD
-  passes and the `sin`/`cos` clone), on the JavaScript that stays as the fallback, and switching
-  between the two mid-run. The
+  short slice of it. Every run goes three times: on WebAssembly (the SIMD passes, Bars and
+  Waves' drawing and the `sin`/`cos`/`atan2` clones), on the JavaScript that stays as the fallback,
+  and switching between the two mid-run. The
   2026-09-28 speedups (Alchemy about 20%, Battery 16 to 37%, the heavier Bars and Waves presets
   about 18% per frame) passed it byte for byte.
 - **What is not compared.** Battery's final stretch to the window is GDI's, not the DLL's, so its

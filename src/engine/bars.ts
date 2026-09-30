@@ -6,6 +6,7 @@
 import { A, type Surface, type TimedLevel } from './ns';
 import './rand';
 import './effect'; // A.makeSurface
+import { newArena, arenaOf } from './bars-kernel';
 
 var F32 = Math.fround;
 var HZ_PER_BIN = 21.513671875;          // float32 at 0x18088c624 — hardcoded, never from the real Fs
@@ -157,6 +158,8 @@ class Bars {
   declare buf1: Uint8Array;
   declare levelTrail: Int32Array;
   declare peakTrail: Int32Array;
+  declare lv: Int32Array;
+  declare pk: Int32Array;
 
   declare lastTimeStamp: number;
   declare skipUpdate: boolean;
@@ -197,6 +200,7 @@ class Bars {
     this.bandEdge = new Float32Array(1025);
     this.buf0 = new Uint8Array(1024); this.buf1 = new Uint8Array(1024);
     this.levelTrail = new Int32Array(16); this.peakTrail = new Int32Array(16);
+    this.lv = new Int32Array(1024); this.pk = new Int32Array(1024);   // DrawBars' per-bar level/peak
 
     // lastTimeStamp starts at 0 (0x18041cb76), so a first Render with timeStamp 0 is a skip frame.
     this.lastTimeStamp = 0; this.skipUpdate = false; this.colourDirty = false;
@@ -241,7 +245,12 @@ class Bars {
 
   resize(w: number, h: number): void {              // == Render's "DIB does not match" path
     this.w = Math.max(1, w | 0); this.h = Math.max(1, h | 0);
-    this.surface = A.makeSurface(this.w, this.h, this.bgColor);
+    var ar = newArena(this.w * this.h);              // the kernel's buffers, or null: plain arrays
+    if (ar) {
+      this.surface = { w: this.w, h: this.h, px: ar.px.fill(this.bgColor) };
+      this.history = ar.history; this.levelTrail = ar.levelTrail; this.peakTrail = ar.peakTrail;
+      this.lv = ar.lv; this.pk = ar.pk;
+    } else this.surface = A.makeSurface(this.w, this.h, this.bgColor);
     this.resetHistory();
     this.rebuildTrailPalette();
   }
@@ -322,8 +331,9 @@ class Bars {
       if (this.fadeMode >= 5) return;                    // no_fade: not even a clear
       var shift = this.fadeMode === 4 ? 0 : 1;
       if (shift) {
-        var n = this.trailRows * 16, H = this.h;
-        for (var k = 0; k < n; k++) {
+        var n = this.trailRows * 16, H = this.h, ar = arenaOf(this.history);
+        if (ar) ar.k.sink(this.history.byteOffset, n, H);
+        else for (var k = 0; k < n; k++) {
           var v = this.history[k];
           if (v >= 0 && v < H) this.history[k] = v - shift;
         }
@@ -409,7 +419,7 @@ class Bars {
     if (this.channels > 1) this.reduceSpectrum(L.freq[1], this.buf1, nUse);
     this.trailRows = nUse * 2;
 
-    var playing = L.state === 2, scale = this.levelScale;
+    var playing = L.state === 2, scale = this.levelScale, lv = this.lv, pk = this.pk, peaks = this.showPeaks;
     for (var i = 0; i < nUse; i++) {
       var h0 = F32(F32(F32(this.buf0[i] * H) / 255.0) * scale) | 0;
       if (h0 > 0 && playing) h0 += ((A.rand() * 20 / 32767) | 0) - 10;      // +/-10 px
@@ -419,11 +429,22 @@ class Bars {
         if (h1 > 0 && playing) h1 += ((A.rand() * 20 / 32767) | 0) - 10;
         h = h0 > h1 ? h0 : h1;          // the LOUDER channel wins: 0x18041d482 cmp / 0x18041d48b cmovle
       }
-      var lvl = this.levelFall(h, i);
+      lv[i] = this.levelFall(h, i);
+      if (peaks) pk[i] = this.peakUpdate(lv[i], i);
+    }
+    // The DLL draws each bar right after its update; drawing them all after is the same: the updates
+    // touch only level*/peak*, the draws only the surface and the history rows.
+    var ar = arenaOf(this.surface.px);
+    if (ar) {
+      ar.k.draw(ar.px.byteOffset, W, H, ar.history.byteOffset, ar.levelTrail.byteOffset, ar.peakTrail.byteOffset,
+        ar.lv.byteOffset, ar.pk.byteOffset, nUse, barW, spacing, xoff, this.trailActive, this.trailHead, this.terminator, peaks ? 1 : 0);
+      return;
+    }
+    for (i = 0; i < nUse; i++) {
       var x = (barW + spacing) * i + xoff;
       var x2 = x + barW; if (x2 - 1 >= W - 1) x2 = W; x2--;
-      var drawn = this.drawLevelBar(2 * i, x, x2, lvl);
-      if (this.showPeaks) this.drawPeakCap(2 * i + 1, x, x2, this.peakUpdate(lvl, i), drawn);
+      var drawn = this.drawLevelBar(2 * i, x, x2, lv[i]);
+      if (peaks) this.drawPeakCap(2 * i + 1, x, x2, pk[i], drawn);
     }
   }
 
