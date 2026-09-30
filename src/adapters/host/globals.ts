@@ -1,4 +1,7 @@
 // The window globals the hosts set (CONTRACT.md v1–v6.1; deno-webview/main.ts, spotify.ts).
+/** Help > Check for Player Updates, as the host answers it (deno-webview/update.ts, tauri/src/update.rs) */
+export interface HostCheck { ready?: string | null; hostUpdate?: boolean; error?: string | null }
+
 export interface SpotifyObserved {
   token?: string;
   at?: number;
@@ -38,6 +41,8 @@ declare global {
     alchemyOpenUrl?: (url: string) => void;
     /** relaunch the app (a checked page update is cached for the next launch) */
     alchemyRestart?: () => void;
+    /** the Tauri host's page-update check (the Deno host answers /update on its worker instead) */
+    alchemyCheckUpdate?: () => Promise<HostCheck>;
     __wmpSpotify?: SpotifyObserved;
   }
 }

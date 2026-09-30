@@ -2,6 +2,7 @@
 // socket (PCM binary frames + `media` / `lyrics` JSON text frames, CONTRACT v4/v5) and the
 // page -> host messages (mediaCmd, lyricsPref, wake).
 import './globals';
+import type { HostCheck } from './globals';
 import type { AppStore, Mode, UpdateCheck, WinAction } from '../../model';
 
 /** A newer exe is out (the host's page-update check found another host build): recorded, and
@@ -35,11 +36,9 @@ export async function checkForUpdates(): Promise<UpdateCheck> {
       if (!now) return { state: 'error', message: 'The website could not be reached.' };
       return was && now !== was ? { state: 'ready' } : { state: 'latest' };
     }
-    // the apps: their worker makes the same signed check a launch does (deno-webview/server.ts)
-    const u = new URL(window.alchemyScreensaver?.url ?? '');
-    u.protocol = 'http:';
-    u.pathname = '/update';
-    const r = await (await fetch(u, { cache: 'no-store' })).json() as { ready?: string | null; hostUpdate?: boolean; error?: string | null };
+    // the apps: the same signed check a launch makes — the Tauri host's command, else the Deno
+    // host's worker (deno-webview/server.ts /update)
+    const r = window.alchemyCheckUpdate ? await window.alchemyCheckUpdate() : await hostWorkerCheck();
     if (r.hostUpdate) return { state: 'app' };
     if (r.ready) return { state: 'ready' };
     if (r.error) return { state: 'error', message: r.error };
@@ -47,6 +46,13 @@ export async function checkForUpdates(): Promise<UpdateCheck> {
   } catch {
     return { state: 'error', message: 'The check could not be made.' };
   }
+}
+
+async function hostWorkerCheck(): Promise<HostCheck> {
+  const u = new URL(window.alchemyScreensaver?.url ?? '');
+  u.protocol = 'http:';
+  u.pathname = '/update';
+  return await (await fetch(u, { cache: 'no-store' })).json() as HostCheck;
 }
 
 /** One boot stage into the host's startup log (a no-op in a plain browser). */

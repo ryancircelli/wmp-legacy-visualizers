@@ -5,24 +5,32 @@
 //! player window (`/c`, or no arguments). The page is the website's own build (`../dist`), embedded
 //! in the executable and served at the origin the Deno host used, `https://wmp.localhost/`.
 
+mod host;
 mod mode;
+mod update;
 #[cfg(target_os = "windows")]
 mod win;
 
 use mode::Mode;
 use std::path::PathBuf;
 use std::sync::LazyLock;
-use std::time::{Instant, SystemTime, UNIX_EPOCH};
+use std::time::Instant;
 use tauri::http::{Request, Response, header};
 use tauri::webview::Color;
 use tauri::{
-    AppHandle, Manager, PhysicalPosition, PhysicalSize, Runtime, UriSchemeContext, WebviewUrl,
-    WebviewWindow, WebviewWindowBuilder,
+    AppHandle, LogicalPosition, LogicalSize, Manager, PhysicalPosition, PhysicalSize, Runtime,
+    UriSchemeContext, UriSchemeResponder, WebviewUrl, WebviewWindowBuilder,
 };
 use tauri_plugin_log::{Target, TargetKind};
 use tauri_plugin_window_state::StateFlags;
 
 static START: LazyLock<Instant> = LazyLock::new(Instant::now);
+
+/// A startup stage in the log, stamped with how long the process has been alive (the `t+` lines
+/// deno-webview/README.md "Startup" measured with).
+pub(crate) fn mark(stage: &str) {
+    log::info!("t+{}ms {stage}", START.elapsed().as_millis());
+}
 
 /// The folder everything is kept in, when it is not the one Tauri would pick (see `win.rs`).
 fn data_root() -> Option<PathBuf> {
@@ -30,6 +38,27 @@ fn data_root() -> Option<PathBuf> {
     return win::data_root();
     #[cfg(not(target_os = "windows"))]
     None
+}
+
+/// Tauri's (wry's) default WebView2 arguments, which setting any replaces, plus autoplay: the
+/// screensaver has no user gesture to start audio with.
+const BROWSER_ARGS: &str = "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection \
+     --autoplay-policy=no-user-gesture-required";
+
+/// `browserArgs` from settings.json (beside the exe, else in the data folder; deno-webview/README.md
+/// "settings.json") replaces `BROWSER_ARGS`: a switch can be tried, or a DevTools port opened,
+/// without a rebuild. Unlike the Deno host's webview.dll, WebView2 here does receive them.
+fn browser_args() -> String {
+    let beside = std::env::current_exe()
+        .ok()
+        .and_then(|e| e.parent().map(PathBuf::from));
+    [beside, data_root()]
+        .into_iter()
+        .flatten()
+        .find_map(|d| std::fs::read(d.join("settings.json")).ok())
+        .and_then(|b| serde_json::from_slice::<serde_json::Value>(&b).ok())
+        .and_then(|v| v["browserArgs"].as_str().map(String::from))
+        .unwrap_or_else(|| BROWSER_ARGS.into())
 }
 
 /// The page, at the origin its settings (`localStorage`) are keyed by. A custom protocol and not
@@ -52,80 +81,65 @@ fn page(query: &str) -> WebviewUrl {
     )
 }
 
-/// Serves `../dist`, embedded at compile time, for `page()`.
-fn serve<R: Runtime>(ctx: UriSchemeContext<'_, R>, req: Request<Vec<u8>>) -> Response<Vec<u8>> {
+/// Serves `../dist`, embedded at compile time, for `page()` — except `index.html`, which is the
+/// newest verified page update when there is one (update.rs).
+fn serve<R: Runtime>(ctx: UriSchemeContext<'_, R>, req: Request<Vec<u8>>, res: UriSchemeResponder) {
+    let app = ctx.app_handle().clone();
     let path = match req.uri().path().trim_start_matches('/') {
         "" => "index.html",
         p => p,
-    };
-    match ctx.app_handle().asset_resolver().get(path.into()) {
-        Some(a) => Response::builder()
-            .header(header::CONTENT_TYPE, a.mime_type)
-            // the page comes out of this exe: a newer exe must never be shown an older cached copy
-            .header(header::CACHE_CONTROL, "no-store")
-            .body(a.bytes),
-        None => Response::builder().status(404).body(Vec::new()),
     }
-    .unwrap()
-}
-
-/// Every window: say when the page has a painted frame (two frames after `load`), the
-/// startup mark the Deno host's `alchemyReady` gave.
-const PAINTED_JS: &str = "addEventListener('load', function () {
-  requestAnimationFrame(function () { requestAnimationFrame(function () {
-    window.__TAURI__.core.invoke('painted');
-  }); });
-});";
-
-/// The screensaver: no cursor, and any key, click or more than 10 px of mouse travel (after a
-/// 1 s grace, so the nudge that started it does not end it) closes it.
-const SAVER_JS: &str = "(function () {
-  addEventListener('DOMContentLoaded', function () {
-    var s = document.createElement('style');
-    s.textContent = '*{cursor:none!important}';
-    document.documentElement.appendChild(s);
-  });
-  var t0 = Date.now(), x = null, y = null, done = false;
-  function bail() { if (!done) { done = true; window.__TAURI__.core.invoke('dismiss'); } }
-  addEventListener('keydown', bail, true);
-  addEventListener('mousedown', bail, true);
-  addEventListener('mousemove', function (e) {
-    if (x === null) { x = e.screenX; y = e.screenY; return; }
-    if (Date.now() - t0 > 1000 && (Math.abs(e.screenX - x) > 10 || Math.abs(e.screenY - y) > 10)) bail();
-  }, true);
-})();";
-
-#[tauri::command]
-fn painted(window: WebviewWindow) {
-    let epoch = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis();
-    log::info!(
-        "{}: page painted t+{}ms (epoch {epoch})",
-        window.label(),
-        START.elapsed().as_millis()
-    );
-}
-
-#[tauri::command]
-fn dismiss(window: WebviewWindow) {
-    if window.label() == "saver" {
-        log::info!("saver: dismissed");
-        let _ = window.destroy(); // the last window: the process ends with it
-    }
+    .to_string();
+    tauri::async_runtime::spawn(async move {
+        let newer = match app.try_state::<update::Updates>() {
+            Some(u) if path == "index.html" => u.page().await,
+            _ => None,
+        };
+        let body = match newer {
+            Some(bytes) => Some(("text/html".to_string(), bytes)),
+            None => app
+                .asset_resolver()
+                .get(path.clone())
+                .map(|a| (a.mime_type, a.bytes)),
+        };
+        if path == "index.html" {
+            mark("page served");
+        }
+        res.respond(
+            match body {
+                Some((mime, bytes)) => Response::builder()
+                    .header(header::CONTENT_TYPE, mime)
+                    // a newer exe or page must never be shown an older cached copy
+                    .header(header::CACHE_CONTROL, "no-store")
+                    .body(bytes),
+                None => Response::builder().status(404).body(Vec::new()),
+            }
+            .unwrap(),
+        );
+    });
 }
 
 fn builder<'a, R: Runtime>(
     app: &'a AppHandle<R>,
     label: &str,
-    url: WebviewUrl,
+    mode: Mode,
 ) -> WebviewWindowBuilder<'a, R, AppHandle<R>> {
-    let b = WebviewWindowBuilder::new(app, label, url)
+    let query = if mode == Mode::Saver {
+        "mode=screensaver&ss=1"
+    } else {
+        "mode=config"
+    };
+    let host_update = app
+        .try_state::<update::Updates>()
+        .is_some_and(|u| u.host_update());
+    let b = WebviewWindowBuilder::new(app, label, page(query))
         .title("Alchemy screensaver")
         .use_https_scheme(true)
-        .visible(false) // shown once, placed
-        .initialization_script(PAINTED_JS);
+        // On screen at once, at its final box and in the skin's colour, before WebView2 is started
+        // (which `build` then waits for): the window a native app gives, filled in a moment later.
+        .visible(true)
+        .additional_browser_args(&browser_args())
+        .initialization_script(host::script(mode, host_update, None));
     match data_root() {
         Some(root) => b.data_directory(root.join("WebView2")),
         None => b,
@@ -151,6 +165,51 @@ fn virtual_screen<R: Runtime>(
     ))
 }
 
+/// A box in physical pixels as the logical one the builder takes, in the scale of the monitor it
+/// starts on — the scale tao converts it back with, so the window is created exactly there.
+fn logical<R: Runtime>(
+    app: &AppHandle<R>,
+    pos: PhysicalPosition<i32>,
+    size: PhysicalSize<u32>,
+) -> Option<(LogicalPosition<f64>, LogicalSize<f64>)> {
+    let m = app.available_monitors().ok()?.into_iter().find(|m| {
+        let (p, s) = (m.position(), m.size());
+        (p.x..p.x + s.width as i32).contains(&pos.x)
+            && (p.y..p.y + s.height as i32).contains(&pos.y)
+    })?;
+    let f = m.scale_factor();
+    Some((pos.to_logical(f), size.to_logical(f)))
+}
+
+/// Where the player was left, from the window-state plugin's own file (`skip_initial_state` below:
+/// the plugin restores after the window and its WebView2 exist, which is a window that visibly
+/// moves; this is the same box before there is a window at all). None on a first run, or when the
+/// box no longer starts on a monitor.
+fn remembered<R: Runtime>(
+    app: &AppHandle<R>,
+) -> Option<(LogicalPosition<f64>, LogicalSize<f64>, bool)> {
+    let s: serde_json::Value = serde_json::from_slice(&std::fs::read(state_file()?).ok()?).ok()?;
+    let s = &s["player"];
+    let max = s["maximized"].as_bool().unwrap_or(false);
+    let at = |k: &str| s[k].as_i64().map(|v| v as i32);
+    // maximized, x/y is the monitor's corner and prev_x/prev_y the box under it
+    let (x, y) = if max {
+        (at("prev_x")?, at("prev_y")?)
+    } else {
+        (at("x")?, at("y")?)
+    };
+    let (w, h) = (s["width"].as_u64()? as u32, s["height"].as_u64()? as u32);
+    if w == 0 || h == 0 {
+        return None;
+    }
+    let (p, z) = logical(app, PhysicalPosition::new(x, y), PhysicalSize::new(w, h))?;
+    Some((p, z, max))
+}
+
+fn state_file() -> Option<PathBuf> {
+    data_root().map(|r| r.join("window-state.json"))
+}
+
 /// Open the window a mode asks for, or bring it forward if this process already has it: a second
 /// launch lands here too, through the single-instance plugin.
 fn open<R: Runtime>(app: &AppHandle<R>, mode: Mode) -> tauri::Result<()> {
@@ -167,32 +226,66 @@ fn open<R: Runtime>(app: &AppHandle<R>, mode: Mode) -> tauri::Result<()> {
     let w = match mode {
         // One window over every monitor, topmost and off the taskbar.
         // ponytail: one spanning window, as the Deno host; one per monitor if per-display framing is wanted.
-        Mode::Saver => builder(app, label, page("mode=screensaver&ss=1"))
-            .decorations(false)
-            .resizable(false)
-            .shadow(false)
-            .always_on_top(true)
-            .skip_taskbar(true)
-            .background_color(Color(0, 0, 0, 255))
-            .initialization_script(SAVER_JS)
-            .build()?,
-        // The player. Native decorations until the host bindings drive the page's own title bar.
-        _ => builder(app, label, page("mode=config"))
-            .inner_size(1100.0, 720.0)
-            .min_inner_size(480.0, 360.0)
-            .center()
-            .background_color(Color(20, 99, 235, 255)) // Luna blue, never a white first frame
-            .build()?,
+        Mode::Saver => {
+            let (pos, size) = virtual_screen(app)?;
+            let b = builder(app, label, mode)
+                .decorations(false)
+                .resizable(false)
+                .shadow(false)
+                .always_on_top(true)
+                .skip_taskbar(true)
+                .background_color(Color(0, 0, 0, 255));
+            let w = match logical(app, pos, size) {
+                Some((p, z)) => b.position(p.x, p.y).inner_size(z.width, z.height),
+                None => b,
+            }
+            .build()?;
+            // in physical pixels again: monitors of different scales make the logical box approximate
+            w.set_position(pos)?;
+            w.set_size(size)?;
+            w
+        }
+        // The player: no frame of its own. The page draws the XP title bar and drives this window
+        // through it (host.js).
+        _ => {
+            let b = builder(app, label, mode)
+                .decorations(false)
+                .min_inner_size(480.0, 360.0)
+                .background_color(Color(20, 99, 235, 255)); // Luna blue, never a white first frame
+            match remembered(app) {
+                Some((p, z, max)) => b
+                    .position(p.x, p.y)
+                    .inner_size(z.width, z.height)
+                    .maximized(max),
+                None => b.inner_size(1100.0, 720.0).center(),
+            }
+            .build()?
+        }
     };
-    if mode == Mode::Saver {
-        let (pos, size) = virtual_screen(app)?;
-        w.set_position(pos)?;
-        w.set_size(size)?;
-    }
+    host::attach(&w, mode);
     w.show()?;
     w.set_focus()?;
-    log::info!("{label}: shown t+{}ms", START.elapsed().as_millis());
+    mark(&format!("{label}: window and WebView2 up"));
     Ok(())
+}
+
+/// Anything that ends the process early: in the log, and in front of the user unless the
+/// screensaver is running, which nobody is looking at.
+fn fatal(saver: bool, what: &str) -> ! {
+    log::error!("fatal: {what}");
+    #[cfg(target_os = "windows")]
+    if !saver {
+        let log = data_root().map(|r| r.join("alchemy.log").display().to_string());
+        win::error_box(
+            &format!(
+                "{what}\n\nThe log has the details:\n{}",
+                log.unwrap_or_default()
+            ),
+            "Alchemy",
+        );
+    }
+    let _ = saver;
+    std::process::exit(1)
 }
 
 fn main() {
@@ -202,6 +295,8 @@ fn main() {
     if mode == Mode::Preview {
         return; // the preview pane stays black: exit 0 before anything starts
     }
+    let saver = mode == Mode::Saver;
+    std::panic::set_hook(Box::new(move |p| fatal(saver, &p.to_string())));
     let root = data_root();
 
     let mut log = tauri_plugin_log::Builder::new()
@@ -218,14 +313,16 @@ fn main() {
         log = log.target(Target::new(TargetKind::Stdout));
     }
 
+    // The plugin remembers the player's box; `open` puts the window there as it is created.
     let mut state = tauri_plugin_window_state::Builder::new()
         .with_state_flags(StateFlags::SIZE | StateFlags::POSITION | StateFlags::MAXIMIZED)
-        .with_denylist(&["saver"]);
-    if let Some(r) = &root {
-        state = state.with_filename(r.join("window-state.json").to_string_lossy());
+        .with_denylist(&["saver"])
+        .skip_initial_state("player");
+    if let Some(f) = state_file() {
+        state = state.with_filename(f.to_string_lossy());
     }
 
-    tauri::Builder::default()
+    let run = tauri::Builder::default()
         // First, as the plugin requires: a second launch hands its arguments to this process and exits.
         .plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
             let mode = mode::parse(argv.iter().skip(1));
@@ -236,15 +333,32 @@ fn main() {
         }))
         .plugin(log.build())
         .plugin(state.build())
-        .register_uri_scheme_protocol("wmp", serve)
-        .invoke_handler(tauri::generate_handler![painted, dismiss])
+        .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_process::init())
+        .register_asynchronous_uri_scheme_protocol("wmp", serve)
+        .invoke_handler(tauri::generate_handler![
+            host::ready,
+            host::host_log,
+            host::dismiss,
+            host::win_full,
+            host::check_update
+        ])
         .setup(move |app| {
-            log::info!(
-                "argv {args:?} -> {mode:?}, t+{}ms",
-                START.elapsed().as_millis()
-            );
+            mark(&format!(
+                "argv {args:?} -> {mode:?}; browser args {}",
+                browser_args()
+            ));
+            // Page updates, asked for now, while WebView2 starts (never in a debug build, whose
+            // page is the working tree's).
+            let own = app.asset_resolver().get("update.json".into());
+            let own = own.and_then(|a| serde_json::from_slice(&a.bytes).ok());
+            if let (Some(own), Some(root), false) = (own, &root, cfg!(debug_assertions)) {
+                app.manage(update::Updates::start(root.join("update"), own));
+            }
             Ok(open(app.handle(), mode)?)
         })
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .run(tauri::generate_context!());
+    if let Err(e) = run {
+        fatal(saver, &e.to_string());
+    }
 }
