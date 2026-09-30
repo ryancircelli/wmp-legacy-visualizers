@@ -288,12 +288,11 @@ impl Conn {
             return;
         };
         match m["type"].as_str() {
+            #[cfg(windows)]
             Some("mediaCmd") => {
                 let cmd = m["cmd"].as_str().unwrap_or("");
                 if ["playpause", "play", "pause", "next", "prev", "seek"].contains(&cmd) {
                     let pos = m["position"].as_f64().unwrap_or(0.0);
-                    log::info!("media: command {cmd} {pos}");
-                    #[cfg(windows)]
                     let _ = self.cmds.send(media::Msg::Cmd(cmd.to_string(), pos));
                 }
             }

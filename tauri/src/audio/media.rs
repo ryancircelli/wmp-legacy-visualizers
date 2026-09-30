@@ -268,9 +268,8 @@ fn run(
                     force = true;
                 }
                 Msg::Cmd(c, pos) => {
-                    if let Some(s) = &s {
-                        let _ = command(s, &c, pos);
-                    }
+                    let ok = s.as_ref().map(|s| command(s, &c, pos));
+                    log::info!("media: command {c} {pos} -> {ok:?}");
                     force = true;
                 }
             }

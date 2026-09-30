@@ -284,6 +284,13 @@ mod tests {
     }
 
     #[test]
+    fn https_is_an_error_never_a_panic() {
+        // ureq 3.4 panics on https unless its `native-tls` feature (not just the provider) is on,
+        // and a panic here is the whole app (panic = "abort").
+        assert!(AGENT.get("https://127.0.0.1:1/").call().is_err());
+    }
+
+    #[test]
     fn frames_keep_the_deno_shape() {
         let t = Track {
             title: "T".into(),
