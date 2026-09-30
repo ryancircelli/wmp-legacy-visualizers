@@ -24,8 +24,8 @@
 //!
 //! **Why a hook.** The builder does not return until WebView2 is up, half a second after the window
 //! is on screen, and it pumps messages meanwhile. So the subclass goes on as the window is created —
-//! a thread-local CBT hook around the builder (`hook`), which is how MFC subclasses its windows — and
-//! the first `WM_PAINT` is already the title bar.
+//! a thread-local CBT hook around the builder (`hook`, win.rs `on_create`), which is how MFC
+//! subclasses its windows — and the first `WM_PAINT` is already the title bar.
 //!
 //! **macOS** has none of this yet: the page draws its title bar there (host.js sets the flag on
 //! Windows only). The equivalent is an `NSView` of the same height pinned to the top of the content
@@ -42,7 +42,6 @@ use webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2Controller;
 use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
 use windows::Win32::Graphics::DirectWrite::*;
 use windows::Win32::Graphics::Gdi::*;
-use windows::Win32::System::Threading::GetCurrentThreadId;
 use windows::Win32::UI::HiDpi::{GetDpiForWindow, GetSystemMetricsForDpi};
 use windows::Win32::UI::Input::KeyboardAndMouse::{
     TME_LEAVE, TME_NONCLIENT, TRACKMOUSEEVENT, TrackMouseEvent,
@@ -666,40 +665,17 @@ fn client(h: HWND) -> RECT {
     r
 }
 
-fn class_is(h: HWND, name: &str) -> bool {
-    let mut buf = [0u16; 64];
-    let n = unsafe { GetClassNameW(h, &mut buf) } as usize;
-    String::from_utf16_lossy(&buf[..n]) == name
-}
-
 /// While it lives, every `CLASS` window this thread makes has the strip from its creation on: put
-/// it round the window builder.
-pub struct Hook(HHOOK);
-
-pub fn hook() -> Option<Hook> {
+/// it round the window builder. `max`: the window is being created maximized (win.rs `maximized`).
+pub fn hook(max: bool) -> Option<crate::win::OnCreate> {
     warm();
-    unsafe { SetWindowsHookExW(WH_CBT, Some(cbt), None, GetCurrentThreadId()) }
-        .map(Hook)
-        .map_err(|e| log::error!("title bar: no creation hook: {e}"))
-        .ok()
-}
-
-impl Drop for Hook {
-    fn drop(&mut self) {
-        let _ = unsafe { UnhookWindowsHookEx(self.0) };
-    }
-}
-
-unsafe extern "system" fn cbt(code: i32, wp: WPARAM, lp: LPARAM) -> LRESULT {
-    if code == HCBT_CREATEWND as i32 {
-        let h = HWND(wp.0 as _);
-        let cs = unsafe { &*(*(lp.0 as *const CBT_CREATEWNDW)).lpcs };
-        if cs.hwndParent.is_invalid() && class_is(h, CLASS) {
-            STRIPS.with(|s| s.borrow_mut().push((h.0 as isize, RefCell::default())));
-            let _ = unsafe { SetWindowSubclass(h, Some(window), ID, 0) };
+    crate::win::on_create(CLASS, move |h, _| {
+        STRIPS.with(|s| s.borrow_mut().push((h.0 as isize, RefCell::default())));
+        let _ = unsafe { SetWindowSubclass(h, Some(window), ID, 0) };
+        if max {
+            crate::win::maximized(h);
         }
-    }
-    unsafe { CallNextHookEx(None, code, wp, lp) }
+    })
 }
 
 /// A WebView2 controller whose container lies in `h`: fitted below the strip from now on.
@@ -966,7 +942,9 @@ unsafe extern "system" fn window(
         WM_PARENTNOTIFY if (wp.0 & 0xFFFF) as u32 == WM_CREATE => {
             let child = HWND(lp.0 as _);
             // wry's container for each web view (its window class, wry webview2/mod.rs)
-            if class_is(child, "WRY_WEBVIEW") && unsafe { GetParent(child) }.ok() == Some(h) {
+            if crate::win::class_is(child, "WRY_WEBVIEW")
+                && unsafe { GetParent(child) }.ok() == Some(h)
+            {
                 let _ = unsafe { SetWindowSubclass(child, Some(container), ID, h.0 as usize) };
                 fit(child);
             }

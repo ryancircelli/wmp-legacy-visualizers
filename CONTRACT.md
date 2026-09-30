@@ -201,8 +201,8 @@ Globals (tauri/src/host.js, on every document of every Tauri window, before any 
   - `alchemyScreensaver` is MERGED into, never replaced: `Object.assign({audio:false, url:''},
     window.alchemyScreensaver)`. A plugin's init script runs before the window's own, and the audio
     plugin's (tauri/src/audio/mod.rs) has already set `{audio: true, url: "ws://127.0.0.1:<port>/audio?k=<key>"}`
-    — only when location.hostname is `wmp.localhost`, `localhost` (the page off Windows) or
-    `open.spotify.com`, so a page the web view is somehow navigated to is never handed the key.
+    — only when location.hostname is `wmp.localhost` or `localhost` (the page off Windows), so a page
+    the web view is somehow navigated to is never handed the key.
   - `alchemyHostUpdate`, `alchemyMarks`, `alchemyLog`, `alchemyOccluded` (called by the host) and
     `alchemyWinDrag` / `Min` / `Max` / `Close` / `Size` / `Full`, as the Deno host; the window calls go
     through Tauri's window API. `alchemyOpenUrl` goes through the opener plugin, scoped to the project's
