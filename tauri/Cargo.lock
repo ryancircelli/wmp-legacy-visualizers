@@ -21,12 +21,19 @@ dependencies = [
 name = "alchemy"
 version = "0.1.0"
 dependencies = [
+ "base64 0.22.1",
+ "flate2",
  "log",
+ "regex",
+ "serde_json",
  "tauri",
  "tauri-build",
  "tauri-plugin-log",
  "tauri-plugin-single-instance",
  "tauri-plugin-window-state",
+ "webview2-com",
+ "windows",
+ "wry",
 ]
 
 [[package]]

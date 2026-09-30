@@ -6,6 +6,7 @@
 //! in the executable and served at the origin the Deno host used, `https://wmp.localhost/`.
 
 mod mode;
+mod spotify;
 #[cfg(target_os = "windows")]
 mod win;
 
@@ -154,10 +155,10 @@ fn virtual_screen<R: Runtime>(
 /// Open the window a mode asks for, or bring it forward if this process already has it: a second
 /// launch lands here too, through the single-instance plugin.
 fn open<R: Runtime>(app: &AppHandle<R>, mode: Mode) -> tauri::Result<()> {
-    let label = if mode == Mode::Saver {
-        "saver"
-    } else {
-        "player"
+    let label = match mode {
+        Mode::Saver => "saver",
+        Mode::Spotify => "spotify",
+        _ => "player",
     };
     if let Some(w) = app.get_webview_window(label) {
         w.unminimize()?;
@@ -178,12 +179,20 @@ fn open<R: Runtime>(app: &AppHandle<R>, mode: Mode) -> tauri::Result<()> {
             .build()?,
         // The player. Native decorations until the host bindings drive the page's own title bar.
         _ => builder(app, label, page("mode=config"))
+            .initialization_script(if mode == Mode::Spotify {
+                spotify::INIT_JS
+            } else {
+                ""
+            })
             .inner_size(1100.0, 720.0)
             .min_inner_size(480.0, 360.0)
             .center()
             .background_color(Color(20, 99, 235, 255)) // Luna blue, never a white first frame
             .build()?,
     };
+    if mode == Mode::Spotify {
+        spotify::attach(&w);
+    }
     if mode == Mode::Saver {
         let (pos, size) = virtual_screen(app)?;
         w.set_position(pos)?;
@@ -237,7 +246,15 @@ fn main() {
         .plugin(log.build())
         .plugin(state.build())
         .register_uri_scheme_protocol("wmp", serve)
-        .invoke_handler(tauri::generate_handler![painted, dismiss])
+        .invoke_handler(tauri::generate_handler![
+            painted,
+            dismiss,
+            spotify::sp_snapshot,
+            spotify::sp_request,
+            spotify::sp_route,
+            spotify::sp_cookie,
+            spotify::sp_logout
+        ])
         .setup(move |app| {
             log::info!(
                 "argv {args:?} -> {mode:?}, t+{}ms",

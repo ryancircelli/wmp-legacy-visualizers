@@ -12,11 +12,16 @@ pub enum Mode {
     Config,
     /// `/p <hwnd>`: the preview pane in the Screen Saver Settings dialog. Nothing is drawn in it.
     Preview,
+    /// `--mode=spotify`: the Spotify player (the flag WmpSpotify.exe has baked in, CONTRACT.md v6).
+    Spotify,
 }
 
 /// `args` without the program name.
 pub fn parse<I: IntoIterator<Item = S>, S: AsRef<str>>(args: I) -> Mode {
     for a in args {
+        if a.as_ref() == "--mode=spotify" {
+            return Mode::Spotify;
+        }
         let b = a.as_ref().as_bytes();
         if b.len() >= 2 && (b[0] == b'/' || b[0] == b'-') {
             match b[1].to_ascii_lowercase() {
@@ -48,6 +53,7 @@ mod tests {
             (&["/p:12345"], Preview),
             (&["--restart", "/s"], Saver),
             (&["12345"], Config),
+            (&["--mode=spotify"], Spotify),
         ] {
             assert_eq!(parse(args), want, "{args:?}");
         }
