@@ -7,7 +7,7 @@ import { A } from './ns';
 import './rand';
 import './effect';
 import './kernels';
-import { moveBitsWasm, newArena, type Arena } from './movebits';
+import { ladderWasm, moveBitsWasm, newArena, type Arena } from './movebits';
 import type { WarpKernel, WarpPoint, EffectCtx } from './effect';
 import type { Surface } from './ns';
 // mpvis.DLL's sin/cos are ucrtbase's (_o_sin/_o_cos -> 0x1800aba70/0x1800a7730): the clones in 00-rand.js.
@@ -296,9 +296,10 @@ export class Shift extends A.Effect {
   // ---- 18000cd20 ShiftBackgroundBuild: exactly 3 scanlines per call --------
   // Per destination pixel the DLL writes the back table, then that pixel's entry in each of the 22
   // ladder tables. Each entry depends only on the pixel's own (sx, sy, ox, oy), so here a row's
-  // pixels are mapped first (their four values kept in _row) and then each ladder table's row is
-  // written in one run: the same values into the same entries, a table at a time instead of 22
-  // tables a pixel.
+  // pixels are mapped first (their four values kept in a row buffer) and then each ladder table's
+  // row is written in one run: the same values into the same entries, a table at a time instead of
+  // 22 tables a pixel. With the tables resident, the row is the arena's and the runs are WASM's
+  // (movebits.ts ladderWasm).
   _build3() {
     const back = this.back, front = this.front;
     if (!back.buf || !back.dirty || !this.rowOff) return;
@@ -316,8 +317,8 @@ export class Shift extends A.Effect {
         cur[k] = b;
       }
     }
-    const ramp = this.ramp!, half = this._rampHalf, p = this._p;
-    let row = this._row;
+    const ramp = this.ramp!, half = this._rampHalf, p = this._p, ar = this._arena && this._arena.w === W ? this._arena : null;
+    let row = ar ? ar.row : this._row;
     if (ladder && (!row || row.length !== 4 * W)) row = this._row = new Int32Array(4 * W);
     let y = back.cursorY;
     for (let pass = 0; pass < 3; pass++) {
@@ -336,7 +337,7 @@ export class Shift extends A.Effect {
           row![q + 2] = half + (sx - ox); row![q + 3] = half + (sy - oy);   // iX, iY
         }
       }
-      if (ladder) {
+      if (ladder && !(ar && ladderWasm(ar, ramp, cur as Int32Array[], o0, W, H))) {
         for (let k = 0; k < NLADDER; k++) {
           const r = ramp[k], b = cur[k]!;
           for (let x = 0, q = 0, o = o0; x < W; x++, q += 4, o++) {
@@ -407,10 +408,10 @@ export class Shift extends A.Effect {
 
   // Moves A.px, B.px and every allocated table into one arena (movebits.ts), unless they are all
   // there already: a copy each, once per size. Tables allocated later go straight in (tabAlloc).
-  _resident(sa: Surface, sb: Surface, n: number) {
-    const ar = this._arena;
-    if (ar && ar.n === n && sa.px.buffer === ar.buf && sb.px.buffer === ar.buf) return;
-    const nr = this._arena = sa.px.length === n && sb.px.length === n ? newArena(n, 4 + NLADDER) : null;
+  _resident(sa: Surface, sb: Surface, W: number, H: number) {
+    const ar = this._arena, n = W * H;
+    if (ar && ar.n === n && ar.w === W && sa.px.buffer === ar.buf && sb.px.buffer === ar.buf) return;
+    const nr = this._arena = sa.px.length === n && sb.px.length === n ? newArena(n, 4 + NLADDER, W, H) : null;
     if (!nr) return;
     sa.px = adopt(nr.u32(0), sa.px); sb.px = adopt(nr.u32(1), sb.px);
     for (const t of [this._tabA, this._tabB, ...this.trans]) if (t.buf && t.buf.length === n) t.buf = adopt(nr.i32(t.slot), t.buf);
@@ -424,7 +425,7 @@ export class Shift extends A.Effect {
     // observable through the %4 bailout below.
     if (!intended && (n % 4) !== 0) { ctx.A = sb; ctx.B = sa; return; }
 
-    this._resident(sa, sb, n);
+    this._resident(sa, sb, W, H);
     const tab = t.buf!, src = sa.px, dst = sb.px;
     if (!moveBitsWasm(src, tab, dst, W, H)) {            // the same gather + blur in WASM SIMD
       for (let i = 0; i < n; i++) dst[i] = src[tab[i]];   // nearest neighbour, unclamped

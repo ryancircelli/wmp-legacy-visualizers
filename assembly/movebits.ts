@@ -76,3 +76,23 @@ export function moveBits(src: usize, tab: usize, dst: usize, W: i32, H: i32): vo
   gather(src, tab, dst, W * H);
   blur(src, dst, W, H);
 }
+
+// Shift's transition ladder for one row (shift.ts _build3): entry o0 + x of each of the 22 tables
+// whose byte offsets are at `tabs`, from `row` (per pixel: ox, oy, iX, iY as i32) and the 22 ramps
+// of L shorts at `ramp`. The JavaScript's reads past a ramp's ends give 0 (`| 0` on undefined), and
+// a row outside 0..H reads undefined from rowOff, so the sum is NaN and the Int32Array stores 0:
+// both reproduced here. rowOff[y] is y * W.
+export function ladder(row: usize, ramp: usize, L: i32, tabs: usize, o0: i32, W: i32, H: i32): void {
+  const uL = <u32>L;
+  for (let k = 0; k < 22; k++) {
+    const r = ramp + <usize>(k * L) * 2, b = <usize>load<u32>(tabs + (<usize>k << 2)) + (<usize>o0 << 2);
+    for (let x = 0; x < W; x++) {
+      const q = row + (<usize>x << 4);
+      const ox = load<i32>(q), oy = load<i32>(q, 4), iX = load<i32>(q, 8), iY = load<i32>(q, 12);
+      const ry = <u32>iY < uL ? <i32>load<i16>(r + (<usize>iY << 1)) : 0;
+      const rx = <u32>iX < uL ? <i32>load<i16>(r + (<usize>iX << 1)) : 0;
+      const yy = oy + ry;
+      store<i32>(b + (<usize>x << 2), <u32>yy <= <u32>H ? yy * W + ox + rx : 0);
+    }
+  }
+}
