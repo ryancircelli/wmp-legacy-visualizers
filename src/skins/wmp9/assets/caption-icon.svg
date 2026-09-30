@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 256 256">
+  <!-- The title bar's icon: the app's own orb (deno-webview/assets/icon.svg) at title-bar size. The
+       page's title bar (components/Chrome.tsx) and the desktop host's (tauri/src/titlebar.rs) both
+       draw this file. -->
+  <defs>
+    <radialGradient id="orb" cx="35%" cy="32%" r="78%">
+      <stop offset="0" stop-color="#BFDDFF"/>
+      <stop offset="0.25" stop-color="#6BA9F5"/>
+      <stop offset="0.6" stop-color="#2A6FE0"/>
+      <stop offset="1" stop-color="#12417F"/>
+    </radialGradient>
+    <linearGradient id="gloss" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fff" stop-opacity="0.55"/>
+      <stop offset="1" stop-color="#fff" stop-opacity="0"/>
+    </linearGradient>
+    <clipPath id="ball"><circle cx="128" cy="128" r="120"/></clipPath>
+  </defs>
+  <circle cx="128" cy="128" r="120" fill="url(#orb)"/>
+  <ellipse cx="128" cy="72" rx="92" ry="52" fill="url(#gloss)" clip-path="url(#ball)"/>
+  <circle cx="128" cy="128" r="118.5" fill="none" stroke="#08234F" stroke-width="3"/>
+  <circle cx="128" cy="128" r="104" fill="none" stroke="#8FC4FF" stroke-opacity="0.59" stroke-width="2"/>
+  <path d="M108 84 L108 172 L184 128 Z" fill="#fff"/>
+</svg>

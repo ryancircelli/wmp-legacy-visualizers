@@ -5,6 +5,11 @@ import { menuItems, MENUS } from '../../menus';
 import s from '../wmp9.module.css';
 import emblemSpotify from '../assets/emblem-spotify.svg';
 import emblemWmp from '../assets/emblem-wmp.svg';
+// the title bar's artwork, shared with the Tauri host's own title bar (tauri/src/titlebar.rs)
+import captionIcon from '../assets/caption-icon.svg';
+import captionMin from '../assets/caption-min.svg?raw';
+import captionMax from '../assets/caption-max.svg?raw';
+import captionClose from '../assets/caption-close.svg?raw';
 
 /** XP's popup menus (the menu bar's, the view pill's and the visualization picker's). */
 export const MENU: MenuClasses = {
@@ -27,49 +32,28 @@ export const ADDTO: AddToClasses = {
 /** The playing track's Add to, for the Play menu (the menu bar's and the view pill's). */
 const usePlayingAddTo = () => useAddTo(useApp(playingTrack));
 
+/** A caption button's glyph, its SVG file inline: as an <img> it would land a fraction of a pixel
+ *  elsewhere at 125 / 150 / 175 %. */
+const Glyph = ({ svg }: { svg: string }) => <span className="block mx-auto w-11 h-11" aria-hidden="true" dangerouslySetInnerHTML={{ __html: svg }} />;
+
 const WBTN = 'w-21 h-21 flex-none p-0 rounded-sm border leading-[0] shadow-[inset_1px_1px_0_rgba(255,255,255,.55),inset_-1px_-1px_0_rgba(0,0,0,.22)]';
 
 export function TitleBar() {
   const w = useWindowControls();
   return (
-    <div className={cx(s.corners, s.titlebar, 'flex-none h-30 flex items-center gap-6 pt-0 pr-3 pb-2 pl-7 rounded-t-win text-white font-xp font-bold text-13 leading-[1] [text-shadow:1px_1px_1px_rgba(0,0,0,.45)] bare:hidden', w.host && 'cursor-default')}
+    <div className={cx(s.corners, s.titlebar, 'flex-none h-30 flex items-center gap-6 pt-0 pr-3 pb-2 pl-7 rounded-t-win text-white font-xp font-bold text-13 leading-[1] [text-shadow:1px_1px_1px_rgba(0,0,0,.45)] bare:hidden nativetitle:hidden', w.host && 'cursor-default')}
          id="titlebar" onMouseDown={w.onCaptionMouseDown}>
-      {/* the app's own icon (deno-webview/assets/icon.svg), inlined at title-bar size: no external
-           file, and this is the only copy of the artwork the page itself needs. */}
-      <svg className="flex-none" id="wmpicon" width="16" height="16" viewBox="0 0 256 256" aria-hidden="true">
-        <defs>
-          <radialGradient id="orb" cx="35%" cy="32%" r="78%">
-            <stop offset="0" stopColor="#BFDDFF"/>
-            <stop offset="0.25" stopColor="#6BA9F5"/>
-            <stop offset="0.6" stopColor="#2A6FE0"/>
-            <stop offset="1" stopColor="#12417F"/>
-          </radialGradient>
-          <linearGradient id="gloss" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0" stopColor="#fff" stopOpacity="0.55"/>
-            <stop offset="1" stopColor="#fff" stopOpacity="0"/>
-          </linearGradient>
-          <clipPath id="ball"><circle cx="128" cy="128" r="120"/></clipPath>
-        </defs>
-        <circle cx="128" cy="128" r="120" fill="url(#orb)"/>
-        <ellipse cx="128" cy="72" rx="92" ry="52" fill="url(#gloss)" clipPath="url(#ball)"/>
-        <circle cx="128" cy="128" r="118.5" fill="none" stroke="#08234F" strokeWidth="3"/>
-        <circle cx="128" cy="128" r="104" fill="none" stroke="#8FC4FF" strokeOpacity="0.59" strokeWidth="2"/>
-        <path d="M108 84 L108 172 L184 128 Z" fill="#fff"/>
-      </svg>
+      {/* the app's own orb at title-bar size; the desktop host's own title bar draws the same file */}
+      <img className="flex-none" id="wmpicon" width="16" height="16" src={captionIcon} alt="" aria-hidden="true" draggable={false} />
       <span className="flex-auto min-w-0 truncate">Windows Media Player</span>
       <button className={cx(s.wbtn, WBTN, 'border-caption-edge')} id="wmin" title="Minimize" tabIndex={-1} onClick={w.minimize}>
-        <svg className="mx-auto fill-white" width="11" height="11" viewBox="0 0 11 11" aria-hidden="true"><rect x="2" y="7" width="7" height="2"/></svg>
+        <Glyph svg={captionMin} />
       </button>
       <button className={cx(s.wbtn, WBTN, 'border-caption-edge')} id="wmax" title="Maximize (full screen)" onClick={w.maximize}>
-        <svg className="mx-auto fill-white" width="11" height="11" viewBox="0 0 11 11" aria-hidden="true">
-          <path d="M1.5 1.5h8v8h-8z" fill="none" stroke="#FFFFFF" strokeWidth="1.4"/>
-          <rect x="1.5" y="1.5" width="8" height="2"/>
-        </svg>
+        <Glyph svg={captionMax} />
       </button>
       <button className={cx(s.wbtn, s.x, WBTN, 'border-close-edge')} id="wclose" title="Close" onClick={w.close}>
-        <svg className="mx-auto fill-white" width="11" height="11" viewBox="0 0 11 11" aria-hidden="true">
-          <path d="M2.2 2.2 L8.8 8.8 M8.8 2.2 L2.2 8.8" stroke="#FFFFFF" strokeWidth="1.9" strokeLinecap="round" fill="none"/>
-        </svg>
+        <Glyph svg={captionClose} />
       </button>
     </div>
   );
