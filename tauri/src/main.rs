@@ -40,15 +40,12 @@ fn data_root() -> Option<PathBuf> {
     None
 }
 
-/// Tauri's (wry's) default WebView2 arguments, which setting any replaces, plus autoplay: the
-/// screensaver has no user gesture to start audio with.
-const BROWSER_ARGS: &str = "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection \
-     --autoplay-policy=no-user-gesture-required";
-
 /// `browserArgs` from settings.json (beside the exe, else in the data folder; deno-webview/README.md
-/// "settings.json") replaces `BROWSER_ARGS`: a switch can be tried, or a DevTools port opened,
-/// without a rebuild. Unlike the Deno host's webview.dll, WebView2 here does receive them.
-fn browser_args() -> String {
+/// "settings.json") replaces wry's WebView2 arguments (`--disable-features=msWebOOUI,msPdfOOUI,
+/// msSmartScreenProtection --autoplay-policy=no-user-gesture-required`): a switch can be tried, or a
+/// DevTools port opened, without a rebuild. Unlike the Deno host's webview.dll, WebView2 here does
+/// receive them. `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS` does not: the arguments wry passes win.
+fn browser_args() -> Option<String> {
     let beside = std::env::current_exe()
         .ok()
         .and_then(|e| e.parent().map(PathBuf::from));
@@ -58,7 +55,6 @@ fn browser_args() -> String {
         .find_map(|d| std::fs::read(d.join("settings.json")).ok())
         .and_then(|b| serde_json::from_slice::<serde_json::Value>(&b).ok())
         .and_then(|v| v["browserArgs"].as_str().map(String::from))
-        .unwrap_or_else(|| BROWSER_ARGS.into())
 }
 
 /// The page, at the origin its settings (`localStorage`) are keyed by. A custom protocol and not
@@ -138,8 +134,11 @@ fn builder<'a, R: Runtime>(
         // On screen at once, at its final box and in the skin's colour, before WebView2 is started
         // (which `build` then waits for): the window a native app gives, filled in a moment later.
         .visible(true)
-        .additional_browser_args(&browser_args())
-        .initialization_script(host::script(mode, host_update, None));
+        .initialization_script(host::script(mode, host_update));
+    let b = match browser_args() {
+        Some(args) => b.additional_browser_args(&args),
+        None => b,
+    };
     match data_root() {
         Some(root) => b.data_directory(root.join("WebView2")),
         None => b,
@@ -248,7 +247,10 @@ fn open<R: Runtime>(app: &AppHandle<R>, mode: Mode) -> tauri::Result<()> {
         // The player: no frame of its own. The page draws the XP title bar and drives this window
         // through it (host.js).
         _ => {
+            #[cfg(target_os = "windows")]
+            win::chrome_when_created("AlchemyHost");
             let b = builder(app, label, mode)
+                .window_classname("AlchemyHost") // the Deno host's class, for whatever looks for it
                 .decorations(false)
                 .min_inner_size(480.0, 360.0)
                 .background_color(Color(20, 99, 235, 255)); // Luna blue, never a white first frame
@@ -316,10 +318,12 @@ fn main() {
     // The plugin remembers the player's box; `open` puts the window there as it is created.
     let mut state = tauri_plugin_window_state::Builder::new()
         .with_state_flags(StateFlags::SIZE | StateFlags::POSITION | StateFlags::MAXIMIZED)
-        .with_denylist(&["saver"])
-        .skip_initial_state("player");
+        .with_denylist(&["saver"]);
     if let Some(f) = state_file() {
-        state = state.with_filename(f.to_string_lossy());
+        // where `remembered` reads it; elsewhere (no data folder) the plugin restores as usual
+        state = state
+            .with_filename(f.to_string_lossy())
+            .skip_initial_state("player");
     }
 
     let run = tauri::Builder::default()
@@ -346,7 +350,7 @@ fn main() {
         .setup(move |app| {
             mark(&format!(
                 "argv {args:?} -> {mode:?}; browser args {}",
-                browser_args()
+                browser_args().as_deref().unwrap_or("wry's")
             ));
             // Page updates, asked for now, while WebView2 starts (never in a debug build, whose
             // page is the working tree's).

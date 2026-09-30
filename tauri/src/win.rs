@@ -18,8 +18,9 @@ use windows::Win32::System::StationsAndDesktops::{
     CloseDesktop, DESKTOP_CONTROL_FLAGS, DESKTOP_SWITCHDESKTOP, OpenInputDesktop,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    GW_HWNDPREV, GWL_EXSTYLE, GetWindow, GetWindowLongPtrW, GetWindowRect, IsIconic, IsWindow,
-    IsWindowVisible, MB_ICONERROR, MB_OK, MessageBoxW, WS_EX_LAYERED, WS_EX_TRANSPARENT,
+    FindWindowExW, GW_HWNDPREV, GWL_EXSTYLE, GetWindow, GetWindowLongPtrW, GetWindowRect,
+    GetWindowThreadProcessId, IsIconic, IsWindow, IsWindowVisible, MB_ICONERROR, MB_OK,
+    MessageBoxW, WS_EX_LAYERED, WS_EX_TRANSPARENT,
 };
 use windows::core::HSTRING;
 
@@ -63,6 +64,27 @@ pub fn chrome(h: isize) {
     set(DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_ROUND.0 as u32);
     set(DWMWA_BORDER_COLOR, DWMWA_COLOR_NONE);
     set(DWMWA_CAPTION_COLOR, 0x00EB_6314); // COLORREF 0x00BBGGRR: #1463EB
+}
+
+/// `chrome` for this process's window of `class` the moment it exists. The main thread is inside
+/// the window builder until WebView2 is up, half a second after the window is on screen, and
+/// until then the frame would show Windows' own grey caption rows; this thread is not.
+pub fn chrome_when_created(class: &'static str) {
+    std::thread::spawn(move || {
+        let (pid, class) = (std::process::id(), HSTRING::from(class));
+        for _ in 0..2000 {
+            let mut after = None;
+            while let Ok(h) = unsafe { FindWindowExW(None, after, &class, None) } {
+                let mut owner = 0;
+                unsafe { GetWindowThreadProcessId(h, Some(&mut owner)) };
+                if owner == pid {
+                    return chrome(h.0 as isize);
+                }
+                after = Some(h);
+            }
+            std::thread::sleep(std::time::Duration::from_millis(1));
+        }
+    });
 }
 
 /// Full-screen visuals keep the machine and the display awake; off hands power back to the plan.

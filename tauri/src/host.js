@@ -1,5 +1,5 @@
 // What the desktop host gives the page, before any page script, on every document (host.rs
-// `script` calls this with H = {mode, hostUpdate, audio, url}). The same globals the Deno host's
+// `script` calls this with H = {mode, hostUpdate}). The same globals the Deno host's
 // init script sets (deno-webview/main.ts initScript; src/adapters/host/globals.ts), implemented
 // with Tauri's IPC and window API instead of webview bindings.
 (function (H) {
@@ -13,7 +13,9 @@
   // a newer exe is out (update.rs): the page offers the download (Help menu)
   window.alchemyHostUpdate = H.hostUpdate;
   // The page prefers the host's system audio over a display-media loopback when audio is true.
-  window.alchemyScreensaver = { audio: H.audio, url: H.url };
+  // Merged, not replaced: a plugin's init script (the audio socket's) runs before this one and
+  // sets audio and url.
+  window.alchemyScreensaver = Object.assign({ audio: false, url: '' }, window.alchemyScreensaver);
   window.alchemyLog = function (line) { return call('host_log', { line: String(line) }); };
   window.alchemyOpenUrl = function (url) {
     // Only the project's own addresses: the opener plugin's scope (capabilities/default.json).

@@ -6,14 +6,11 @@ use crate::{mark, mode::Mode, update::Updates};
 use std::sync::atomic::{AtomicBool, Ordering};
 use tauri::{AppHandle, Manager, Runtime, WebviewWindow, WindowEvent};
 
-/// The init script every document gets before its own. `audio` is the host's system-audio socket
-/// URL, when it has one: the page then prefers it over asking for a display-media loopback.
-pub fn script(mode: Mode, host_update: bool, audio: Option<&str>) -> String {
+/// The init script every document gets before its own.
+pub fn script(mode: Mode, host_update: bool) -> String {
     let h = serde_json::json!({
         "mode": if mode == Mode::Saver { "screensaver" } else { "config" },
         "hostUpdate": host_update,
-        "audio": audio.is_some(),
-        "url": audio.unwrap_or(""),
     });
     format!("{}({h});", include_str!("host.js"))
 }
