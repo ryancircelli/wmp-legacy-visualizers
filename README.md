@@ -119,7 +119,9 @@ LRCLIB for lyrics, if that option is on).
 
 ## Build and test
 
-The page is TypeScript + React, built by Vite (Node 24 / npm). The desktop formats are Deno.
+The page is TypeScript + React, built by Vite (Node 24 / npm). The desktop formats are Deno. A Tauri 2
+host for them (`tauri/`, see [`tauri/README.md`](tauri/README.md)) is on the `tauri` branch and is not
+released yet; the downloads above are the Deno host.
 
 ```sh
 npm ci                      # once, and after package-lock.json changes
@@ -226,6 +228,7 @@ into that private reverse-engineering archive.
 | `docs/` | `EXACTNESS.md`, the frame-by-frame comparison record |
 | `deno/` | The static handler every format serves `dist/` with (`main.ts`), and `deno task serve` for local work |
 | `deno-webview/` | The two Windows desktop formats, one module compiled twice: Deno + WebView2, single-file, plus the WASAPI audio helper |
+| `tauri/` | The Tauri 2 host meant to replace `deno-webview/`: one Rust exe for the screensaver, the player and Spotify. On the `tauri` branch, not released |
 
 ## A note on the source material
 
