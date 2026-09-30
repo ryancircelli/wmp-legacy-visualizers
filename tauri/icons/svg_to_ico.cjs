@@ -1,7 +1,7 @@
-// node assets/svg_to_ico.cjs <in.svg> <out.ico> — rasterise an SVG in Chromium (gradients, filters
+// node svg_to_ico.cjs <in.svg> <out.ico> — rasterise an SVG in Chromium (gradients, filters
 // and all, which this machine's ImageMagick mangles) at 1024 px on a transparent background, then
 // let PIL write the .ico at 16/24/32/48/64/128/256 (downscaled from the 1024 master).
-//   NODE_PATH=$(npm root -g) node assets/svg_to_ico.cjs assets/icon-spotify.svg assets/icon-spotify.ico
+//   NODE_PATH=$(npm root -g) node tauri/icons/svg_to_ico.cjs tauri/icons/spotify.svg tauri/icons/spotify.ico
 const { chromium } = require('playwright');
 const fs = require('fs'), path = require('path'), { execFileSync } = require('child_process');
 (async () => {

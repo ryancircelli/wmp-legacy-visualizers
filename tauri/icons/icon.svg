@@ -1,7 +1,7 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256"
      role="img" aria-label="WMP Legacy Visualizers">
   <!-- The application's icon: the XP-era Media Player orb, drawn here rather than copied from
-       anywhere. assets/make_icon.py renders the same geometry to icon.ico for the executables;
+       anywhere. make_icon.py renders the same geometry to icon.ico for the executables;
        keep the two in step if either moves. -->
   <defs>
     <radialGradient id="orb" cx="35%" cy="32%" r="78%">

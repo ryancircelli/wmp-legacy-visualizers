@@ -1,5 +1,11 @@
 # The desktop hosts (Deno + WebView2)
 
+> **Retired.** This is the design record of the Deno + WebView2 host that `tauri/` replaced,
+> kept for its measurements: `tauri/README.md` and the Tauri host's comments cite them. The host
+> was removed on 2026-09-30; its sources (`deno-webview/`, and the static handler in `deno/`) are
+> in git history, last at commit `60d9b23`. The file names below (`main.ts`, `win32.ts`,
+> `server.ts`, `spotify.ts`, `assets/`, …) are that host's. Its icon art moved to `tauri/icons/`.
+
 Two of the project's three formats (the third is the website), both compiled from `main.ts`: the
 page running in the OS's own browser engine, one file each, 77 MB, no installer and no runtime to
 ship — Windows 11 already has WebView2.

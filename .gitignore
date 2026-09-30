@@ -21,8 +21,6 @@ dist/
 !.dev.vars.example
 !.env.example
 
-# deno
-deno-webview/native/alchemy-audio.exe
 node_modules/
 
 # the reverse-engineering archive (decompiles, specs) is private and never committed here

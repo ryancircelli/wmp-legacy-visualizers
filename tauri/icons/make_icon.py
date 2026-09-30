@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""Render assets/icon.svg's artwork to assets/icon.ico (the exe icon).
+"""Render icon.svg's artwork to icon.ico beside it (Alchemy.scr's icon, tauri.conf.json).
 
 Drawn with PIL rather than rasterised from the SVG: this machine has no SVG rasteriser
 (no cairosvg, no rsvg-convert, and ImageMagick's built-in MSVG mangles radial gradients).
 The geometry below is the same 256-unit box the SVG uses, so the two stay in step.
 
-    python3 assets/make_icon.py
+    python3 tauri/icons/make_icon.py
 """
 from PIL import Image, ImageDraw, ImageFilter
 

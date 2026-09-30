@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 256 256">
-  <!-- The title bar's icon: the app's own orb (deno-webview/assets/icon.svg) at title-bar size. The
+  <!-- The title bar's icon: the app's own orb (tauri/icons/icon.svg) at title-bar size. The
        page's title bar (components/Chrome.tsx) and the desktop host's (tauri/src/titlebar.rs) both
        draw this file. -->
   <defs>
