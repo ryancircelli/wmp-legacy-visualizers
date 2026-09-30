@@ -3,7 +3,6 @@
 // is kept in Caches for launches without a network.
 import AVFoundation
 import CoreMedia
-import Network
 import ReplayKit
 import SwiftUI
 import WebKit
@@ -18,9 +17,6 @@ struct WmpSpotifyApp: App {
         try? AVAudioSession.sharedInstance().setCategory(.playAndRecord, options: [.defaultToSpeaker, .allowBluetoothA2DP, .allowAirPlay])
         try? AVAudioSession.sharedInstance().setActive(true)
         HostLog.shared.log("host: build \(Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "?")")
-        // Listening before the page loads: the page opens the socket once, at load. The capture
-        // starts from Player, once the scene is up.
-        Audio.shared.server.start()
     }
 
     var body: some Scene {
@@ -28,17 +24,32 @@ struct WmpSpotifyApp: App {
     }
 }
 
-// The audio host, for the app's lifetime. Player starts the capture; its log row restarts it.
+// The audio host, for the app's lifetime. Player starts the capture and tells it the scene phase;
+// its log row restarts it.
 final class Audio {
     static let shared = Audio()
-    let server = AudioServer()
-    lazy var capture = AppAudioCapture(server: server)
+    let capture = AppAudioCapture()
 }
 
-// The one web view, for the retry's reload.
+// The one web view, used on the main thread: the retry reloads it, the capture feeds the page
+// through it.
 final class WebHolder {
     static let shared = WebHolder()
     weak var web: WKWebView?
+    private var failed = false  // an evaluateJavaScript error was logged
+
+    /// From any thread: runs `js` in the page on the main thread, in call order, the result dropped.
+    /// Only the first error is logged (the page without window.__wmpAudio, say). The completion
+    /// handler and not the async variant, which crashes on a void result in some SDKs.
+    func run(_ js: String) {
+        DispatchQueue.main.async {
+            self.web?.evaluateJavaScript(js) { _, error in
+                guard let error, !self.failed else { return }
+                self.failed = true
+                HostLog.shared.log("audio: evaluateJavaScript failed: \(error.localizedDescription)")
+            }
+        }
+    }
 }
 
 // The host's log. print reaches nobody on a TestFlight install, so Player shows the last line under
@@ -48,13 +59,14 @@ final class HostLog: ObservableObject {
     @Published var last = ""
     var lines: [String] = []
 
-    /// From any thread; the published state changes on the main thread.
-    func log(_ line: String) {
+    /// From any thread; the published state changes on the main thread. A quiet line goes to the
+    /// long-press list only, never the band.
+    func log(_ line: String, quiet: Bool = false) {
         print(line)
         DispatchQueue.main.async {
             self.lines.append(line)
             if self.lines.count > 20 { self.lines.removeFirst() }
-            self.last = line
+            if !quiet { self.last = line }
         }
     }
 }
@@ -98,7 +110,8 @@ struct Player: View {
             }
         }
         .onChange(of: scenePhase, initial: true) { _, phase in
-            HostLog.shared.log("scene: \(phase)")
+            HostLog.shared.log("scene: \(phase)", quiet: true)
+            Audio.shared.capture.scene(active: phase == .active)
         }
         .task {
             script = await userScript()
@@ -110,8 +123,8 @@ struct Player: View {
         }
     }
 
-    // ReplayKit's consent alert again, and the page reloaded: it opens the socket once, at load,
-    // and keeps the microphone once the socket is lost.
+    // ReplayKit's consent alert again, and the page reloaded: once __wmpAudio.close() has given it
+    // the microphone, only a new page takes the app's audio again.
     private func retry() {
         HostLog.shared.log("retry: restarting capture, reloading the page in 1.5 s")
         Audio.shared.capture.restart()
@@ -205,160 +218,34 @@ struct WebView: UIViewRepresentable {
     }
 }
 
-// ws://127.0.0.1:47831/audio for the page (observer.js hands it the URL), in the Windows host's
-// format (tauri/src/audio/mod.rs): {"rate":n} once, then binary interleaved stereo f32. The page's
-// own messages (lyricsPref, wake, mediaCmd) are read and dropped. All state is on `queue`.
-// ponytail: no send backpressure (the Windows host caps unsent bytes); add one if a stalled page
-// ever shows up as memory growth.
-final class AudioServer {
-    private let queue = DispatchQueue(label: "audio-server")
-    private var listener: NWListener?
-    private var page: NWConnection?  // the latest socket
-    private var ready = false        // its handshake is done
-    private var rate: Double?
-
-    /// Listens, unless it already is. Again after close(): the retry.
-    func start() {
-        queue.async { self.listen() }
-    }
-
-    private func listen() {
-        guard listener == nil else { return }
-        let ws = NWProtocolWebSocket.Options()
-        ws.autoReplyPing = true
-        let params = NWParameters(tls: nil, tcp: NWProtocolTCP.Options())
-        params.defaultProtocolStack.applicationProtocols.insert(ws, at: 0)
-        // Loopback only: nothing off the phone reaches it. (No key, unlike the Windows host's: only
-        // the foreground app runs, and this is only the app's own sound.)
-        params.requiredLocalEndpoint = .hostPort(host: "127.0.0.1", port: 47831)
-        params.allowLocalEndpointReuse = true
-        let listener: NWListener
-        do {
-            listener = try NWListener(using: params)
-        } catch {
-            HostLog.shared.log("audio: cannot listen: \(error)")
-            return
-        }
-        listener.stateUpdateHandler = { [weak self, weak listener] state in
-            HostLog.shared.log("audio: listener \(state), port \(listener?.port?.rawValue ?? 0)")
-            // Dropped, so the next start() makes a new one (the port still held, say).
-            if case .failed = state, let self, let listener, listener === self.listener {
-                listener.cancel()
-                self.listener = nil
-            }
-        }
-        listener.newConnectionHandler = { [weak self] c in self?.accept(c) }
-        self.listener = listener
-        listener.start(queue: queue)
-    }
-
-    /// The capture's sample rate, before its first samples: sent now if the page is connected, else
-    /// as soon as it is.
-    func sendRate(_ rate: Double) {
-        queue.async {
-            self.rate = rate
-            self.sendRateFrame(rate)
-        }
-    }
-
-    func sendPCM(_ data: Data) {
-        queue.async { self.send(data, .binary) }
-    }
-
-    /// The socket and the listener, so a page that reconnects gets no socket and keeps the
-    /// microphone, until start() listens again.
-    func close() {
-        queue.async {
-            self.listener?.cancel()
-            self.listener = nil
-            self.page?.cancel()
-            self.page = nil
-            self.ready = false
-            self.rate = nil
-            HostLog.shared.log("audio: server closed")
-        }
-    }
-
-    private func accept(_ c: NWConnection) {
-        page?.cancel()
-        page = c
-        ready = false
-        c.stateUpdateHandler = { [weak self, weak c] state in
-            guard let self, let c, c === self.page else { return }
-            switch state {
-            case .ready:
-                HostLog.shared.log("audio: page connected")
-                self.ready = true
-                self.receive(c)
-                if let rate = self.rate { self.sendRateFrame(rate) }
-            case .failed(let error):
-                HostLog.shared.log("audio: socket failed: \(error)")
-                self.page = nil
-            case .cancelled:
-                HostLog.shared.log("audio: socket closed")
-                self.page = nil
-            default:
-                break
-            }
-        }
-        c.start(queue: queue)
-    }
-
-    // Drains the page's messages, which this host has no use for.
-    private func receive(_ c: NWConnection) {
-        c.receiveMessage { [weak self, weak c] _, context, _, error in
-            guard let self, let c else { return }
-            let meta = context?.protocolMetadata(definition: NWProtocolWebSocket.definition)
-                as? NWProtocolWebSocket.Metadata
-            // An error, a close frame or the end of the stream: done with this socket.
-            guard error == nil, let meta, meta.opcode != .close else {
-                c.cancel()
-                return
-            }
-            self.receive(c)
-        }
-    }
-
-    private func sendRateFrame(_ rate: Double) {
-        send(Data("{\"rate\":\(Int(rate))}".utf8), .text)
-    }
-
-    private func send(_ data: Data, _ opcode: NWProtocolWebSocket.Opcode) {
-        guard ready, let page else { return }
-        let context = NWConnection.ContentContext(identifier: "audio",
-                                                  metadata: [NWProtocolWebSocket.Metadata(opcode: opcode)])
-        page.send(content: data, contentContext: context, isComplete: true,
-                  completion: .contentProcessed { error in
-                      if let error { HostLog.shared.log("audio: send failed: \(error)") }
-                  })
-    }
-}
-
 // The app's own output for the visualizers, by ReplayKit's in-app capture. An experiment: iOS gives
 // an app no way to hear another app, Spotify's DRM playback cannot be routed through Web Audio, and
 // Apple Music is silenced in screen recordings; whether Spotify's web player is too is what this
-// finds out. The first buffer that is not silent sends the rate, and every buffer from then on goes
-// to the page. 30 s of nothing but silence, or a refusal or failure, stops the capture and closes
-// the server until a retry (restart()): the page then falls back to the microphone. All state is on
-// `queue`.
+// finds out. There is no socket: WebKit refuses a ws:// connection from Spotify's https page (build
+// 6's never connected), so the samples go in by evaluateJavaScript (WebHolder.run) to the stand-in
+// observer.js puts in its place. The first buffer that is not silent sends __wmpAudio.rate(n), and
+// every buffer from then on __wmpAudio.pcm(<base64 interleaved stereo int16 LE>, n), the rate again
+// for a stand-in opened later (a reload, the login page and back). 30 s in the
+// foreground of nothing but silence, or a refusal or failure, stops the capture and sends
+// __wmpAudio.close() until a retry (restart()): the page then falls back to the microphone. All
+// state is on `queue`.
 final class AppAudioCapture {
-    private let server: AudioServer
     private let queue = DispatchQueue(label: "replaykit-audio")
     private var attached = false
     private var done = false
+    private var active = true      // the scene is in the foreground
     private var buffers = 0
+    private var emptyBuffers = 0   // read, but with no frames
+    private var totalFrames = 0
     private var described = false  // the first buffer's format was logged
+    private var measured = false   // the first read buffer's size and peak were logged
     private var skipped = false    // a buffer this cannot read was logged
     private var timeout: DispatchWorkItem?
     private var gen = 0  // which start() a ReplayKit callback belongs to; older ones are ignored
 
-    init(server: AudioServer) { self.server = server }
-
     /// On the main thread. startCapture brings up iOS's own consent alert ("Allow screen recording
-    /// in WMP Spotify?"); that is expected for this experiment. Declining it is a refusal. The server
-    /// listens first, since a give-up closed it.
+    /// in WMP Spotify?"); that is expected for this experiment. Declining it is a refusal.
     func start() {
-        server.start()
         let recorder = RPScreenRecorder.shared()
         recorder.isMicrophoneEnabled = false
         HostLog.shared.log("replaykit: starting in-app capture (available: \(recorder.isAvailable))")
@@ -379,17 +266,16 @@ final class AppAudioCapture {
                     self.giveUp("capture refused or failed (\(error.localizedDescription))")
                     return
                 }
-                HostLog.shared.log("replaykit: capture started, waiting up to 30 s for app audio that is not silent")
+                HostLog.shared.log("replaykit: capture started, waiting up to 30 s in the foreground for app audio that is not silent")
                 // From here and not from startCapture, so the time the consent alert is up does not count.
-                let timeout = DispatchWorkItem { [weak self] in
-                    guard let self, !self.attached else { return }
-                    HostLog.shared.log("replaykit: \(self.buffers) app audio buffers in 30 s, none with sound")
-                    self.giveUp("30 s of silence")
-                }
-                self.timeout = timeout
-                self.queue.asyncAfter(deadline: .now() + 30, execute: timeout)
+                self.arm()
             }
         })
+    }
+
+    /// From the main thread, at each scene phase: the 30 s count only in the foreground.
+    func scene(active: Bool) {
+        queue.async { self.active = active }
     }
 
     /// The retry, from the main thread: forgets the last attempt, stops a capture still running, and
@@ -399,7 +285,10 @@ final class AppAudioCapture {
             self.done = false
             self.attached = false
             self.buffers = 0
+            self.emptyBuffers = 0
+            self.totalFrames = 0
             self.described = false
+            self.measured = false
             self.skipped = false
             self.timeout?.cancel()
             self.timeout = nil
@@ -417,18 +306,46 @@ final class AppAudioCapture {
         }
     }
 
+    // 30 s, then the give-up if nothing was heard. In the background, where ReplayKit may deliver
+    // nothing, another 30 s instead, the counts started over.
+    private func arm() {
+        let timeout = DispatchWorkItem { [weak self] in
+            guard let self, !self.attached else { return }
+            guard self.active else {
+                self.buffers = 0
+                self.emptyBuffers = 0
+                self.totalFrames = 0
+                self.arm()
+                return
+            }
+            HostLog.shared.log("replaykit: \(self.buffers) app audio buffers (\(self.emptyBuffers) empty, \(self.totalFrames) frames) in 30 s, none with sound")
+            self.giveUp("30 s of silence")
+        }
+        self.timeout = timeout
+        queue.asyncAfter(deadline: .now() + 30, execute: timeout)
+    }
+
     private func take(_ buffer: CMSampleBuffer) {
         guard !done else { return }
         buffers += 1
         guard let s = stereo(buffer) else { return }
+        if !measured {
+            measured = true
+            HostLog.shared.log("replaykit: first buffer \(s.frames) frames, peak \(s.peak)")
+        }
+        totalFrames += s.frames
+        guard s.frames > 0 else {
+            emptyBuffers += 1
+            return
+        }
         if !attached {
             guard s.peak > 0 else { return }
             attached = true
             timeout?.cancel()
             HostLog.shared.log("replaykit: app audio after \(buffers) buffers (peak \(s.peak)), \(Int(s.rate)) Hz: sending it to the page")
-            server.sendRate(s.rate)
+            WebHolder.shared.run("__wmpAudio.rate(\(Int(s.rate)))")
         }
-        server.sendPCM(s.pcm)
+        WebHolder.shared.run("__wmpAudio.pcm('\(s.pcm.base64EncodedString())', \(Int(s.rate)))")
     }
 
     private func giveUp(_ why: String) {
@@ -436,7 +353,7 @@ final class AppAudioCapture {
         done = true
         timeout?.cancel()
         HostLog.shared.log("replaykit: \(why), giving the page the microphone")
-        server.close()
+        WebHolder.shared.run("__wmpAudio.close()")
         DispatchQueue.main.async {
             RPScreenRecorder.shared().stopCapture { error in
                 if let error { HostLog.shared.log("replaykit: stopCapture: \(error.localizedDescription)") }
@@ -444,10 +361,11 @@ final class AppAudioCapture {
         }
     }
 
-    /// The buffer as interleaved stereo little-endian f32 (mono doubled), with its peak and rate: from
-    /// 16-bit integer or 32-bit float, interleaved or not, either byte order (ReplayKit's app audio
-    /// has been reported big-endian). nil for anything else, logged once.
-    private func stereo(_ buffer: CMSampleBuffer) -> (pcm: Data, peak: Float, rate: Double)? {
+    /// The buffer as interleaved stereo little-endian int16 (mono doubled), with its peak (0...1),
+    /// rate and frame count: from 16-bit integer or 32-bit float, interleaved or not, either byte
+    /// order (ReplayKit's app audio is big-endian int16, measured build 6). nil for anything else,
+    /// logged once.
+    private func stereo(_ buffer: CMSampleBuffer) -> (pcm: Data, peak: Float, rate: Double, frames: Int)? {
         guard let desc = CMSampleBufferGetFormatDescription(buffer),
               let asbd = CMAudioFormatDescriptionGetStreamBasicDescription(desc)?.pointee else { return nil }
         if !described {
@@ -491,7 +409,7 @@ final class AppAudioCapture {
         }
 
         let frames = abl.map { Int($0.mDataByteSize) / Int(asbd.mBytesPerFrame) }.min() ?? 0
-        var out = [Float](repeating: 0, count: frames * 2)
+        var out = [Int16](repeating: 0, count: frames * 2)
         var peak: Float = 0
         withExtendedLifetime(block) {
             for c in 0..<2 {
@@ -501,20 +419,24 @@ final class AppAudioCapture {
                 let offset = planar ? 0 : from
                 for i in 0..<frames {
                     let at = (i * step + offset) * size
-                    let v: Float
+                    let v: Int16
                     if isFloat {
                         let u = p.load(fromByteOffset: at, as: UInt32.self)
-                        v = Float(bitPattern: big ? u.byteSwapped : u)
+                        let f = Float(bitPattern: big ? u.byteSwapped : u)
+                        // Clamped first, so the product fits (NaN comes out as 1).
+                        v = Int16(max(-1, min(1, f)) * 32767)
                     } else {
                         let u = p.load(fromByteOffset: at, as: UInt16.self)
-                        v = Float(Int16(bitPattern: big ? u.byteSwapped : u)) / 32768
+                        v = Int16(bitPattern: big ? u.byteSwapped : u)
                     }
                     out[i * 2 + c] = v
-                    peak = max(peak, abs(v))
+                    // In Float: abs(Int16.min) would trap.
+                    peak = max(peak, abs(Float(v)) / 32768)
                 }
             }
         }
-        return (out.withUnsafeBufferPointer { Data(buffer: $0) }, peak, asbd.mSampleRate)
+        // Every iOS device is little-endian: the samples go out as they sit in memory.
+        return (out.withUnsafeBufferPointer { Data(buffer: $0) }, peak, asbd.mSampleRate, frames)
     }
 
     private func skip(_ why: String) {

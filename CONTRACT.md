@@ -318,9 +318,11 @@ launch and keeps in Caches (offline: the last copy; none: Spotify's page bare). 
 document start in the main frame only, with a desktop Safari user agent, since Spotify serves the web
 player to desktop browsers only. Host bindings the page sees: `alchemyElectron = {loopback:true,
 mode:'app'}` and `alchemyScreensaver = {audio:true, url:'ws://127.0.0.1:47831/audio'}` (the v8 audio
-socket, served by App.swift from ReplayKit's capture of the app's own output; the host sends the rate
-frame only once it hears something and closes the socket when refused or after 30 s of silence, and
-the page then takes the microphone: startLoopback with no getDisplayMedia, on a lost socket too),
+socket's frames, but no socket: WebKit refuses ws:// from the https page, so observer.js answers that
+one URL with a stand-in and App.swift feeds it by evaluateJavaScript, `__wmpAudio.rate(n)`,
+`__wmpAudio.pcm(<base64 stereo int16 LE>)` per ReplayKit buffer of the app's own output, and
+`__wmpAudio.close()` when refused or after 30 s of silence; the page then takes the microphone:
+startLoopback with no getDisplayMedia, on a lost socket too),
 `alchemyLog` (a WKScriptMessageHandler), `alchemySpotifyLogout` (accounts.spotify.com/logout). No audio
 socket, no lyrics from a host (LRCLIB is fetched by the page), no window bindings, no page-update
 signature (the site is trusted as the bundle's source). Built on GitHub's macOS runners, signed with
