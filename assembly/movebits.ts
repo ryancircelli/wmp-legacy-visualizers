@@ -6,6 +6,7 @@
 // The blur walks the interior as one linear run, so x = 0 reads the previous row's last pixel and
 // x = W-1 the next row's first, exactly like the JS. blur1 (the tail) works on one pixel's fields,
 // whose sums stay below 1024 << 16, so nothing carries between them; the vector loop on channels.
+//   ladder  one row of Shift's 22 transition tables (_build3), below.
 // Pointers are byte offsets of u32/i32 arrays in this module's memory, laid out by the JS glue.
 
 const RB: u32 = 0x00FF00FF;

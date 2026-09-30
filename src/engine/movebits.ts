@@ -1,5 +1,5 @@
-// ShiftMoveBits' gather + blur in WebAssembly SIMD (assembly/movebits.ts, embedded as
-// ./movebits-wasm.ts), with shift.ts's JavaScript as the fallback. Both run the same integer ops, so
+// ShiftMoveBits' gather + blur, and _build3's transition ladder, in WebAssembly SIMD
+// (assembly/movebits.ts, embedded as ./movebits-wasm.ts), with shift.ts's JavaScript as the fallback. Both run the same integer ops, so
 // the output is identical whichever runs, frame by frame (tests/engine/golden runs every Alchemy
 // fixture on each path and on a path that flips between them).
 //
@@ -9,9 +9,9 @@
 // the main thread, so it compiles synchronously right there; any refusal (no WebAssembly, no SIMD,
 // a CSP without wasm-unsafe-eval, memory.grow failing) leaves the JS path in charge for good.
 //
-// Resident: Shift keeps A.px, B.px and its warp tables as views into an arena (newArena), a kernel
-// instance of its own whose memory never grows after it is made, so the kernel works on them in
-// place. Otherwise (arrays from anywhere else, e.g. a test's) the shared kernel works on copies in
+// Resident: Shift keeps A.px, B.px and its warp tables (and the ladder's row and ramps) as views
+// into an arena (newArena), a kernel instance of its own whose memory never grows after it is made,
+// so the kernel works on them in place; the ladder only ever runs there (ladderWasm). Otherwise (arrays from anywhere else, e.g. a test's) the shared kernel works on copies in
 // its memory, [src | dst | tab] each rounded up to 16 bytes: A.px and the table in, the gathered
 // image (B.px) and the blurred interior rows (A.px rows 1..H-2) out, rows 0 and H-1 of A.px left
 // alone as the JS leaves them. Those copies cost ~0.2 ms a frame at 640x480. The shared memory
