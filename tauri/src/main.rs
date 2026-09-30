@@ -5,6 +5,7 @@
 //! player window (`/c`, or no arguments). The page is the website's own build (`../dist`), embedded
 //! in the executable and served at the origin the Deno host used, `https://wmp.localhost/`.
 
+mod audio;
 mod mode;
 #[cfg(target_os = "windows")]
 mod win;
@@ -236,6 +237,7 @@ fn main() {
         }))
         .plugin(log.build())
         .plugin(state.build())
+        .plugin(audio::init())
         .register_uri_scheme_protocol("wmp", serve)
         .invoke_handler(tauri::generate_handler![painted, dismiss])
         .setup(move |app| {

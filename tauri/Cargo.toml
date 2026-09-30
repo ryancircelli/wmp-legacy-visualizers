@@ -22,6 +22,13 @@ tauri-plugin-single-instance = "=2.5.1"
 tauri-plugin-window-state = "=2.5.0"
 tauri-plugin-log = "=2.10.0"
 log = "0.4"
+tungstenite = "0.30"
+serde_json = "1.0.151"
+serde = { version = "1.0.229", features = ["derive"] }
+ureq = { version = "3.4", default-features = false, features = ["native-tls-no-default", "json"] }
+getrandom = "0.3"
+sha1 = "0.11"
+regex = "1"
 
 # Tauri's recommended size profile (https://v2.tauri.app/concept/size/).
 [profile.release]
@@ -30,3 +37,7 @@ lto = true
 opt-level = "s"
 panic = "abort"
 strip = true
+
+[target."cfg(windows)".dependencies]
+wasapi = "0.24.0"
+windows = { version = "0.62.2", features = ["Foundation", "Media_Control", "Storage_Streams", "Security_Cryptography", "Win32_System_Power"] }
