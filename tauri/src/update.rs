@@ -259,8 +259,7 @@ fn short(v: &str) -> &str {
 
 /// The one HTTP GET the updates make.
 pub async fn http_get(url: String) -> Result<Vec<u8>, String> {
-    static CLIENT: LazyLock<reqwest::Client> = LazyLock::new(reqwest::Client::new);
-    let r = CLIENT
+    let r = crate::HTTP
         .get(&url)
         .header("cache-control", "no-cache")
         .timeout(Duration::from_secs(15))
@@ -627,6 +626,21 @@ mod tests {
             m.files["index.html"],
             sha256hex(include_bytes!("../../dist/index.html"))
         );
+    }
+
+    /// A TLS handshake with a server that does not speak TLS: an error, never a panic, which would
+    /// be the whole app (panic = "abort"). ureq 3.4, the lyrics' client before, panicked on https
+    /// without the right feature; this is the one client both use.
+    #[test]
+    fn https_is_an_error_never_a_panic() {
+        use std::io::Write;
+        let l = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!("https://{}/", l.local_addr().unwrap());
+        std::thread::spawn(move || {
+            let (mut s, _) = l.accept().unwrap();
+            let _ = s.write_all(b"HTTP/1.1 200 OK\r\ncontent-length: 0\r\n\r\n");
+        });
+        assert!(run(http_get(url)).is_err());
     }
 
     /// The real key decodes to a verifying key (a typo in it would silently disable every update).

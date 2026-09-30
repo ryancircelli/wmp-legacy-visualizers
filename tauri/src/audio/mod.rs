@@ -270,15 +270,15 @@ impl Conn {
         }
     }
 
-    /// Look the current track up, or say there are none: off the socket's thread, since LRCLIB can
-    /// take its whole 5 s timeout.
+    /// Look the current track up, or say there are none: a task on Tauri's runtime, off the
+    /// socket's thread, since LRCLIB can take its whole 5 s timeout.
     fn lyrics(&self) {
         let (key, out) = (self.track_key.clone(), self.out.clone());
         match (&self.track, self.lyrics_on) {
             (Some(t), true) => {
                 let (t, dir) = (t.clone(), self.dir.clone());
-                std::thread::spawn(move || {
-                    let (status, frame) = lyrics::lyrics_for(&t, dir.as_deref());
+                tauri::async_runtime::spawn(async move {
+                    let (status, frame) = lyrics::lyrics_for(&t, dir.as_deref()).await;
                     log::info!("lyrics: {status} for {:?}", t.title);
                     let _ = out.send(Out::Lyrics(key, frame));
                 });

@@ -36,6 +36,16 @@ pub(crate) fn mark(stage: &str) {
     log::info!("t+{}ms {stage}", START.elapsed().as_millis());
 }
 
+/// The one HTTP client (page updates, lyrics): reqwest, on the tokio runtime Tauri already runs,
+/// with the system's TLS (SChannel here, Security.framework on a Mac). LRCLIB asks every client to
+/// say who it is.
+pub(crate) static HTTP: LazyLock<reqwest::Client> = LazyLock::new(|| {
+    reqwest::Client::builder()
+        .user_agent("WmpLegacyVisualizers/1.0 (github.com/ryancircelli/wmp-legacy-visualizers)")
+        .build()
+        .expect("no TLS")
+});
+
 /// The folder everything is kept in, when it is not the one Tauri would pick (see `win.rs`).
 fn data_root() -> Option<PathBuf> {
     #[cfg(target_os = "windows")]
