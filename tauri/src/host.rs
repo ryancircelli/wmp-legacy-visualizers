@@ -11,6 +11,8 @@ pub fn script(mode: Mode, host_update: bool) -> String {
     let h = serde_json::json!({
         "mode": if mode == Mode::Saver { "screensaver" } else { "config" },
         "hostUpdate": host_update,
+        // the host draws the title bar (titlebar.rs): the page hides its own
+        "nativeTitle": cfg!(windows) && mode != Mode::Saver,
     });
     format!("{}({h});", include_str!("host.js"))
 }
@@ -44,6 +46,9 @@ pub fn attach<R: Runtime>(w: &WebviewWindow<R>, mode: Mode) {
     if mode == Mode::Saver {
         return;
     }
+    // the title bar keeps the web view below it
+    #[cfg(windows)]
+    let _ = w.with_webview(move |pw| crate::titlebar::adopt(hwnd, pw.controller()));
     // Four times a second and whenever the window is activated, as the Deno host did: WebView2
     // keeps drawing a window nobody can see, at 60 fps (deno-webview/README.md, 27 % of a core).
     #[cfg(windows)]

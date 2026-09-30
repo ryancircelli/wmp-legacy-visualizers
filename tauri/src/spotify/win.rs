@@ -200,6 +200,10 @@ fn create<R: Runtime>(
             with(|h| h.loaded(ev, url));
         })
         .build_as_child(w)?;
+    // shown, it goes below the title bar
+    if let Ok(h) = w.hwnd() {
+        crate::titlebar::adopt(h.0 as isize, view.controller());
+    }
     let core = view.webview();
     autoplay(&core);
     let probe = cfg!(debug_assertions) && std::env::var_os("ALCHEMY_SPOTIFY_PROBE").is_some();

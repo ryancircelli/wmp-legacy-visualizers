@@ -80,9 +80,11 @@
     return;
   }
 
-  // The player. The window has no frame of its own (decorations off): the page's XP title bar is
-  // its only title bar and the skin's status-bar grip its resize handle. Its corners are DWM's
-  // (win.rs chrome), so the page draws its own square, as template.html does when maximized.
+  // The player. The window has no frame of its own (decorations off). On Windows the host draws the
+  // XP title bar (titlebar.rs) and the page hides its own; elsewhere the page's is the only one. The
+  // skin's status-bar grip is the resize handle. The corners are DWM's (win.rs chrome), so the page
+  // draws its own square, as template.html does when maximized.
+  window.alchemyNativeTitle = H.nativeTitle === true;
   addEventListener('DOMContentLoaded', function () {
     var q = document.createElement('style');
     q.textContent = '#chrome,#titlebar{border-radius:0!important}';
