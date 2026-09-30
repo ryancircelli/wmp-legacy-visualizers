@@ -19,12 +19,13 @@ export function Root() {
     <div className="font-xp text-11 leading-[1.4] text-ink" data-ui-root="">
       {/* Luna: the title bar across the top with rounded top corners, and a 4px blue border of the
           same colour down both sides and along the bottom, where XP squares the corners off. That
-          border is #chrome's own background showing past #framebody's margin. */}
+          border is #chrome's own background showing past #framebody's margin. A host that draws the
+          window's chrome itself (nativetitle: tauri/src/titlebar.rs) draws this border too. */}
       <div className={cx(s.corners, 'absolute inset-0 flex flex-col overflow-hidden rounded-t-win bg-luna-window data-bare:rounded-none data-bare:bg-none data-bare:bg-black data-bare:cursor-none data-bare:[&_*]:cursor-none')}
            id="chrome" data-bare={st.bare || undefined} data-spotify={st.spotify || undefined} data-nativetitle={st.nativeTitle || undefined}
            data-nopl={!st.playlistPane || undefined} data-notask={!st.taskPane || undefined}>
         <TitleBar />
-        <div className="flex-auto flex flex-col min-h-0 mt-0 mx-4 mb-4 border border-t-0 border-luna-sep bg-luna-frame bare:m-0 bare:border-0 bare:bg-black" id="framebody">
+        <div className="flex-auto flex flex-col min-h-0 mt-0 mx-4 mb-4 border border-t-0 border-luna-sep bg-luna-frame bare:m-0 bare:border-0 bare:bg-black nativetitle:m-0 nativetitle:border-0" id="framebody">
           <WmpMenuBar />
           <div className="flex-auto flex flex-col min-h-0 bg-luna-frame" id="body">
             {/* the task pane knob's state: the label in the top bar toggles it */}
