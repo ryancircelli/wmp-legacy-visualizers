@@ -182,10 +182,11 @@ the file matches its hash, `built` is newer than the exe's own page, and `needs`
 HOST_API. **deno-webview/host-api.json is the contract version: bump it in the same commit as any
 page change that needs something older exes lack** (a new binding, a changed message); older exes
 then keep their built-in page. A page may still feature-detect optional bindings (alchemyOpenUrl)
-without a bump. `host` hashes the host's own sources; another value tells an exe a newer one is out
-(window.alchemyHostUpdate = true; the page offers the download).
+without a bump. `host` hashes the host's own sources (tools/postbuild.js; since the Tauri host's release, `tauri/`
+and host-api.json by git blob id); another value tells an exe a newer one is out (window.alchemyHostUpdate =
+true; the page offers the download).
 
-## v8 — the Tauri host (`tauri/`, branch `tauri`; not released)
+## v8 — the Tauri host (`tauri/`; the two downloads, release.yml)
 One exe for every mode (tauri/src/mode.rs): `/s` the screensaver, `/c`, `/c:<hwnd>` or nothing the player
 window, `/p <hwnd>` exits 0, `--mode=spotify` the Spotify player (below). The page is the website's build,
 embedded, at `https://wmp.localhost/index.html?mode=screensaver&ss=1` (the saver) or `?mode=config` (the

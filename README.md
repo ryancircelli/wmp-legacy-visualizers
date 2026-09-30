@@ -47,12 +47,12 @@ player when there is one.
 In the browser, audio is a screen/tab share: press Play, pick a tab or your screen, and tick
 **Share audio**. The video track is discarded the instant the stream arrives.
 
-The application and the screensaver capture the system mix instead, with nothing to click: a 270 KB
-WASAPI loopback helper (`deno-webview/audio/`) writes the speakers' PCM to the Deno host, which relays it
-to the page over a WebSocket, and the page turns it into the same frequency and waveform bytes an
+The application and the screensaver capture the system mix instead, with nothing to click: the
+desktop host reads the speakers' PCM through WASAPI loopback, in its own process, and hands it to the
+page over a local WebSocket, and the page turns it into the same frequency and waveform bytes an
 `AnalyserNode` produces. WebView2 itself offers no way to answer a capture request with a loopback
-stream — and, as it turns out, no way to set Chromium's autoplay policy either, so a screensaver's
-`AudioContext` can never start. `deno-webview/README.md` has the measurements and what they forced.
+stream. [`tauri/README.md`](tauri/README.md) has the details, and `deno-webview/README.md` the
+measurements from the first host that forced this design.
 
 ## Spotify
 
@@ -61,9 +61,10 @@ player runs inside it, hidden under the skin:
 
 - **Log in once.** The first launch shows Spotify's login page as it is. When you are signed in,
   the WMP skin comes up over it and stays up. The login lives in the app's own profile
-  (`%LOCALAPPDATA%\WmpLegacyVisualizers\spotify\`), so it survives restarts and new downloads.
-  Opening WmpSpotify again while it runs brings its window forward; opening a new download while
-  the old one runs closes the old one and keeps your login.
+  (`%LOCALAPPDATA%\WmpLegacyVisualizers\tauri\WebView2\`), so it survives restarts and new
+  downloads; the first launch after the earlier (Deno) version carries its login and settings over.
+  Opening WmpSpotify again while it runs brings its window forward. Close it before opening a new
+  download, which otherwise only brings the running one forward.
 - **Now Playing** shows the track, the artist, the album art and the position, and synced lyrics
   when LRCLIB has them, as in the application. It follows whatever your account is playing, on
   any device. The visualizers follow the music.
@@ -119,9 +120,9 @@ LRCLIB for lyrics, if that option is on).
 
 ## Build and test
 
-The page is TypeScript + React, built by Vite (Node 24 / npm). The desktop formats are Deno. A Tauri 2
-host for them (`tauri/`, see [`tauri/README.md`](tauri/README.md)) is on the `tauri` branch and is not
-released yet; the downloads above are the Deno host.
+The page is TypeScript + React, built by Vite (Node 24 / npm). The desktop formats are one Tauri 2
+host (`tauri/`, see [`tauri/README.md`](tauri/README.md)), built twice. `deno-webview/`, the Deno host
+it replaced, is kept for `npm run dev:spotify` and as the fallback.
 
 ```sh
 npm ci                      # once, and after package-lock.json changes
@@ -138,13 +139,16 @@ npm run build:wasm          # after editing assembly/*.ts (AssemblyScript): rege
 |---|---|
 | `dist/index.html` | The whole page as one self-contained file: the website, and embedded in every exe |
 | `alchemy.html` (root) | A copy of it; open it directly, no server needed (Chromium/Chrome target) |
-| `dist/spotify-inject.js` | JSON `{html, css, js}` that `WmpSpotify.exe` injects into open.spotify.com (`js` is one classic script) |
+| `dist/spotify-inject.js` | JSON `{html, css, js}` that the Deno host's `WmpSpotify.exe` injects into open.spotify.com (`js` is one classic script) |
 | `dist/version.json`, `_headers`, `_redirects` (tools/postbuild.js) | Build stamp; Cloudflare caching/security headers and the `/alchemy` route |
 
 ```sh
-cd deno-webview && deno task compile           # -> dist/Alchemy.exe  (screensaver; cross-compiles from Linux/macOS)
-cd deno-webview && deno task compile:spotify   # -> dist/WmpSpotify.exe
-cd deno-webview && deno task test
+npm ci --prefix tauri                          # once
+cd tauri && npx tauri build --no-bundle        # on Windows -> target/release/Alchemy.exe (Alchemy.scr)
+cd tauri && npx tauri build --no-bundle --features wmp-spotify --config tauri.spotify.conf.json
+                                               #   -> the same, as WmpSpotify.exe
+cd tauri && npm run build:win                  # from WSL or Linux (cargo-xwin; tauri/README.md)
+cd tauri && cargo test
 cd deno && deno task serve                     # serve ../dist on http://127.0.0.1:8765/
 ```
 
@@ -156,10 +160,10 @@ Hot reload while developing:
   place, script/markup changes reload the page (login kept). No real HMR there: open.spotify.com's
   CSP blocks module loads from localhost. Details in deno-webview/README.md, "Hot reload (dev)".
 
-Each `compile*` task runs `npm run build` first (so `npm ci` must have been run once) and the
-WASAPI helper build (`cargo` + mingw). CI does the same on every push to master: `deploy.yml`
-(website), `screensaver-release.yml` and `spotify-release.yml`, each running
-typecheck, lint and the unit tests before building. The Playwright smokes
+Each build runs `npm run build` first (so `npm ci` must have been run once). CI does the same on
+every push to master: `deploy.yml` (website) and `release.yml` (both downloads, on Windows), each
+running typecheck, lint and the unit tests before building; a change to the host reaches the website
+only after `release.yml` has published the exes that go with it. The Playwright smokes
 (`NODE_PATH=$(npm root -g) node tests/shell-smoke.js`, `tests/spotify-smoke.js`, `tests/gl.smoke.js`)
 run locally only.
 
@@ -227,8 +231,8 @@ into that private reverse-engineering archive.
 | `tests/` | Vitest unit tests, fixtures, and the Playwright smokes |
 | `docs/` | `EXACTNESS.md`, the frame-by-frame comparison record |
 | `deno/` | The static handler every format serves `dist/` with (`main.ts`), and `deno task serve` for local work |
-| `deno-webview/` | The two Windows desktop formats, one module compiled twice: Deno + WebView2, single-file, plus the WASAPI audio helper |
-| `tauri/` | The Tauri 2 host meant to replace `deno-webview/`: one Rust exe for the screensaver, the player and Spotify. On the `tauri` branch, not released |
+| `deno-webview/` | The Deno + WebView2 host the Tauri one replaced: `npm run dev:spotify`, and the fallback |
+| `tauri/` | The two Windows desktop formats: one Rust exe for the screensaver, the player and Spotify, built twice (`tauri/package/` is the rest of the zips) |
 
 ## A note on the source material
 

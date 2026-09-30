@@ -13,6 +13,10 @@ repository = "https://github.com/ryancircelli/wmp-legacy-visualizers"
 edition = "2024"
 rust-version = "1.90"
 
+[features]
+# WmpSpotify.exe: the same program, opening Spotify mode when no mode is asked for (main.rs)
+wmp-spotify = []
+
 [build-dependencies]
 tauri-build = { version = "=2.7.0", features = [] }
 

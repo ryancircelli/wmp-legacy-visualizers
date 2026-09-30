@@ -6,6 +6,8 @@
 //! in the executable and served at the origin the Deno host used, `https://wmp.localhost/`.
 
 mod audio;
+#[cfg(target_os = "windows")]
+mod carry;
 mod host;
 mod mode;
 mod spotify;
@@ -314,9 +316,39 @@ fn fatal(saver: bool, what: &str) -> ! {
     std::process::exit(1)
 }
 
+/// WmpSpotify.exe is this program built with the `wmp-spotify` feature (.github/workflows/release.yml):
+/// with no mode asked for it opens Spotify, as the Deno host's had `--mode=spotify` compiled in. It asks
+/// for it out loud, starting itself again with the flag, because a launch the running instance takes
+/// over reaches that instance as the raw arguments (the single-instance plugin), and that instance may
+/// be Alchemy.scr's, for which no arguments mean the player. Returns only if it could not.
+#[cfg(feature = "wmp-spotify")]
+fn relaunch_as_spotify(args: &[String]) {
+    // the same standard handles, so ALCHEMY_CONSOLE's redirected log still arrives
+    let child = std::env::current_exe().and_then(|exe| {
+        std::process::Command::new(exe)
+            .args(args)
+            .arg("--mode=spotify")
+            .spawn()
+    });
+    if let Ok(c) = child {
+        // the shell let this process come to the front; the window will be the child's
+        #[cfg(target_os = "windows")]
+        unsafe {
+            let _ = windows::Win32::UI::WindowsAndMessaging::AllowSetForegroundWindow(c.id());
+        }
+        std::process::exit(0);
+    }
+}
+
 fn main() {
     LazyLock::force(&START);
-    let args: Vec<String> = std::env::args().skip(1).collect();
+    #[allow(unused_mut)]
+    let mut args: Vec<String> = std::env::args().skip(1).collect();
+    #[cfg(feature = "wmp-spotify")]
+    if mode::given(&args).is_none() {
+        relaunch_as_spotify(&args);
+        args.push("--mode=spotify".into());
+    }
     let mode = mode::parse(&args);
     if mode == Mode::Preview {
         return; // the preview pane stays black: exit 0 before anything starts
@@ -391,6 +423,12 @@ fn main() {
             let own = own.and_then(|a| serde_json::from_slice(&a.bytes).ok());
             if let (Some(own), Some(root), false) = (own, &root, cfg!(debug_assertions)) {
                 app.manage(update::Updates::start(root.join("update"), own));
+            }
+            // Before this process's WebView2 starts, and past the single-instance check: only the
+            // instance that keeps running touches the profile.
+            #[cfg(target_os = "windows")]
+            if let Some(root) = &root {
+                carry::settings(root);
             }
             Ok(open(app.handle(), mode)?)
         })

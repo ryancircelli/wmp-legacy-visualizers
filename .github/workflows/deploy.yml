@@ -1,5 +1,7 @@
 # Builds the page (npm run build -> dist/) and publishes it to Cloudflare (wmp.ryancircelli.com) on every push to master.
 # workflow_dispatch from any other branch checks and builds only: the deploy step is master-only.
+# A push that changes the desktop host is published by release.yml instead, which runs this workflow once the
+# new exes are downloadable: update.json's `host` is what tells installed apps a new download is out.
 # Secrets: CLOUDFLARE_API_TOKEN (scoped: account Workers Scripts Write; zone ryancircelli.com Zone Read +
 # Workers Routes Write), CLOUDFLARE_ACCOUNT_ID, UPDATE_SIGNING_KEY (signs dist/update.json; tools/sign-update.js).
 name: deploy
@@ -18,8 +20,6 @@ on:
       - 'public/**'
       - 'wrangler.jsonc'
       - 'tools/sign-update.js'
-      # the host's sources set update.json's `host`, which tells older exes a new one is out
-      - 'deno-webview/**'
       - '.github/workflows/deploy.yml'
   workflow_dispatch:
 concurrency: { group: pages-deploy, cancel-in-progress: true }
@@ -29,6 +29,16 @@ jobs:
     permissions: { contents: read, deployments: write }
     steps:
       - uses: actions/checkout@v4
+        with: { fetch-depth: 0 } # the push's whole range, for the host check below
+      # update.json's `host` hashes these (tools/postbuild.js). Published now, it would have every installed app
+      # offer a download that is still the previous build for the quarter hour release.yml takes; release.yml
+      # runs this workflow when the new one is up. A range git cannot read deploys, as it always did.
+      - name: Leave a host change to release.yml
+        id: host
+        if: github.event_name == 'push'
+        run: |
+          git diff --quiet '${{ github.event.before }}' '${{ github.sha }}' -- tauri deno-webview/host-api.json && rc=0 || rc=$?
+          if [ "$rc" = 1 ]; then echo later=true >> "$GITHUB_OUTPUT"; echo "the host changed: release.yml deploys"; fi
       - uses: actions/setup-node@v4
         with: { node-version: '24', cache: npm }
       - run: npm ci
@@ -38,15 +48,15 @@ jobs:
       - name: Build site
         env: { GITHUB_SHA: '${{ github.sha }}' }
         run: npm run build && ls -l dist
-      # The exes take a page update only when this signature verifies (deno-webview/update.ts);
+      # The exes take a page update only when this signature verifies (tauri/src/update.rs, deno-webview/update.ts);
       # the key is a secret, so an unsigned or foreign manifest on the site is ignored by them.
       - name: Sign the page update manifest
-        if: github.ref == 'refs/heads/master'
+        if: github.ref == 'refs/heads/master' && steps.host.outputs.later != 'true'
         env:
           UPDATE_SIGNING_KEY: ${{ secrets.UPDATE_SIGNING_KEY }}
         run: node tools/sign-update.js
       - name: Deploy to Cloudflare (Worker with static assets, custom domain wmp.ryancircelli.com)
-        if: github.ref == 'refs/heads/master'
+        if: github.ref == 'refs/heads/master' && steps.host.outputs.later != 'true'
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}

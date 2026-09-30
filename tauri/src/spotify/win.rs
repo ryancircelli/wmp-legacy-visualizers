@@ -236,15 +236,18 @@ fn create<R: Runtime>(
     // measured 4.3 MB.
     let net = json!({ "maxTotalBufferSize": 32 << 20, "maxResourceBufferSize": 16 << 20,
                       "maxPostDataSize": 1 << 16 });
-    cdp(&core, "Network.enable", net, move |r| match r {
-        Ok(_) => {
-            log::info!(
-                "spotify: web view up, watching its network, t+{}ms",
-                t0.elapsed().as_millis()
-            );
-            with(|h| h.view.load_url(HOME));
-        }
-        Err(e) => log::error!("spotify: no network observer: {e}"),
+    let c = core.clone();
+    carry_login(w, &core, move || {
+        cdp(&c, "Network.enable", net, move |r| match r {
+            Ok(_) => {
+                log::info!(
+                    "spotify: web view up, watching its network, t+{}ms",
+                    t0.elapsed().as_millis()
+                );
+                with(|h| h.view.load_url(HOME));
+            }
+            Err(e) => log::error!("spotify: no network observer: {e}"),
+        })
     });
     w.on_window_event(|e| match e {
         WindowEvent::Resized(s) => {
@@ -259,6 +262,85 @@ fn create<R: Runtime>(
         _ => {}
     });
     Ok(())
+}
+
+/// The Deno host's Spotify login, once (crate::carry): every cookie of its `spotify` profile, set into
+/// this one before Spotify's page first loads. Read through the DevTools Protocol of a web view on
+/// that profile that exists only for this (its own browser, for a second or so), so neither profile's
+/// cookie encryption matters: both are the runtime's own, and the protocol hands over names, values,
+/// flags and expiry. All of them, not only spotify.com's: a login through Google or Facebook lives
+/// on those sites. `then` runs whatever happens.
+fn carry_login<R: Runtime>(
+    w: &WebviewWindow<R>,
+    core: &ICoreWebView2,
+    then: impl FnOnce() + 'static,
+) {
+    use crate::carry;
+    let Some(root) = crate::data_root() else {
+        return then();
+    };
+    let Some(udf) = carry::deno_dir(&root).map(|d| d.join("spotify")) else {
+        return then();
+    };
+    if carry::done(&root, "login") {
+        return then();
+    }
+    if !udf.join("EBWebView").is_dir() {
+        carry::mark(&root, "login", "no Deno Spotify profile, nothing to carry");
+        return then();
+    }
+    if carry::busy(&udf) {
+        log::info!("carry: login: the Deno Spotify profile is in use; left for the next launch");
+        return then();
+    }
+    let t0 = Instant::now();
+    let mut ctx = wry::WebContext::new(Some(udf));
+    let old = WebViewBuilder::new_with_web_context(&mut ctx)
+        .with_visible(false)
+        .with_bounds(rect(PhysicalSize::new(1, 1), false))
+        .build_as_child(w);
+    let old = match old {
+        Ok(v) => v,
+        Err(e) => {
+            log::warn!("carry: login: no web view on the Deno profile: {e}");
+            return then();
+        }
+    };
+    let (old_core, core) = (old.webview(), core.clone());
+    cdp(&old_core, "Network.getAllCookies", json!({}), move |r| {
+        let got = r.map(|v| v["cookies"].as_array().cloned().unwrap_or_default());
+        let cookies: Vec<Value> = got.as_ref().map_or(vec![], |c| {
+            c.iter()
+                .cloned()
+                .map(|mut c| {
+                    // a Cookie as Network.setCookies takes it (CookieParam)
+                    if let Some(o) = c.as_object_mut() {
+                        if o.remove("session") == Some(Value::Bool(true)) {
+                            o.remove("expires");
+                        }
+                        o.remove("size");
+                        o.remove("partitionKeyOpaque");
+                    }
+                    c
+                })
+                .collect()
+        });
+        let n = cookies.len();
+        // the Deno profile's web view goes in this callback, not in its own
+        let p = json!({ "cookies": cookies });
+        cdp(&core, "Network.setCookies", p, move |r| {
+            drop(old);
+            match (got, r) {
+                (Ok(_), Ok(_)) => carry::mark(
+                    &root,
+                    "login",
+                    &format!("{n} cookies, {} ms", t0.elapsed().as_millis()),
+                ),
+                (Err(e), _) | (_, Err(e)) => log::warn!("carry: login: {e}"),
+            }
+            then();
+        });
+    });
 }
 
 /// Media on open.spotify.com may start without a click in its page: the permission WebView2 keeps
