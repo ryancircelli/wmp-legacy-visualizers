@@ -172,9 +172,11 @@
 @custom-variant max-520 (@media (max-width: 520px));
 @custom-variant max-440 (@media (max-width: 440px));
 /* App states, set as data attributes on the skin's window element (#chrome): full screen /
-   screensaver (bare), the Spotify engine, the playlist pane off (nopl), the task pane off (notask).
-   Declared after the widths so a state rule wins over a width rule, as it did. */
+   screensaver (bare), the Spotify engine, the playlist pane off (nopl), the task pane off (notask),
+   the host drawing the title bar itself (nativetitle). Declared after the widths so a state rule
+   wins over a width rule, as it did. */
 @custom-variant bare (&:where([data-bare], [data-bare] *));
+@custom-variant nativetitle (&:where([data-nativetitle], [data-nativetitle] *));
 @custom-variant spotify (&:where([data-spotify], [data-spotify] *));
 @custom-variant nopl (&:where([data-nopl], [data-nopl] *));
 @custom-variant notask (&:where([data-notask], [data-notask] *));

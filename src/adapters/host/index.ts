@@ -63,6 +63,7 @@ export function detectMode(): Mode {
 }
 
 export const hostWindow = () => typeof window.alchemyWinDrag === 'function';
+export const nativeTitle = () => window.alchemyNativeTitle === true;
 
 export function win(action: WinAction): void {
   const f = { drag: window.alchemyWinDrag, min: window.alchemyWinMin, max: window.alchemyWinMax,

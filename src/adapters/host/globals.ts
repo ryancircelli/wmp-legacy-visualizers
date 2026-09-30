@@ -29,6 +29,8 @@ declare global {
     alchemyWinClose?: () => void;
     alchemyWinSize?: () => void;
     alchemyWinFull?: (on: boolean) => void;
+    /** the host draws the window's title bar itself (the Tauri host on Windows): the page hides its own */
+    alchemyNativeTitle?: boolean;
     /** set by the ticker; the desktop host calls it when its window stops or starts being seen */
     alchemyOccluded?: (on: boolean) => void;
     alchemySpotifyLogout?: () => void;

@@ -534,6 +534,10 @@ describe('chrome', () => {
     expect($('#titlebar')).not.toBeNull();
     act(() => S().actions.setUi({ bare: true }));
     expect($('#chrome')!.dataset.bare).toBe('true');
+    // the host draws the title bar itself (window.alchemyNativeTitle): the skin's hides
+    expect($('#chrome')!.dataset.nativetitle).toBeUndefined();
+    act(() => S().actions.setAuth({ nativeTitle: true }));
+    expect($('#chrome')!.dataset.nativetitle).toBe('true');
     act(() => S().actions.setSettings({ playlistPane: false }));
     expect($('#chrome')!.dataset.nopl).toBe('true');
     fireEvent.click($('#tpcollapse')!);

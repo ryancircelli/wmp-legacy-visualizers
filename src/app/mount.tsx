@@ -6,7 +6,7 @@ import { createLocalAdapter } from '../adapters/local';
 import { createSpotifyAdapter } from '../adapters/spotify';
 import { wasLoggedIn } from '../adapters/spotify/observers';
 import { persistQueries } from '../ui';
-import { detectMode, hostWindow } from '../adapters/host';
+import { detectMode, hostWindow, nativeTitle } from '../adapters/host';
 import { idleStatus } from '../adapters/host/media';
 import { createAppStore, SCALE_OPTS, type Scale, type VisKind } from '../model';
 import { App } from './App';
@@ -29,7 +29,7 @@ export async function mount(): Promise<void> {
   const spotify = window.alchemyEngine === 'spotify';
   const root = window.alchemyRoot ?? document;
   // Known before the first render (the layout differs); the adapter confirms them when it starts.
-  actions.setAuth({ engine: spotify ? 'spotify' : 'local', mode: detectMode(), hostWindow: hostWindow() });
+  actions.setAuth({ engine: spotify ? 'spotify' : 'local', mode: detectMode(), hostWindow: hostWindow(), nativeTitle: nativeTitle() });
   if (detectMode() === "screensaver") actions.setUi({ bare: true });
   // Spotify's own page (its login) shows until the web player says we are logged in, unless the
   // last session here was: then the skin comes up now (adapters/spotify/observers.ts).
