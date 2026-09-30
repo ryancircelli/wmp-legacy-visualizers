@@ -191,7 +191,12 @@ export function createEngine(kind: VisKind, canvas: CanvasLike, opts: CreateEngi
     present() {
       const s = last;
       if (!s || s.w !== bw || s.h !== bh) return;
-      if (gl) { gl.draw(s.px, bw, bh, sampling); return; }
+      if (gl) {
+        // Battery's palette lookup on the GPU while nothing has read (and so built) px
+        if (s.idx && s.pal) gl.drawIndexed(s.idx, s.pal, bw, bh);
+        else gl.draw(s.px, bw, bh, sampling);
+        return;
+      }
       if (!img || !img32 || !buf.ctx || !buf.canvas || !view) return;
       blit(s.px, img32);
       buf.ctx.putImageData(img, 0, 0);

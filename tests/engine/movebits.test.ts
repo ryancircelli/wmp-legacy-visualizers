@@ -12,6 +12,7 @@ import '../../src/engine/rand';
 import '../../src/engine/effect';
 import { Shift } from '../../src/engine/shift';
 import { MOVEBITS_WASM } from '../../src/engine/movebits-wasm';
+import { ladderWasm, newArena } from '../../src/engine/movebits';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 
@@ -94,6 +95,35 @@ describe('movebits: WebAssembly vs JavaScript', () => {
   it('src/engine/movebits-wasm.ts is what assembly/movebits.ts compiles to', () => {
     execFileSync(process.execPath, [join(ROOT, 'tools/build-wasm.mjs'), '--check'], { cwd: ROOT, stdio: 'pipe' });
   }, 60_000);
+});
+
+describe('movebits: the transition ladder', () => {
+  // shift.ts _build3's JavaScript for one row, as the reference
+  function ladderJS(row: Int32Array, ramp: Int16Array[], cur: Int32Array[], o0: number, W: number, H: number): void {
+    const rowOff = Int32Array.from({ length: H + 1 }, (_, y) => y * W);
+    for (let k = 0; k < 22; k++) {
+      const r = ramp[k]!, b = cur[k]!;
+      for (let x = 0, q = 0, o = o0; x < W; x++, q += 4, o++) b[o] = rowOff[row[q + 1]! + (r[row[q + 3]!]! | 0)]! + row[q]! + (r[row[q + 2]!]! | 0);
+    }
+  }
+  it('WASM rows match the JavaScript, ramp overruns and rows off the surface included', () => {
+    for (const [W, H, half] of [[64, 48, 64], [36, 64, 36], [36, 64, 64], [5, 3, 5]] as const) {
+      const n = W * H, ar = newArena(n, 26, W, H)!, r = lcg(W * 7 + H);
+      const ramp = Array.from({ length: 22 }, (_, k) => Int16Array.from({ length: 2 * half }, (_, i) => Math.trunc((i - half) * Math.fround(Math.fround(k + 1) * Math.fround(0.04347826)))));
+      const cur = Array.from({ length: 22 }, (_, k) => ar.i32(4 + k).fill(-7)), want = cur.map((t) => t.slice());
+      for (let y = 0; y < H; y++) {
+        for (let x = 0; x < W; x++) {
+          const ox = r() % W, oy = r() % H, sx = r() % W, sy = r() % H, q = 4 * x;
+          ar.row[q] = ox; ar.row[q + 1] = oy; ar.row[q + 2] = half + (sx - ox); ar.row[q + 3] = half + (sy - oy);
+          if (r() % 9 === 0) ar.row[q + 3] = r() % 2 ? -1 - (r() % 5) : 2 * half + (r() % 5);   // off a ramp
+          if (r() % 11 === 0) { ar.row[q + 1] = H - 1; ar.row[q + 3] = 2 * half - 1; }        // below the last row
+        }
+        ladderJS(ar.row, ramp, want, y * W, W, H);
+        expect(ladderWasm(ar, ramp, cur, y * W, W, H)).toBe(true);
+      }
+      for (let k = 0; k < 22; k++) expect([W, H, k, Buffer.from(cur[k]!.buffer, cur[k]!.byteOffset, 4 * n).equals(Buffer.from(want[k]!.buffer))]).toEqual([W, H, k, true]);
+    }
+  });
 });
 
 describe('movebits: fallback', () => {

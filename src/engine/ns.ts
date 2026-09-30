@@ -16,6 +16,10 @@ export interface Surface {
   w: number;
   h: number;
   px: Uint32Array;
+  /** Battery's (battery/index.ts Frame): the frame as 8-bit indices into `pal` until px is first read,
+   *  null after; px would be pal[idx]. gl.ts draws from these while they are there. */
+  readonly idx?: Uint8Array | null;
+  readonly pal?: Uint32Array;
 }
 
 /** One WMP Render() call's audio. state 2 = playing (WMP's value); wave bytes centred on 128. */
@@ -36,6 +40,10 @@ export interface AlchemyNS {
   cos(x: number): number;
   /** out[0] = sin(x), out[1] = cos(x), exactly as sin()/cos() */
   sincos(x: number, out: Float64Array): void;
+  /** out[2i] = sin(x[i]), out[2i+1] = cos(x[i]) for i < n, exactly as sincos() */
+  sincosN(x: Float64Array, n: number, out: Float64Array): void;
+  /** sin, cos and sincos: 'auto' = WebAssembly when available, else JS (rand.ts); the same bits either way. */
+  trigMode: 'auto' | 'js' | 'wasm';
   atan2(y: number, x: number): number;
   // effect.ts
   makeSurface(w: number, h: number, fill?: number): Surface;
@@ -51,6 +59,8 @@ export interface AlchemyNS {
   // Bars and Waves, Battery (wmp.dll)
   /** Battery's blur and palette passes: 'auto' = WebAssembly when available, else JS (battery/kernel.ts). */
   batteryKernel: 'auto' | 'js' | 'wasm';
+  /** Bars' bar drawing and trail sink: 'auto' = WebAssembly when available, else JS (bars-kernel.ts). */
+  barsKernel: 'auto' | 'js' | 'wasm';
   Bars: typeof Bars;
   BatteryWarps: typeof BatteryWarps;
   BatteryDraws: BatteryDrawsNS;

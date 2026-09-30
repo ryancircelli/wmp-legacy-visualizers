@@ -8,7 +8,10 @@ import './effect';
 import type { WarpPoint } from './effect';
 // mpvis.DLL's sin/cos are ucrtbase's (_o_sin/_o_cos -> 0x1800aba70/0x1800a7730): the clones in 00-rand.js.
 // eslint-disable-next-line @typescript-eslint/unbound-method -- A.sin/A.cos never read `this`; hoisted once, not per-call, on purpose (see 00-rand.js)
-var sin = A.sin || Math.sin, cos = A.cos || Math.cos;
+var sin = A.sin || Math.sin;
+// SC[0] = sin, SC[1] = cos of one angle: the same bits as the two calls, one reduction.
+// eslint-disable-next-line @typescript-eslint/unbound-method -- A.sincos never reads `this`; hoisted once on purpose
+var sincos = A.sincos, SC = new Float64Array(2);
 
 const PI_F = Math.fround(Math.PI);   // 0x18002377c = 3.1415927f
 const PI_D = 3.1415927410125732;     // 0x180023740 = (double)(float)M_PI
@@ -220,8 +223,9 @@ class StretchShift extends Kernel {
     const rSrc = r - t * t * t * this.amp;
     const w = this.sinShake ? sin(this.sinLoops * t * PI_D) : t;
     const aSrc = a0 + w * this.rotation;
-    p.x = tr(cos(aSrc) * rSrc) + cx;
-    p.y = tr(sin(aSrc) * rSrc) + cy;
+    sincos(aSrc, SC);
+    p.x = tr(SC[1] * rSrc) + cx;
+    p.y = tr(SC[0] * rSrc) + cy;
   }
 }
 
@@ -313,8 +317,9 @@ class ShiftOScope extends Kernel {
         const dx = this.cx0 - p.x, dy = this.cy0 - p.y;
         const r = sqrt((dy * dy + dx * dx) | 0);
         const a = atan2(dy, dx) + this.spinFactor;
-        p.y = (this.h - this.cy0) - tr(sin(a) * r);
-        p.x = (this.w - this.cx0) - tr(cos(a) * r);
+        sincos(a, SC);
+        p.y = (this.h - this.cy0) - tr(SC[0] * r);
+        p.x = (this.w - this.cx0) - tr(SC[1] * r);
         break;
       }
       default: break;
@@ -357,8 +362,9 @@ class ShiftOScope extends Kernel {
         if (tr(r) >= this.halfInt) {                    // (int)r / (int)half != 0
           const a = atan2(dy, dx);
           const rSrc = 2.0 * this.halfHalf - r;
-          p.x = tr(cos(a) * rSrc) + this.cx0;
-          p.y = tr(sin(a) * rSrc) + this.cy0;
+          sincos(a, SC);
+          p.x = tr(SC[1] * rSrc) + this.cx0;
+          p.y = tr(SC[0] * rSrc) + this.cy0;
           return;
         }
         const inLeft = dstX <= mx;                     // inside the disk: mode 0

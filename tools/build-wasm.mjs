@@ -15,6 +15,8 @@ const FLAGS = ['-O3', '--noAssert', '--runtime', 'stub', '--enable', 'simd'];
 const KERNELS = [
   { src: 'assembly/movebits.ts', out: 'src/engine/movebits-wasm.ts', name: 'MOVEBITS_WASM' },
   { src: 'assembly/battery.ts', out: 'src/engine/battery/kernel-wasm.ts', name: 'BATTERY_WASM' },
+  { src: 'assembly/trig.ts', out: 'src/engine/trig-wasm.ts', name: 'TRIG_WASM' },
+  { src: 'assembly/bars.ts', out: 'src/engine/bars-wasm.ts', name: 'BARS_WASM' },
 ];
 
 let stale = false;

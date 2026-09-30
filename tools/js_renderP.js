@@ -20,6 +20,8 @@ vm.runInContext(fs.readFileSync(ENGINE, 'utf8'), sandbox, { filename: ENGINE });
 const AL = sandbox.window.Alchemy;
 // Shift's gather + blur: auto (WebAssembly, else JS) | wasm | js. Both paths are byte-identical.
 AL.moveBitsMode = process.env.ALCHEMY_MOVEBITS || 'auto';
+// sin/cos: the same choice (ALCHEMY_TRIG), the same bits either way.
+AL.trigMode = process.env.ALCHEMY_TRIG || 'auto';
 
 const W = 640, H = 480, PER = 4100;
 const [binPath, outDir] = process.argv.slice(2);

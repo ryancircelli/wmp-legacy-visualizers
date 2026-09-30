@@ -3,6 +3,7 @@
 // in engine code.
 // Wrapped verbatim from src/00-rand.js (ARCHITECTURE.md "Engine"): same code, the IIFE opened into module scope.
 import { A } from './ns';
+import { TRIG_WASM } from './trig-wasm';
 var seed = 1; // MSVC starts at 1
 
 A.srand = function (s) { seed = s | 0; };
@@ -219,7 +220,7 @@ function subTail(q: number): number {
   k *= 5e-324;
   return q < 0 ? -k : k;
 }
-A.atan2 = function (y, x) {
+function ucrtAtan2(y: number, x: number): number {
   if (x === 0 || y === 0 || x - x !== 0 || y - y !== 0) return Math.atan2(y, x);
   var ex = expo(x), ey = expo(y);
   if (ex < 0x3fd && ey < 0x3fd) {                                            // 0x18004def0: *2^1024, exact
@@ -262,7 +263,7 @@ A.atan2 = function (y, x) {
   if (xneg) { h = PH - h; l = PL - l; }
   var res = h + l;
   return neg ? -res : res;
-};
+}
 
 function ucrtSin(x: number): number {
   var ax = abs(x);
@@ -279,7 +280,6 @@ function ucrtSin(x: number): number {
   var y = (q & 1) ? cosPoly(r, RR[0]) : sinPoly(r, RR[0]);
   return ((q & 2) !== 0) !== (x < 0) ? -y : y;
 }
-A.sin = ucrtSin;
 
 function ucrtCos(x: number): number {
   var ax = abs(x);
@@ -297,14 +297,13 @@ function ucrtCos(x: number): number {
   var y = (q & 1) ? sinPoly(r, RR[0]) : cosPoly(r, RR[0]);
   return ((q + 1) & 2) ? -y : y;
 }
-A.cos = ucrtCos;
 
 // out[0] = sin(x), out[1] = cos(x), bit for bit what A.sin / A.cos return: where both reduce
 // (|x| > pi/4), they reduce identically and each takes one of the same two polynomials on the
 // same (r, rr), so one reduction and one evaluation of each polynomial serve both. The results go
 // out through a typed array: a double returned from a call that is not inlined is a heap
 // allocation, and these run per pixel of a stroke.
-A.sincos = function (x, out) {
+function ucrtSincos(x: number, out: Float64Array): void {
   var ax = abs(x);
   if (ax > PIO4 && ax <= 1.7976931348623157e308) {
     var r = reduce(ax), q = reg_, rr = RR[0];
@@ -315,4 +314,112 @@ A.sincos = function (x, out) {
   } else {
     out[0] = ucrtSin(x); out[1] = ucrtCos(x);
   }
+}
+
+// ---------------------------------------------------------------- the same clones in WebAssembly
+// assembly/trig.ts (embedded as ./trig-wasm.ts) is sin, cos and atan2 above, op for op: the same f64
+// arithmetic and the same emulated fma, so it returns the same bits, in about half the time; and its
+// doubles stay unboxed where the JavaScript's, returned from calls V8 does not inline, are heap
+// allocations. Only |x| < 2e7 goes to its sin/cos: the Payne-Hanek reduction, NaN and the
+// infinities stay here.
+//
+// A.trigMode: 'auto' (default) = WASM when it loads, else JS; 'js' = always JS; 'wasm' = WASM or throw
+// (tests use it to prove the path ran). The engines hoist A.sin, A.cos, A.sincos, A.sincosN and
+// A.atan2 once, so these stay the same functions and read the mode per call. The module (under 4 KB)
+// compiles synchronously on the first call that wants it; any refusal (no WebAssembly, a CSP without wasm-unsafe-eval) leaves
+// the JavaScript in charge for good.
+interface TrigKernel {
+  memory: WebAssembly.Memory;
+  heapBase: () => number;
+  sin: (x: number) => number;
+  cos: (x: number) => number;
+  sincos: (x: number, out: number) => void;
+  sincosN: (src: number, dst: number, n: number) => number;
+  atanInit: (tables: number) => void;
+  atan2: (y: number, x: number) => number;
+}
+var trigMode: 'auto' | 'js' | 'wasm' = 'auto', K: TrigKernel | null = null, tried = false, on = false;
+var ksin = ucrtSin, kcos = ucrtCos, ksc: TrigKernel['sincos'] = function () {}, KO = 0, KF = F64;
+// sincosN's batches: CAP arguments at KX, their 2*CAP results at KS, after the sincos slot (one page)
+var CAP = 2048, ksn: TrigKernel['sincosN'] = function () { return 0; }, KXo = 0, KSo = 0, KX = F64, KS = F64;
+var katan2 = ucrtAtan2;                             // after the batches: ATN_HI then ATN_LO (241 each)
+function trigKernel(): TrigKernel | null {
+  if (tried) return K;
+  tried = true;
+  try {
+    var bin = atob(TRIG_WASM), bytes = new Uint8Array(bin.length);
+    for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    var k = new WebAssembly.Instance(new WebAssembly.Module(bytes), {}).exports as unknown as TrigKernel;
+    KO = k.heapBase();
+    if (k.memory.buffer.byteLength < KO + 16) k.memory.grow(1);         // it starts empty; never grown again
+    KF = new Float64Array(k.memory.buffer, KO, 2);
+    KXo = KO + 16; KSo = KXo + 8 * CAP;
+    KX = new Float64Array(k.memory.buffer, KXo, CAP); KS = new Float64Array(k.memory.buffer, KSo, 2 * CAP);
+    var atn = KSo + 16 * CAP;
+    new Float64Array(k.memory.buffer, atn, 241).set(ATN_HI); new Float64Array(k.memory.buffer, atn + 1928, 241).set(ATN_LO);
+    k.atanInit(atn);
+    ksin = k.sin; kcos = k.cos; ksc = k.sincos; ksn = k.sincosN; katan2 = k.atan2; K = k;
+  } catch {
+    K = null;                                        // no WebAssembly / CSP: JS from now on
+  }
+  return K;
+}
+function settle(): void { on = trigMode !== 'js' && trigKernel() !== null; }
+Object.defineProperty(A, 'trigMode', {
+  enumerable: true,
+  get: function () { return trigMode; },
+  set: function (m: 'auto' | 'js' | 'wasm') {
+    if (m === 'wasm' && !trigKernel()) throw new Error('trig: the WebAssembly sin/cos is unavailable here');
+    trigMode = m; settle();
+  },
+});
+
+A.sin = function (x) {
+  if (on) { if (x < 2e7 && x > -2e7) return ksin(x); }
+  else if (!tried && trigMode !== 'js') settle();
+  return ucrtSin(x);
+};
+A.cos = function (x) {
+  if (on) { if (x < 2e7 && x > -2e7) return kcos(x); }
+  else if (!tried && trigMode !== 'js') settle();
+  return ucrtCos(x);
+};
+A.sincos = function (x, out) {
+  if (on) {
+    if (x < 2e7 && x > -2e7) { ksc(x, KO); out[0] = KF[0]; out[1] = KF[1]; return; }
+  } else if (!tried && trigMode !== 'js') settle();
+  ucrtSincos(x, out);
+};
+
+// out[2i] = sin(x[i]), out[2i + 1] = cos(x[i]) for i < n: A.sincos over an array, the same bits. On
+// the WASM path a batch is one call (CAP at a time), so a loop of them pays no call per argument, and
+// no double of it is ever boxed.
+var SCT = new Float64Array(2);
+A.sincosN = function (x, n, out) {
+  var i: number;
+  if (!on && !tried && trigMode !== 'js') settle();
+  if (!on) {
+    for (i = 0; i < n; i++) { ucrtSincos(x[i], SCT); out[2 * i] = SCT[0]; out[2 * i + 1] = SCT[1]; }
+    return;
+  }
+  for (var i0 = 0; i0 < n; i0 += CAP) {
+    var m = n - i0 < CAP ? n - i0 : CAP, k: number;
+    for (k = 0; k < m; k++) KX[k] = x[i0 + k];
+    var left = ksn(KXo, KSo, m);
+    for (k = 0; k < 2 * m; k++) out[2 * i0 + k] = KS[k];
+    if (left > 0) {                                  // |x| >= 2e7, NaN, infinities: the JavaScript
+      for (k = 0; k < m; k++) {
+        var v = x[i0 + k];
+        if (!(v < 2e7 && v > -2e7)) { ucrtSincos(v, SCT); out[2 * (i0 + k)] = SCT[0]; out[2 * (i0 + k) + 1] = SCT[1]; }
+      }
+    }
+  }
+};
+
+// atan2 likewise: assembly/trig.ts has it op for op, on this file's own tables; zeros, infinities and
+// NaN go to Math.atan2 here, as ucrtAtan2 sends them.
+A.atan2 = function (y, x) {
+  if (on) { if (x !== 0 && y !== 0 && x - x === 0 && y - y === 0) return katan2(y, x); }
+  else if (!tried && trigMode !== 'js') settle();
+  return ucrtAtan2(y, x);
 };

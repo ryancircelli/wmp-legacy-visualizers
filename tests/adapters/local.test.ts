@@ -136,6 +136,14 @@ describe('local adapter: host frames (CONTRACT v4/v5)', () => {
     void S().commands.seek(1000);
     expect(sent().length).toBe(n);
   });
+  it('a second rate frame (the helper restarted after a device change) keeps the socket and the source', () => {
+    boot();
+    const cap = S().playback.capture;
+    ws.onmessage?.({ data: '{"rate":48000}' });
+    expect(ws.readyState).toBe(1);
+    expect(S().playback.capture).toBe(cap);
+    expect(S().ui.status).toBe('System audio (local)');
+  });
   it('socket loss: session and lyrics cleared, back to the silence animation', () => {
     boot();
     ws.host(media());

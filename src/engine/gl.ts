@@ -3,7 +3,9 @@
 // replaces the 2D path's per-pixel conversion loop, putImageData into a hidden canvas and a
 // window-sized drawImage, which together were most of the visible player's CPU (measured
 // 2026-09-28: the page and GPU processes at about a third of a core). The engine is untouched,
-// so its output is exactly what it was; only how it reaches the screen changes.
+// so its output is exactly what it was; only how it reaches the screen changes. Battery's frame
+// comes as its own 8-bit indices and 256-entry palette (drawIndexed), looked up here instead of
+// expanded to 0x00RRGGBB on the CPU: the same colours, a quarter of the upload.
 //
 // Sampling keeps each DLL's stretch: Battery's STRETCH_DELETESCANS is nearest neighbour; Alchemy's
 // HALFTONE and any other scaled surface are smooth (a cubic filter when enlarging, which is what the
@@ -22,7 +24,10 @@ precision highp float;
 uniform sampler2D tex;
 uniform vec2 src;     // surface size
 uniform vec2 dst;     // canvas size
-uniform int mode;     // 0 texel for texel, 1 nearest, 2 cubic (enlarging), 3 trilinear (shrinking)
+uniform int mode;     // 0 texel for texel, 1 nearest, 2 cubic (enlarging), 3 trilinear (shrinking),
+                      // 4 nearest from idx through pal
+uniform highp usampler2D idx;   // mode 4: 8-bit palette indices, one per pixel
+uniform sampler2D pal;          // mode 4: 256 x 1, 0x00RRGGBB uploaded as a surface is
 uniform float B;      // cubic family (Mitchell-Netravali B, C)
 uniform float C;
 out vec4 o;
@@ -58,6 +63,8 @@ void main() {
       }
     }
     c = clamp(acc / tw, 0.0, 1.0);
+  } else if (mode == 4) {
+    c = bgr(texelFetch(pal, ivec2(texelFetch(idx, ivec2(floor(d * src / dst)), 0).r, 0), 0));
   } else {
     c = bgr(texture(tex, d / dst));
   }
@@ -70,6 +77,8 @@ export interface Presenter {
   readonly kind: 'webgl2';
   /** paints `px` (w x h, 0x00RRGGBB) over the whole canvas */
   draw(px: Uint32Array, w: number, h: number, sampling: Sampling): void;
+  /** paints `pal[idx]` (w x h indices, a 256-entry 0x00RRGGBB palette) nearest: draw()'s 'nearest' of it */
+  drawIndexed(idx: Uint8Array, pal: Uint32Array, w: number, h: number): void;
   /** for the smokes: one canvas pixel as RGBA, read in the same task as a draw */
   pixel(x: number, y: number): [number, number, number, number];
 }
@@ -126,7 +135,7 @@ function make(canvas: HTMLCanvasElement | OffscreenCanvas): Presenter | null {
   } catch { gl = null; }
   if (!gl) return null;
   const g = gl;
-  let prog: WebGLProgram | null = null, tex: WebGLTexture | null = null, tw = 0, th = 0;
+  let prog: WebGLProgram | null = null, tw = 0, th = 0, iw = 0, ih = 0;
   const loc: Record<string, WebGLUniformLocation | null> = {};
 
   function init(): boolean {
@@ -148,23 +157,42 @@ function make(canvas: HTMLCanvasElement | OffscreenCanvas): Presenter | null {
       return false;
     }
     g.useProgram(prog);
-    for (const n of ['tex', 'src', 'dst', 'mode', 'B', 'C']) loc[n] = g.getUniformLocation(prog, n);
+    for (const n of ['tex', 'idx', 'pal', 'src', 'dst', 'mode', 'B', 'C']) loc[n] = g.getUniformLocation(prog, n);
     g.uniform1i(loc.tex, 0);
+    g.uniform1i(loc.idx, 1);
+    g.uniform1i(loc.pal, 2);
     g.uniform1f(loc.B, CUBIC[0]);
     g.uniform1f(loc.C, CUBIC[1]);
     g.bindVertexArray(g.createVertexArray());
-    tex = g.createTexture();
-    g.bindTexture(g.TEXTURE_2D, tex);
-    g.texParameteri(g.TEXTURE_2D, g.TEXTURE_WRAP_S, g.CLAMP_TO_EDGE);
-    g.texParameteri(g.TEXTURE_2D, g.TEXTURE_WRAP_T, g.CLAMP_TO_EDGE);
-    g.pixelStorei(g.UNPACK_ALIGNMENT, 4);
-    tw = th = 0;
+    // units 0 tex, 1 idx, 2 pal, each given an image so every sampler is complete from the start;
+    // unit 0 is left active. Alignment 1: an index row is w bytes.
+    g.pixelStorei(g.UNPACK_ALIGNMENT, 1);
+    for (let u = 2; u >= 0; u--) {
+      g.activeTexture(g.TEXTURE0 + u);
+      g.bindTexture(g.TEXTURE_2D, g.createTexture());
+      g.texParameteri(g.TEXTURE_2D, g.TEXTURE_WRAP_S, g.CLAMP_TO_EDGE);
+      g.texParameteri(g.TEXTURE_2D, g.TEXTURE_WRAP_T, g.CLAMP_TO_EDGE);
+      g.texParameteri(g.TEXTURE_2D, g.TEXTURE_MIN_FILTER, g.NEAREST);
+      g.texParameteri(g.TEXTURE_2D, g.TEXTURE_MAG_FILTER, g.NEAREST);
+      if (u === 1) g.texImage2D(g.TEXTURE_2D, 0, g.R8UI, 1, 1, 0, g.RED_INTEGER, g.UNSIGNED_BYTE, new Uint8Array(1));
+      else g.texImage2D(g.TEXTURE_2D, 0, g.RGBA8, u ? 256 : 1, 1, 0, g.RGBA, g.UNSIGNED_BYTE, new Uint8Array(u ? 1024 : 4));
+    }
+    tw = th = iw = ih = 1;
     return true;
   }
   if (!init()) return null;
   if ('addEventListener' in canvas) {
     canvas.addEventListener('webglcontextlost', (e) => e.preventDefault());
     canvas.addEventListener('webglcontextrestored', () => { init(); });
+  }
+
+  function paint(mode: number, w: number, h: number) {
+    const cw = g.drawingBufferWidth, ch = g.drawingBufferHeight;
+    g.viewport(0, 0, cw, ch);
+    g.uniform2f(loc.src, w, h);
+    g.uniform2f(loc.dst, cw, ch);
+    g.uniform1i(loc.mode, mode);
+    g.drawArrays(g.TRIANGLES, 0, 3);
   }
 
   return {
@@ -190,11 +218,21 @@ function make(canvas: HTMLCanvasElement | OffscreenCanvas): Presenter | null {
         g.texParameteri(g.TEXTURE_2D, g.TEXTURE_MIN_FILTER, g.NEAREST);
         g.texParameteri(g.TEXTURE_2D, g.TEXTURE_MAG_FILTER, g.NEAREST);
       }
-      g.viewport(0, 0, cw, ch);
-      g.uniform2f(loc.src, w, h);
-      g.uniform2f(loc.dst, cw, ch);
-      g.uniform1i(loc.mode, mode);
-      g.drawArrays(g.TRIANGLES, 0, 3);
+      paint(mode, w, h);
+    },
+    drawIndexed(idx, pal, w, h) {
+      if (!prog || g.isContextLost()) return;
+      g.activeTexture(g.TEXTURE1);
+      if (w !== iw || h !== ih) {
+        g.texImage2D(g.TEXTURE_2D, 0, g.R8UI, w, h, 0, g.RED_INTEGER, g.UNSIGNED_BYTE, idx);
+        iw = w; ih = h;
+      } else {
+        g.texSubImage2D(g.TEXTURE_2D, 0, 0, 0, w, h, g.RED_INTEGER, g.UNSIGNED_BYTE, idx);
+      }
+      g.activeTexture(g.TEXTURE2);
+      g.texSubImage2D(g.TEXTURE_2D, 0, 0, 0, 256, 1, g.RGBA, g.UNSIGNED_BYTE, new Uint8Array(pal.buffer, pal.byteOffset, 1024));
+      g.activeTexture(g.TEXTURE0);
+      paint(4, w, h);
     },
     pixel(x, y) {
       const out = new Uint8Array(4);

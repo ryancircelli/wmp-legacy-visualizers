@@ -187,6 +187,11 @@ export const RUNS: Run[] = [
   // odd interior row counts (the blur pairs rows), odd widths
   { id: 'alchemy-640x479-s99', vis: 'alchemy', w: 640, h: 479, frames: 1000, short: 100, seed: 99 },
   { id: 'alchemy-intended-333x251-s5', vis: 'alchemy', w: 333, h: 251, frames: 1000, short: 0, seed: 5, intended: true },
+  // retail portrait: the transition ramps are 2*W long and indexed by a row delta too, so they are
+  // read past their end (spec 01 s2.5); and a retail size whose pixel count is not a multiple of 4,
+  // where ShiftMoveBits only swaps the two surfaces
+  { id: 'alchemy-360x640-s11', vis: 'alchemy', w: 360, h: 640, frames: 1500, short: 0, seed: 11 },
+  { id: 'alchemy-642x481-s13', vis: 'alchemy', w: 642, h: 481, frames: 500, short: 0, seed: 13 },
   ...[0, 1, 2, 3].flatMap((p): Run[] => [
     { id: `bars-p${p}-354x345`, vis: 'bars', w: 354, h: 345, frames: 3000, short: 300, preset: p },
     { id: `bars-p${p}-1100x200`, vis: 'bars', w: 1100, h: 200, frames: 1500, short: 100, preset: p },
@@ -204,12 +209,13 @@ export const RUNS: Run[] = [
 ];
 
 /** The WebAssembly kernels' path (A.moveBitsMode for Alchemy's gather + blur, A.batteryKernel for
- * Battery's blur/palette): forced WASM, forced JS, or flipping every 37 frames. */
+ * Battery's blur/palette, A.barsKernel for Bars' drawing, A.trigMode for sin/cos/atan2): forced WASM,
+ * forced JS, or flipping every 37 frames. */
 export type MoveBitsPath = 'wasm' | 'js' | 'alternate';
 
 function setPath(path: MoveBitsPath | undefined, f: number): void {
   if (!path) return;
-  A.moveBitsMode = A.batteryKernel = path === 'alternate' ? (((f / 37) | 0) % 2 ? 'js' : 'wasm') : path;
+  A.moveBitsMode = A.batteryKernel = A.barsKernel = A.trigMode = path === 'alternate' ? (((f / 37) | 0) % 2 ? 'js' : 'wasm') : path;
 }
 
 interface Renderer { render(L: TimedLevel): Surface | null; frameHash(s: Surface | null): number; }
@@ -257,7 +263,7 @@ function makeRenderer(run: Run): Renderer {
 /** One entry per BLOCK frames: "<hash of the block's frame hashes + rand counts>:<rand() draws in the block>". */
 export function runGolden(run: Run, frames: number, path?: MoveBitsPath): string[] {
   const gen = new InputGen();
-  setPath(path, 0);                                    // Battery places its buffers at construction
+  setPath(path, 0);                                    // Battery and Bars place their buffers at construction
   const r = makeRenderer(run);
   const out: string[] = [];
   let bh = 0, br = 0;
@@ -274,7 +280,7 @@ export function runGolden(run: Run, frames: number, path?: MoveBitsPath): string
       bh = 0; br = 0;
     }
   }
-  A.moveBitsMode = A.batteryKernel = 'auto';
+  A.moveBitsMode = A.batteryKernel = A.barsKernel = A.trigMode = 'auto';
   return out;
 }
 

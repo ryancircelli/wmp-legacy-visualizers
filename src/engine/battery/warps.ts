@@ -57,7 +57,9 @@ export interface BatteryShift {
 // (it inspects the member's declared origin, not the asserted type).
 /* eslint-disable @typescript-eslint/unbound-method -- A.sin/A.cos/A.atan2 are plain functions, no `this` */
 var fround = Math.fround, trunc = Math.trunc,
-    sin = A.sin || Math.sin, cos = A.cos || Math.cos, sqrt = Math.sqrt;   // ucrtbase clones, 00-rand.js
+    sin = A.sin || Math.sin, cos = A.cos || Math.cos, sqrt = Math.sqrt,   // ucrtbase clones, 00-rand.js
+    sincos = A.sincos;              // SC[0] = sin, SC[1] = cos of one angle: the same bits, one reduction
+var SC = new Float64Array(2);
 // CRT-exact atan2 from 00-rand.js. Every warp here feeds atan2 straight into cos/sin and
 // truncates the product (e.g. CStarburstShift 0x18041ac40 -> sin 0x18041ad3e -> mulsd
 // 0x18041ad43 -> cvttsd2si 0x18041ad47), and on the image diagonals that product is an exact
@@ -166,8 +168,9 @@ class CRingSpinShift extends Shift {
     var ring = this._ring;
     var m = r - trunc(r / ring) * ring;               // r mod ring, trunc toward zero
     var r2 = r - (m / ring) * m;
-    p.y = (this.h - trunc(sin(th) * r2)) - this.cy;
-    p.x = this.wmcx - trunc(cos(th) * r2);
+    sincos(th, SC);
+    p.y = (this.h - trunc(SC[0] * r2)) - this.cy;
+    p.x = this.wmcx - trunc(SC[1] * r2);
   }
 }
 
@@ -199,8 +202,9 @@ class CStretchShift extends Shift {
     var rn = this._wok ? r / this.halfW : 0.0;
     var r2 = r - rn * rn * rn * this._A;
     var th = a0 + rn * this.dbl0;
-    p.y = (this.h - trunc(sin(th) * r2)) - this.cy;
-    p.x = this.wmcx - trunc(cos(th) * r2);
+    sincos(th, SC);
+    p.y = (this.h - trunc(SC[0] * r2)) - this.cy;
+    p.x = this.wmcx - trunc(SC[1] * r2);
   }
 }
 
@@ -229,8 +233,9 @@ class CShiitake extends Shift {
     var R = r + this.dbl0;
     var t = this.cy !== 0 ? (R + R) * PI_F / this.cy : R;
     var th = a0 + this.dbl1 * cos(t * this.dbl3) + this.dbl2 * t;
-    p.y = this.hmcy - trunc(sin(th) * R);
-    p.x = (this.w - trunc(cos(th) * R)) - this.cx;
+    sincos(th, SC);
+    p.y = this.hmcy - trunc(SC[0] * R);
+    p.x = (this.w - trunc(SC[1] * R)) - this.cx;
   }
 }
 
@@ -277,8 +282,9 @@ class CStarburstShift extends Shift {
       g = rn;
     }
     var th = a0 + g * this.dbl0;
-    p.y = this.hmcy - trunc(sin(th) * r2);
-    p.x = this.wmcx - trunc(cos(th) * r2);
+    sincos(th, SC);
+    p.y = this.hmcy - trunc(SC[0] * r2);
+    p.x = this.wmcx - trunc(SC[1] * r2);
   }
 }
 
@@ -341,8 +347,9 @@ class CTrigShift extends Shift {
     else if (m === 2) T = ((p.x & 1) ? sin(a0) : cos(a0)) / HALFPI_157;
     var r2 = r - this._wd2 * (r / this._D) * T;
     var th = a0 + this.dbl0;
-    p.y = this.hmcy - trunc(sin(th) * r2);
-    p.x = this.wmcx - trunc(cos(th) * r2);
+    sincos(th, SC);
+    p.y = this.hmcy - trunc(SC[0] * r2);
+    p.x = this.wmcx - trunc(SC[1] * r2);
   }
 }
 
@@ -374,8 +381,9 @@ class CThingusShift extends Shift {
     var r2 = this._wd2 * q + r;
     var a0 = atan2(dy, dx);
     var th = a0 + q * this.dbl0;
-    p.y = this.hmcy - trunc(sin(th) * r2);
-    p.x = (this.w - trunc(cos(th) * r2)) - this.cx;
+    sincos(th, SC);
+    p.y = this.hmcy - trunc(SC[0] * r2);
+    p.x = (this.w - trunc(SC[1] * r2)) - this.cx;
   }
 }
 
@@ -439,8 +447,9 @@ class CTwirlocity extends Shift {
     if (!this._inward) q = hy === 0.0 ? 0.0 : r / hy;
     else q = r === 0.0 ? 0.0 : hy / r;
     var th = th0 + cos(q * PI_F * this.dbl0) * this.dbl1;
-    p.y = this.hmcy - trunc(sin(th) * r);
-    p.x = (this.w - trunc(cos(th) * r)) - this.cx;
+    sincos(th, SC);
+    p.y = this.hmcy - trunc(SC[0] * r);
+    p.x = (this.w - trunc(SC[1] * r)) - this.cx;
   }
 }
 
@@ -501,8 +510,9 @@ class CSwirlShift extends Shift {
     var th = atan2(dy, dx) + this.dbl0;
     var r = sqrt(dy * dy + dx * dx);
     var r2 = r - sin(th * this.dbl2) * amp;
-    var sy = this.h - trunc(sin(th) * r2) - this.cy;
-    var sx = this.wmcx - trunc(cos(th) * r2);
+    sincos(th, SC);
+    var sy = this.h - trunc(SC[0] * r2) - this.cy;
+    var sx = this.wmcx - trunc(SC[1] * r2);
     // stage 4: outward 1-px dither, quadrant-signed off the destination pixel.
     var v = this.dither === null ? A.rand() % 4 - 2 : this.dither;
     if (y0 < this.cy) sy = sy - v; else sy = sy + v;
@@ -538,8 +548,9 @@ class CZoomShift extends Shift {
     var r = sqrt(dy * dy + dx * dx);
     var r2 = r - this._wd2 * (r / this._diag);
     var th = atan2(dy, dx) + this.dbl0;
-    p.x = (this.w - trunc(cos(th) * r2)) - this.cx;
-    p.y = this.hmcy - trunc(sin(th) * r2);
+    sincos(th, SC);
+    p.x = (this.w - trunc(SC[1] * r2)) - this.cx;
+    p.y = this.hmcy - trunc(SC[0] * r2);
   }
 }
 
@@ -583,8 +594,9 @@ class CTrigStretchShift extends Shift {
     var b = r - this._wd2 * (r / this._diag) * g;
     var r2 = (a + b + b) / 3.0;
     var th = (th0 + this.dbl0 * q + 2.0 * (th0 + this.dbl0)) / 3.0;
-    p.x = (this.w - trunc(cos(th) * r2)) - this.cx;
-    p.y = (this.h - trunc(sin(th) * r2)) - this.cy;
+    sincos(th, SC);
+    p.x = (this.w - trunc(SC[1] * r2)) - this.cx;
+    p.y = (this.h - trunc(SC[0] * r2)) - this.cy;
   }
 }
 

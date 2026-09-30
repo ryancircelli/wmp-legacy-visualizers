@@ -117,9 +117,16 @@ var atan2 = A.atan2 || Math.atan2;
 // Stroke's first pixel and the warp diagonals sit exactly on those ulps.
 // eslint-disable-next-line @typescript-eslint/unbound-method -- A.sin/A.cos never read `this`; hoisted once, not per-call, on purpose
 var sin = A.sin || Math.sin, cos = A.cos || Math.cos;
-// sincos(x, SC): SC[0] = sin(x), SC[1] = cos(x), the same bits (00-rand.js), one reduction for both.
-// eslint-disable-next-line @typescript-eslint/unbound-method -- A.sincos never reads `this`; hoisted once on purpose
-var sincos = A.sincos, SC = new Float64Array(2);
+// sincosN(x, n, out): out[2i] = sin(x[i]), out[2i+1] = cos(x[i]), the same bits (00-rand.js), one
+// reduction for each pair and one call for all n: Stroke's arc and CJiggyScribble's points. The
+// scratch arrays grow to the longest.
+// eslint-disable-next-line @typescript-eslint/unbound-method -- A.sincosN never reads `this`; hoisted once on purpose
+var sincosN = A.sincosN, ANG = new Float64Array(256), ASC = new Float64Array(512), RAD = new Float64Array(256);
+function arcRoom(n: number): void {
+  if (ANG.length >= n) return;
+  var m = Math.ceil(n);
+  ANG = new Float64Array(m); ASC = new Float64Array(2 * m); RAD = new Float64Array(m);
+}
 // Both 2pi constants in Battery are (double)(float)6.2831855f, not 2*Math.PI; pi likewise.
 var TAU = 6.2831854820251465;      // 0x18088c468 (f64) == 0x18088c598 (f32) widened
 var PI_ = 3.1415927410125732;      // 0x18088c4c8 (f32) / 0x18088c440 (f64)
@@ -503,14 +510,18 @@ class CJiggyScribble extends BatteryDraw {
       }
       this._d2 = this.dbl2; this._d3 = this.dbl3;
     }
+    // every point's radius and angle first, then their sin and cos in one call
+    arcRoom(n);
     for (var i = 0; i < n; i++) {
       ax = radMod * tt[4 * i] + this.dbl0 * tt[4 * i + 2];
       ay = radMod * tt[4 * i + 1] + this.dbl0 * tt[4 * i + 3];
-      r = Math.sqrt(ax * ax + ay * ay);
-      th = atan2(ax, ay) + ph;             // ARGUMENTS SWAPPED — not a typo, keep them
-      sincos(th, SC);
-      var X = SC[1] * r + cx;
-      var Y = SC[0] * r + cy;
+      RAD[i] = Math.sqrt(ax * ax + ay * ay);
+      ANG[i] = atan2(ax, ay) + ph;         // ARGUMENTS SWAPPED — not a typo, keep them
+    }
+    sincosN(ANG, n, ASC);
+    for (i = 0; i < n; i++) {
+      var X = ASC[2 * i + 1] * RAD[i] + cx;
+      var Y = ASC[2 * i] * RAD[i] + cy;
       if (lineMode) {
         prim.LineClamped(buf, sw, sh, cvt(px), cvt(py), cvt(X), cvt(Y), 0xff);
         px = X; py = Y;
@@ -520,6 +531,10 @@ class CJiggyScribble extends BatteryDraw {
     }
   }
 }
+
+// Stroke's colour, c0 + dCol + dCol + ... in doubles. Kept in a local, V8 left it boxed (the loop
+// starts it from an integer argument) and every += allocated: 6200 heap numbers a frame on CJDar.
+var CL = new Float64Array(1);
 
 // ------------------------------------------------------------------ Stroke (0x180413ca0)
 // The shared eased-arc primitive: CGalaxy here (mode 0), CJDar in 73-battery-draws-a.js (mode 3).
@@ -557,16 +572,20 @@ function Stroke(buf: Uint8Array, W: number, H: number, x0: number, y0: number, x
   var half = F(PI_ / F(2.0 * F(n)));                // float32: pi_f / (2n)
   if (n < 1) return;                                // cmp ebp,1 / jl — signed, after the setup
   var ang = th0, env = 0.0, prevX = x0, prevY = y0, k;
+  CL[0] = col;                                      // the colour accumulates in CL: see below
   var envSin = (n | 0) === n && n <= 1024 ? strokeEnvelope(n, half) : null;
+  // The angles first (the same accumulation, ang += dAng), then their sin and cos in one call.
+  arcRoom(n);
+  for (k = 0; k < n; k++) { ANG[k] = ang; ang += dAng; }
+  sincosN(ANG, n, ASC);
   for (k = 0; k < n; k++) {
     var rr = (envSin ? envSin[k] : sin(env)) * (r1 - r0) + r0;
-    sincos(ang, SC);
-    var X = cvt(SC[1] * rr + px);
-    var Y = cvt(SC[0] * rr + py);
-    var c = cvt(col) & 0xff;
+    var X = cvt(ASC[2 * k + 1] * rr + px);
+    var Y = cvt(ASC[2 * k] * rr + py);
+    var c = cvt(CL[0]) & 0xff;
     if (bLine) { prim.LineClamped(buf, W, H, prevX, prevY, X, Y, c); prevX = X; prevY = Y; }
     else if (X >= 0 && X < W && Y >= 0 && Y < H) buf[Y * W + X] = c;
-    env += half; ang += dAng; col += dCol;
+    env += half; CL[0] += dCol;
   }
 }
 prim.Stroke = Stroke;

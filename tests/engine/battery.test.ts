@@ -488,6 +488,50 @@ describe('Battery: buffer parity and swaps (§1)', () => {
   });
 });
 
+describe('Battery: px is expanded when it is read (Frame)', () => {
+  // The WebGL2 presenter draws idx through pal and never reads px; everything else reads px. Read
+  // now and then (every 7th frame, one frame across a resize), px must be what an every-frame reader
+  // (the golden guard's) saw, through playing, paused, stopped and the stopped fill.
+  const L = level(2, (l) => { for (let i = 0; i < 1024; i++) { l.freq[0][i] = (i * 7) & 255; l.wave[0][i] = 128 + (i & 31); } });
+  const states = (f: number) => (f >= 150 && f < 160 ? 1 : f >= 200 && f < 520 ? 0 : 2);
+  const fnv = (px: Uint32Array) => { let h = 0x811c9dc5; for (let i = 0; i < px.length; i++) h = Math.imul(h ^ px[i]!, 0x01000193); return h >>> 0; };
+  function run(every: number) {
+    A.srand(1);
+    const b = new Battery({ width: 64, height: 48 });
+    b.seed(99);
+    const seen = new Map<number, number>(), Ls = [level(0), level(1), L];
+    for (let f = 0; f < 600; f++) {
+      const s = b.render(Ls[states(f)]);
+      if (f % every === 0) {
+        if (states(f) === 2) {
+          expect(s.idx).toBe(b.front);
+          expect(s.pal).toBe(b.LIVE32);
+        }
+        seen.set(f, fnv(s.px));
+        expect(s.idx).toBe(null);
+      }
+      if (f === 120) {                              // read or not, then its buffers are replaced
+        b.resize(64, 48);
+        seen.set(-1, fnv(s.px));
+      }
+    }
+    return seen;
+  }
+  for (const mode of ['js', 'auto'] as const) {
+    it(mode, () => {
+      A.batteryKernel = mode;
+      try {
+        const all = run(1), some = run(7);
+        expect(some.size).toBe(87);
+        if (mode === 'auto') expect(new Battery({ width: 8, height: 8 }).front.buffer.byteLength).toBeGreaterThan(64);  // resident: the WASM kernel ran
+        for (const [f, h] of some) expect([f, h]).toEqual([f, all.get(f)]);
+      } finally {
+        A.batteryKernel = 'auto';
+      }
+    }, 20000);
+  }
+});
+
 describe('Battery: 300 frames, no out-of-bounds writes', () => {
   // fake classes: a warp that returns wild coordinates, draws that scribble far outside the buffer
   it('hostile warp/draw classes stay in bounds across 300 frames, all 26 presets, and a resize', () => {

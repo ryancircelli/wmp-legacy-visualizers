@@ -123,7 +123,10 @@ export function startHost(store: AppStore, opts: { hostMedia?: () => boolean; pl
     me = sock = openSocket(url, {
       // The desktop host only fetches lyrics while this says so (CONTRACT v5).
       onOpen: () => send({ type: 'lyricsPref', enabled: !!S().lyrics }),
-      onRate: () => attach({ kind: 'wsaudio', label: MSG_LOCAL, fill, stop: () => me?.close() }),
+      // The host resends {"rate"} whenever its capture restarts (a default-device change): this
+      // socket's source is already attached then, and attaching again would stop it, which closes
+      // the very socket the frame came on.
+      onRate: () => { if (source?.fill !== fill) attach({ kind: 'wsaudio', label: MSG_LOCAL, fill, stop: () => me?.close() }); },
       onPcm: (f) => pcm.push(f),
       onMedia: (m: MediaFrame) => { if (!opts.hostMedia || opts.hostMedia()) onMediaFrame(store, m); },
       onLyrics: (l) => onLyricsFrame(store, l),

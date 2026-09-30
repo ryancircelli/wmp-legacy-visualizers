@@ -561,7 +561,7 @@ describe('8. no out-of-bounds writes', () => {
       const a1 = new AtomBalls(); a1.setSize(n, n); a1.randomize(); c.beat = true; a1.render(c);
       eq(tiny.bad.length, 0);
     }
-  });
+  }, 30_000);   // ~1.4 s alone; the 5 s default was overrun while other builds loaded the machine
 });
 
 // =================================================================== 9. rand() only
