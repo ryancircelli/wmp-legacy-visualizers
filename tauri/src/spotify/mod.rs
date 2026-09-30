@@ -102,21 +102,40 @@ pub async fn sp_request<R: Runtime>(
             seen::short(&url)
         ));
     }
+    // the log names a pathfinder operation, never its variables (a search's words) or the answer
+    let op = body
+        .as_deref()
+        .and_then(|b| serde_json::from_str::<Value>(b).ok())
+        .and_then(|j| j["operationName"].as_str().map(|o| format!(" {o}")))
+        .unwrap_or_default();
     let (t0, what) = (
         std::time::Instant::now(),
-        format!("{method} {}", seen::short(&url)),
+        format!("{method} {}{op}", seen::short(&url)),
     );
     let r = on_main(&app, move |tx| {
         win::fetch(tx, url, method, body, headers.unwrap_or_default())
     })
     .await;
     match &r {
-        Ok(v) => log::info!(
-            "spotify: request {what} -> {} ({} bytes, {} ms)",
-            v["status"],
-            v["text"].as_str().map_or(0, str::len),
-            t0.elapsed().as_millis()
-        ),
+        Ok(v) => {
+            let text = v["text"].as_str().unwrap_or("");
+            let errors = serde_json::from_str::<Value>(text).ok().and_then(|j| {
+                let e = j["errors"][0]["message"]
+                    .as_str()
+                    .or(j["error"]["message"].as_str())?;
+                Some(format!(
+                    ", error \"{}\"",
+                    e.chars().take(80).collect::<String>()
+                ))
+            });
+            log::info!(
+                "spotify: request {what} -> {} ({} bytes, {} ms{})",
+                v["status"],
+                text.len(),
+                t0.elapsed().as_millis(),
+                errors.unwrap_or_default()
+            )
+        }
         Err(e) => log::info!("spotify: request {what} failed: {e}"),
     }
     r

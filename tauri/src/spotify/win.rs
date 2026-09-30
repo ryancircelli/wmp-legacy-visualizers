@@ -594,7 +594,7 @@ pub fn logout(tx: Reply<()>) {
 }
 
 /// Debug builds: `ALCHEMY_SPOTIFY_PROBE=<url of a GET the web player makes>` keeps the web view
-/// hidden and on the web player even when logged out, and 15 s in (then every
+/// parked and on the web player even when logged out, and 15 s in (then every
 /// `ALCHEMY_SPOTIFY_PROBE_EVERY` seconds) makes that GET the way `sp_request` does, and reads what
 /// the isolated world sees: visibility, autoplay, and how often a 1 s timer fires in 20 s.
 #[cfg(debug_assertions)]
@@ -602,6 +602,15 @@ fn probe_thread<R: Runtime>(w: WebviewWindow<R>) {
     let Ok(url) = std::env::var("ALCHEMY_SPOTIFY_PROBE") else {
         return;
     };
+    // ALCHEMY_SPOTIFY_PROBE_PAGE=<js>: run in our page 20 s in, to drive it through the bridge
+    if let Ok(js) = std::env::var("ALCHEMY_SPOTIFY_PROBE_PAGE") {
+        let w = w.clone();
+        std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_secs(20));
+            log::info!("spotify: probe drives our page");
+            let _ = w.eval(js);
+        });
+    }
     let every: u64 = std::env::var("ALCHEMY_SPOTIFY_PROBE_EVERY")
         .ok()
         .and_then(|s| s.parse().ok())
