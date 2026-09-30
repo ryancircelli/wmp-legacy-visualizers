@@ -170,8 +170,6 @@ Page (src/95-spotify.js):
     fallback table (dated; SPIKE2.md); the search chunk only loads after the hidden app visits /search, so the page may
     trigger it (history.pushState('/search') + popstate) and rescan. 412 "Invalid query hash" → rescan once, then status.
   - Premium: play/transport commands need Premium at Spotify's end; a non-2xx on them is reported in the status bar.
-Terms: /api/token is what the web player itself calls; Spotify's response notes that third-party use of it breaks the
-Developer Terms. This is a personal tool; the token never leaves the page.
 
 ## v7 — page updates (the Deno host's `update.ts`; `tauri/src/update.rs` since v8)
 Every build writes dist/update.json {version, built (commit time), needs, host, files: {name: sha256}};

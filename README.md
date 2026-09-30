@@ -95,9 +95,8 @@ player runs inside it, hidden under the skin:
   The Play menu has Shuffle, Repeat (Off, Playlist, Track), Rewind, Fast Forward and volume.
   Help > Keyboard Shortcuts lists the keys.
 - **Play, pause, next, previous and seeking** are sent the way Spotify's own player sends them.
-  They work on your account's own terms: whatever Spotify lets your account do in its web player,
-  it can do here. If Spotify refuses a command, the status bar says why, and the button falls back
-  to Windows' media controls, as in the application.
+  If Spotify refuses a command, the status bar says why, and the button falls back to Windows'
+  media controls, as in the application.
 
 | Keys | Does |
 |---|---|
