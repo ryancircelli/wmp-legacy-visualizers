@@ -6,8 +6,13 @@ targets:
     type: application
     platform: iOS
     deploymentTarget: "17.0"
-    # xcodegen writes a shared scheme only for targets that ask for one; CI builds -scheme WmpSpotify.
+    # xcodegen writes a shared scheme only for targets that ask for one; CI builds -scheme WmpSpotify,
+    # which builds the extension too (a dependency).
     scheme: {}
+    # Embedded in PlugIns.
+    dependencies:
+      - target: WmpSpotifyBroadcast
+        embed: true
     # Listed file by file so the generated Info.plist next to them is never a resource.
     sources:
       - path: WmpSpotify/App.swift
@@ -24,7 +29,6 @@ targets:
         LSRequiresIPhoneOS: true
         UILaunchScreen: {}
         UIBackgroundModes: [audio]
-        NSMicrophoneUsageDescription: The visualizers follow what the phone plays.
         ITSAppUsesNonExemptEncryption: false
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
@@ -45,4 +49,34 @@ targets:
         TARGETED_DEVICE_FAMILY: "1,2"
         SWIFT_VERSION: "5.9"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        GENERATE_INFOPLIST_FILE: "NO"
+  # The broadcast upload extension (ios/README.md): the system's app audio to the app over loopback.
+  WmpSpotifyBroadcast:
+    type: app-extension
+    platform: iOS
+    deploymentTarget: "17.0"
+    sources:
+      - path: WmpSpotifyBroadcast/SampleHandler.swift
+    info:
+      path: WmpSpotifyBroadcast/Info.plist
+      properties:
+        CFBundleDisplayName: WMP Spotify
+        # The app's version and build number: App Store Connect wants the extension's to match.
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.broadcast-services-upload
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).SampleHandler
+          RPBroadcastProcessMode: RPBroadcastProcessModeSampleBuffer
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.rcircelli.wmpspotify.broadcast
+        # Archived only inside the app: without this the archive is a generic one that will not export.
+        SKIP_INSTALL: "YES"
+        DEVELOPMENT_TEAM: QKSF9UQ8WT
+        CODE_SIGN_STYLE: Automatic
+        MARKETING_VERSION: "0.1"
+        CURRENT_PROJECT_VERSION: 1
+        TARGETED_DEVICE_FAMILY: "1,2"
+        SWIFT_VERSION: "5.9"
         GENERATE_INFOPLIST_FILE: "NO"

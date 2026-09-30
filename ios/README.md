@@ -10,18 +10,23 @@ The page is not built into the app. Each launch fetches `spotify-inject.js` from
 (what deploy.yml publishes) and caches it, so a fix to the player reaches the phone without a new build.
 Playback is meant to carry on with the phone locked (the audio background mode).
 
-The visualizers hear the microphone, which picks up the phone's own speaker (and the room). It is the
-only source iOS leaves: an app cannot hear another app's output, Spotify's FairPlay playback cannot be
-routed through Web Audio, and the two other routes were tried and measured on 2026-09-30. ReplayKit's
-in-app capture (build 7) delivered 1024-frame stereo buffers of zeros while Spotify played, even
-though a system screen recording of the same app has the music: WebKit's audio comes out of a separate
-process that in-app capture does not hear. A local WebSocket from the app to the page (build 6) was
-never connected: WebKit refuses ws://127.0.0.1 from Spotify's https page. The one route left untried
-is a broadcast upload extension, the system-level capture a screen recording uses, at the cost of an
-extension target, an app group, IPC into the app, and the user starting a broadcast from a picker at
-every launch. The page asks for the microphone at launch (iOS asks once) and says so in its status
-line. The band under the web view shows the host's last log line (scene changes go only to the list):
-tap it to reload the page, long-press it for the last 20 lines.
+The visualizers hear a broadcast upload extension (`WmpSpotifyBroadcast/`), the system-level capture a
+screen recording uses. It receives the system's mix of every app's audio, so it has Spotify wherever it
+plays: a system screen recording of the app carries the music (checked 2026-09-30), where ReplayKit's
+in-app capture delivered only zeros from the web view (build 7; WebKit's audio comes out of a process
+in-app capture does not hear). The extension sends its audio to the app over a loopback WebSocket,
+ws://127.0.0.1:47831 (`AudioServer` in App.swift): `{"rate":n}` first, then each buffer as interleaved
+stereo int16 LE. The app cannot pass it on the same way, since WebKit refuses ws:// from Spotify's https
+page (build 6), so it runs `__wmpAudio.pcm(<base64>, n)` in the page by evaluateJavaScript, batched
+every 100 ms, and `observer.js` hands that to the page as its audio socket. There is no microphone
+anywhere: the app's audio session is plain playback, and the picker has no microphone button.
+
+To start it: about 2 s after launch the app opens iOS's broadcast sheet by itself (the button at the
+right end of the band opens it too). Tap Start Broadcast; after a 3 s countdown the red indicator in
+the status bar stays for as long as it runs. Stop it from that indicator or from Control Center. If
+the app is not running, the extension ends the broadcast with "WMP Spotify is not running". Between
+broadcasts the visualizers go dark. The band under the web view shows the host's last log line (scene
+changes go only to the list): tap it to reload the page, long-press it for the last 20 lines.
 
 ## Building
 
@@ -48,9 +53,10 @@ The .p8 can be downloaded only once, when the key is made.
 ## One-time setup
 
 1. Make the API key and add the three secrets (repository Settings > Secrets and variables > Actions).
-2. Register the App ID com.rcircelli.wmpspotify at developer.apple.com > Identifiers (explicit, no
-   capabilities). The archive step does not register it: measured 2026-09-30, the archive signed
-   without one and the upload failed with "Error Downloading App Information".
+2. Register the App IDs com.rcircelli.wmpspotify and com.rcircelli.wmpspotify.broadcast (the
+   extension) at developer.apple.com > Identifiers (explicit, no capabilities). The archive step does
+   not register them: measured 2026-09-30, the archive signed without one and the upload failed with
+   "Error Downloading App Information".
 3. In App Store Connect, Apps > + > New App: iOS, bundle ID com.rcircelli.wmpspotify, any SKU. The name
    has to be unique across the App Store even though this app never ships there. A pending Program
    License Agreement blocks this until the Account Holder accepts it.
@@ -68,6 +74,8 @@ Nothing had to be routed through another Spotify Connect device.
 
 - The web view keeps to the safe area: black bars at the notch and the home indicator.
 - The skin is WMP 9's desktop window at phone size; nothing is laid out for a phone.
-- The visualizers hear the microphone (above), the room as well as the speaker.
+- The broadcast has to be started by hand at every launch (iOS requires the Start Broadcast tap), and
+  it ends when the app is killed.
+- The extension hears every app's audio, not only Spotify's.
 - No signature check on the page update. The Windows exes run a new page only when update.json's
   signature verifies (`tauri/src/update.rs`); this app runs whatever wmp.ryancircelli.com serves.

@@ -2,19 +2,23 @@
 // mounted over it by observer.js. The page's bundle is fetched at every launch; the last good copy
 // is kept in Caches for launches without a network.
 import AVFoundation
+import Network
+import ReplayKit
 import SwiftUI
 import WebKit
 
 @main
 struct WmpSpotifyApp: App {
+    // For the app's lifetime: the broadcast extension connects to it whenever a broadcast starts.
+    private let server = AudioServer()
+
     init() {
-        // .playAndRecord, since the page takes the microphone for the visualizers (ios/README.md:
-        // nothing else on iOS hears the web view): WebKit would switch a .playback session to it
-        // anyway, and on its own that routes sound to the earpiece. The music keeps going with the
-        // screen locked (UIBackgroundModes audio) and with the mute switch on, as under .playback.
-        try? AVAudioSession.sharedInstance().setCategory(.playAndRecord, options: [.defaultToSpeaker, .allowBluetoothA2DP, .allowAirPlay])
+        // .playback: the music keeps going with the screen locked, in the background
+        // (UIBackgroundModes audio) and with the mute switch on.
+        try? AVAudioSession.sharedInstance().setCategory(.playback)
         try? AVAudioSession.sharedInstance().setActive(true)
         HostLog.shared.log("host: build \(Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "?")")
+        server.start()
     }
 
     var body: some Scene {
@@ -22,10 +26,26 @@ struct WmpSpotifyApp: App {
     }
 }
 
-// The one web view: a tap on the log row reloads it.
+// The one web view and the broadcast picker, used on the main thread: a tap on the log row reloads
+// the web view, Forwarder feeds the page through it, and Player opens the picker at launch.
 final class WebHolder {
     static let shared = WebHolder()
     weak var web: WKWebView?
+    weak var picker: RPSystemBroadcastPickerView?
+    private var failed = false  // an evaluateJavaScript error was logged
+
+    /// From any thread: runs `js` in the page on the main thread, in call order, the result dropped.
+    /// Only the first error is logged (the page without window.__wmpAudio, say). The completion
+    /// handler and not the async variant, which crashes on a void result in some SDKs.
+    func run(_ js: String) {
+        DispatchQueue.main.async {
+            self.web?.evaluateJavaScript(js) { _, error in
+                guard let error, !self.failed else { return }
+                self.failed = true
+                HostLog.shared.log("audio: evaluateJavaScript failed: \(error.localizedDescription)")
+            }
+        }
+    }
 }
 
 // The host's log. print reaches nobody on a TestFlight install, so Player shows the last line under
@@ -58,21 +78,24 @@ struct Player: View {
         ZStack {
             Color.black.ignoresSafeArea()
             // The web view keeps to the safe area (black bars at the notch), the host's last log
-            // line under it. The keyboard is left to WebKit, which scrolls the focused field into
-            // view itself.
+            // line under it with the broadcast picker at its right end. The keyboard is left to
+            // WebKit, which scrolls the focused field into view itself.
             VStack(spacing: 0) {
                 if ready { WebView(script: script) } else { Color.clear }
-                Text(log.last)
-                    .font(.system(size: 10, design: .monospaced))
-                    .foregroundStyle(.gray)
-                    .lineLimit(1)
-                    .truncationMode(.head)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 4)
-                    .contentShape(Rectangle())
-                    .onTapGesture { reload() }
-                    .onLongPressGesture { showLog = true }
+                HStack(spacing: 0) {
+                    Text(log.last)
+                        .font(.system(size: 10, design: .monospaced))
+                        .foregroundStyle(.gray)
+                        .lineLimit(1)
+                        .truncationMode(.head)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 4)
+                        .contentShape(Rectangle())
+                        .onTapGesture { reload() }
+                        .onLongPressGesture { showLog = true }
+                    BroadcastButton().frame(width: 44, height: 44)
+                }
             }
             .ignoresSafeArea(.keyboard)
         }
@@ -91,14 +114,36 @@ struct Player: View {
         .task {
             script = await userScript()
             ready = true
+            // iOS's broadcast sheet 2 s after the page is up, so it need not be hunted for: a tap
+            // sent to the picker's own button, the widely used way to open it from code (ReplayKit
+            // has no call for it). The user still taps Start Broadcast; iOS requires that tap.
+            try? await Task.sleep(for: .seconds(2))
+            guard let picker = WebHolder.shared.picker else { return }
+            HostLog.shared.log("broadcast: picker shown")
+            for case let b as UIButton in picker.subviews { b.sendActions(for: .touchUpInside) }
         }
     }
 
-    // The page again from the top: its overlay, its socket-less audio, Spotify's own state.
+    // The page again from the top: its overlay, its stand-in audio socket, Spotify's own state.
     private func reload() {
         HostLog.shared.log("reload: the page")
         WebHolder.shared.web?.reload()
     }
+}
+
+// iOS's own broadcast picker, offering only our extension and no microphone button. Its button is
+// tinted white for the black band.
+struct BroadcastButton: UIViewRepresentable {
+    func makeUIView(context: Context) -> RPSystemBroadcastPickerView {
+        let picker = RPSystemBroadcastPickerView(frame: CGRect(x: 0, y: 0, width: 44, height: 44))
+        picker.preferredExtension = "com.rcircelli.wmpspotify.broadcast"
+        picker.showsMicrophoneButton = false
+        for case let b as UIButton in picker.subviews { b.imageView?.tintColor = .white }
+        WebHolder.shared.picker = picker
+        return picker
+    }
+
+    func updateUIView(_ picker: RPSystemBroadcastPickerView, context: Context) {}
 }
 
 // dist/spotify-inject.js as the site publishes it (tools/postbuild.js).
@@ -153,7 +198,6 @@ struct WebView: UIViewRepresentable {
         // Spotify serves the web player to desktop browsers only; the overlay covers the desktop
         // layout anyway.
         web.customUserAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Safari/605.1.15"
-        web.uiDelegate = context.coordinator
         web.isOpaque = false
         web.backgroundColor = .black
         web.scrollView.backgroundColor = .black
@@ -168,18 +212,141 @@ struct WebView: UIViewRepresentable {
     func updateUIView(_ web: WKWebView, context: Context) {}
 
     // window.alchemyLog from the page (observer.js posts to webkit.messageHandlers.log).
-    final class Coordinator: NSObject, WKScriptMessageHandler, WKUIDelegate {
+    final class Coordinator: NSObject, WKScriptMessageHandler {
         func userContentController(_ userContentController: WKUserContentController,
                                    didReceive message: WKScriptMessage) {
             HostLog.shared.log("page: \(message.body)")
         }
+    }
+}
 
-        // The microphone, granted once by iOS (NSMicrophoneUsageDescription): without this WebKit
-        // asks its own "open.spotify.com would like to use your microphone" at every launch.
-        func webView(_ webView: WKWebView, requestMediaCapturePermissionFor origin: WKSecurityOrigin,
-                     initiatedByFrame frame: WKFrameInfo, type: WKMediaCaptureType,
-                     decisionHandler: @escaping (WKPermissionDecision) -> Void) {
-            decisionHandler(type == .microphone ? .grant : .deny)
+// ws://127.0.0.1:47831 for the broadcast extension (ios/WmpSpotifyBroadcast/SampleHandler.swift),
+// which sends {"rate":n} as text, then binary frames of interleaved stereo int16 LE: all handed to
+// Forwarder. The latest connection wins. All state is on `queue`.
+final class AudioServer {
+    private let queue = DispatchQueue(label: "audio-server")
+    private var listener: NWListener?
+    private var source: NWConnection?  // the extension's latest socket
+
+    func start() {
+        let ws = NWProtocolWebSocket.Options()
+        ws.autoReplyPing = true
+        let params = NWParameters(tls: nil, tcp: NWProtocolTCP.Options())
+        params.defaultProtocolStack.applicationProtocols.insert(ws, at: 0)
+        // Loopback only: nothing off the phone reaches it.
+        params.requiredLocalEndpoint = .hostPort(host: "127.0.0.1", port: 47831)
+        params.allowLocalEndpointReuse = true
+        let listener: NWListener
+        do {
+            listener = try NWListener(using: params)
+        } catch {
+            HostLog.shared.log("audio: cannot listen: \(error)")
+            return
         }
+        listener.stateUpdateHandler = { [weak listener] state in
+            HostLog.shared.log("audio: listener \(state), port \(listener?.port?.rawValue ?? 0)")
+        }
+        listener.newConnectionHandler = { [weak self] c in self?.accept(c) }
+        self.listener = listener
+        listener.start(queue: queue)
+    }
+
+    private func accept(_ c: NWConnection) {
+        source?.cancel()
+        source = c
+        c.stateUpdateHandler = { [weak self, weak c] state in
+            guard let self, let c, c === self.source else { return }
+            switch state {
+            case .ready:
+                HostLog.shared.log("audio: extension connected")
+                self.receive(c)
+            case .failed, .cancelled:
+                self.drop(c)
+            default:
+                break
+            }
+        }
+        c.start(queue: queue)
+    }
+
+    // The extension's frames, one at a time, until an error, a close frame or the end of the stream.
+    private func receive(_ c: NWConnection) {
+        c.receiveMessage { [weak self, weak c] data, context, _, error in
+            guard let self, let c else { return }
+            let meta = context?.protocolMetadata(definition: NWProtocolWebSocket.definition)
+                as? NWProtocolWebSocket.Metadata
+            guard error == nil, let meta, meta.opcode != .close else {
+                self.drop(c)
+                return
+            }
+            if let data, meta.opcode == .binary {
+                Forwarder.shared.pcm(data)
+            } else if let data, meta.opcode == .text,
+                      let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                      let rate = json["rate"] as? Int {
+                Forwarder.shared.rate(rate)
+            }
+            self.receive(c)
+        }
+    }
+
+    // Once per socket: the broadcast ended (or the extension died), so the page goes silent.
+    private func drop(_ c: NWConnection) {
+        guard c === source else { return }
+        source = nil
+        c.cancel()
+        HostLog.shared.log("audio: extension disconnected")
+        Forwarder.shared.stopped()
+    }
+}
+
+// The extension's audio into the page by evaluateJavaScript (WebKit refuses ws:// from Spotify's
+// https page), to the stand-in socket observer.js puts in its place: __wmpAudio.rate(n) when the
+// extension says it, then every 100 ms __wmpAudio.pcm(<base64 interleaved stereo int16 LE>, n) with
+// all that came in since, so evaluateJavaScript runs 10 times a second and not once per buffer (43).
+// The rate rides along for a stand-in opened later (a reload). All state is on `queue`.
+final class Forwarder {
+    static let shared = Forwarder()
+    private let queue = DispatchQueue(label: "audio-forwarder")
+    private var sampleRate = 0
+    private var pending = Data()
+    private var timer: DispatchSourceTimer?
+
+    func rate(_ n: Int) {
+        queue.async {
+            self.sampleRate = n
+            WebHolder.shared.run("__wmpAudio.rate(\(n))")
+        }
+    }
+
+    func pcm(_ data: Data) {
+        queue.async {
+            self.pending.append(data)
+            guard self.timer == nil else { return }
+            let timer = DispatchSource.makeTimerSource(queue: self.queue)
+            timer.schedule(deadline: .now() + .milliseconds(100), repeating: .milliseconds(100))
+            timer.setEventHandler { self.flush() }
+            timer.resume()
+            self.timer = timer
+        }
+    }
+
+    /// The broadcast is over: what is left, then 4096 frames of silence so the visualizers go dark
+    /// instead of holding the last spectrum. No __wmpAudio.close(): the page opens its stand-in once,
+    /// and the next broadcast carries on in it.
+    func stopped() {
+        queue.async {
+            self.timer?.cancel()
+            self.timer = nil
+            self.flush()
+            self.pending = Data(count: 4096 * 2 * 2)
+            self.flush()
+        }
+    }
+
+    private func flush() {
+        defer { pending.removeAll(keepingCapacity: true) }
+        guard !pending.isEmpty, sampleRate > 0 else { return }
+        WebHolder.shared.run("__wmpAudio.pcm('\(pending.base64EncodedString())', \(sampleRate))")
     }
 }

@@ -30,3 +30,4 @@ NOTES-*.md
 HANDOFF.md
 ios/WmpSpotify.xcodeproj/
 ios/WmpSpotify/Info.plist
+ios/WmpSpotifyBroadcast/Info.plist
