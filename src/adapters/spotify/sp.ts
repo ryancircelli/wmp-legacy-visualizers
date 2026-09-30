@@ -3,6 +3,7 @@
 import '../host/globals';
 import type { AppStore, HomeFeed, Track } from '../../model';
 import type { SpotifyObserved } from '../host/globals';
+import { transport } from './transport';
 
 /** player_state as the dealer / connect-state send it: every number is a string. */
 export interface PlayerState {
@@ -54,24 +55,18 @@ export const status = (sp: Sp, msg: string) => sp.store.getState().actions.setSt
 
 export interface Resp { status: number; json: unknown; text: string }
 
-/** POST JSON (or GET) with the web player's own credentials, client-token too when known. A 429
+/** POST JSON (or GET) with the web player's own credentials (the transport adds them). A 429
  *  blocks every request until Retry-After (seconds) has passed. Network errors reject. */
 export async function post(sp: Sp, url: string, body: unknown, method = 'POST', extra: Record<string, string> = {}): Promise<Resp> {
-  const w = W();
-  if (!w.token) return { status: 0, json: null, text: '' };
+  const t = transport();
+  if (!t.authed()) return { status: 0, json: null, text: '' };
   if (sp.blockedUntil > Date.now()) return { status: 429, json: null, text: '' };
-  const headers: Record<string, string> = {
-    Authorization: 'Bearer ' + w.token, 'Content-Type': 'application/json;charset=UTF-8', Accept: 'application/json' };
-  if (w.clientToken) headers['client-token'] = w.clientToken;
-  Object.assign(headers, extra);
-  const init: RequestInit = { method, headers };
-  if (method !== 'GET') init.body = JSON.stringify(body);
-  const r = await fetch(url, init);
-  if (r.status === 429) sp.blockedUntil = Date.now() + (parseInt(r.headers.get('Retry-After') ?? '', 10) || 1) * 1000;
-  const text = await r.text();
+  const headers = { 'Content-Type': 'application/json;charset=UTF-8', Accept: 'application/json', ...extra };
+  const r = await t.request(url, method, method !== 'GET' ? JSON.stringify(body) : undefined, headers);
+  if (r.status === 429) sp.blockedUntil = Date.now() + (parseInt(r.retryAfter ?? '', 10) || 1) * 1000;
   let json: unknown = null;
-  try { json = text ? JSON.parse(text) : null; } catch { /* not JSON */ }
-  return { status: r.status, json, text };
+  try { json = r.text ? JSON.parse(r.text) : null; } catch { /* not JSON */ }
+  return { status: r.status, json, text: r.text };
 }
 
 export const kindOf = (uri: string | undefined) => /^spotify:(\w+):/.exec(uri || '')?.[1] ?? '';

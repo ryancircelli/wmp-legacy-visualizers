@@ -1,6 +1,8 @@
-// The window globals the hosts set (CONTRACT.md v1–v6.1; deno-webview/main.ts, spotify.ts).
+// The window globals the hosts set (CONTRACT.md v1–v8; deno-webview/main.ts, spotify.ts, tauri/).
 export interface SpotifyObserved {
+  /** the bearer: the Deno host's page has it; the Tauri host keeps it and says only hasToken */
   token?: string;
+  hasToken?: boolean;
   at?: number;
   clientToken?: string;
   loggedIn?: boolean;
@@ -39,6 +41,11 @@ declare global {
     /** relaunch the app (a checked page update is cached for the next launch) */
     alchemyRestart?: () => void;
     __wmpSpotify?: SpotifyObserved;
+    /** the Tauri host's IPC (withGlobalTauri): what the Spotify bridge uses of it */
+    __TAURI__?: {
+      core: { invoke<T = unknown>(cmd: string, args?: Record<string, unknown>): Promise<T> };
+      event: { listen<T>(event: string, handler: (e: { payload: T }) => void): Promise<() => void> };
+    };
   }
 }
 export {};
