@@ -142,8 +142,14 @@ Everything the Deno host gives the page, the Tauri host gives it too, by other m
 - **The player window.** Frameless (`decorations(false)`), 480x360 minimum, window class `AlchemyHost`
   (the Deno host's, for whatever looks for it), and on screen at its final box before WebView2 starts:
   the builder is `visible(true)` and is given the remembered box, read from the window-state plugin's
-  own file before the window exists. The plugin's restore is skipped for the player, because it runs
-  after the window and its WebView2 exist, which is a window that visibly moves. DWM gets Windows 11's
+  own file before the window exists. The Spotify window is the same, at its own remembered box. The
+  plugin's restore is skipped for both, because it runs after the window and its WebView2 exist, which
+  is a window that visibly moves: the Spotify window used to open at the player's box and jump to its
+  own a second later. A window left maximized is created maximized. tao shows a new window at its
+  restored box and maximizes it after, which DWM animated, the restored box and then a 200 ms zoom;
+  `win.rs maximized` keeps it hidden until it is maximized, and DWM's animations off until it is up
+  (`DWMWA_TRANSITIONS_FORCEDISABLED`, or its opening fade and zoom still play). Filmed: over the whole
+  screen from the first frame, and restore returns to the remembered box. DWM gets Windows 11's
   rounded corner, no border (`DWMWA_COLOR_NONE`), and a caption colour: a frameless tao window keeps
   `dpi / 96` rows of frame at the top (measured `#EDF5F9`, two rows at 150 %), the strip the Deno host
   removed by hand in `WM_NCCALCSIZE`, and painted the title bar's own top colour it disappears into it.
@@ -159,7 +165,10 @@ Everything the Deno host gives the page, the Tauri host gives it too, by other m
   in (deno-webview/README.md: 27 % of a core, drawing for nobody).
 - **Full screen and wake.** F and Esc call `win_full`: Tauri's own full screen, then the virtual
   screen's box set twice (tao keeps a full-screen window on the monitor a new box mostly covers, so the
-  first move changes which monitor it thinks it is on and the second is left alone), topmost, and
+  first move changes which monitor it thinks it is on and the second is left alone), position and size
+  in one `SetWindowPos` each time: set apart, each half is a box of its own, mostly on some other
+  monitor, and with a small monitor left of a larger one the two halves alternate the clamp between
+  them. Verified on one monitor only; multi-monitor is reviewed, not run. Then topmost, and
   `SetThreadExecutionState` holding the display on. The log line carries the state it replaced
   (`0x80000003` on the way out means the display was being kept on). Closing while full screen leaves
   full screen first, so the box the window-state plugin records is the window's own and not the desktop's.
@@ -180,7 +189,8 @@ Everything the Deno host gives the page, the Tauri host gives it too, by other m
   run loop is logged and shown in a message box naming the log, except in the running screensaver,
   which nobody is looking at.
 - **The log and the marks.** `%LOCALAPPDATA%\WmpLegacyVisualizers\tauri\alchemy.log`, through
-  tauri-plugin-log (stdout too in debug builds). Startup stages are `t+<ms>` lines from process start,
+  tauri-plugin-log (stdout too in debug builds, or with `ALCHEMY_CONSOLE` set, the Deno host's switch).
+  Startup stages are `t+<ms>` lines from process start,
   the format deno-webview/README.md's "Startup" tables were measured with; the page's own marks arrive
   as one line at its first painted frame, and its report line (source, visualizer, fps, size, status,
   energy, saved settings) 3 s and 9 s after load, as the Deno host logs them.
@@ -188,12 +198,24 @@ Everything the Deno host gives the page, the Tauri host gives it too, by other m
   replaces wry's WebView2 arguments, `--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection
   --autoplay-policy=no-user-gesture-required`. Unlike the Deno host's `webview.dll`, WebView2 here does
   receive them, so a switch can be tried, or a DevTools port opened, without a rebuild.
-  `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS` does not reach it: the arguments wry passes win.
-- **The screensaver.** Undecorated, not resizable, topmost, off the taskbar, black, over every monitor
-  (set again in physical pixels after creation, because monitors of different scales make the logical
-  box approximate). `host.js` hides the settings panel and the cursor and ends it on a key, a click, or
-  more than 10 px of mouse travel after a one-second grace; a page with no canvas after 15 s gives the
-  desktop back. Only the saver window's `dismiss` is honoured.
+  `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS` does not reach it: the arguments wry passes win. The Deno
+  host's other setting, `pageUrl` (load a site instead of the embedded page), is not ported: a newer
+  page without a new exe is what the signed page updates are for, an unsigned override at our origin
+  would step round that signature, and a site loaded as itself is a remote origin, which Tauri refuses
+  every command this host defines (the saver's `dismiss` among them) unless a remote capability lists
+  them all.
+- **The screensaver.** Undecorated, not resizable, topmost, off the taskbar, black, over every monitor,
+  window class `AlchemySaver`. On Windows it is created over the virtual screen exactly, through its
+  `CREATESTRUCT` in a creation hook (`win.rs saver`): tao creates a window at a position only when the
+  position is on some monitor, and the virtual screen's corner is on none when the monitors' tops or
+  lefts do not line up, which left it at tao's default box on the primary monitor until WebView2 was
+  up. `host.js` hides the settings panel and the cursor and ends it on a key, a click, or more than
+  10 px of mouse travel after a one-second grace; a page with no canvas after 15 s gives the desktop
+  back. Only the saver window's `dismiss` is honoured. Until WebView2 has the focus, though, a key or a
+  click reaches the window and not the page, whose handlers do not exist for the first half second:
+  `win.rs saver_input`, in front of tao's window procedure as the Deno host's `hostProc` was, hides the
+  window at once and closes it the ordinary way, exit 0 as the page's dismissal. Measured: a key posted
+  at 166 ms and a click at 120 ms, the window hidden within 14 ms and never shown again, exit 0.
 
 ## Audio
 
@@ -207,9 +229,9 @@ media threads, which stop when it closes: nothing listens to the speakers while 
 that tries them all; what it serves is the system's sound, what is playing, and transport and wake
 commands. So a request is served only with a per-launch key, 128 random bits in the URL the page is
 given (`/audio?k=<key>`), and anything else gets 403. The plugin's init script hands that URL only to
-`wmp.localhost`, `localhost` (the page off Windows) and `open.spotify.com` (the Deno host's overlay; no
-Tauri web view here is ever there), and a client that connects and never completes the handshake is
-dropped after five seconds. The Deno host keys its socket the same way.
+`wmp.localhost` and `localhost` (the page off Windows); Spotify's page is in a web view no plugin's
+script reaches. A client that connects and never completes the handshake is dropped after five
+seconds. The Deno host keys its socket the same way.
 
 **A WebSocket, not a Tauri `ipc::Channel`, by measurement.** A Channel is Tauri's own answer to
 streaming from Rust to the page, so it was measured against the socket (2026-09-29, the player window,
