@@ -16,12 +16,14 @@ with ReplayKit's in-app capture (app audio only, microphone off) and serves it t
 ws://127.0.0.1:47831/audio in the Windows host's format (`{"rate":n}`, then interleaved stereo float32;
 `tauri/src/audio/mod.rs`). The rate goes out with the first buffer that is not silent. If 30 s of
 capture bring nothing but silence, or capture is refused or fails, the app stops capturing and closes
-the socket and its listener for good, and the page falls back to the microphone (iOS asks for it once).
+the socket and its listener, and the page falls back to the microphone (iOS asks for it once).
 Starting the capture brings up iOS's own screen-recording consent alert at launch; declining it is a
 refusal. What the build tests is whether FairPlay-protected audio survives ReplayKit capture: Apple
 Music is silenced in screen recordings, and whether Spotify's web player is too is unknown. The page
 says which way it went ("System audio (local)" once the app's own sound arrives); with Xcode attached,
-the console has the why, in lines starting `replaykit:` and `audio:`.
+the console has the why, in lines starting `replaykit:` and `audio:`. The band under the web view shows
+the host's last log line: tap it to re-run the ReplayKit prompt and reload the page, long-press it for
+the last 20 lines.
 
 ## Building
 
