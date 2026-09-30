@@ -1,5 +1,6 @@
-//! Spotify mode (`--mode=spotify`, CONTRACT.md v8): open.spotify.com, unmodified, in a hidden child
+//! Spotify mode (`--mode=spotify`, CONTRACT.md v8): open.spotify.com, unmodified, in a child
 //! WebView2 the host creates with wry itself, so no Tauri IPC or script is ever in Spotify's page.
+//! It is parked out of sight (`win.rs` `rect`) unless Spotify needs the user: its login, a captcha.
 //! The host watches that page through the DevTools Protocol (`win.rs`, `seen.rs`) and runs our
 //! page's requests inside it, in an isolated world, with the web player's own credentials. The
 //! bearer lives in Spotify's page and in host memory only: never in our page, a file or the log.

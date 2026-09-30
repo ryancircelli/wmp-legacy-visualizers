@@ -33,8 +33,9 @@ struct Host {
     core: ICoreWebView2,
     seen: Seen,
     emit: Box<dyn Fn(&str, Value)>,
-    /// the web view's current URL, and whether it is shown over our page
+    /// the web view's current URL, the window's size, and whether it is shown over our page
     url: String,
+    size: PhysicalSize<u32>,
     shown: bool,
     login_at: Option<Instant>,
     bodies: HashMap<String, Body>,
@@ -165,11 +166,18 @@ pub fn attach<R: Runtime>(w: &WebviewWindow<R>) {
     probe_thread(w.clone());
 }
 
-fn full<R: Runtime>(w: &WebviewWindow<R>) -> Rect {
-    let s = w.inner_size().unwrap_or_default();
+/// Where the web view sits: over the whole window while shown, else parked, 1x1 px just outside
+/// it. Parked and not hidden: with IsVisible=false the page is `hidden`, and then (measured)
+/// Chromium holds a page's first media play() until it is shown and throttles its timers.
+fn rect(size: PhysicalSize<u32>, shown: bool) -> Rect {
+    let (position, size) = if shown {
+        (PhysicalPosition::new(0, 0), size)
+    } else {
+        (PhysicalPosition::new(-1, -1), PhysicalSize::new(1, 1))
+    };
     Rect {
-        position: PhysicalPosition::new(0, 0).into(),
-        size: PhysicalSize::new(s.width, s.height).into(),
+        position: position.into(),
+        size: size.into(),
     }
 }
 
@@ -178,22 +186,15 @@ fn create<R: Runtime>(
     env: ICoreWebView2Environment,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let t0 = Instant::now();
-    // ALCHEMY_SPOTIFY_OWN_ENV (debug builds): the measured alternative, a browser of its own.
-    let own = cfg!(debug_assertions) && std::env::var_os("ALCHEMY_SPOTIFY_OWN_ENV").is_some();
-    let mut ctx = wry::WebContext::new(crate::data_root().map(|r| r.join("spotify")));
-    let b = if own {
-        WebViewBuilder::new_with_web_context(&mut ctx).with_additional_browser_args(
-            "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --autoplay-policy=no-user-gesture-required",
-        )
-    } else {
-        // Tauri's browser process, and a profile of its own: its cookies and storage are not ours.
-        WebViewBuilder::new()
-            .with_environment(env)
-            .with_profile_name("spotify")
-    };
-    let view = b
-        .with_visible(false)
-        .with_bounds(full(w))
+    let size = w.inner_size()?;
+    // Tauri's browser process (one environment, so no browser arguments of its own) and a profile
+    // of its own, WebView2\EBWebView\WV2Profile_spotify: its cookies and storage are not our page's.
+    // A browser of its own measured 100 MB more (CONTRACT.md v8).
+    let view = WebViewBuilder::new()
+        .with_environment(env)
+        .with_profile_name("spotify")
+        .with_bounds(rect(size, false))
+        .with_focused(false)
         .with_devtools(cfg!(debug_assertions))
         .with_on_page_load_handler(|ev, url| {
             with(|h| h.loaded(ev, url));
@@ -212,6 +213,7 @@ fn create<R: Runtime>(
                 let _ = w2.emit_to(EventTarget::webview_window(w2.label()), n, v);
             }),
             url: String::new(),
+            size,
             shown: false,
             login_at: None,
             bodies: HashMap::new(),
@@ -232,12 +234,7 @@ fn create<R: Runtime>(
     cdp(&core, "Network.enable", net, move |r| match r {
         Ok(_) => {
             log::info!(
-                "spotify: web view up ({}), watching its network, t+{}ms",
-                if own {
-                    "own browser"
-                } else {
-                    "profile 'spotify' in the app's browser"
-                },
+                "spotify: web view up, watching its network, t+{}ms",
                 t0.elapsed().as_millis()
             );
             with(|h| h.view.load_url(HOME));
@@ -247,10 +244,8 @@ fn create<R: Runtime>(
     w.on_window_event(|e| match e {
         WindowEvent::Resized(s) => {
             with(|h| {
-                h.view.set_bounds(Rect {
-                    position: PhysicalPosition::new(0, 0).into(),
-                    size: PhysicalSize::new(s.width, s.height).into(),
-                })
+                h.size = *s;
+                h.view.set_bounds(rect(*s, h.shown))
             });
         }
         WindowEvent::Destroyed => {
@@ -261,8 +256,9 @@ fn create<R: Runtime>(
     Ok(())
 }
 
-/// Media on open.spotify.com may start without a click in its page (the permission WebView2 keeps
-/// per origin in the profile; no browser argument, so the environment can be shared).
+/// Media on open.spotify.com may start without a click in its page: the permission WebView2 keeps
+/// per origin in the profile, not the browser argument, which would have to be the whole
+/// environment's. (WebView2 154 was measured to allow it by default; this keeps it so.)
 fn autoplay(core: &ICoreWebView2) {
     let r = unsafe {
         core.cast::<ICoreWebView2_13>()
@@ -476,7 +472,7 @@ impl Host {
             return;
         }
         self.shown = want;
-        let _ = self.view.set_visible(want);
+        let _ = self.view.set_bounds(rect(self.size, want));
         let _ = if want {
             self.view.focus()
         } else {
@@ -625,10 +621,16 @@ fn probe_thread<R: Runtime>(w: WebviewWindow<R>) {
 
 #[cfg(debug_assertions)]
 fn probe(url: String) {
+    // a second of silence, unmuted: whether media may start without a click in the page
     const JS: &str = "(async () => { const c = new AudioContext(), ac = c.state; c.close();
+      const k = 800, b = new Uint8Array(44 + k), d = new DataView(b.buffer), s = (o, t) => [...t].forEach((x, i) => { b[o + i] = x.charCodeAt(0); });
+      s(0, 'RIFF'); d.setUint32(4, 36 + k, true); s(8, 'WAVEfmt '); d.setUint32(16, 16, true); d.setUint16(20, 1, true); d.setUint16(22, 1, true);
+      d.setUint32(24, 8000, true); d.setUint32(28, 8000, true); d.setUint16(32, 1, true); d.setUint16(34, 8, true); s(36, 'data'); d.setUint32(40, k, true); b.fill(128, 44);
+      const media = await Promise.race([new Audio(URL.createObjectURL(new Blob([b], { type: 'audio/wav' }))).play().then(() => 'played', (e) => e.name),
+        new Promise((ok) => setTimeout(ok, 5000, 'still pending after 5 s'))]);
       let n = 0; const t0 = performance.now();
       await new Promise((ok) => { const tick = () => { n++; performance.now() - t0 < 20000 ? setTimeout(tick, 1000) : ok(); }; setTimeout(tick, 1000); });
-      return { visibility: document.visibilityState, audioContext: ac,
+      return { visibility: document.visibilityState, audioContext: ac, media,
                autoplayPolicy: navigator.getAutoplayPolicy ? navigator.getAutoplayPolicy('mediaelement') : 'n/a',
                timerTicksIn20s: n }; })()";
     let Some((core, names)) = with(|h| {
