@@ -37,15 +37,14 @@ The .p8 can be downloaded only once, when the key is made.
 ## One-time setup
 
 1. Make the API key and add the three secrets (repository Settings > Secrets and variables > Actions).
-2. Run the workflow (Actions > ios > Run workflow). The archive step registers the App ID
-   com.rcircelli.wmpspotify in the developer portal; the upload step then fails, as there is no app
-   record yet. (Or register the identifier by hand first, at developer.apple.com > Identifiers.)
-   If the archive fails with "Your team has no devices", register the iPhone at developer.apple.com >
-   Devices: the archive is signed for development before the upload re-signs it for distribution.
+2. Register the App ID com.rcircelli.wmpspotify at developer.apple.com > Identifiers (explicit, no
+   capabilities). The archive step does not register it: measured 2026-09-30, the archive signed
+   without one and the upload failed with "Error Downloading App Information".
 3. In App Store Connect, Apps > + > New App: iOS, bundle ID com.rcircelli.wmpspotify, any SKU. The name
-   has to be unique across the App Store even though this app never ships there.
-4. Run the workflow again. Once the build has processed, add yourself as an internal tester (the app's
-   TestFlight tab > Internal Testing) and install it from the TestFlight app.
+   has to be unique across the App Store even though this app never ships there. A pending Program
+   License Agreement blocks this until the Account Holder accepts it.
+4. Run the workflow (Actions > ios > Run workflow). Once the build has processed, add yourself as an
+   internal tester (the app's TestFlight tab > Internal Testing) and install it from the TestFlight app.
 
 ## Untested
 
