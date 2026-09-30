@@ -323,14 +323,11 @@ fn fatal(saver: bool, what: &str) -> ! {
 /// be Alchemy.scr's, for which no arguments mean the player. Returns only if it could not.
 #[cfg(feature = "wmp-spotify")]
 fn relaunch_as_spotify(args: &[String]) {
-    use std::process::{Command, Stdio};
+    // the same standard handles, so ALCHEMY_CONSOLE's redirected log still arrives
     let child = std::env::current_exe().and_then(|exe| {
-        Command::new(exe)
+        std::process::Command::new(exe)
             .args(args)
             .arg("--mode=spotify")
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
             .spawn()
     });
     if let Ok(c) = child {
