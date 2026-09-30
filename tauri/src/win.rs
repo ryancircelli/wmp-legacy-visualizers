@@ -1,11 +1,12 @@
 //! Windows only.
 
+use std::cell::RefCell;
 use std::path::PathBuf;
-use windows::Win32::Foundation::{HWND, RECT};
+use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, RECT, WPARAM};
 use windows::Win32::Graphics::Dwm::{
     DWMWA_BORDER_COLOR, DWMWA_CAPTION_COLOR, DWMWA_CLOAKED, DWMWA_COLOR_NONE,
-    DWMWA_EXTENDED_FRAME_BOUNDS, DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_ROUND,
-    DwmGetWindowAttribute, DwmSetWindowAttribute,
+    DWMWA_EXTENDED_FRAME_BOUNDS, DWMWA_TRANSITIONS_FORCEDISABLED, DWMWA_WINDOW_CORNER_PREFERENCE,
+    DWMWCP_ROUND, DwmGetWindowAttribute, DwmSetWindowAttribute,
 };
 use windows::Win32::Graphics::Gdi::{
     CombineRgn, CreateRectRgn, DeleteObject, MONITOR_DEFAULTTONULL, MonitorFromWindow, NULLREGION,
@@ -17,12 +18,18 @@ use windows::Win32::System::Power::{
 use windows::Win32::System::StationsAndDesktops::{
     CloseDesktop, DESKTOP_CONTROL_FLAGS, DESKTOP_SWITCHDESKTOP, OpenInputDesktop,
 };
+use windows::Win32::System::Threading::GetCurrentThreadId;
+use windows::Win32::UI::Shell::{DefSubclassProc, RemoveWindowSubclass, SetWindowSubclass};
 use windows::Win32::UI::WindowsAndMessaging::{
-    FindWindowExW, GW_HWNDPREV, GWL_EXSTYLE, GetWindow, GetWindowLongPtrW, GetWindowRect,
-    GetWindowThreadProcessId, IsIconic, IsWindow, IsWindowVisible, MB_ICONERROR, MB_OK,
-    MessageBoxW, WS_EX_LAYERED, WS_EX_TRANSPARENT,
+    CBT_CREATEWNDW, CREATESTRUCTW, CallNextHookEx, FindWindowExW, GW_HWNDPREV, GWL_EXSTYLE,
+    GetClassNameW, GetWindow, GetWindowLongPtrW, GetWindowRect, GetWindowThreadProcessId,
+    HCBT_CREATEWND, HHOOK, IsIconic, IsWindow, IsWindowVisible, IsZoomed, MB_ICONERROR, MB_OK,
+    MessageBoxW, PostMessageW, SW_HIDE, SWP_NOACTIVATE, SWP_NOZORDER, SWP_SHOWWINDOW, SetWindowPos,
+    SetWindowsHookExW, ShowWindow, UnhookWindowsHookEx, WH_CBT, WINDOWPOS, WM_CLOSE, WM_CREATE,
+    WM_KEYDOWN, WM_LBUTTONDOWN, WM_MBUTTONDOWN, WM_NCDESTROY, WM_RBUTTONDOWN, WM_SYSKEYDOWN,
+    WM_WINDOWPOSCHANGING, WS_EX_LAYERED, WS_EX_TRANSPARENT,
 };
-use windows::core::HSTRING;
+use windows::core::{BOOL, HSTRING};
 
 /// Everything the host keeps on Windows: the WebView2 profile, the window box, the log.
 ///
@@ -86,6 +93,195 @@ pub fn chrome_when_created(class: &'static str) {
             std::thread::sleep(std::time::Duration::from_millis(1));
         }
     });
+}
+
+pub fn class_is(h: HWND, name: &str) -> bool {
+    let mut buf = [0u16; 64];
+    let n = unsafe { GetClassNameW(h, &mut buf) } as usize;
+    String::from_utf16_lossy(&buf[..n]) == name
+}
+
+/// What `on_create` does to each window of a class.
+type Made = (&'static str, Box<dyn Fn(HWND, &mut CREATESTRUCTW)>);
+
+thread_local! {
+    static ON_CREATE: RefCell<Option<Made>> = const { RefCell::new(None) };
+}
+
+/// While it lives, `f` is given every top-level window of `class` this thread creates, with the box
+/// it is about to be created at (its `CREATESTRUCT`, which `f` may change), before the window's
+/// first message: a thread-local CBT hook, which is how MFC subclasses its windows. Put round a
+/// window builder, which does not return until WebView2 is up, half a second after the window is on
+/// screen, so anything done after it is done to a window the user has been looking at. One at a
+/// time on a thread.
+pub struct OnCreate(HHOOK);
+
+pub fn on_create(
+    class: &'static str,
+    f: impl Fn(HWND, &mut CREATESTRUCTW) + 'static,
+) -> Option<OnCreate> {
+    let hook = unsafe { SetWindowsHookExW(WH_CBT, Some(cbt), None, GetCurrentThreadId()) }
+        .map_err(|e| log::error!("no window creation hook: {e}"))
+        .ok()?;
+    ON_CREATE.set(Some((class, Box::new(f))));
+    Some(OnCreate(hook))
+}
+
+impl Drop for OnCreate {
+    fn drop(&mut self) {
+        let _ = unsafe { UnhookWindowsHookEx(self.0) };
+        ON_CREATE.set(None);
+    }
+}
+
+unsafe extern "system" fn cbt(code: i32, wp: WPARAM, lp: LPARAM) -> LRESULT {
+    if code == HCBT_CREATEWND as i32 {
+        let h = HWND(wp.0 as _);
+        let cs = unsafe { &mut *(*(lp.0 as *const CBT_CREATEWNDW)).lpcs };
+        ON_CREATE.with_borrow(|on| {
+            if let Some((class, f)) = on
+                && cs.hwndParent.is_invalid()
+                && class_is(h, class)
+            {
+                f(h, cs);
+            }
+        });
+    }
+    unsafe { CallNextHookEx(None, code, wp, lp) }
+}
+
+/// This module's subclasses: a window being created maximized, and the screensaver.
+const HOLD: usize = 0x4d58;
+const SAVER: usize = 0x5356;
+
+/// A window being created maximized (from `on_create`) comes up maximized. tao shows a new window
+/// at its restored box and maximizes it after, which DWM animated: the restored box first, then a
+/// 200 ms zoom to the whole screen. It is kept from showing until it is maximized, and the maximize
+/// shows it, over the whole screen from its first frame, and without DWM's opening fade and zoom
+/// either (`animate` puts DWM's animations back once it is up); the restored box stays the one it
+/// was created at, where the restore button takes it.
+pub fn maximized(h: HWND) {
+    let _ = unsafe { SetWindowSubclass(h, Some(hold), HOLD, 0) };
+}
+
+/// DWM's animations for the window (opening, minimize, maximize), back on after `maximized`.
+pub fn animate(h: isize) {
+    set_animations(hwnd(h), true);
+}
+
+fn set_animations(h: HWND, on: bool) {
+    let off = BOOL::from(!on);
+    let _ = unsafe {
+        DwmSetWindowAttribute(
+            h,
+            DWMWA_TRANSITIONS_FORCEDISABLED,
+            &off as *const BOOL as _,
+            4,
+        )
+    };
+}
+
+unsafe extern "system" fn hold(
+    h: HWND,
+    msg: u32,
+    wp: WPARAM,
+    lp: LPARAM,
+    _: usize,
+    _: usize,
+) -> LRESULT {
+    let done = match msg {
+        WM_CREATE => {
+            set_animations(h, false); // before tao's handler shows the window
+            false
+        }
+        WM_WINDOWPOSCHANGING => {
+            let pos = unsafe { &mut *(lp.0 as *mut WINDOWPOS) };
+            let show = pos.flags.contains(SWP_SHOWWINDOW);
+            if show && !unsafe { IsZoomed(h) }.as_bool() {
+                pos.flags &= !SWP_SHOWWINDOW;
+            }
+            show && unsafe { IsZoomed(h) }.as_bool()
+        }
+        WM_NCDESTROY => true,
+        _ => false,
+    };
+    if done {
+        let _ = unsafe { RemoveWindowSubclass(h, Some(hold), HOLD) };
+    }
+    unsafe { DefSubclassProc(h, msg, wp, lp) }
+}
+
+/// Round the screensaver's window builder (its window of `class`). The window is created over `bx`
+/// (x, y, width, height: the virtual screen in physical pixels), exactly, whatever the monitors'
+/// scales: tao creates a window at a position only when it is on some monitor, and the virtual
+/// screen's corner is on none when the monitors' tops or lefts do not line up, so it came up at
+/// tao's default box on the primary monitor until WebView2 was up. And from its first moment a key
+/// or a click ends it (`saver_input`).
+pub fn saver(class: &'static str, bx: (i32, i32, u32, u32)) -> Option<OnCreate> {
+    on_create(class, move |h, cs| {
+        (cs.x, cs.y, cs.cx, cs.cy) = (bx.0, bx.1, bx.2 as i32, bx.3 as i32);
+        let _ = unsafe { SetWindowSubclass(h, Some(saver_input), SAVER, 0) };
+    })
+}
+
+/// In front of tao's window procedure on the screensaver (deno-webview/win32.ts hostProc). Until
+/// WebView2 has the focus a key or a click comes here and not to the page, whose own handlers
+/// (host.js) do not exist for the first half second; without this the saver ignored the user for as
+/// long as that took. Once WebView2 has the focus these stop arriving and the page's handlers take
+/// over, mouse travel (which needs the page's grace period) included.
+///
+/// The window is hidden at once and closed the ordinary way, `WM_CLOSE`: Tauri closes it once the
+/// builder has returned, and the process ends with its last window, exit 0, as when the page ends
+/// it. `gone` from then on, so Tauri's own show after the builder cannot bring it back.
+unsafe extern "system" fn saver_input(
+    h: HWND,
+    msg: u32,
+    wp: WPARAM,
+    lp: LPARAM,
+    _: usize,
+    gone: usize,
+) -> LRESULT {
+    match msg {
+        WM_KEYDOWN | WM_SYSKEYDOWN | WM_LBUTTONDOWN | WM_RBUTTONDOWN | WM_MBUTTONDOWN => {
+            if gone == 0 {
+                let what = if matches!(msg, WM_KEYDOWN | WM_SYSKEYDOWN) {
+                    "key"
+                } else {
+                    "click"
+                };
+                log::info!("saver: exit: {what} before the page");
+                unsafe {
+                    let _ = SetWindowSubclass(h, Some(saver_input), SAVER, 1);
+                    let _ = ShowWindow(h, SW_HIDE);
+                    let _ = PostMessageW(Some(h), WM_CLOSE, WPARAM(0), LPARAM(0));
+                }
+            }
+            return LRESULT(0);
+        }
+        WM_WINDOWPOSCHANGING if gone != 0 => {
+            unsafe { (*(lp.0 as *mut WINDOWPOS)).flags &= !SWP_SHOWWINDOW };
+        }
+        WM_NCDESTROY => {
+            let _ = unsafe { RemoveWindowSubclass(h, Some(saver_input), SAVER) };
+        }
+        _ => {}
+    }
+    unsafe { DefSubclassProc(h, msg, wp, lp) }
+}
+
+/// Move and size in one step, in physical pixels (`host.rs` full).
+pub fn place(h: isize, x: i32, y: i32, w: u32, ht: u32) {
+    let _ = unsafe {
+        SetWindowPos(
+            hwnd(h),
+            None,
+            x,
+            y,
+            w as i32,
+            ht as i32,
+            SWP_NOZORDER | SWP_NOACTIVATE,
+        )
+    };
 }
 
 /// Full-screen visuals keep the machine and the display awake; off hands power back to the plan.

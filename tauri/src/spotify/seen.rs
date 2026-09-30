@@ -3,11 +3,9 @@
 //! rules are the Deno host's injected observers' (deno-webview/spotify.ts), moved out of the page.
 
 use base64::Engine;
-use regex::Regex;
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
 use std::io::Read;
-use std::sync::LazyLock;
 
 /// Events for our page: (name, payload).
 pub type Out = Vec<(&'static str, Value)>;
@@ -220,15 +218,36 @@ pub fn hobs(url: &str) -> Option<(String, String)> {
         .then(|| (host.to_owned(), hex))
 }
 
-static OP: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r#""([A-Za-z0-9_]+)"\s*,\s*"(?:query|mutation)"\s*,\s*"([0-9a-f]{64})""#).unwrap()
-});
-
-/// How the bundles declare an operation: `"<name>","query"|"mutation","<sha256>"`.
+/// How the bundles declare an operation: `"<name>","query"|"mutation","<sha256>"`. The page's
+/// `OP_RE` (src/adapters/spotify/transport.ts) without a regex engine, which cost the exe 964 KB: a
+/// match may start at any `"`, and the next is looked for after it, as the regex does.
 pub fn scan(script: &str) -> Vec<(String, String)> {
-    OP.captures_iter(script)
-        .map(|c| (c[1].to_owned(), c[2].to_owned()))
-        .collect()
+    let (mut out, mut i) = (Vec::new(), 0);
+    while let Some(q) = script[i..].find('"').map(|q| q + i) {
+        i = q + 1;
+        if let Some((end, op, sha)) = declaration(script, q) {
+            out.push((op.to_owned(), sha.to_owned()));
+            i = end;
+        }
+    }
+    out
+}
+
+/// `"([A-Za-z0-9_]+)"\s*,\s*"(?:query|mutation)"\s*,\s*"([0-9a-f]{64})"` at `s[at..]`: (its end,
+/// name, hash).
+fn declaration(s: &str, at: usize) -> Option<(usize, &str, &str)> {
+    let b = s.as_bytes();
+    let run =
+        |from: usize, ok: fn(&u8) -> bool| from + b[from..].iter().take_while(|c| ok(c)).count();
+    let ws = |from| run(from, |c| b" \t\n\r\x0b\x0c".contains(c));
+    let lit = |from: usize, t: &[u8]| b[from..].starts_with(t).then_some(from + t.len());
+    let name = run(at + 1, |c| c.is_ascii_alphanumeric() || *c == b'_');
+    let mut i = lit(name, b"\"").filter(|_| name > at + 1)?;
+    i = ws(lit(ws(i), b",")?);
+    i = lit(i, b"\"query\"").or_else(|| lit(i, b"\"mutation\""))?;
+    i = lit(ws(lit(ws(i), b",")?), b"\"")?;
+    let sha = s.get(i..i + 64).filter(|h| is_hex(h, 64))?;
+    Some((lit(i + 64, b"\"")?, &s[at + 1..name], sha))
 }
 
 /// A dealer message pushing `hm://connect-state/v1/cluster`: its cluster. The payload is JSON, or
@@ -362,6 +381,37 @@ mod tests {
         assert_eq!(s.script(js).len(), 2);
         assert!(s.script(js).is_empty());
         assert_eq!(s.scanned["addToLibrary"], "d".repeat(64));
+        // what OP_RE finds in each (Python's re, which matches it the same way, leftmost first)
+        let (h1, h2) = ("1".repeat(64), "2".repeat(64));
+        let op = |o: &str, h: &str| vec![(o.to_owned(), h.to_owned())];
+        for (js, want) in [
+            (format!("\"a\"\n,\t\"query\"\r\n,  \"{h1}\""), op("a", &h1)),
+            (
+                format!(
+                    r#""short","query","{}" "long","query","{}" "upper","query","{}""#,
+                    "1".repeat(63),
+                    "1".repeat(65),
+                    "A".repeat(64)
+                ),
+                vec![],
+            ),
+            (
+                format!(r#""a-b","query","{h1}" "Q","Query","{h1}""#),
+                vec![],
+            ),
+            // the next match is looked for after the last, and may start at any quote
+            (
+                format!(r#""a","query","{h1}","query","{h2}""#),
+                op("a", &h1),
+            ),
+            (format!(r#""q","query","query","{h2}""#), op("query", &h2)),
+            (
+                format!(r#""é","mutation","{h1}"x"é_1","mutation","{h2}""#),
+                vec![],
+            ),
+        ] {
+            assert_eq!(scan(&js), want, "{js}");
+        }
 
         // a gzipped, base64 dealer push
         let mut gz = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
