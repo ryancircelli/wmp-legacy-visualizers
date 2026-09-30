@@ -8,9 +8,20 @@ top. Spotify's page is never driven through its DOM.
 
 The page is not built into the app. Each launch fetches `spotify-inject.js` from wmp.ryancircelli.com
 (what deploy.yml publishes) and caches it, so a fix to the player reaches the phone without a new build.
-There is no audio source: iOS gives an app no way to hear another app's output, and Spotify's DRM
-playback cannot be routed through Web Audio, so the visualizers follow the player state and animate on
-silence. Playback is meant to carry on with the phone locked (the audio background mode).
+Playback is meant to carry on with the phone locked (the audio background mode).
+
+Audio for the visualizers is an experiment in this build. iOS gives an app no way to hear another app's
+output and Spotify's DRM playback cannot be routed through Web Audio, so the app records its own output
+with ReplayKit's in-app capture (app audio only, microphone off) and serves it to the page on
+ws://127.0.0.1:47831/audio in the Windows host's format (`{"rate":n}`, then interleaved stereo float32;
+`tauri/src/audio/mod.rs`). The rate goes out with the first buffer that is not silent. If 30 s of
+capture bring nothing but silence, or capture is refused or fails, the app stops capturing and closes
+the socket and its listener for good, and the page falls back to the microphone (iOS asks for it once).
+Starting the capture brings up iOS's own screen-recording consent alert at launch; declining it is a
+refusal. What the build tests is whether FairPlay-protected audio survives ReplayKit capture: Apple
+Music is silenced in screen recordings, and whether Spotify's web player is too is unknown. The page
+says which way it went ("System audio (local)" once the app's own sound arrives); with Xcode attached,
+the console has the why, in lines starting `replaykit:` and `audio:`.
 
 ## Building
 
@@ -57,5 +68,7 @@ Nothing had to be routed through another Spotify Connect device.
 
 - The web view keeps to the safe area: black bars at the notch and the home indicator.
 - The skin is WMP 9's desktop window at phone size; nothing is laid out for a phone.
+- Audio is an experiment (above): ReplayKit's consent alert comes up at launch, and when capture gives
+  nothing the visualizers hear the microphone, which picks up the room as well as the speaker.
 - No signature check on the page update. The Windows exes run a new page only when update.json's
   signature verifies (`tauri/src/update.rs`); this app runs whatever wmp.ryancircelli.com serves.

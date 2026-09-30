@@ -93,6 +93,10 @@ export function startHost(store: AppStore, opts: { hostMedia?: () => boolean; pl
              stop: () => { for (const t of stream.getTracks()) t.stop(); } });
   }
 
+  // A host with no getDisplayMedia at all (a WKWebView: the iOS app, ios/) gets the microphone, which
+  // hears the phone's own speaker; also where its audio socket falls through to (openHostAudio).
+  const mic = () => !!navigator.mediaDevices && !navigator.mediaDevices.getDisplayMedia;
+
   // The desktop host without its WASAPI helper: loopback audio with no picker (video:false: desktop
   // video capture fails on plenty of Windows machines). Never ask getUserMedia for audio alone that
   // way — it hard-crashes the renderer.
@@ -100,7 +104,8 @@ export function startHost(store: AppStore, opts: { hostMedia?: () => boolean; pl
     audio();
     let why = '', stream: MediaStream;
     try {
-      stream = await navigator.mediaDevices.getDisplayMedia({ audio: true, video: false }).catch((e: { name?: string }) => {
+      stream = mic() ? await navigator.mediaDevices.getUserMedia({ audio: true })
+        : await navigator.mediaDevices.getDisplayMedia({ audio: true, video: false }).catch((e: { name?: string }) => {
         why = 'getDisplayMedia ' + e.name + ' -> ';
         const desktop = { mandatory: { chromeMediaSource: 'desktop' } } as unknown as MediaTrackConstraints;
         return navigator.mediaDevices.getUserMedia({ audio: desktop, video: desktop });
@@ -111,7 +116,7 @@ export function startHost(store: AppStore, opts: { hostMedia?: () => boolean; pl
     }
     for (const t of stream.getVideoTracks()) { t.stop(); stream.removeTrack(t); }
     if (!stream.getAudioTracks().length) { actions.setStatus(idleStatus(store)); return; }
-    attach({ kind: 'loopback', node: audio().source(stream), label: 'System audio (loopback)',
+    attach({ kind: 'loopback', node: audio().source(stream), label: mic() ? 'Microphone' : 'System audio (loopback)',
              stop: () => { for (const t of stream.getTracks()) t.stop(); } });
   }
 
@@ -139,6 +144,9 @@ export function startHost(store: AppStore, opts: { hostMedia?: () => boolean; pl
         // Attached and then dropped: back to the silence animation, never a frozen last frame.
         if (attached) { if (source?.fill === fill) localStop(); }
         else actions.setStatus(idleStatus(store) + ' (system audio: ' + why + ')');
+        // The iOS host closes its socket when its capture is refused or hears nothing (ios/README.md):
+        // the microphone then, as the loopback flag asks.
+        if (mic() && window.alchemyElectron?.loopback) void startLoopback();
       },
     });
     if (!sock) actions.setStatus(idleStatus(store) + ' (system audio: cannot open ' + url + ')');

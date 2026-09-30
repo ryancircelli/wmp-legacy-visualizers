@@ -26,9 +26,12 @@ var DEVICE_NAME = 'WMP Spotify';
 // ---- the host bindings (CONTRACT.md v4-v6) this host answers in-page
 window.alchemyLog = function (m) { try { webkit.messageHandlers.log.postMessage(String(m)); } catch (e) {} };
 var log = function (m) { window.alchemyLog('spotify: ' + m); };
-// An app, not the website: no share picker, and no audio source at all (no loopback on iOS): the
-// visualizers follow Spotify's player state and animate on silence.
-window.alchemyElectron = { loopback: false, mode: 'app' };
+// An app, not the website: no share picker. The audio is the host's socket (App.swift AudioServer:
+// ReplayKit's capture of the app's own output, in the Windows host's format), and when the host
+// closes it (refused, or silent for 30 s) the loopback flag makes the page take the microphone
+// (src/adapters/local/index.ts startLoopback: no getDisplayMedia in a WKWebView).
+window.alchemyElectron = { loopback: true, mode: 'app' };
+window.alchemyScreensaver = { audio: true, url: 'ws://127.0.0.1:47831/audio' };
 window.alchemyMarks = [];
 window.alchemySpotifyLogout = function () { log('log out'); location.replace(SPOTIFY_LOGOUT); };
 

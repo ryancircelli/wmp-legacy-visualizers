@@ -24,6 +24,7 @@ targets:
         LSRequiresIPhoneOS: true
         UILaunchScreen: {}
         UIBackgroundModes: [audio]
+        NSMicrophoneUsageDescription: The visualizers follow what the phone plays.
         ITSAppUsesNonExemptEncryption: false
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
