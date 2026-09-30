@@ -32,18 +32,17 @@ jobs:
           npm ci
           npm ci --prefix tauri
 
-      - name: Test the argument parser
-        working-directory: tauri
-        run: |
-          rustc --edition 2024 --test src/mode.rs -o mode-test.exe
-          ./mode-test.exe
-
       # beforeBuildCommand (tauri.conf.json) builds the page into ../dist first.
       - name: Build
         working-directory: tauri
         env:
           GITHUB_SHA: ${{ github.sha }}
         run: npx tauri build --no-bundle
+
+      # The argument parser and the page updates (update.rs, with the manifest just built into dist/)
+      - name: Test
+        working-directory: tauri
+        run: cargo test
 
       # The old webview.dll imported the VC++ Redistributable and died on a fresh PC: fail on any
       # import Windows does not ship.

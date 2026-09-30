@@ -1,7 +1,23 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "What the page may call: Tauri's core defaults, in both windows.",
+  "description": "What the page may call (host.js), in both windows: its title bar drives the window, and it may open the project's own addresses and relaunch the app.",
   "windows": ["player", "saver"],
-  "permissions": ["core:default"]
+  "permissions": [
+    "core:default",
+    "core:window:allow-start-dragging",
+    "core:window:allow-start-resize-dragging",
+    "core:window:allow-minimize",
+    "core:window:allow-toggle-maximize",
+    "core:window:allow-close",
+    "process:allow-restart",
+    {
+      "identifier": "opener:allow-open-url",
+      "allow": [
+        { "url": "https://wmp.ryancircelli.com/*" },
+        { "url": "https://github.com/ryancircelli/wmp-legacy-visualizers" },
+        { "url": "https://github.com/ryancircelli/wmp-legacy-visualizers/*" }
+      ]
+    }
+  ]
 }
