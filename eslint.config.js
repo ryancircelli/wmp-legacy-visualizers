@@ -6,7 +6,7 @@ import tseslint from 'typescript-eslint';
 export default tseslint.config(
   // Old concatenated sources, A/B drivers and Playwright smokes are plain CommonJS/scripts, not linted.
   // assembly/ is AssemblyScript (its own types and decorators), checked by its compiler (npm run build:wasm).
-  { ignores: ['dist', 'alchemy.html', 'src/*.js', 'tools', 'tests/*.js', 're', 'spec', 'deno', 'deno-webview', 'site', 'assembly', 'tauri/target'] },
+  { ignores: ['dist', 'alchemy.html', 'src/*.js', 'tools', 'tests/*.js', 're', 'spec', 'deno', 'deno-webview', 'site', 'assembly', 'tauri/target', 'tauri/gen'] },
   {
     files: ['**/*.{ts,tsx}'],
     extends: [js.configs.recommended, ...tseslint.configs.recommendedTypeChecked],

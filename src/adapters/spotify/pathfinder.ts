@@ -2,6 +2,7 @@
 // page itself sent) -> the scan of the loaded bundles -> BAKED. A hash the server refused (412)
 // is never used again; a 412 rescans once and retries.
 import { QueryError, RateLimitError, W, post, status, type Sp } from './sp';
+import { transport } from './transport';
 
 export const PATHFINDER = 'https://api-partner.spotify.com/pathfinder/v2/query';
 // web-player.eb2d94d5 as of 2026-09-24 (SPIKE2.md §5): last resort only, they change with deploys.
@@ -37,35 +38,15 @@ export const BAKED: Record<string, string> = {
   addToPlaylist: '47b2a1234b17748d332dd0431534f22450e9ecbb3d5ddcdacbd83368636a0990',
   removeFromPlaylist: '47b2a1234b17748d332dd0431534f22450e9ecbb3d5ddcdacbd83368636a0990',
 };
-// How the bundles declare an operation: "<name>","query"|"mutation","<sha256>".
-const OP_RE = /"([A-Za-z0-9_]+)"\s*,\s*"(query|mutation)"\s*,\s*"([0-9a-f]{64})"/g;
-
 export function hashFor(sp: Sp, op: string): string | null {
   for (const h of [W().hashes?.[op], sp.scanned[op], BAKED[op]]) if (h && !sp.bad[h]) return h;
   return null;
 }
 
-/** Every script the page has loaded: document.scripts, plus lazy chunks (xpui-routes-search.*.js)
- *  that only show up as resource timing entries. */
-function scriptUrls(): string[] {
-  const out = new Set<string>();
-  const add = (u: string) => { if (u && /\.js(\?|$)/.test(u)) out.add(u); };
-  for (const s of Array.from(document.scripts ?? [])) add(s.src);
-  for (const e of performance.getEntriesByType?.('resource') ?? []) {
-    if ((e as PerformanceResourceTiming).initiatorType === 'script') add(e.name);
-  }
-  return [...out];
-}
-
-/** Read each script once (a deploy brings new URLs; a refused hash is skipped by hashFor). */
+/** The operations the web player's scripts declare, each script read once (a deploy brings new
+ *  URLs; a refused hash is skipped by hashFor). */
 export function rescan(sp: Sp): Promise<unknown> {
-  sp.scan = Promise.all(scriptUrls().filter((u) => !sp.read[u]).map(async (u) => {
-    sp.read[u] = true;
-    try {
-      const t = await (await fetch(u)).text();
-      for (const m of t.matchAll(OP_RE)) if (!sp.bad[m[3]!]) sp.scanned[m[1]!] = m[3]!;
-    } catch { /* unreadable: skip */ }
-  }));
+  sp.scan = transport().scan(sp.read).then((found) => { for (const [op, sha] of found) if (!sp.bad[sha]) sp.scanned[op] = sha; });
   return sp.scan;
 }
 
@@ -74,10 +55,7 @@ export function rescan(sp: Sp): Promise<unknown> {
 export async function searchRoute(sp: Sp): Promise<void> {
   if (sp.routed || sp.scanned.searchDesktop || W().hashes?.searchDesktop) return;
   sp.routed = true;
-  try {
-    history.pushState(history.state, '', '/search');
-    window.dispatchEvent(new PopStateEvent('popstate', { state: history.state as unknown }));
-  } catch { /* no router to poke */ }
+  try { await transport().route('/search'); } catch { /* no router to poke */ }
   await new Promise((ok) => setTimeout(ok, 1500));
   await rescan(sp);
 }
@@ -88,10 +66,7 @@ export async function visitRoute(sp: Sp, path: string, ops: string[]): Promise<v
   const kind = path.split('/')[1] ?? path;
   if (sp.routes[kind] || ops.some((op) => hashFor(sp, op))) return;
   sp.routes[kind] = true;
-  try {
-    history.pushState(history.state, '', path);
-    window.dispatchEvent(new PopStateEvent('popstate', { state: history.state as unknown }));
-  } catch { /* no router to poke */ }
+  try { await transport().route(path); } catch { /* no router to poke */ }
   await new Promise((ok) => setTimeout(ok, 1500));
   await rescan(sp);
 }

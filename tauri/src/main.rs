@@ -8,6 +8,7 @@
 mod audio;
 mod host;
 mod mode;
+mod spotify;
 mod update;
 #[cfg(target_os = "windows")]
 mod win;
@@ -130,7 +131,8 @@ fn builder<'a, R: Runtime>(
         .try_state::<update::Updates>()
         .is_some_and(|u| u.host_update());
     let b = WebviewWindowBuilder::new(app, label, page(query))
-        .title("Alchemy screensaver")
+        // what the taskbar and Alt+Tab show: neither window has a native caption (deno-webview/main.ts)
+        .title(if mode == Mode::Spotify { "WMP Spotify" } else { "Alchemy screensaver" })
         .use_https_scheme(true)
         // On screen at once, at its final box and in the skin's colour, before WebView2 is started
         // (which `build` then waits for): the window a native app gives, filled in a moment later.
@@ -213,10 +215,10 @@ fn state_file() -> Option<PathBuf> {
 /// Open the window a mode asks for, or bring it forward if this process already has it: a second
 /// launch lands here too, through the single-instance plugin.
 fn open<R: Runtime>(app: &AppHandle<R>, mode: Mode) -> tauri::Result<()> {
-    let label = if mode == Mode::Saver {
-        "saver"
-    } else {
-        "player"
+    let label = match mode {
+        Mode::Saver => "saver",
+        Mode::Spotify => "spotify",
+        _ => "player",
     };
     if let Some(w) = app.get_webview_window(label) {
         w.unminimize()?;
@@ -255,6 +257,11 @@ fn open<R: Runtime>(app: &AppHandle<R>, mode: Mode) -> tauri::Result<()> {
                 .decorations(false)
                 .min_inner_size(480.0, 360.0)
                 .background_color(Color(20, 99, 235, 255)); // Luna blue, never a white first frame
+            let b = if mode == Mode::Spotify {
+                b.initialization_script(spotify::INIT_JS)
+            } else {
+                b
+            };
             match remembered(app) {
                 Some((p, z, max)) => b
                     .position(p.x, p.y)
@@ -266,6 +273,9 @@ fn open<R: Runtime>(app: &AppHandle<R>, mode: Mode) -> tauri::Result<()> {
         }
     };
     host::attach(&w, mode);
+    if mode == Mode::Spotify {
+        spotify::attach(&w);
+    }
     w.show()?;
     w.set_focus()?;
     mark(&format!("{label}: window and WebView2 up"));
@@ -347,7 +357,12 @@ fn main() {
             host::host_log,
             host::dismiss,
             host::win_full,
-            host::check_update
+            host::check_update,
+            spotify::sp_snapshot,
+            spotify::sp_request,
+            spotify::sp_route,
+            spotify::sp_cookie,
+            spotify::sp_logout
         ])
         .setup(move |app| {
             mark(&format!(

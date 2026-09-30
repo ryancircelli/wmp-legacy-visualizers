@@ -1,8 +1,8 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "What the page may call (host.js), in both windows: its title bar drives the window, and it may open the project's own addresses and relaunch the app.",
-  "windows": ["player", "saver"],
+  "description": "What the page may call (host.js), in every window: its title bar drives the window, and it may open the project's own addresses and relaunch the app.",
+  "windows": ["player", "saver", "spotify"],
   "permissions": [
     "core:default",
     "core:window:allow-start-dragging",

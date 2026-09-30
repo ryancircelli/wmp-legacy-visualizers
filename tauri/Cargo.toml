@@ -39,8 +39,14 @@ ureq = { version = "3.4", default-features = false, features = ["native-tls", "j
 getrandom = "0.3"
 sha1 = "0.11"
 
+# Spotify mode (spotify/): the versions Tauri 2.12 already builds with
+flate2 = "=1.1.10"
+regex = "=1.13.1"
+
 [target.'cfg(windows)'.dependencies]
 wasapi = "0.24.0"
+wry = { version = "=0.57.0", default-features = false }
+webview2-com = "=0.39.1"
 windows = { version = "0.62.2", features = [
   "Foundation",
   "Media_Control",

@@ -1385,3 +1385,46 @@ describe('23. membership: isCuratedEntities is a gate (captured shape)', () => {
     expect(env2.ops('fetchPlaylist').length).toBe(1);
   });
 });
+
+describe('the Tauri host bridge (CONTRACT v8)', () => {
+  it('follows the host, sends every request through sp_request, and never holds the bearer', async () => {
+    type Args = { url: string; method: string; body: string; headers: Record<string, string> };
+    const on: Record<string, (e: { payload: unknown }) => void> = {}, calls: [string, Args][] = [];
+    const snapshot = { loggedIn: null, hasToken: false, deviceId: null, hobs: 'dddd', spclient: 'gew4-spclient.spotify.com',
+                       hashes: { libraryV3: '1'.repeat(64) }, scanned: { searchDesktop: '3'.repeat(64) }, cluster: null };
+    vi.stubGlobal('__TAURI__', {
+      core: { invoke: (cmd: string, args: Args) => {
+        calls.push([cmd, args]);
+        const lib = { data: { me: { libraryV3: { totalCount: 0, items: [] } } } };
+        return Promise.resolve(cmd === 'sp_snapshot' ? snapshot : cmd === 'sp_request'
+          ? { status: 200, text: JSON.stringify(/pathfinder/.test(args.url) ? lib : { ack_id: 'x' }), retryAfter: null } : undefined);
+      } },
+      event: { listen: (e: string, f: (e: { payload: unknown }) => void) => { on[e] = f; return Promise.resolve(() => { delete on[e]; }); } },
+    });
+    const env = boot({ loggedIn: true });                         // the Deno host's object: replaced, never read
+    env.start();
+    await settle();
+    const W = window.__wmpSpotify!;
+    expect([W.token, W.spclient, W.hashes!.libraryV3, env.S.auth.loggedIn, env.S.auth.canLogout]).toEqual([undefined, 'gew4-spclient.spotify.com', '1'.repeat(64), null, true]);
+    on['sp:auth']!({ payload: { loggedIn: true, hasToken: true } });
+    on['sp:cluster']!({ payload: { active_device_id: FX.activeDeviceId, player_state: FX.playerState,
+                                   devices: { [ME]: { name: 'Web Player (Microsoft Edge)', device_type: 'computer', volume: 65535 } } } });
+    await settle();
+    expect(env.S.auth.loggedIn).toBe(true);
+    expect(W.deviceId).toBe(ME);                                   // resolved from the hobs prefix
+    expect(env.S.playback.track!.title).toBe('Wish I Knew You');
+    expect(env.S.devices.list.map((d) => d.name)).toEqual(['Web Player (Microsoft Edge)']);
+    await env.C.pause();
+    await Q.fetchLibraryList();
+    const req = calls.filter((c) => c[0] === 'sp_request').map((c) => c[1]);
+    const cmd = req.find((r) => /player\/command/.test(r.url)), lib = req.find((r) => /libraryV3/.test(r.body));
+    expect(cmd).toMatchObject({ url: `https://gew4-spclient.spotify.com/connect-state/v1/player/command/from/${ME}/to/${FX.activeDeviceId}`,
+                                method: 'POST', headers: { 'Content-Type': 'application/json;charset=UTF-8' } });
+    expect(JSON.parse(cmd!.body)).toEqual({ command: { endpoint: 'pause' } });
+    expect(JSON.parse(lib!.body).extensions.persistedQuery.sha256Hash).toBe('1'.repeat(64));
+    expect(req.every((r) => !('Authorization' in r.headers) && !('authorization' in r.headers))).toBe(true);
+    expect(calls.some(([c]) => c === 'sp_route' || c === 'sp_cookie')).toBe(false);
+    env.C.logout();
+    expect(calls.at(-1)![0]).toBe('sp_logout');
+  });
+});
