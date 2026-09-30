@@ -43,9 +43,17 @@ use windows::core::{BOOL, HSTRING};
 /// and Spotify login are copied over from the Deno host's profiles once (`carry.rs`). The folder
 /// stays where it is after that host is gone: the Spotify login lives in it, and moving it would
 /// log every user out.
+///
+/// A dev build (`tauri dev`, anything built without Tauri's `custom-protocol` feature) keeps its
+/// own, `tauri-dev`, so it never shares a profile, a window box or a log with the installed apps.
 pub fn data_root() -> Option<PathBuf> {
+    let leaf = if tauri::is_dev() {
+        "tauri-dev"
+    } else {
+        "tauri"
+    };
     std::env::var_os("LOCALAPPDATA")
-        .map(|d| PathBuf::from(d).join("WmpLegacyVisualizers").join("tauri"))
+        .map(|d| PathBuf::from(d).join("WmpLegacyVisualizers").join(leaf))
 }
 
 fn hwnd(h: isize) -> HWND {

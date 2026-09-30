@@ -80,11 +80,18 @@ fn browser_args() -> Option<String> {
 }
 
 /// The page, at the origin its settings (`localStorage`) are keyed by. A custom protocol and not
-/// Tauri's own `tauri.localhost`, so the origin is the one the Deno host's virtual host has always
-/// had and nothing has to be carried over to a new one. On Windows a custom protocol is served as
+/// Tauri's own `tauri.localhost`, so the origin is the one the Deno host's virtual host had and
+/// nothing had to be carried over to a new one. On Windows a custom protocol is served as
 /// `https://<name>.localhost/`; `.localhost` resolves inside the browser, with no DNS lookup (see
-/// deno-webview/README.md for the two seconds a `.local` name cost).
-fn page(query: &str) -> WebviewUrl {
+/// docs/history/deno-webview.md for the two seconds a `.local` name cost).
+///
+/// Under `tauri dev` (tauri.dev.conf.json) it is Vite's dev server instead, with its hot reload.
+/// Never in a release: `tauri build` compiles Tauri's `custom-protocol` feature in, so `is_dev()`
+/// is false, and the config it builds with has no `devUrl`.
+fn page<R: Runtime>(app: &AppHandle<R>, query: &str) -> WebviewUrl {
+    if let (true, Some(dev)) = (tauri::is_dev(), &app.config().build.dev_url) {
+        return WebviewUrl::External(dev.join(&format!("index.html?{query}")).unwrap());
+    }
     #[cfg(target_os = "windows")]
     return WebviewUrl::External(
         format!("https://wmp.localhost/index.html?{query}")
@@ -150,7 +157,7 @@ fn builder<'a, R: Runtime>(
     let host_update = app
         .try_state::<update::Updates>()
         .is_some_and(|u| u.host_update());
-    let b = WebviewWindowBuilder::new(app, label, page(query))
+    let b = WebviewWindowBuilder::new(app, label, page(app, query))
         // what the taskbar and Alt+Tab show
         .title(if mode == Mode::Spotify {
             "WMP Spotify"

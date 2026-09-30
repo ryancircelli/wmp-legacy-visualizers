@@ -9,6 +9,8 @@ import { viteSingleFile } from 'vite-plugin-singlefile';
 export default defineConfig({
   plugins: [react(), tailwindcss(), viteSingleFile()],
   build: { target: 'es2022', modulePreload: { polyfill: false } },
+  // `npm run dev:app` builds into tauri/target while this server runs; nothing in tauri/ is the page's
+  server: { watch: { ignored: ['**/tauri/**'] } },
   test: {
     environment: 'jsdom',
     include: ['tests/**/*.test.{ts,tsx}'],

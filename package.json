@@ -8,6 +8,8 @@
   },
   "scripts": {
     "dev": "vite",
+    "dev:app": "npm --prefix tauri run dev",
+    "dev:spotify": "npm --prefix tauri run dev:spotify",
     "build": "vite build && vite build --config vite.inject.config.ts && vite build --config vite.engine.config.ts && node tools/postbuild.js",
     "build:engine": "vite build --config vite.engine.config.ts",
     "build:wasm": "node tools/build-wasm.mjs",

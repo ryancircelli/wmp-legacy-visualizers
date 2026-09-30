@@ -4,6 +4,8 @@
   "type": "module",
   "scripts": {
     "tauri": "tauri",
+    "dev": "RC_x86_64_pc_windows_msvc=x86_64-w64-mingw32-windres CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_RUNNER=env tauri dev --runner cargo-xwin --target x86_64-pc-windows-msvc --config tauri.dev.conf.json",
+    "dev:spotify": "npm run dev -- -- -- --mode=spotify",
     "build:win": "RC_x86_64_pc_windows_msvc=x86_64-w64-mingw32-windres tauri build --runner cargo-xwin --target x86_64-pc-windows-msvc --no-bundle"
   },
   "devDependencies": {
