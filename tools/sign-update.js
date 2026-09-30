@@ -1,6 +1,6 @@
 // CI, deploy only: signs dist/update.json into dist/update.json.sig (base64 Ed25519) with
 // UPDATE_SIGNING_KEY (base64 PKCS#8 DER; a GitHub secret, never in the repo). The exes verify it
-// with the public half baked into deno-webview/update.ts before they take a page update.
+// with the public half baked into tauri/src/update.rs before they take a page update.
 //   node tools/sign-update.js [distDir]
 'use strict';
 const crypto = require('crypto'), fs = require('fs'), path = require('path');

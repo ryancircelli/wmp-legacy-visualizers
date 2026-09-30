@@ -22,7 +22,6 @@ on:
     paths:
       - 'tauri/**'
       - '!tauri/README.md'
-      - 'deno-webview/host-api.json'
       - 'src/**'
       - 'index.html'
       - 'package.json'

@@ -198,9 +198,8 @@ Everything the Deno host gives the page, the Tauri host gives it too, by other m
 - **Signed page updates.** `update.rs` is `update.ts` in Rust (ed25519-dalek, sha2, reqwest on the
   system's TLS): the same manifest, the same public key, the same rules — the signature verifies, the
   file matches its hash, it is newer than the page built in, and it needs no more than this host's API
-  version, which is read at compile time from `deno-webview/host-api.json` so the two hosts share one
-  number while both exist. It asks while WebView2 starts, and the request for `index.html` waits at
-  most half a second more for the answer. The cache is never moved backwards: a replayed older manifest,
+  version, which is read at compile time from `host-api.json`. It asks while WebView2 starts, and the
+  request for `index.html` waits at most half a second more for the answer. The cache is never moved backwards: a replayed older manifest,
   still validly signed, does not replace a newer cached page. The file is written before its manifest,
   so an interrupted write leaves nothing that verifies. Ten `cargo test` cases replace
   `update_test.ts`, including one that the manifest in `dist/` describes `dist/` and fits this host.

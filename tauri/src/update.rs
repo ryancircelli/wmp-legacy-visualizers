@@ -1,4 +1,4 @@
-//! Page updates without a new download: deno-webview/update.ts in Rust, the same contract
+//! Page updates without a new download: the retired Deno host's update.ts in Rust, the same contract
 //! (CONTRACT.md v7). Every deploy publishes `update.json` beside `index.html`, signed in CI
 //! (tools/sign-update.js) with a key only GitHub holds; the public half is below. A copy of the
 //! page is used only when its manifest verifies, its file matches the manifest's hash, it is newer
@@ -26,10 +26,10 @@ pub const UPDATE_ORIGIN: &str = "https://wmp.ryancircelli.com/";
 /// Ed25519, raw, base64: verifies what tools/sign-update.js signed with UPDATE_SIGNING_KEY.
 pub const PUBLIC_KEY: &str = "PtAmxNOZGD1FK8HvZQylQDQ69z0RDM+m0TYEylxQ6vA=";
 
-/// The contract version this host implements, shared with the Deno host while both exist.
+/// The contract version this host implements (`tauri/host-api.json`, CONTRACT.md v7).
 pub fn host_api() -> i64 {
     static API: LazyLock<i64> = LazyLock::new(|| {
-        serde_json::from_str::<serde_json::Value>(include_str!("../../deno-webview/host-api.json"))
+        serde_json::from_str::<serde_json::Value>(include_str!("../host-api.json"))
             .ok()
             .and_then(|v| v["hostApi"].as_i64())
             .unwrap_or(0)

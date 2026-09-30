@@ -179,11 +179,11 @@ deploy signs it (dist/update.json.sig, Ed25519, tools/sign-update.js with the UP
 and the exes fetch it, with index.html (screensaver) or spotify-inject.js (WmpSpotify), from
 wmp.ryancircelli.com. A copy is used when the signature verifies with the key baked into update.ts,
 the file matches its hash, `built` is newer than the exe's own page, and `needs` <= the exe's
-HOST_API. **deno-webview/host-api.json is the contract version: bump it in the same commit as any
+HOST_API. **tauri/host-api.json is the contract version: bump it in the same commit as any
 page change that needs something older exes lack** (a new binding, a changed message); older exes
 then keep their built-in page. A page may still feature-detect optional bindings (alchemyOpenUrl)
 without a bump. `host` hashes the host's own sources (tools/postbuild.js; since the Tauri host's release, `tauri/`
-and host-api.json by git blob id); another value tells an exe a newer one is out (window.alchemyHostUpdate =
+by git blob id, host-api.json among them); another value tells an exe a newer one is out (window.alchemyHostUpdate =
 true; the page offers the download).
 
 ## v8 — the Tauri host (`tauri/`; the two downloads, release.yml)
@@ -222,7 +222,7 @@ Globals (tauri/src/host.js, on every document of every Tauri window, before any 
     Spotify's page (below). Not provided: `alchemyReady` (host.js reports the first painted frame
     itself), `alchemySpotifyLogout` (the bridge's `sp_logout`), `alchemyQuit`, `alchemyCarried`.
 Page updates (v7) are the same contract in Rust (tauri/src/update.rs): same manifest, key and rules;
-`needs` is compared with deno-webview/host-api.json, one number for both hosts while both exist. Only
+`needs` is compared with tauri/host-api.json. Only
 `index.html` is updated: the Spotify window runs index.html too, there is no spotify-inject.js here.
 Cache `tauri\update\`.
 

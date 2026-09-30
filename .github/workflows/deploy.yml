@@ -37,7 +37,7 @@ jobs:
         id: host
         if: github.event_name == 'push'
         run: |
-          git diff --quiet '${{ github.event.before }}' '${{ github.sha }}' -- tauri deno-webview/host-api.json && rc=0 || rc=$?
+          git diff --quiet '${{ github.event.before }}' '${{ github.sha }}' -- tauri && rc=0 || rc=$?
           if [ "$rc" = 1 ]; then echo later=true >> "$GITHUB_OUTPUT"; echo "the host changed: release.yml deploys"; fi
       - uses: actions/setup-node@v4
         with: { node-version: '24', cache: npm }
@@ -48,7 +48,7 @@ jobs:
       - name: Build site
         env: { GITHUB_SHA: '${{ github.sha }}' }
         run: npm run build && ls -l dist
-      # The exes take a page update only when this signature verifies (tauri/src/update.rs, deno-webview/update.ts);
+      # The exes take a page update only when this signature verifies (tauri/src/update.rs);
       # the key is a secret, so an unsigned or foreign manifest on the site is ignored by them.
       - name: Sign the page update manifest
         if: github.ref == 'refs/heads/master' && steps.host.outputs.later != 'true'
