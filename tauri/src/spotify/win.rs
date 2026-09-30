@@ -228,8 +228,9 @@ fn create<R: Runtime>(
     on(&core, "Network.loadingFailed", Host::on_failed)?;
     on(&core, "Network.webSocketCreated", Host::on_socket)?;
     on(&core, "Network.webSocketFrameReceived", Host::on_frame)?;
-    // Bodies stay in the protocol's buffer until read; scripts are a few MB each.
-    let net = json!({ "maxTotalBufferSize": 64 << 20, "maxResourceBufferSize": 16 << 20,
+    // Bodies wait in the protocol's buffer until read (the oldest go first); the largest script
+    // measured 4.3 MB.
+    let net = json!({ "maxTotalBufferSize": 32 << 20, "maxResourceBufferSize": 16 << 20,
                       "maxPostDataSize": 1 << 16 });
     cdp(&core, "Network.enable", net, move |r| match r {
         Ok(_) => {
@@ -257,8 +258,9 @@ fn create<R: Runtime>(
 }
 
 /// Media on open.spotify.com may start without a click in its page: the permission WebView2 keeps
-/// per origin in the profile, not the browser argument, which would have to be the whole
-/// environment's. (WebView2 154 was measured to allow it by default; this keeps it so.)
+/// per origin in the profile. Tauri's environment has wry's --autoplay-policy argument today, but
+/// that is the app's browser-wide choice; measured without it: this permission alone lets a play()
+/// start (and an AudioContext run), and without either they are refused.
 fn autoplay(core: &ICoreWebView2) {
     let r = unsafe {
         core.cast::<ICoreWebView2_13>()
@@ -302,6 +304,17 @@ impl Host {
                     );
                 }
             }
+            if n == "sp:device" {
+                log::info!(
+                    "spotify: our Connect device: full id {}, spclient {}",
+                    if v["deviceId"].is_string() {
+                        "known"
+                    } else {
+                        "not yet"
+                    },
+                    v["spclient"].as_str().unwrap_or("?")
+                );
+            }
             let auth = n == "sp:auth";
             (self.emit)(n, v);
             if auth {
@@ -316,11 +329,11 @@ impl Host {
             p["requestId"].as_str().unwrap_or(""),
             r["url"].as_str().unwrap_or(""),
         );
-        let api = seen::api_host(url);
-        if api {
+        let (api, m) = (seen::api_host(url), r["method"].as_str().unwrap_or(""));
+        // the first 40 of its API requests, then every power of two (not preflights, not telemetry)
+        if api && m != "OPTIONS" && !url.contains("/gabo-receiver-service/") {
             self.requests += 1;
             if self.requests <= 40 || self.requests.is_power_of_two() {
-                let m = r["method"].as_str().unwrap_or("");
                 log::info!("spotify: seen #{} {m} {}", self.requests, seen::short(url));
             }
         }
@@ -402,7 +415,11 @@ impl Host {
             Body::Script => {
                 let out = self.seen.script(text);
                 if !out.is_empty() {
-                    log::info!("spotify: {} query hashes declared in a script", out.len());
+                    log::info!(
+                        "spotify: {} query hashes declared in a script ({} KB)",
+                        out.len(),
+                        text.len() >> 10
+                    );
                 }
                 out
             }
@@ -674,5 +691,15 @@ fn probe(url: String) {
     evaluate(&core, JS.into(), |r| match r {
         Ok(v) => log::info!("spotify: probe page {v}"),
         Err(e) => log::info!("spotify: probe page failed: {e}"),
+    });
+    // Spotify's own world (no contextId: the page's), read only: none of Tauri's scripts are there
+    const MAIN: &str = "JSON.stringify(['__TAURI__', '__TAURI_INTERNALS__', 'ipc', 'alchemyScreensaver', \
+      'alchemyEngine', '__wmpSpotify'].map((k) => k + ':' + typeof window[k]))";
+    let p = json!({ "expression": MAIN, "returnByValue": true, "silent": true });
+    cdp(&core, "Runtime.evaluate", p, |r| {
+        log::info!(
+            "spotify: probe Spotify's own world {}",
+            r.map_or_else(|e| e, |v| v["result"]["value"].to_string())
+        )
     });
 }

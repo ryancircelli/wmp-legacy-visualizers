@@ -102,11 +102,17 @@ pub async fn sp_request<R: Runtime>(
             seen::short(&url)
         ));
     }
-    // the log names a pathfinder operation, never its variables (a search's words) or the answer
+    // the log names a pathfinder operation or a player command, never a query's variables (a
+    // search's words) or the answer
     let op = body
         .as_deref()
         .and_then(|b| serde_json::from_str::<Value>(b).ok())
-        .and_then(|j| j["operationName"].as_str().map(|o| format!(" {o}")))
+        .and_then(|j| {
+            let o = j["operationName"]
+                .as_str()
+                .or(j["command"]["endpoint"].as_str())?;
+            Some(format!(" {o}"))
+        })
         .unwrap_or_default();
     let (t0, what) = (
         std::time::Instant::now(),
