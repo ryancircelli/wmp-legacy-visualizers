@@ -26,7 +26,6 @@ dependencies = [
  "flate2",
  "getrandom 0.3.4",
  "log",
- "regex",
  "reqwest",
  "resvg",
  "serde",

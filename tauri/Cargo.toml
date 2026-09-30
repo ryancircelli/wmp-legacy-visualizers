@@ -39,9 +39,8 @@ ureq = { version = "3.4", default-features = false, features = ["native-tls", "j
 getrandom = "0.3"
 sha1 = "0.11"
 
-# Spotify mode (spotify/): the versions Tauri 2.12 already builds with
+# Spotify mode (spotify/): a dealer push's gzip
 flate2 = "=1.1.10"
-regex = "=1.13.1"
 
 [target.'cfg(windows)'.dependencies]
 # the native title bar (titlebar.rs): the page's own SVGs, rasterised; nothing else of resvg's
