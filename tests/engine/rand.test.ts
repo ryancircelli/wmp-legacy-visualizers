@@ -183,6 +183,24 @@ describe('trig: WebAssembly vs JavaScript', () => {
     expect(failures).toEqual([]);
   }, 60_000);
 
+  it('atan2: the same bits on 2 million pairs (engine integers, wide exponents, subnormal quotients)', () => {
+    let s = 4242;
+    const r = (): number => (s = (Math.imul(s, 1103515245) + 12345) | 0) >>> 0;
+    const ys: number[] = [], xs: number[] = [];
+    for (const v of [0, -0, 1, -1, 5e-324, -5e-324, 1e-310, 1e308, -1e308, Infinity, -Infinity, NaN]) for (const w of [0, -0, 1, -3, 1e-310, 1e300, Infinity, NaN]) { ys.push(v); xs.push(w); }
+    for (let i = 0; i < 2000000; i++) {
+      const k = r() % 4;
+      if (k === 0) { ys.push((r() % 4001) - 2000); xs.push((r() % 4001) - 2000); }              // pixel deltas
+      else if (k === 1) { ys.push(((r() / 2 ** 32) - 0.5) * 2 ** ((r() % 80) - 40)); xs.push(((r() / 2 ** 32) - 0.5) * 2 ** ((r() % 80) - 40)); }
+      else if (k === 2) { ys.push(((r() / 2 ** 32) - 0.5) * 2 ** ((r() % 2000) - 1000)); xs.push(((r() / 2 ** 32) - 0.5) * 2 ** ((r() % 2000) - 1000)); }
+      else { const a = (r() / 2 ** 32) * 2 ** -1000, b = 2 ** ((r() % 60) + 1); ys.push(r() & 1 ? a : -a); xs.push(r() & 2 ? b : -b); }   // quotient below 2^-1022
+    }
+    const run2 = (mode: 'js' | 'wasm'): Float64Array => { A.trigMode = mode; return Float64Array.from(ys, (y, i) => A.atan2(y, xs[i]!)); };
+    const want = run2('js'), got = run2('wasm'), failures: string[] = [];
+    for (let i = 0; i < want.length; i++) if (!same(got[i]!, want[i]!) && failures.length < 10) failures.push(`atan2(${hex(ys[i]!)},${hex(xs[i]!)})`);
+    expect(failures).toEqual([]);
+  }, 60_000);
+
   it('sincosN: sincos of every element, both paths, in batches and past them', () => {
     const xs = args().subarray(0, 300000), failures: string[] = [];
     for (const mode of ['js', 'wasm'] as const) {

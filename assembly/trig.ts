@@ -159,5 +159,71 @@ export function sincosN(src: usize, dst: usize, n: i32): i32 {
   return left;
 }
 
+// ---- atan2 0x18004d420 (its AVX2 + FMA3 branch), rand.ts's A.atan2 op for op. Its tables of
+// atan(i/256) (241 hi + 241 lo doubles) are rand.ts's ATN_HI/ATN_LO, which the glue copies to `ATN`
+// (atanInit). x and y are finite and non-zero: the caller checks, as rand.ts hands those to Math.atan2.
+let ATN: usize = 0;
+export function atanInit(tables: usize): void { ATN = tables; }
+const P2H: f64 = 1.5707963267948966, P2L: f64 = 6.123233995736766e-17, PH: f64 = 3.1415926218032837, PL: f64 = 3.178650954705639e-08;
+const TWO512: f64 = 1.3407807929942597e+154;
+@inline function expo(v: f64): i32 { return <i32>(reinterpret<u64>(v) >> 52) & 0x7ff; }
+@inline function pow2(e: i32): f64 { return reinterpret<f64>(<u64>(e + 1023) << 52); }   // e in -1022 .. 1023
+@inline function hi32(v: f64): f64 { return reinterpret<f64>(reinterpret<u64>(v) & 0xFFFFFFFF00000000); }
+function subTail(q: f64): f64 {                          // 0x1800f3ee8 + 0x1800937b4
+  const e = expo(q), aq = abs<f64>(q);
+  if (e > 100) return q * 7.888609052210118e-31;
+  let k: f64 = 0;
+  const sh = 0x65 - e;
+  if (sh <= 0x36) {
+    const m = aq * pow2(600) * pow2(475 - e);
+    const t = Math.floor(m / pow2(100 - e));
+    k = Math.floor(t / 2) + (t % 2);
+  }
+  k *= 5e-324;
+  return q < 0 ? -k : k;
+}
+export function atan2(y: f64, x: f64): f64 {
+  let ex = expo(x), ey = expo(y);
+  if (ex < 0x3fd && ey < 0x3fd) {
+    x = x * TWO512 * TWO512; y = y * TWO512 * TWO512; ex = expo(x); ey = expo(y);
+  }
+  const d = ey - ex;
+  if (d > 56) return y < 0 ? -P2H : P2H;
+  if (d < -28 && x > 0) return d < -1074 ? y * 0 : d < -1022 ? subTail(y * 1.2676506002282294e30 / x) : y / x;
+  if (d < -56 && x < 0) return y < 0 ? -3.141592653589793 : 3.141592653589793;
+  const neg = y < 0, xneg = x < 0;
+  let big = xneg ? -x : x, sml = neg ? -y : y, swp = false;
+  if (sml > big) { const t = big; big = sml; sml = t; swp = true; }
+  const u = sml / big;
+  let h: f64 = 0, l: f64;
+  if (u > 0.0625) {
+    const c0 = <i32>(u * 256 + 0.5), i = c0 - 16;
+    h = load<f64>(ATN + (<usize>i << 3));
+    const c = <f64>c0 * 0.00390625;
+    const e = 0x3ff - expo(big), e1 = e / 2, e2 = e - e1;
+    const s1 = pow2(e1), s2 = pow2(e2);
+    const B = s1 * big * s2, S = s1 * sml * s2;
+    const Bh = Math.floor(B * 33554432) / 33554432;
+    const num = (S - Bh * c) - (B - Bh) * c;
+    const v = num / fmaExact(S, c, B);
+    const v2 = v * v;
+    l = fma(-v, fma(-v2, 0.19999918038989142, 0.33333333333224097) * v2, v + load<f64>(ATN + 1928 + (<usize>i << 3)));
+  } else if (u < 1e-8) {
+    l = u;
+  } else {
+    const ne = 0x3ff - expo(big), sa = pow2(ne >> 1), sb = pow2(ne - (ne >> 1));
+    big = big * sa * sb; sml = sml * sa * sb;
+    const u2 = u * u, bh = Math.floor(big * 1048576) / 1048576, uh = hi32(u);
+    const r = fmaExact(-big, u - uh, (sml - bh * uh) - uh * (big - bh));
+    const p = fma(-fma(-fma(-fma(-0.09002981028544979, u2, 0.11110736283514526), u2, 0.1428571356180717), u2,
+                0.19999999999393223), u2, 0.3333333333333317);
+    l = fmaExact(-(u2 * u), p, r / big) + u;
+  }
+  if (swp) { h = P2H - h; l = P2L - l; }
+  if (xneg) { h = PH - h; l = PL - l; }
+  const res = h + l;
+  return neg ? -res : res;
+}
+
 /** First byte the glue may use (16-aligned). */
 export function heapBase(): usize { return (__heap_base + 15) & ~(<usize>15); }
