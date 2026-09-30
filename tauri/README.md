@@ -2,9 +2,10 @@
 
 The screensaver, its player window and the Spotify player, rebuilt on Tauri 2.12 (WebView2 through
 wry and tao, the host in Rust) to replace `deno-webview/`. One executable, about 7 MB, no installer,
-nothing beside it. **It is on the `tauri` branch and is not released:** CI builds it on every push to
-that branch and keeps the exe as a workflow artifact, and the downloads in the top-level README are
-still the Deno host's. CONTRACT.md v8 is what the page can rely on here.
+nothing beside it. `.github/workflows/release.yml` builds it twice on every push to master and
+publishes the two downloads: `Alchemy.scr` (AlchemyScreensaver-win64.zip, with `package/`'s install
+scripts and README) and `WmpSpotify.exe` (WmpSpotify-win64.zip), the second with the `wmp-spotify`
+feature and the Spotify icon. CONTRACT.md v8 is what the page can rely on here.
 
 | Arguments                     | What opens                                                                                         |
 | ----------------------------- | -------------------------------------------------------------------------------------------------- |
@@ -12,6 +13,14 @@ still the Deno host's. CONTRACT.md v8 is what the page can rely on here.
 | `/c`, `/c:<hwnd>`, or nothing | The player window, `?mode=config`: where the visualizer, preset, fps and scale are chosen.         |
 | `/p <hwnd>`, `/p:<hwnd>`      | Exits 0 before anything starts. The preview pane stays black, as it did.                           |
 | `--mode=spotify`              | The Spotify player: our page in a window of its own, Spotify's web player beside it (below).      |
+
+`WmpSpotify.exe` (built with `--features wmp-spotify`) treats a launch that names no mode as
+`--mode=spotify`, and says so out loud: it starts itself again with the flag and exits (`main.rs`
+`relaunch_as_spotify`), so the flag also reaches a running instance of the other exe through the
+single-instance plugin (below), which forwards the raw arguments. A default applied only in its own
+process would have opened the player there. Measured on Windows: WmpSpotify.exe opened while Alchemy.scr
+runs opens the Spotify window in that process, and Alchemy.scr opened while WmpSpotify.exe runs opens
+the player.
 
 The arguments are read before Tauri starts (`mode.rs`, the forms Windows was observed to use), so a
 preview request never starts a browser. The first argument that looks like one of them wins, which is
@@ -22,6 +31,7 @@ npm ci && npm ci --prefix tauri      # once, at the repo root
 cd tauri
 npm run build:win                    # from WSL or Linux -> target/x86_64-pc-windows-msvc/release/alchemy.exe
 npx tauri build --no-bundle          # on Windows, and in CI -> target/release/Alchemy.exe
+npx tauri build --no-bundle --features wmp-spotify --config tauri.spotify.conf.json   # WmpSpotify.exe
 cargo test                           # the argument parser, page updates, lyrics, Spotify's observers, the title bar
 ```
 
@@ -84,11 +94,21 @@ that path:
 - **It is read from the `LOCALAPPDATA` variable, as the Deno host always did,** not through Tauri's
   path resolver, which asks the shell for the known folder and ignores the variable. A test points
   `LOCALAPPDATA` at a scratch folder and nothing lands in the real one.
-- **`tauri` is a folder of its own while both hosts exist,** because a WebView2 user-data folder can be
-  open in one program at a time, and a Deno screensaver and a Tauri player window must be able to run
-  together. The price is that the Tauri host starts with default settings and logged out of Spotify.
-  Since the origin is already the Deno host's, retiring that host and dropping `tauri` from this path
-  is the whole settings carry-over: the Deno profile holds the user's settings under the same origin.
+- **`tauri` is a folder of its own, for good,** because a WebView2 user-data folder can be open in one
+  program with one set of browser arguments at a time, and a Deno screensaver or WmpSpotify.exe may
+  still run beside this host. It never moves: the Spotify login lives in it.
+- **The carry-over is a copy, once** (`carry.rs`), recorded by `carried-settings` and `carried-login`
+  in this folder. Settings: the Deno `WebView2` profile's `EBWebView\Default\Local Storage` folder
+  (LevelDB, unencrypted, keyed by origin, and the origin is the same) copied into this profile before
+  WebView2 starts, past the single-instance check. The Spotify login: every cookie of the Deno
+  `spotify` profile, read with `Network.getAllCookies` from a hidden web view on that profile (a
+  browser of its own for about a second) and set with `Network.setCookies` into `WV2Profile_spotify`
+  before Spotify's page first loads, so neither profile's cookie encryption is involved. A profile in
+  use (its `EBWebView\lockfile` held) leaves the item for the next launch. The Deno folders are left
+  as they were. Verified on Windows 11 (WebView2 154) with synthetic Deno profiles made by the Deno
+  host from source: a `localStorage` value read back by the Tauri page, and GitHub's `logged_in`
+  cookie (HttpOnly, Secure, a year's expiry) arriving with its flags and expiry to the microsecond;
+  0.4 to 0.9 s on the first Spotify launch.
 
 ## Measured
 
