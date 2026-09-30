@@ -34,15 +34,16 @@ tokio = { version = "1", features = ["sync", "time"] }
 # page updates (update.rs): the signed manifest, and the two files it names
 ed25519-dalek = "3"
 sha2 = "0.11"
-base64 = "0.22"
+base64 = "0.23"
 
 # audio (audio/): the keyed socket, lyrics' cache names
 tungstenite = "0.30"
 getrandom = "0.3"
 sha1 = "0.11"
 
-# Spotify mode (spotify/): a dealer push's gzip
-flate2 = "=1.1.10"
+# Spotify mode (spotify/): a dealer push's gzip. The flate2 resvg's png already builds; its inflate
+# is 44 KB of the exe, which nothing else links.
+flate2 = "1"
 
 [target.'cfg(windows)'.dependencies]
 # the native title bar (titlebar.rs): the page's own SVGs, rasterised; nothing else of resvg's
