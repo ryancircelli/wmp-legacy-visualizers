@@ -317,7 +317,7 @@ App.swift around dist/spotify-inject.js, which the app fetches from wmp.ryancirc
 launch and keeps in Caches (offline: the last copy; none: Spotify's page bare). The user script runs at
 document start in the main frame only, with a desktop Safari user agent, since Spotify serves the web
 player to desktop browsers only. Host bindings the page sees: `alchemyElectron = {loopback:true,
-mode:'app'}` (the page then takes the microphone: startLoopback with no getDisplayMedia),
+mode:'app'}` (no audio source: the page animates on silence),
 `alchemyLog` (a WKScriptMessageHandler), `alchemySpotifyLogout` (accounts.spotify.com/logout). No audio
 socket, no lyrics from a host (LRCLIB is fetched by the page), no window bindings, no page-update
 signature (the site is trusted as the bundle's source). Built on GitHub's macOS runners, signed with

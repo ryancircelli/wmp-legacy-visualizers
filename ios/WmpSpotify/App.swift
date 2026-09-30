@@ -8,11 +8,9 @@ import WebKit
 @main
 struct WmpSpotifyApp: App {
     init() {
-        // .playAndRecord, since the page takes the microphone for the visualizers: WebKit would
-        // switch a .playback session to it anyway, and on its own that routes sound to the earpiece.
-        // The music keeps going with the screen locked (UIBackgroundModes audio) and with the mute
-        // switch on, as under .playback.
-        try? AVAudioSession.sharedInstance().setCategory(.playAndRecord, options: [.defaultToSpeaker, .allowBluetoothA2DP, .allowAirPlay])
+        // .playback: the music keeps going with the screen locked, in the background
+        // (UIBackgroundModes audio) and with the mute switch on.
+        try? AVAudioSession.sharedInstance().setCategory(.playback)
         try? AVAudioSession.sharedInstance().setActive(true)
     }
 
@@ -91,7 +89,6 @@ struct WebView: UIViewRepresentable {
         // Spotify serves the web player to desktop browsers only; the overlay covers the desktop
         // layout anyway.
         web.customUserAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Safari/605.1.15"
-        web.uiDelegate = context.coordinator
         web.isOpaque = false
         web.backgroundColor = .black
         web.scrollView.backgroundColor = .black
@@ -105,18 +102,10 @@ struct WebView: UIViewRepresentable {
     func updateUIView(_ web: WKWebView, context: Context) {}
 
     // window.alchemyLog from the page (observer.js posts to webkit.messageHandlers.log).
-    final class Coordinator: NSObject, WKScriptMessageHandler, WKUIDelegate {
+    final class Coordinator: NSObject, WKScriptMessageHandler {
         func userContentController(_ userContentController: WKUserContentController,
                                    didReceive message: WKScriptMessage) {
             print("page: \(message.body)")
-        }
-
-        // The microphone, granted once by iOS (NSMicrophoneUsageDescription): without this WebKit
-        // asks its own "open.spotify.com would like to use your microphone" at every launch.
-        func webView(_ webView: WKWebView, requestMediaCapturePermissionFor origin: WKSecurityOrigin,
-                     initiatedByFrame frame: WKFrameInfo, type: WKMediaCaptureType,
-                     decisionHandler: @escaping (WKPermissionDecision) -> Void) {
-            decisionHandler(type == .microphone ? .grant : .deny)
         }
     }
 }

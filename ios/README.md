@@ -8,8 +8,9 @@ top. Spotify's page is never driven through its DOM.
 
 The page is not built into the app. Each launch fetches `spotify-inject.js` from wmp.ryancircelli.com
 (what deploy.yml publishes) and caches it, so a fix to the player reaches the phone without a new build.
-The visualizers' audio is the microphone: iOS gives an app no way to hear another app's output.
-Playback is meant to carry on with the phone locked (the audio background mode).
+There is no audio source: iOS gives an app no way to hear another app's output, and Spotify's DRM
+playback cannot be routed through Web Audio, so the visualizers follow the player state and animate on
+silence. Playback is meant to carry on with the phone locked (the audio background mode).
 
 ## Building
 
