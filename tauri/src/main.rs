@@ -9,6 +9,8 @@ mod audio;
 mod host;
 mod mode;
 mod spotify;
+#[cfg(target_os = "windows")]
+mod titlebar;
 mod update;
 #[cfg(target_os = "windows")]
 mod win;
@@ -131,7 +133,7 @@ fn builder<'a, R: Runtime>(
         .try_state::<update::Updates>()
         .is_some_and(|u| u.host_update());
     let b = WebviewWindowBuilder::new(app, label, page(query))
-        // what the taskbar and Alt+Tab show: neither window has a native caption (deno-webview/main.ts)
+        // what the taskbar and Alt+Tab show
         .title(if mode == Mode::Spotify { "WMP Spotify" } else { "Alchemy screensaver" })
         .use_https_scheme(true)
         // On screen at once, at its final box and in the skin's colour, before WebView2 is started
@@ -247,16 +249,20 @@ fn open<R: Runtime>(app: &AppHandle<R>, mode: Mode) -> tauri::Result<()> {
             w.set_size(size)?;
             w
         }
-        // The player: no frame of its own. The page draws the XP title bar and drives this window
-        // through it (host.js).
+        // The player: no frame of its own. The XP title bar is the host's on Windows (titlebar.rs,
+        // from the window's first frame) and the page's elsewhere (host.js).
         _ => {
             #[cfg(target_os = "windows")]
             win::chrome_when_created("AlchemyHost");
+            #[cfg(target_os = "windows")]
+            let _title_bar = titlebar::hook();
             let b = builder(app, label, mode)
                 .window_classname("AlchemyHost") // the Deno host's class, for whatever looks for it
                 .decorations(false)
                 .min_inner_size(480.0, 360.0)
-                .background_color(Color(20, 99, 235, 255)); // Luna blue, never a white first frame
+                // under the title bar until the page paints (and WebView2's own background): the
+                // menu bar's face, the first row of the skin's content (deno-webview/README.md)
+                .background_color(Color(0xEC, 0xE9, 0xD8, 255));
             let b = if mode == Mode::Spotify {
                 b.initialization_script(spotify::INIT_JS)
             } else {

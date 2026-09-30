@@ -13,7 +13,7 @@ import s from './wmp9.module.css';
 
 export function Root() {
   const sh = useShell();
-  const st = useApp((x) => ({ bare: isBare(x), spotify: isSpotify(x),
+  const st = useApp((x) => ({ bare: isBare(x), spotify: isSpotify(x), nativeTitle: x.auth.nativeTitle === true,
                               taskPane: x.settings.taskPane !== false, playlistPane: x.settings.playlistPane !== false }));
   return (
     <div className="font-xp text-11 leading-[1.4] text-ink" data-ui-root="">
@@ -21,7 +21,7 @@ export function Root() {
           same colour down both sides and along the bottom, where XP squares the corners off. That
           border is #chrome's own background showing past #framebody's margin. */}
       <div className={cx(s.corners, 'absolute inset-0 flex flex-col overflow-hidden rounded-t-win bg-luna-window data-bare:rounded-none data-bare:bg-none data-bare:bg-black data-bare:cursor-none data-bare:[&_*]:cursor-none')}
-           id="chrome" data-bare={st.bare || undefined} data-spotify={st.spotify || undefined}
+           id="chrome" data-bare={st.bare || undefined} data-spotify={st.spotify || undefined} data-nativetitle={st.nativeTitle || undefined}
            data-nopl={!st.playlistPane || undefined} data-notask={!st.taskPane || undefined}>
         <TitleBar />
         <div className="flex-auto flex flex-col min-h-0 mt-0 mx-4 mb-4 border border-t-0 border-luna-sep bg-luna-frame bare:m-0 bare:border-0 bare:bg-black" id="framebody">
