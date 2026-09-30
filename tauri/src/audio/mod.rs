@@ -304,8 +304,12 @@ impl Conn {
                 }
             }
             Some("lyricsPref") => {
-                self.lyrics_on = m["enabled"] != false;
-                self.lyrics();
+                // Only a change: the page says "on" as it connects, while the first lookup is out.
+                let on = m["enabled"] != false;
+                if on != self.lyrics_on {
+                    self.lyrics_on = on;
+                    self.lyrics();
+                }
             }
             Some("wake") => {
                 self.wake = m["on"] == true;

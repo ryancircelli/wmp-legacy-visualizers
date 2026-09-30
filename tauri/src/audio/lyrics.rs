@@ -2,7 +2,6 @@
 //! LRCLIB, cached on disk per track. deno-webview/lyrics.ts, ported; the cache files are the same
 //! (`<sha1 of title\0artist\0album\0seconds>.json`, holding the frame).
 
-use regex::Regex;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use sha1::{Digest, Sha1};
@@ -43,14 +42,38 @@ struct Hit {
 const API: &str = "https://lrclib.net/api";
 const UA: &str = "WmpLegacyVisualizers/1.0 (github.com/ryancircelli/wmp-legacy-visualizers)";
 
-static STAMP: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"\[([0-9]+):([0-9]+(?:\.[0-9]+)?)\]").unwrap());
-static TAG: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"<([0-9]+):([0-9]+(?:\.[0-9]+)?)>").unwrap());
-
 fn secs(m: &str, s: &str) -> f64 {
     let v = m.parse::<f64>().unwrap_or(0.0) * 60.0 + s.parse::<f64>().unwrap_or(0.0);
     (v * 100.0).round() / 100.0
+}
+
+/// Every `<open>mm:ss(.xx)<close>` in `s`, as (start, end, seconds): lyrics.ts's
+/// `/\[(\d+):(\d+(?:\.\d+)?)\]/g` (and its `<...>` twin) without a regex engine in the exe.
+fn stamps(s: &str, open: u8, close: u8) -> Vec<(usize, usize, f64)> {
+    let b = s.as_bytes();
+    let digits = |from: usize| {
+        let n = b[from.min(b.len())..]
+            .iter()
+            .take_while(|c| c.is_ascii_digit())
+            .count();
+        (n > 0).then_some(from + n)
+    };
+    let (mut out, mut i) = (Vec::new(), 0);
+    while let Some(o) = b[i..].iter().position(|&c| c == open).map(|o| o + i) {
+        i = o + 1;
+        let Some(m) = digits(o + 1).filter(|&m| b.get(m) == Some(&b':')) else {
+            continue;
+        };
+        let Some(mut e) = digits(m + 1) else { continue };
+        if b.get(e) == Some(&b'.') {
+            e = digits(e + 1).unwrap_or(e);
+        }
+        if b.get(e) == Some(&close) {
+            out.push((o, e + 1, secs(&s[o + 1..m], &s[m + 1..e])));
+            i = e + 1;
+        }
+    }
+    out
 }
 
 /// `[mm:ss.xx]text`, with any number of stamps per line; tag lines like `[ar:...]` never match.
@@ -58,32 +81,34 @@ fn secs(m: &str, s: &str) -> f64 {
 pub fn parse_lrc(lrc: &str) -> Vec<Line> {
     let mut out = Vec::new();
     for line in lrc.lines() {
-        let stamps: Vec<_> = STAMP.captures_iter(line).collect();
-        let Some(last) = stamps.last() else { continue };
-        let rest = &line[last.get(0).unwrap().end()..];
-        let tags: Vec<_> = TAG.captures_iter(rest).collect();
-        let text = TAG
-            .replace_all(rest, "")
-            .split_whitespace()
-            .collect::<Vec<_>>()
-            .join(" ");
+        let at = stamps(line, b'[', b']');
+        let Some(&(_, end, _)) = at.last() else {
+            continue;
+        };
+        let rest = &line[end..];
+        let tags = stamps(rest, b'<', b'>');
+        let mut text = String::new();
+        let mut from = 0;
+        for &(s, e, _) in &tags {
+            text += &rest[from..s];
+            from = e;
+        }
+        text += &rest[from..];
+        let text = text.split_whitespace().collect::<Vec<_>>().join(" ");
         let words: Vec<Word> = tags
             .iter()
             .enumerate()
-            .map(|(i, w)| {
-                let end = tags
-                    .get(i + 1)
-                    .map_or(rest.len(), |n| n.get(0).unwrap().start());
-                Word {
-                    t: secs(&w[1], &w[2]),
-                    text: rest[w.get(0).unwrap().end()..end].trim().to_string(),
-                }
+            .map(|(i, &(_, e, t))| Word {
+                t,
+                text: rest[e..tags.get(i + 1).map_or(rest.len(), |n| n.0)]
+                    .trim()
+                    .into(),
             })
             .filter(|w| !w.text.is_empty())
             .collect();
-        for s in &stamps {
+        for &(_, _, t) in &at {
             out.push(Line {
-                t: secs(&s[1], &s[2]),
+                t,
                 text: text.clone(),
                 words: (!words.is_empty()).then(|| words.clone()),
             });
@@ -258,6 +283,18 @@ mod tests {
         let mut first = l(10.0, "Is this the");
         first.words = Some(vec![w(10.0, "Is"), w(10.4, "this"), w(11.0, "the")]);
         assert_eq!(got, [first, l(12.0, "plain")]);
+    }
+
+    #[test]
+    fn stamps_match_like_the_regex() {
+        let got =
+            parse_lrc("[1:2.5x]a\n[00:03.]b\n x [00:04]c <0:4.5>d <9>e\n[ti:x][00:05.25]<00:06>");
+        let mut c = l(4.0, "c d <9>e"); // node: lyrics.ts gives exactly this
+        c.words = Some(vec![Word {
+            t: 4.5,
+            text: "d <9>e".into(),
+        }]);
+        assert_eq!(got, [c, l(5.25, "")]);
     }
 
     #[test]
