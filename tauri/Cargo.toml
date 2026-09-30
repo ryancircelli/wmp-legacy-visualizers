@@ -26,16 +26,18 @@ tauri-plugin-process = "=2.4.0"
 log = "0.4"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+# the one HTTP client (main.rs HTTP: page updates, lyrics), on the tokio runtime Tauri runs, as
+# Tauri's own http and updater plugins use it; the system's TLS, HTTP/1.1 only
+reqwest = { version = "0.13", default-features = false, features = ["native-tls"] }
+tokio = { version = "1", features = ["sync", "time"] }
+
 # page updates (update.rs): the signed manifest, and the two files it names
 ed25519-dalek = "3"
 sha2 = "0.11"
 base64 = "0.22"
-reqwest = { version = "0.13", default-features = false, features = ["native-tls"] }
-tokio = { version = "1", features = ["sync", "time"] }
 
-# audio (audio/): the keyed socket, lyrics over https
+# audio (audio/): the keyed socket, lyrics' cache names
 tungstenite = "0.30"
-ureq = { version = "3.4", default-features = false, features = ["native-tls", "json"] }
 getrandom = "0.3"
 sha1 = "0.11"
 

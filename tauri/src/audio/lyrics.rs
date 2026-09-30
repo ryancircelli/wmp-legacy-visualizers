@@ -6,7 +6,6 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use sha1::{Digest, Sha1};
 use std::path::Path;
-use std::sync::LazyLock;
 use std::time::Duration;
 
 #[derive(Serialize, Clone, PartialEq, Debug)]
@@ -40,7 +39,6 @@ struct Hit {
 }
 
 const API: &str = "https://lrclib.net/api";
-const UA: &str = "WmpLegacyVisualizers/1.0 (github.com/ryancircelli/wmp-legacy-visualizers)";
 
 fn secs(m: &str, s: &str) -> f64 {
     let v = m.parse::<f64>().unwrap_or(0.0) * 60.0 + s.parse::<f64>().unwrap_or(0.0);
@@ -162,48 +160,38 @@ fn to_frame(hit: Option<Hit>, t: &Track) -> (String, String) {
     )
 }
 
-static AGENT: LazyLock<ureq::Agent> = LazyLock::new(|| {
-    use ureq::tls::{RootCerts, TlsConfig, TlsProvider};
-    ureq::Agent::config_builder()
-        .timeout_global(Some(Duration::from_secs(5)))
-        .http_status_as_error(false)
-        .user_agent(UA)
-        // The system's own TLS and roots (SChannel here, Security.framework on a Mac).
-        .tls_config(
-            TlsConfig::builder()
-                .provider(TlsProvider::NativeTls)
-                .root_certs(RootCerts::PlatformVerifier)
-                .build(),
-        )
-        .build()
-        .into()
-});
+type Error = Box<dyn std::error::Error + Send + Sync>;
+
+/// `API/<path>?<query>`: the status and the body, within 5 s.
+async fn get(path: &str, query: &[(&str, &str)]) -> Result<(u16, Vec<u8>), Error> {
+    let url = reqwest::Url::parse_with_params(&format!("{API}/{path}"), query)?;
+    let r = crate::HTTP
+        .get(url)
+        .timeout(Duration::from_secs(5))
+        .send()
+        .await?;
+    Ok((r.status().as_u16(), r.bytes().await?.to_vec()))
+}
 
 /// Exact match first (LRCLIB wants all four fields, duration within ~2 s), then a search.
-fn lookup(t: &Track) -> Result<Option<Hit>, Box<dyn std::error::Error>> {
+async fn lookup(t: &Track) -> Result<Option<Hit>, Error> {
+    let (title, artist) = (
+        ("track_name", t.title.as_str()),
+        ("artist_name", t.artist.as_str()),
+    );
     if t.duration > 0.0 {
-        let mut r = AGENT
-            .get(format!("{API}/get"))
-            .query("track_name", &t.title)
-            .query("artist_name", &t.artist)
-            .query("album_name", &t.album)
-            .query("duration", t.duration.round().to_string())
-            .call()?;
-        match r.status().as_u16() {
-            200 => return Ok(Some(r.body_mut().read_json()?)),
-            404 => {}
-            s => return Err(format!("lrclib get {s}").into()),
+        let d = t.duration.round().to_string();
+        let q = [title, artist, ("album_name", &t.album), ("duration", &d)];
+        match get("get", &q).await? {
+            (200, b) => return Ok(Some(serde_json::from_slice(&b)?)),
+            (404, _) => {}
+            (s, _) => return Err(format!("lrclib get {s}").into()),
         }
     }
-    let mut r = AGENT
-        .get(format!("{API}/search"))
-        .query("track_name", &t.title)
-        .query("artist_name", &t.artist)
-        .call()?;
-    if r.status() != 200 {
-        return Err(format!("lrclib search {}", r.status()).into());
+    match get("search", &[title, artist]).await? {
+        (200, b) => Ok(closest(serde_json::from_slice(&b)?, t.duration)),
+        (s, _) => Err(format!("lrclib search {s}").into()),
     }
-    Ok(closest(r.body_mut().read_json()?, t.duration))
 }
 
 fn cache_name(t: &Track) -> String {
@@ -220,8 +208,8 @@ fn cache_name(t: &Track) -> String {
 }
 
 /// Cached lyrics for `t`, else LRCLIB's (cached unless the fetch failed), as (what happened, the
-/// frame). Never fails; blocks for up to the 5 s timeout.
-pub fn lyrics_for(t: &Track, dir: Option<&Path>) -> (String, String) {
+/// frame). Never fails; takes up to the 5 s timeout.
+pub async fn lyrics_for(t: &Track, dir: Option<&Path>) -> (String, String) {
     let file = dir.map(|d| d.join(cache_name(t)));
     if let Some(Ok(s)) = file.as_ref().map(std::fs::read_to_string) {
         // Only a whole lyrics frame: the page takes any other text frame for the audio's first one.
@@ -233,7 +221,7 @@ pub fn lyrics_for(t: &Track, dir: Option<&Path>) -> (String, String) {
             );
         }
     }
-    match lookup(t) {
+    match lookup(t).await {
         Ok(hit) => {
             let (status, f) = to_frame(hit, t);
             if let (Some(file), Some(dir)) = (&file, dir) {
@@ -318,13 +306,6 @@ mod tests {
         };
         assert_eq!(closest(hits(), 354.0).unwrap().duration, Some(356.0));
         assert_eq!(closest(hits(), 0.0).unwrap().duration, Some(356.0));
-    }
-
-    #[test]
-    fn https_is_an_error_never_a_panic() {
-        // ureq 3.4 panics on https unless its `native-tls` feature (not just the provider) is on,
-        // and a panic here is the whole app (panic = "abort").
-        assert!(AGENT.get("https://127.0.0.1:1/").call().is_err());
     }
 
     #[test]
