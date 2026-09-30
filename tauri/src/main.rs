@@ -5,6 +5,7 @@
 //! player window (`/c`, or no arguments). The page is the website's own build (`../dist`), embedded
 //! in the executable and served at the origin the Deno host used, `https://wmp.localhost/`.
 
+mod audio;
 mod host;
 mod mode;
 mod update;
@@ -339,6 +340,7 @@ fn main() {
         .plugin(state.build())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_process::init())
+        .plugin(audio::init())
         .register_asynchronous_uri_scheme_protocol("wmp", serve)
         .invoke_handler(tauri::generate_handler![
             host::ready,
