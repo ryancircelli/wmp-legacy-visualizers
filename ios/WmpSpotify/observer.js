@@ -26,44 +26,12 @@ var DEVICE_NAME = 'WMP Spotify';
 // ---- the host bindings (CONTRACT.md v4-v6) this host answers in-page
 window.alchemyLog = function (m) { try { webkit.messageHandlers.log.postMessage(String(m)); } catch (e) {} };
 var log = function (m) { window.alchemyLog('spotify: ' + m); };
-// An app, not the website: no share picker. The audio is the host's "socket" (CONTRACT v8's, in the
-// Windows host's format), but WebKit refuses a ws:// connection from Spotify's https page (measured:
-// build 6 never connected), so there is no socket: the WebSocket wrapper below hands the page a
-// stand-in for this one URL, and App.swift feeds it by evaluateJavaScript, __wmpAudio.rate(n) once
-// and __wmpAudio.pcm(<base64 of interleaved stereo int16 LE>, n) per ReplayKit buffer (the rate again,
-// for a stand-in opened after the first: a reload, a login page and back), __wmpAudio.close() when the
-// host gives up (refused, or silent for 30 s). Lost, the loopback flag makes the page take
-// the microphone (src/adapters/local/index.ts startLoopback: no getDisplayMedia in a WKWebView).
+// An app, not the website: no share picker. The audio is the microphone, which hears the phone's
+// own speaker: the loopback flag makes the page take it (src/adapters/local/index.ts startLoopback:
+// no getDisplayMedia in a WKWebView). Nothing else on iOS hears the web view: ReplayKit's in-app
+// capture delivered 1024-frame buffers of zeros while Spotify played (build 7, 2026-09-30), WebKit
+// refuses ws:// from this https page (build 6), and FairPlay audio cannot enter Web Audio.
 window.alchemyElectron = { loopback: true, mode: 'app' };
-var AUDIO_URL = 'ws://127.0.0.1:47831/audio';
-window.alchemyScreensaver = { audio: true, url: AUDIO_URL };
-var audioSock = null;
-window.__wmpAudio = {
-  rate: function (n) {
-    if (!audioSock || !audioSock.onmessage || audioSock.rated === n) return;
-    audioSock.rated = n;
-    audioSock.onmessage({ data: JSON.stringify({ rate: n }) });
-  },
-  pcm: function (b64, n) {
-    if (n) window.__wmpAudio.rate(n);
-    if (!audioSock || !audioSock.onmessage || !audioSock.rated) return;
-    var bin = atob(b64), n = bin.length >> 1, f = new Float32Array(n);
-    for (var i = 0; i < n; i++) {
-      var v = bin.charCodeAt(2 * i) | (bin.charCodeAt(2 * i + 1) << 8);
-      f[i] = (v >= 32768 ? v - 65536 : v) / 32768;
-    }
-    audioSock.onmessage({ data: f.buffer });
-  },
-  close: function () { var s = audioSock; audioSock = null; if (s && s.onclose) s.onclose({}); },
-};
-function fakeAudioSocket() {
-  var s = { url: AUDIO_URL, readyState: 0, binaryType: 'blob', rated: 0, onopen: null, onmessage: null, onerror: null, onclose: null,
-    send: function () {}, close: function () { if (audioSock === s) { audioSock = null; s.readyState = 3; if (s.onclose) s.onclose({}); } },
-    addEventListener: function (t, fn) { s['on' + t] = fn; } };
-  audioSock = s;
-  setTimeout(function () { if (audioSock === s) { s.readyState = 1; if (s.onopen) s.onopen({}); } }, 0);
-  return s;
-}
 window.alchemyMarks = [];
 window.alchemySpotifyLogout = function () { log('log out'); location.replace(SPOTIFY_LOGOUT); };
 
@@ -261,7 +229,6 @@ function dealer(ws) {
 }
 var OWS = window.WebSocket;
 var WS = function WebSocket(url, protocols) {
-  if (String(url) === AUDIO_URL) return fakeAudioSocket();
   var ws = protocols === undefined ? new OWS(url) : new OWS(url, protocols);
   try { if (/^wss:\/\/[^/]*dealer[^/]*\.spotify\.com\//.test(String(url))) dealer(ws); } catch (e) {}
   return ws;

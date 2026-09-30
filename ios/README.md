@@ -10,28 +10,18 @@ The page is not built into the app. Each launch fetches `spotify-inject.js` from
 (what deploy.yml publishes) and caches it, so a fix to the player reaches the phone without a new build.
 Playback is meant to carry on with the phone locked (the audio background mode).
 
-Audio for the visualizers is an experiment in this build. iOS gives an app no way to hear another app's
-output and Spotify's DRM playback cannot be routed through Web Audio, so the app records its own output
-with ReplayKit's in-app capture (app audio only, microphone off) and hands it to the page with
-`evaluateJavaScript` on the web view: `__wmpAudio.rate(n)` once, `__wmpAudio.pcm(...)` per buffer with
-the samples as base64 of interleaved stereo int16, little-endian, and `__wmpAudio.close()` when it gives
-up. `observer.js` turns those into the frames of the Windows host's audio socket (`{"rate":n}`, then
-interleaved stereo float32; `tauri/src/audio/mod.rs`). There is no socket on the phone: WebKit refuses a
-ws://127.0.0.1 connection from Spotify's https page (measured on build 6: the app's listener came up and
-the page never connected). The rate goes out with the first buffer that is not silent. If 30 s of
-capture bring nothing but silence, or capture is refused or fails, the app stops capturing and closes
-the page's audio, and the page falls back to the microphone (iOS asks for it once). The 30 s count only
-in the foreground: when they run out with the app in the background, where ReplayKit may deliver
-nothing, the wait starts over. The give-up line counts the buffers, how many of them were empty (no
-frames at all) and the frames in all, so a capture that delivered nothing reads differently from one
-that delivered silence; the first buffer's frame count and peak are logged too.
-Starting the capture brings up iOS's own screen-recording consent alert at launch; declining it is a
-refusal. What the build tests is whether FairPlay-protected audio survives ReplayKit capture: Apple
-Music is silenced in screen recordings, and whether Spotify's web player is too is unknown. The page
-says which way it went ("System audio (local)" once the app's own sound arrives); the host's log has
-the why, in lines starting `replaykit:` and `audio:`. The band under the web view shows the host's last
-log line (scene changes go only to the list): tap it to re-run the ReplayKit prompt and reload the page,
-long-press it for the last 20 lines.
+The visualizers hear the microphone, which picks up the phone's own speaker (and the room). It is the
+only source iOS leaves: an app cannot hear another app's output, Spotify's FairPlay playback cannot be
+routed through Web Audio, and the two other routes were tried and measured on 2026-09-30. ReplayKit's
+in-app capture (build 7) delivered 1024-frame stereo buffers of zeros while Spotify played, even
+though a system screen recording of the same app has the music: WebKit's audio comes out of a separate
+process that in-app capture does not hear. A local WebSocket from the app to the page (build 6) was
+never connected: WebKit refuses ws://127.0.0.1 from Spotify's https page. The one route left untried
+is a broadcast upload extension, the system-level capture a screen recording uses, at the cost of an
+extension target, an app group, IPC into the app, and the user starting a broadcast from a picker at
+every launch. The page asks for the microphone at launch (iOS asks once) and says so in its status
+line. The band under the web view shows the host's last log line (scene changes go only to the list):
+tap it to reload the page, long-press it for the last 20 lines.
 
 ## Building
 
@@ -78,7 +68,6 @@ Nothing had to be routed through another Spotify Connect device.
 
 - The web view keeps to the safe area: black bars at the notch and the home indicator.
 - The skin is WMP 9's desktop window at phone size; nothing is laid out for a phone.
-- Audio is an experiment (above): ReplayKit's consent alert comes up at launch, and when capture gives
-  nothing the visualizers hear the microphone, which picks up the room as well as the speaker.
+- The visualizers hear the microphone (above), the room as well as the speaker.
 - No signature check on the page update. The Windows exes run a new page only when update.json's
   signature verifies (`tauri/src/update.rs`); this app runs whatever wmp.ryancircelli.com serves.

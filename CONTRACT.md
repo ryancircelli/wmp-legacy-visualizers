@@ -317,12 +317,9 @@ App.swift around dist/spotify-inject.js, which the app fetches from wmp.ryancirc
 launch and keeps in Caches (offline: the last copy; none: Spotify's page bare). The user script runs at
 document start in the main frame only, with a desktop Safari user agent, since Spotify serves the web
 player to desktop browsers only. Host bindings the page sees: `alchemyElectron = {loopback:true,
-mode:'app'}` and `alchemyScreensaver = {audio:true, url:'ws://127.0.0.1:47831/audio'}` (the v8 audio
-socket's frames, but no socket: WebKit refuses ws:// from the https page, so observer.js answers that
-one URL with a stand-in and App.swift feeds it by evaluateJavaScript, `__wmpAudio.rate(n)`,
-`__wmpAudio.pcm(<base64 stereo int16 LE>)` per ReplayKit buffer of the app's own output, and
-`__wmpAudio.close()` when refused or after 30 s of silence; the page then takes the microphone:
-startLoopback with no getDisplayMedia, on a lost socket too),
+mode:'app'}` (the page takes the microphone: startLoopback with no getDisplayMedia; ReplayKit's
+in-app capture hears zeros from the web view and WebKit refuses ws:// from the https page, so no
+host audio, ios/README.md),
 `alchemyLog` (a WKScriptMessageHandler), `alchemySpotifyLogout` (accounts.spotify.com/logout). No audio
 socket, no lyrics from a host (LRCLIB is fetched by the page), no window bindings, no page-update
 signature (the site is trusted as the bundle's source). Built on GitHub's macOS runners, signed with

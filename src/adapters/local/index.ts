@@ -94,7 +94,7 @@ export function startHost(store: AppStore, opts: { hostMedia?: () => boolean; pl
   }
 
   // A host with no getDisplayMedia at all (a WKWebView: the iOS app, ios/) gets the microphone, which
-  // hears the phone's own speaker; also where its audio socket falls through to (openHostAudio).
+  // hears the phone's own speaker.
   const mic = () => !!navigator.mediaDevices && !navigator.mediaDevices.getDisplayMedia;
 
   // The desktop host without its WASAPI helper: loopback audio with no picker (video:false: desktop
@@ -144,9 +144,6 @@ export function startHost(store: AppStore, opts: { hostMedia?: () => boolean; pl
         // Attached and then dropped: back to the silence animation, never a frozen last frame.
         if (attached) { if (source?.fill === fill) localStop(); }
         else actions.setStatus(idleStatus(store) + ' (system audio: ' + why + ')');
-        // The iOS host closes its socket when its capture is refused or hears nothing (ios/README.md):
-        // the microphone then, as the loopback flag asks.
-        if (mic() && window.alchemyElectron?.loopback) void startLoopback();
       },
     });
     if (!sock) actions.setStatus(idleStatus(store) + ' (system audio: cannot open ' + url + ')');
