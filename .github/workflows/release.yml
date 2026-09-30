@@ -18,7 +18,7 @@
 name: release
 on:
   push:
-    branches: [master, tauri, tauri-release] # TEMPORARY: tauri-release, to test the build before merge
+    branches: [master, tauri]
     paths:
       - 'tauri/**'
       - '!tauri/README.md'
