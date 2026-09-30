@@ -1,6 +1,6 @@
 //! What the host learns by watching the web player's own traffic (CONTRACT.md v8), as plain
 //! functions of what the DevTools Protocol reported, so they are tested without a web view. The
-//! rules are the Deno host's injected observers' (deno-webview/spotify.ts), moved out of the page.
+//! rules are the Deno host's injected observers' (its spotify.ts), moved out of the page.
 
 use base64::Engine;
 use serde_json::{Value, json};

@@ -1,8 +1,9 @@
 # The desktop host on Tauri 2
 
 The screensaver, its player window and the Spotify player, rebuilt on Tauri 2.12 (WebView2 through
-wry and tao, the host in Rust) to replace `deno-webview/`. One executable, about 7 MB, no installer,
-nothing beside it. `.github/workflows/release.yml` builds it twice on every push to master and
+wry and tao, the host in Rust) to replace the Deno + WebView2 host, now retired (its design record:
+[`docs/history/deno-webview.md`](../docs/history/deno-webview.md)). One executable, about 7 MB, no
+installer, nothing beside it. `.github/workflows/release.yml` builds it twice on every push to master and
 publishes the two downloads: `Alchemy.scr` (AlchemyScreensaver-win64.zip, with `package/`'s install
 scripts and README) and `WmpSpotify.exe` (WmpSpotify-win64.zip), the second with the `wmp-spotify`
 feature and the Spotify icon. CONTRACT.md v8 is what the page can rely on here.
@@ -37,6 +38,47 @@ cargo test                           # the argument parser, page updates, lyrics
 
 Both builds run `npm run build` at the root first (`beforeBuildCommand`) and embed `../dist` in the exe.
 
+## Hot reload: `tauri dev`
+
+```
+npm run dev:app                      # at the repo root, from WSL: the player window
+npm run dev:spotify                  # the Spotify window (--mode=spotify)
+```
+
+Both are `tauri dev` with `tauri.dev.conf.json` merged in. Its `beforeDevCommand` starts Vite's dev
+server (`npm run dev -- --strictPort`: a taken port fails rather than moving off `devUrl`), and the
+host loads the page from `devUrl`, http://localhost:5173/, instead of the embedded build. Vite's HMR
+then works in both windows as it does on the website: CSS updates in place, components fast-refresh.
+A change under `tauri/` rebuilds and restarts the exe; closing its window ends the session.
+
+From WSL the exe is cross-built as `build:win` builds it, and
+`CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_RUNNER=env` runs it on Windows through WSL's interop rather than
+under wine, cargo-xwin's default. Windows reaches the dev server at `localhost` (WSL forwards it; this
+machine runs mirrored networking). Killing the WSL side of an interop process ends the Windows one
+too (checked with `PING.EXE`), so a restart or a Ctrl+C should leave nothing running. With a current Rust on Windows, `npx tauri dev --config
+tauri.dev.conf.json` in `tauri/` is the same thing natively.
+
+A dev build is one compiled without Tauri's `custom-protocol` feature (Tauri's `dev` cfg,
+`tauri::is_dev()`), and differs from a release in four ways:
+
+- **The page is the dev server's** (`main.rs page`), at its origin, so its `localStorage` is its own.
+- **Its own instance:** identifier `com.ryancircelli.wmp-legacy-visualizers.dev`, so it runs beside
+  the installed apps instead of handing its arguments to them (below).
+- **Its own data folder,** `%LOCALAPPDATA%\WmpLegacyVisualizers\tauri-dev\` (`win.rs data_root`): the
+  WebView2 profile, the window box and the log. Spotify wants one login there.
+- **No embedded page and no page updates.**
+
+It cannot ship. `tauri build`, all that release.yml runs, compiles `custom-protocol` in, so
+`is_dev()` is false and the page is always the embedded one, and it never reads
+`tauri.dev.conf.json`, so the exe's config has no `devUrl` either.
+
+Verified from WSL on Windows 11, 2026-09-30, `npm run dev:app` and `npm run dev:spotify` as they
+are (the exe started through `Process.Start` for the test instead of interop): the window loads
+`http://localhost:5173/index.html?mode=config` with `__TAURI__`, the audio socket and, in the
+Spotify window, `alchemyEngine = 'spotify'` beside Spotify's login; a CSS Module value changed, and
+changed back, showed in the page each time with no reload (a marker set on `window` and the
+document's `timeOrigin` survived); closing the window ended `tauri dev` and Vite with it.
+
 ## Toolchain
 
 **MSVC, cross-compiled from WSL with cargo-xwin.** `npm run build:win` is
@@ -50,7 +92,7 @@ symlink to rustup's `rust-lld`). The icon resource goes through mingw's `windres
 for `x86_64-pc-windows-gnu` with nothing but a mingw linker, so that was tried first. But the WebView2
 loader comes as a static library only for MSVC (`WebView2LoaderStatic.lib`); on the gnu target it can
 only be linked as its DLL, and the exe then needs `WebView2Loader.dll` beside it. That is the file
-deno-webview embeds and unpacks into `%LOCALAPPDATA%` on first run, and a Tauri exe that needed it
+the Deno host embedded and unpacked into `%LOCALAPPDATA%` on first run, and a Tauri exe that needed it
 would have to do the same or ship as two files. On MSVC the loader is inside the exe, and tauri-build
 links the VC runtime statically too.
 
@@ -58,11 +100,11 @@ links the VC runtime statically too.
 the crate is edition 2024 with `rust-version = "1.90"`. Building on Windows would mean upgrading that
 toolchain first; building from WSL does not, and WSL is where the rest of the project is built.
 
-CI builds on `windows-latest` with MSVC, Tauri's supported toolchain (`.github/workflows/tauri.yml`),
+CI builds on `windows-latest` with MSVC, Tauri's supported toolchain (`.github/workflows/release.yml`),
 runs `cargo test`, and then **checks the exe's imports**: `llvm-objdump -p` lists every DLL it imports,
 and the job fails on `vcruntime*`, `msvcp*`, `ucrtbased` or `WebView2Loader`. That is the failure the
 Deno host's first `webview.dll` had: an MSVC `/MD` build that imported the Visual C++ Redistributable
-and died without a word on a fresh Windows 11 (deno-webview/README.md, "Implementation notes"). The
+and died without a word on a fresh Windows 11 (docs/history/deno-webview.md, "Implementation notes"). The
 check keeps it from coming back through any dependency.
 
 The release profile is Tauri's size profile (`lto`, `opt-level = "s"`, one codegen unit, `strip`,
@@ -79,8 +121,8 @@ Windows Tauri serves a custom protocol as `https://<name>.localhost/`, and `use_
 makes that `https://wmp.localhost/`: **the origin the Deno host's virtual host has always had.** The
 user's settings live in `localStorage`, keyed by origin, so the same origin means nothing has to be
 carried over from one host to the other. Tauri's own `tauri.localhost` would have been a new origin,
-and the Deno host has already been through one origin move, with a carry page and one slow launch
-(deno-webview/README.md, "The origin"). `.localhost` is also the name that resolves inside the browser,
+and the Deno host had already been through one origin move, with a carry page and one slow launch
+(docs/history/deno-webview.md, "The origin"). `.localhost` is also the name that resolves inside the browser,
 with no DNS lookup; the two seconds a `.local` name cost are in the same section.
 
 `serve` answers from `../dist` as embedded at compile time, except `index.html`, which is the newest
@@ -149,9 +191,9 @@ Against the Deno host, on the same Windows 11 machine at 150 %, September 2026:
 
 ## Host parity
 
-Everything the Deno host gives the page, the Tauri host gives it too, by other means:
+Everything the Deno host gave the page, the Tauri host gives it too, by other means:
 
-- **The globals** (`host.js`, CONTRACT.md v8): the same names the Deno init script sets, on Tauri's IPC
+- **The globals** (`host.js`, CONTRACT.md v8): the same names the Deno init script set, on Tauri's IPC
   and window API. Three differ. `alchemyElectron.loopback` is false, because with it true a page
   without host audio asks `getDisplayMedia`, which WebView2 answers with a share picker.
   `alchemyScreensaver` is merged into rather than assigned, because a plugin's init script runs before
@@ -182,7 +224,7 @@ Everything the Deno host gives the page, the Tauri host gives it too, by other m
   (the input desktop cannot be opened), or covered pixel for pixel by visible windows that are neither
   layered nor click-through. The page is told on each change, and again at its first painted frame,
   since a change before that reached no page. WebView2 tracks none of this for a window it is embedded
-  in (deno-webview/README.md: 27 % of a core, drawing for nobody).
+  in (docs/history/deno-webview.md: 27 % of a core, drawing for nobody).
 - **Full screen and wake.** F and Esc call `win_full`: Tauri's own full screen, then the virtual
   screen's box set twice (tao keeps a full-screen window on the monitor a new box mostly covers, so the
   first move changes which monitor it thinks it is on and the second is left alone), position and size
@@ -210,9 +252,9 @@ Everything the Deno host gives the page, the Tauri host gives it too, by other m
 - **The log and the marks.** `%LOCALAPPDATA%\WmpLegacyVisualizers\tauri\alchemy.log`, through
   tauri-plugin-log (stdout too in debug builds, or with `ALCHEMY_CONSOLE` set, the Deno host's switch).
   Startup stages are `t+<ms>` lines from process start,
-  the format deno-webview/README.md's "Startup" tables were measured with; the page's own marks arrive
+  the format docs/history/deno-webview.md's "Startup" tables were measured with; the page's own marks arrive
   as one line at its first painted frame, and its report line (source, visualizer, fps, size, status,
-  energy, saved settings) 3 s and 9 s after load, as the Deno host logs them.
+  energy, saved settings) 3 s and 9 s after load, as the Deno host logged them.
 - **Browser arguments.** `browserArgs` in `settings.json` (beside the exe, else in the data folder)
   replaces wry's WebView2 arguments, `--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection
   --autoplay-policy=no-user-gesture-required`. Unlike the Deno host's `webview.dll`, WebView2 here does
@@ -250,7 +292,7 @@ commands. So a request is served only with a per-launch key, 128 random bits in 
 given (`/audio?k=<key>`), and anything else gets 403. The plugin's init script hands that URL only to
 `wmp.localhost` and `localhost` (the page off Windows); Spotify's page is in a web view no plugin's
 script reaches. A client that connects and never completes the handshake is dropped after five
-seconds. The Deno host keys its socket the same way.
+seconds. The Deno host keyed its socket the same way.
 
 **A WebSocket, not a Tauri `ipc::Channel`, by measurement.** A Channel is Tauri's own answer to
 streaming from Rust to the page, so it was measured against the socket (2026-09-29, the player window,
@@ -369,7 +411,7 @@ starting and 150-200 ms of page. Spotify's desktop app, warm on the same machine
 about 0.9 s and its UI at about 2.7 s, so this was already faster at both. What read as broken was
 the first two thirds of a second: an empty blue window looks like a failure, and a window with its
 title bar and a neutral fill looks like an app filling in. WebView2's start cannot be made shorter from
-here (deno-webview/README.md measured all of it), so the fix is the first frame: the title bar drawn
+here (docs/history/deno-webview.md measured all of it), so the fix is the first frame: the title bar drawn
 natively, from the window's first `WM_PAINT`, with the web view below it.
 
 **In the client area, answered for in `WM_NCHITTEST`.** tao keeps `WS_CAPTION` on a frameless window and

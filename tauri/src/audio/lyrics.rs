@@ -1,5 +1,5 @@
 //! Synced lyrics for the track the media session reports (CONTRACT.md, "v5 — Synced lyrics"), from
-//! LRCLIB, cached on disk per track. deno-webview/lyrics.ts, ported; the cache files are the same
+//! LRCLIB, cached on disk per track. The Deno host's lyrics.ts ported; the cache files are the same
 //! (`<sha1 of title\0artist\0album\0seconds>.json`, holding the frame).
 
 use serde::{Deserialize, Serialize};

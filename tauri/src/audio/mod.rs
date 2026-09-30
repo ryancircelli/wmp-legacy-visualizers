@@ -1,5 +1,5 @@
 //! System audio, Now Playing and lyrics for the page, in process: what the Deno host did with a
-//! helper process (deno-webview/audio/) and a relay (deno-webview/audio.ts, lyrics.ts).
+//! helper process (its audio/) and a relay (its audio.ts, lyrics.ts).
 //!
 //! The page gets the same WebSocket it always had, so it needs no change at all: this plugin's init
 //! script sets `window.alchemyScreensaver = {audio: true, url: "ws://127.0.0.1:<port>/audio?k=<key>"}`

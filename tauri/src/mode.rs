@@ -1,4 +1,4 @@
-//! Which window Windows is asking for, read before Tauri starts (deno-webview/main.ts `modeOf`).
+//! Which window Windows is asking for, read before Tauri starts (the Deno host's main.ts `modeOf`).
 //!
 //! Observed forms on Windows 11: `/S` (the shell's own .scr verb, upper case), `/s`, `/p 12345`,
 //! `/p:12345`, `/c`, `/c:98765`, and nothing at all when the file is double-clicked, which means

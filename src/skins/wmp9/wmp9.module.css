@@ -5,9 +5,9 @@
    this sheet is unlayered, so it would win. ARCHITECTURE.md "Tailwind" lists every rule and why.
    Measured off re/captures/wmp9-corporate-reference.png (658x467). */
 
-/* XP squares a maximized window's corners, and the host drops its own rounded window region to
-   match (deno-webview/win32.ts roundTop()); a plain browser guesses from the window against the
-   screen (App.tsx). The host also appends #chrome,#titlebar{border-radius:0!important}. */
+/* XP squares a maximized window's corners, and the Deno host dropped its own rounded window region
+   to match (its win32.ts roundTop()); a plain browser guesses from the window against the screen
+   (App.tsx). The Tauri host appends #chrome,#titlebar{border-radius:0!important} (host.js). */
 :global(body.maximized) .corners { border-radius: 0; }
 
 /* ---- many-stop and pixel-stop gradients ------------------------------------------------- */

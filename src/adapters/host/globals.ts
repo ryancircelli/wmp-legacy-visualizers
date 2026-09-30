@@ -1,5 +1,6 @@
-// The window globals the hosts set (CONTRACT.md v1–v8; deno-webview/main.ts, spotify.ts, tauri/).
-/** Help > Check for Player Updates, as the host answers it (deno-webview/update.ts, tauri/src/update.rs) */
+// The window globals the hosts set (CONTRACT.md v1–v8; tauri/src/host.js, and the retired Deno host's
+// main.ts and spotify.ts).
+/** Help > Check for Player Updates, as the host answers it (tauri/src/update.rs) */
 export interface HostCheck { ready?: string | null; hostUpdate?: boolean; error?: string | null }
 
 export interface SpotifyObserved {
@@ -39,13 +40,13 @@ declare global {
     /** set by the ticker; the desktop host calls it when its window stops or starts being seen */
     alchemyOccluded?: (on: boolean) => void;
     alchemySpotifyLogout?: () => void;
-    /** a newer exe is out (deno-webview/update.ts): offer the download */
+    /** a newer exe is out (tauri/src/update.rs): offer the download */
     alchemyHostUpdate?: boolean;
     /** open one of the project's own URLs in the user's browser */
     alchemyOpenUrl?: (url: string) => void;
     /** relaunch the app (a checked page update is cached for the next launch) */
     alchemyRestart?: () => void;
-    /** the Tauri host's page-update check (the Deno host answers /update on its worker instead) */
+    /** the Tauri host's page-update check (the Deno host answered /update on its worker instead) */
     alchemyCheckUpdate?: () => Promise<HostCheck>;
     __wmpSpotify?: SpotifyObserved;
     /** the Tauri host's IPC (withGlobalTauri): what the Spotify bridge uses of it */

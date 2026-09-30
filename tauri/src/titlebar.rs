@@ -12,7 +12,7 @@
 //! to the client in `WM_NCCALCSIZE` (bar a DPI-scaled row or two at the top on Windows 11, which DWM
 //! paints in `DWMWA_CAPTION_COLOR`, win.rs). DWM composes the non-client area itself, so nothing an
 //! application paints there is shown (and `DWMNCRP_DISABLED` brings back Windows 95's sizing frame,
-//! deno-webview/README.md). A caption in the client area, answered for in `WM_NCHITTEST`, is
+//! docs/history/deno-webview.md). A caption in the client area, answered for in `WM_NCHITTEST`, is
 //! Microsoft's own custom-frame recipe, and it keeps what `WS_CAPTION` gives: `HTCAPTION` drags with
 //! Aero Snap, double-clicks maximize, right-click and Alt+Space open the system menu, and
 //! `HTMAXBUTTON` opens Windows 11's Snap Layouts.

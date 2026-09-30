@@ -545,7 +545,7 @@ impl Host {
     }
 
     /// Logged out: Spotify's login page instead of the anonymous web player, at most once a minute
-    /// so a session still anonymous after signing in cannot bounce (deno-webview/spotify.ts).
+    /// so a session still anonymous after signing in cannot bounce (the Deno host's spotify.ts).
     fn auth_changed(&mut self) {
         let due = self
             .login_at

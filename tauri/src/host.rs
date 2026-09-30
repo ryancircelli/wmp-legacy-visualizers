@@ -1,4 +1,4 @@
-//! What the desktop apps give the page (CONTRACT.md; deno-webview/main.ts): the window globals
+//! What the desktop apps give the page (CONTRACT.md; the Deno host's main.ts before): the window globals
 //! (`host.js`), the page's own title bar driving this window, full screen over every monitor, the
 //! covered-window pause, page updates on demand, and the page's share of the log.
 
@@ -53,8 +53,8 @@ pub fn attach<R: Runtime>(w: &WebviewWindow<R>, mode: Mode) {
     // the title bar keeps the web view below it
     #[cfg(windows)]
     let _ = w.with_webview(move |pw| crate::titlebar::adopt(hwnd, pw.controller()));
-    // Four times a second and whenever the window is activated, as the Deno host did: WebView2
-    // keeps drawing a window nobody can see, at 60 fps (deno-webview/README.md, 27 % of a core).
+    // Four times a second and whenever the window is activated, as the Deno host did: WebView2 keeps
+    // drawing a window nobody can see, at 60 fps (docs/history/deno-webview.md: 27 % of a core).
     #[cfg(windows)]
     {
         let w = w.clone();
@@ -154,7 +154,7 @@ fn full<R: Runtime>(w: &WebviewWindow<R>, on: bool) -> tauri::Result<()> {
 }
 
 /// The union of every monitor, in physical pixels: the virtual screen, which the screensaver and
-/// full screen cover with one window (deno-webview/README.md "Trade-offs").
+/// full screen cover with one window (docs/history/deno-webview.md "Trade-offs").
 pub fn virtual_screen<R: Runtime>(
     app: &AppHandle<R>,
 ) -> tauri::Result<(PhysicalPosition<i32>, PhysicalSize<u32>)> {

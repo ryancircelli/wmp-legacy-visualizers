@@ -33,7 +33,7 @@ use tauri_plugin_window_state::StateFlags;
 static START: LazyLock<Instant> = LazyLock::new(Instant::now);
 
 /// A startup stage in the log, stamped with how long the process has been alive (the `t+` lines
-/// deno-webview/README.md "Startup" measured with).
+/// docs/history/deno-webview.md "Startup" measured with).
 pub(crate) fn mark(stage: &str) {
     log::info!("t+{}ms {stage}", START.elapsed().as_millis());
 }
@@ -56,10 +56,11 @@ fn data_root() -> Option<PathBuf> {
     None
 }
 
-/// `browserArgs` from settings.json (beside the exe, else in the data folder; deno-webview/README.md
-/// "settings.json") replaces wry's WebView2 arguments (`--disable-features=msWebOOUI,msPdfOOUI,
-/// msSmartScreenProtection --autoplay-policy=no-user-gesture-required`): a switch can be tried, or a
-/// DevTools port opened, without a rebuild. Unlike the Deno host's webview.dll, WebView2 here does
+/// `browserArgs` from settings.json (beside the exe, else in the data folder;
+/// docs/history/deno-webview.md "settings.json") replaces wry's WebView2 arguments
+/// (`--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection
+/// --autoplay-policy=no-user-gesture-required`): a switch can be tried, or a DevTools port opened,
+/// without a rebuild. Unlike the Deno host's webview.dll, WebView2 here does
 /// receive them. `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS` does not: the arguments wry passes win.
 ///
 /// The Deno host's other setting, `pageUrl` (load a site instead of the embedded page), is not
@@ -277,7 +278,7 @@ fn open<R: Runtime>(app: &AppHandle<R>, mode: Mode) -> tauri::Result<()> {
                 .decorations(false)
                 .min_inner_size(480.0, 360.0)
                 // under the title bar until the page paints (and WebView2's own background): the
-                // menu bar's face, the first row of the skin's content (deno-webview/README.md)
+                // menu bar's face, the first row of the skin (docs/history/deno-webview.md)
                 .background_color(Color(0xEC, 0xE9, 0xD8, 255));
             let b = if mode == Mode::Spotify {
                 b.initialization_script(spotify::INIT_JS)

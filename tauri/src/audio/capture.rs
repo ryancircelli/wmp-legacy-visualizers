@@ -1,6 +1,6 @@
 //! WASAPI loopback on the default render endpoint: what the speakers are playing, as raw PCM, with no
 //! picker and no permission prompt — the one thing WebView2 cannot give the page itself
-//! (deno-webview/README.md, "System audio"). The helper's `run()` (deno-webview/audio/src/main.rs),
+//! (docs/history/deno-webview.md, "System audio"). The Deno host's audio helper's `run()`,
 //! moved in process: each wake-up's packets go to the socket as one message, so a 10 ms period is
 //! never split across two (the helper's stdout had to dodge a LineWriter for that).
 

@@ -51,8 +51,9 @@ The application and the screensaver capture the system mix instead, with nothing
 desktop host reads the speakers' PCM through WASAPI loopback, in its own process, and hands it to the
 page over a local WebSocket, and the page turns it into the same frequency and waveform bytes an
 `AnalyserNode` produces. WebView2 itself offers no way to answer a capture request with a loopback
-stream. [`tauri/README.md`](tauri/README.md) has the details, and `deno-webview/README.md` the
-measurements from the first host that forced this design.
+stream. [`tauri/README.md`](tauri/README.md) has the details, and
+[`docs/history/deno-webview.md`](docs/history/deno-webview.md) the measurements from the first host
+that forced this design.
 
 ## Spotify
 
@@ -121,8 +122,9 @@ LRCLIB for lyrics, if that option is on).
 ## Build and test
 
 The page is TypeScript + React, built by Vite (Node 24 / npm). The desktop formats are one Tauri 2
-host (`tauri/`, see [`tauri/README.md`](tauri/README.md)), built twice. `deno-webview/`, the Deno host
-it replaced, is kept for `npm run dev:spotify` and as the fallback.
+host (`tauri/`, see [`tauri/README.md`](tauri/README.md)), built twice. It replaced a Deno + WebView2
+host, retired; [`docs/history/deno-webview.md`](docs/history/deno-webview.md) is that host's design
+record.
 
 ```sh
 npm ci                      # once, and after package-lock.json changes
@@ -139,7 +141,7 @@ npm run build:wasm          # after editing assembly/*.ts (AssemblyScript): rege
 |---|---|
 | `dist/index.html` | The whole page as one self-contained file: the website, and embedded in every exe |
 | `alchemy.html` (root) | A copy of it; open it directly, no server needed (Chromium/Chrome target) |
-| `dist/spotify-inject.js` | JSON `{html, css, js}` that the Deno host's `WmpSpotify.exe` injects into open.spotify.com (`js` is one classic script) |
+| `dist/spotify-inject.js` | JSON `{html, css, js}` that the retired Deno host's `WmpSpotify.exe` injected into open.spotify.com; no current host reads it |
 | `dist/version.json`, `_headers`, `_redirects` (tools/postbuild.js) | Build stamp; Cloudflare caching/security headers and the `/alchemy` route |
 
 ```sh
@@ -149,16 +151,17 @@ cd tauri && npx tauri build --no-bundle --features wmp-spotify --config tauri.sp
                                                #   -> the same, as WmpSpotify.exe
 cd tauri && npm run build:win                  # from WSL or Linux (cargo-xwin; tauri/README.md)
 cd tauri && cargo test
-cd deno && deno task serve                     # serve ../dist on http://127.0.0.1:8765/
+npx vite preview                               # serve dist/ on http://localhost:4173/
 ```
 
 Hot reload while developing:
 - `npm run dev` — the website on Vite's dev server with HMR: Tailwind classes, `theme.css` and the
   CSS Modules update in place, components fast-refresh with their state kept (a module that also
   exports non-components makes Vite reload the page instead).
-- `npm run dev:spotify` — WmpSpotify against a watch build: CSS changes swap into the overlay in
-  place, script/markup changes reload the page (login kept). No real HMR there: open.spotify.com's
-  CSP blocks module loads from localhost. Details in deno-webview/README.md, "Hot reload (dev)".
+- `npm run dev:app` / `npm run dev:spotify` — the same, in the desktop player / Spotify window:
+  `tauri dev` (from WSL: cross-built, run on Windows) with the page from that dev server instead of
+  the embedded build. Its own instance and data folder, so it runs beside the installed apps.
+  Details in [`tauri/README.md`](tauri/README.md), "Hot reload".
 
 Each build runs `npm run build` first (so `npm ci` must have been run once). CI does the same on
 every push to master: `deploy.yml` (website) and `release.yml` (both downloads, on Windows), each
@@ -229,9 +232,7 @@ into that private reverse-engineering archive.
 | `src/` | The page around it: the WMP 9 skin, the player model, and the Spotify and capture adapters |
 | `tools/` | The verification harness: PowerShell hosts for the real DLLs, reference renderers, A/B scripts |
 | `tests/` | Vitest unit tests, fixtures, and the Playwright smokes |
-| `docs/` | `EXACTNESS.md`, the frame-by-frame comparison record |
-| `deno/` | The static handler every format serves `dist/` with (`main.ts`), and `deno task serve` for local work |
-| `deno-webview/` | The Deno + WebView2 host the Tauri one replaced: `npm run dev:spotify`, and the fallback |
+| `docs/` | `EXACTNESS.md`, the frame-by-frame comparison record; `history/`, the retired Deno host's design record |
 | `tauri/` | The two Windows desktop formats: one Rust exe for the screensaver, the player and Spotify, built twice (`tauri/package/` is the rest of the zips) |
 
 ## A note on the source material

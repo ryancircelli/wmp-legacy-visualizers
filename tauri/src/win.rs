@@ -66,7 +66,7 @@ pub fn alive(h: isize) -> bool {
 
 /// Windows 11's frame round the frameless window, in the skin's colours: its rounded corner kept
 /// (anti-aliased against whatever is behind it; the page squares its own chrome in this host,
-/// host.js, so there is no second curve to leave white crescents — deno-webview/README.md "The
+/// host.js, so there is no second curve to leave white crescents — docs/history/deno-webview.md "The
 /// player window"), no 1 px border (`DWMWA_COLOR_NONE`: transparent), and the caption colour Luna
 /// blue. The caption is the top frame a frameless Tauri window keeps on Windows 11, `dpi / 96` rows
 /// (tao `calculate_insets_for_dpi`): measured `#EDF5F9`, two rows at 150 %, a pale line over the
@@ -232,7 +232,7 @@ pub fn saver(class: &'static str, bx: (i32, i32, u32, u32)) -> Option<OnCreate> 
     })
 }
 
-/// In front of tao's window procedure on the screensaver (deno-webview/win32.ts hostProc). Until
+/// In front of tao's window procedure on the screensaver (the Deno host's win32.ts hostProc). Until
 /// WebView2 has the focus a key or a click comes here and not to the page, whose own handlers
 /// (host.js) do not exist for the first half second; without this the saver ignored the user for as
 /// long as that took. Once WebView2 has the focus these stop arriving and the page's handlers take
@@ -337,7 +337,7 @@ fn frame_bounds(h: HWND) -> Option<RECT> {
     None
 }
 
-/// Whether nothing of the window can be seen (deno-webview/win32.ts `occluded`): minimized, on
+/// Whether nothing of the window can be seen (the Deno host's win32.ts `occluded`): minimized, on
 /// another virtual desktop (cloaked), on no monitor, behind the lock screen (the input desktop is
 /// Winlogon's, which we may not open), or every pixel of it under windows above it in the z-order.
 /// WebView2 tracks none of this for a window it is embedded in: the page runs its frame loops at

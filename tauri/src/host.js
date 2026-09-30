@@ -1,6 +1,6 @@
 // What the desktop host gives the page, before any page script, on every document (host.rs
 // `script` calls this with H = {mode, hostUpdate}). The same globals the Deno host's
-// init script sets (deno-webview/main.ts initScript; src/adapters/host/globals.ts), implemented
+// init script set (its main.ts initScript; src/adapters/host/globals.ts), implemented
 // with Tauri's IPC and window API instead of webview bindings.
 (function (H) {
   function call(cmd, args) { return window.__TAURI__.core.invoke(cmd, args); }

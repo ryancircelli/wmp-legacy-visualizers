@@ -37,7 +37,7 @@ export async function checkForUpdates(): Promise<UpdateCheck> {
       return was && now !== was ? { state: 'ready' } : { state: 'latest' };
     }
     // the apps: the same signed check a launch makes — the Tauri host's command, else the Deno
-    // host's worker (deno-webview/server.ts /update)
+    // host's worker (its server.ts /update)
     const r = window.alchemyCheckUpdate ? await window.alchemyCheckUpdate() : await hostWorkerCheck();
     if (r.hostUpdate) return { state: 'app' };
     if (r.ready) return { state: 'ready' };

@@ -1,6 +1,6 @@
 //! Now Playing: the current Windows media session (Global System Media Transport Controls), as
 //! `media` frames for the page, and the page's transport commands. CONTRACT.md, "v4 — Now Playing".
-//! The helper's media thread (deno-webview/audio/src/media.rs), moved in process.
+//! The helper's media thread (the Deno host's audio/src/media.rs), moved in process.
 //!
 //! One frame per change, and once a second while playing so the page's clock never drifts far:
 //!   {"type":"media","status":"playing","title":..,"artist":..,"album":..,"app":..,"duration":s,

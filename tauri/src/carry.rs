@@ -1,5 +1,5 @@
 //! The first launch after the Deno host: the user's settings and Spotify login, carried over once
-//! from that host's WebView2 profiles (deno-webview/main.ts `profileDir`) into this host's
+//! from that host's WebView2 profiles (its main.ts `profileDir`) into this host's
 //! (`win.rs` `data_root`). Windows only; this host's own data folder never moves again, so it is the
 //! only carry-over there will be.
 //!
@@ -30,7 +30,7 @@ pub fn mark(root: &Path, what: &str, how: &str) {
 }
 
 /// Whether a WebView2 browser has the user-data folder `udf` open: its `EBWebView\lockfile` cannot
-/// be opened exclusively (deno-webview/win32.ts `fileBusy`, measured there).
+/// be opened exclusively (the Deno host's win32.ts `fileBusy`, measured there).
 pub fn busy(udf: &Path) -> bool {
     use std::os::windows::fs::OpenOptionsExt;
     let f = udf.join(r"EBWebView\lockfile");

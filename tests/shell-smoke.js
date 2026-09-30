@@ -53,7 +53,7 @@ const MOCK = () => {
   };
 
   // The screensaver host binds these into the page; stub them to check the title bar drives them
-  // (deno-webview/main.ts, win32.ts caption()).
+  // (tauri/src/host.js).
   window.__win = [];
   window.alchemyWinDrag = () => window.__win.push('drag');
   window.alchemyWinMin = () => window.__win.push('min');
@@ -61,8 +61,8 @@ const MOCK = () => {
   window.alchemyWinSize = () => window.__win.push('size');
   window.alchemyWinClose = () => window.__win.push('close');
 
-  // The screensaver's system-audio path (src/90-shell.js Shell.useLocalAudio) with the Deno host
-  // and its WASAPI helper replaced by this: the {"rate":n} message, then interleaved stereo f32 of
+  // The screensaver's system-audio path (src/90-shell.js Shell.useLocalAudio) with the desktop host
+  // and its WASAPI capture replaced by this: the {"rate":n} message, then interleaved stereo f32 of
   // the same tone, paced off the wall clock so the page's ring holds a full, continuous window.
   window.WebSocket = class {
     constructor(url) {

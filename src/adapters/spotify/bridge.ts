@@ -2,8 +2,8 @@
 // web view of its own that the host watches through the DevTools Protocol. The host reports what
 // it saw as events and runs our requests inside the web player with its credentials; the bearer
 // never comes to this page. What it reports is kept as window.__wmpSpotify with the same
-// wmp-spotify-* events the Deno host's injected script fires, from the same rules (the cluster
-// and device parts below are deno-webview/spotify.ts's), so the adapter above reads one shape.
+// wmp-spotify-* events the Deno host's injected script fired, from the same rules (the cluster
+// and device parts below are its spotify.ts's), so the adapter above reads one shape.
 import '../host/globals';
 import type { Device } from '../../model';
 import type { SpotifyObserved } from '../host/globals';

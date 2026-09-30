@@ -59,7 +59,7 @@ export const VIEW_LABELS = [
 ] as const;
 
 // Covered: the desktop host calls window.alchemyOccluded when its window stops or starts being seen
-// (deno-webview/win32.ts occluded). WebView2 runs rAF at 60 fps for a window nobody can see, so every
+// (tauri/src/win.rs occluded). WebView2 runs rAF at 60 fps for a window nobody can see, so every
 // frame loop stops asking while it is covered and is restarted when it is not, as minimized does.
 let covered = false;
 const seen = new Set<() => void>();

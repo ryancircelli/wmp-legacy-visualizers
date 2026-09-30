@@ -1,9 +1,9 @@
 // TimedLevel from raw PCM: the host socket's path in the old shell (Shell.useLocalAudio, src/90-shell.js).
 //
 // WebView2 refuses every audio-only getDisplayMedia and shows its own unanswerable picker for the
-// audio+video one, so the capture happens outside the browser: a WASAPI loopback helper writes PCM to the
-// Deno host, which relays it over a WebSocket — first a {"rate":n} text message, then interleaved stereo
-// float32 frames. Those samples are analysed here, in JS, and not by an AnalyserNode: a screensaver's
+// audio+video one, so the capture happens outside the browser: the desktop host captures the WASAPI
+// loopback (tauri/src/audio) and sends it over a WebSocket — first a {"rate":n} text message, then
+// interleaved stereo float32 frames. Those samples are analysed here, in JS, and not by an AnalyserNode: a screensaver's
 // AudioContext stays 'suspended' forever with no gesture to resume it, and a suspended context runs no graph.
 //
 // The bytes are the AnalyserNode's own definition, the one tools/gen_frames.py mirrors: a Blackman window

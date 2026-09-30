@@ -1,4 +1,4 @@
-// window.alchemyOccluded (deno-webview/win32.ts occluded): a covered window's frame loops stop
+// window.alchemyOccluded (tauri/src/win.rs occluded): a covered window's frame loops stop
 // asking for frames, and start again, once each, when it is seen.
 import { renderHook } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';

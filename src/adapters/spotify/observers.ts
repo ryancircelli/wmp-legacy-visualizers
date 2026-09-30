@@ -1,5 +1,5 @@
-// The host's observers (deno-webview/spotify.ts) start at document creation and this runs later:
-// read what window.__wmpSpotify already has, then follow its events.
+// The host's observers (the Deno host's spotify.ts; bridge.ts on Tauri) start at document creation and
+// this runs later: read what window.__wmpSpotify already has, then follow its events.
 import type { Device } from '../../model';
 import { onState } from './state';
 import { deviceVolume } from './connect';

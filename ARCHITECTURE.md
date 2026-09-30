@@ -4,7 +4,7 @@ Decision (user, 2026-09-24): TypeScript everywhere, React for the skins, a real 
 The visualizer engine stays numerically byte-identical (docs/EXACTNESS.md is the gate). The host boundary
 (CONTRACT.md v1–v6.1: messages, bindings, window globals, bundle file names) is UNCHANGED.
 
-## Toolchain (Node 24 / npm; Deno stays for the host)
+## Toolchain (Node 24 / npm)
 - vite ^6 + @vitejs/plugin-react, TypeScript ^5 (`strict: true`, `noUncheckedIndexedAccess`), vite-plugin-singlefile
 - react ^19, react-dom ^19; state: zustand ^5 (slices + `subscribeWithSelector` + devtools middleware)
 - tests: vitest + @testing-library/react + jsdom for units; the existing Playwright smokes (tests/*.js) re-pointed at dist/
@@ -12,15 +12,15 @@ The visualizer engine stays numerically byte-identical (docs/EXACTNESS.md is the
 - CSS: Tailwind v4 (`@tailwindcss/vite`) utilities over the tokens in `src/ui/theme.css`, plus one small CSS Module per
   skin for what utilities cannot say (see "Tailwind"); UI primitives: Radix (menubar, dropdown-menu, dialog)
 - npm scripts: `dev`, `build`, `test`, `lint`, `typecheck`, `smoke`. `python3 build.py` and `deno/build.ts` are RETIRED
-  once `npm run build` produces the same outputs; deno-webview's `page` task and CI call `npm ci && npm run build`.
+  once `npm run build` produces the same outputs; the desktop host's build and CI call `npm ci && npm run build`.
 
 ## Outputs (unchanged names; the host and CI depend on them)
 - `dist/index.html` — the whole page as ONE self-contained file (singlefile; no external requests but fonts none, and the
   lrclib/host sockets at runtime). Served by Cloudflare, unpacked by the exe, embedded by the screensaver.
 - `alchemy.html` at the repo root = a copy of dist/index.html (kept for the README/Downloads habit) — via `npm run build`.
 - `dist/spotify-inject.js` — JSON `{ "html": <body inner markup: just the mount node>, "css": <all css>, "js": <the bundle
-  as an IIFE/classic script string> }`. The host injects it into open.spotify.com (deno-webview/spotify.ts, unchanged
-  shape). The js must be a classic script (no `import`/`export`, no `type=module`), so Vite builds `format: 'iife'`.
+  as an IIFE/classic script string> }`. The Deno host injected it into open.spotify.com (its spotify.ts, unchanged
+  shape); the Tauri host does not use it. The js must be a classic script (no `import`/`export`, no `type=module`), so Vite builds `format: 'iife'`.
 - `dist/version.json`, `_headers`, `_redirects` as now (site/make_dist.py or an npm script; keep behaviour).
 
 ## Layout
@@ -43,7 +43,7 @@ src/
                      (player_state → playback slice; numbers are strings; is_paused; no active device = paused)
     local/           the app/website: system audio or share picker (getDisplayMedia), host GSMTC `media` frames,
                      mediaCmd over the socket, lyrics from the host (CONTRACT v4/v5)
-    host/            the socket to the Deno host (PCM + JSON), alchemyWin*/alchemyReady/alchemySpotifyLogout bindings,
+    host/            the socket to the desktop host (PCM + JSON), alchemyWin*/alchemyReady/alchemySpotifyLogout bindings,
                      screensaver/app/spotify mode detection (window.alchemyScreensaver, alchemyEngine, alchemyRoot)
   skins/
     types.ts         Skin = { id, name, Root: React.FC, shortcuts? } (see "Skins")
@@ -262,7 +262,8 @@ The SVG-drawn chrome (swooshes, lozenge, icons) is inline SVG in the components,
 A toolchain+engine: package.json, vite/ts/eslint config, src/engine/**, tools/* adapters, tests/engine/**
 B model+adapters: src/model/**, src/adapters/**, tests/model/**, tests/adapters/**
 C skin+app: src/skins/**, src/app/**, src/main.ts, tests/skins/**, tests/*-smoke.js
-D host+CI: deno-webview/** (spotify.ts injection of the new bundle, deno.json tasks), deno/** (retire build.ts),
+D host+CI: deno-webview/** (spotify.ts injection of the new bundle, deno.json tasks), deno/** (retire build.ts;
+  both folders since removed with the Deno host, docs/history/deno-webview.md),
   .github/workflows/**, site/**, README/HANDOFF build sections
 Lead: cut-over commit (delete old files), exactness re-run, live verification, PR.
 

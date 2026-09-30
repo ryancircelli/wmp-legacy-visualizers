@@ -16,13 +16,13 @@ use serde_json::Value;
 use std::collections::BTreeMap;
 use tauri::{AppHandle, Runtime, WebviewWindow, async_runtime::Sender};
 
-/// Tells our page it is the Spotify player (CONTRACT.md v6: the Deno host sets the same global).
+/// Tells our page it is the Spotify player (CONTRACT.md v6: the Deno host set the same global).
 pub const INIT_JS: &str = "window.alchemyEngine = 'spotify';";
 pub const HOME: &str = "https://open.spotify.com/";
-/// Spotify's login page, back to the web player once signed in (deno-webview/spotify.ts).
+/// Spotify's login page, back to the web player once signed in (the Deno host's spotify.ts).
 pub const LOGIN: &str =
     "https://accounts.spotify.com/login?continue=https%3A%2F%2Fopen.spotify.com%2F";
-/// Ends the session and lands on the login page (deno-webview/main.ts SPOTIFY_LOGOUT).
+/// Ends the session and lands on the login page (the Deno host's main.ts SPOTIFY_LOGOUT).
 pub const LOGOUT: &str = "https://accounts.spotify.com/logout?continue=https%3A%2F%2Faccounts.spotify.com%2Flogin%3Fcontinue%3Dhttps%253A%252F%252Fopen.spotify.com%252F";
 
 type Reply<T> = Sender<Result<T, String>>;

@@ -141,7 +141,7 @@ Privacy: the token never leaves the page; the host never sees it; nothing is wri
 ### v6.1 — the page uses the web player's own channels (the public Web API answers 429 to its token)
 Measured 2026-09-24: every api.spotify.com/v1 call with the web player's token is 429 from the first request. The host's
 injected script therefore observes the page's own traffic and exposes it; the page never calls api.spotify.com.
-Host (deno-webview/spotify.ts) maintains window.__wmpSpotify = { token, at, clientToken, loggedIn, expiresAt, clientId,
+Host (the Deno host's spotify.ts) maintains window.__wmpSpotify = { token, at, clientToken, loggedIn, expiresAt, clientId,
   deviceId (this web player's 40-hex connect id), activeDeviceId, connectionId, hashes: {operationName: sha256},
   state: <last player_state>, cluster: <last cluster> } and dispatches CustomEvents on window:
   "wmp-spotify-token" {token} (only on change), "wmp-spotify-auth" {loggedIn} (from /api/token isAnonymous; an anonymous token also replaces the page with
@@ -173,11 +173,11 @@ Page (src/95-spotify.js):
 Terms: /api/token is what the web player itself calls; Spotify's response notes that third-party use of it breaks the
 Developer Terms. This is a personal tool; the token never leaves the page.
 
-## v7 — page updates (`deno-webview/update.ts`)
+## v7 — page updates (the Deno host's `update.ts`; `tauri/src/update.rs` since v8)
 Every build writes dist/update.json {version, built (commit time), needs, host, files: {name: sha256}};
 deploy signs it (dist/update.json.sig, Ed25519, tools/sign-update.js with the UPDATE_SIGNING_KEY secret)
 and the exes fetch it, with index.html (screensaver) or spotify-inject.js (WmpSpotify), from
-wmp.ryancircelli.com. A copy is used when the signature verifies with the key baked into update.ts,
+wmp.ryancircelli.com. A copy is used when the signature verifies with the key baked into the exe,
 the file matches its hash, `built` is newer than the exe's own page, and `needs` <= the exe's
 HOST_API. **tauri/host-api.json is the contract version: bump it in the same commit as any
 page change that needs something older exes lack** (a new binding, a changed message); older exes
@@ -194,10 +194,11 @@ player and Spotify windows): a custom protocol, `wmp`, which Tauri serves on Win
 `https://wmp.localhost/`, so the origin, and the `localStorage` it keys, is the Deno host's
 (`wmp://localhost/` elsewhere). Data folder `%LOCALAPPDATA%\WmpLegacyVisualizers\tauri\` (WebView2
 profile, window-state.json, alchemy.log, update\, lyrics\): a WebView2 profile can be open in one program
-at a time, so the two hosts keep separate settings and logins while both exist.
+at a time, so it is not the Deno host's; the first launch copies that host's settings and login over
+once (tauri/src/carry.rs).
 Globals (tauri/src/host.js, on every document of every Tauri window, before any page script):
   - `alchemyElectron = { loopback: false, mode: "screensaver"|"config" }`. loopback is false (the Deno host
-    says true): with it true, a page without host audio (no socket, or off Windows) would call
+    said true): with it true, a page without host audio (no socket, or off Windows) would call
     getDisplayMedia, which WebView2 answers with a share picker, not a loopback.
   - `alchemyScreensaver` is MERGED into, never replaced: `Object.assign({audio:false, url:''},
     window.alchemyScreensaver)`. A plugin's init script runs before the window's own, and the audio
@@ -229,11 +230,11 @@ Cache `tauri\update\`.
 ### v8 — the audio socket (both hosts)
   - `/audio` answers only with the per-launch key, 128 random bits in hex: `ws://127.0.0.1:<port>/audio?k=<key>`;
     without it, 403. The port is findable by anything local, and the socket is the system's sound, what
-    is playing, and transport and wake commands. The Deno host keys it the same way (server.ts).
+    is playing, and transport and wake commands. The Deno host keyed it the same way (its server.ts).
   - `{"rate":n}` is the first text frame, then PCM (binary, interleaved stereo f32, one message per
     capture period: 3840 bytes at 48 kHz). The Tauri host sends the rate ONCE per socket, even when the
     capture restarts after a default-device change and keeps streaming into the same socket; the Deno
-    host sends it again after a helper restart. The page attaches a socket's source once
+    host sent it again after a helper restart. The page attaches a socket's source once
     (src/adapters/local/index.ts `openHostAudio`, since 2026-09-29), so either is safe; before that fix a
     second rate replaced the source, and stopping the old one closed the socket it arrived on.
   - `media`, `lyrics`, `mediaCmd`, `wake` as v4/v5. `lyricsPref` refetches only on a change (the page sends
@@ -254,7 +255,7 @@ called) and runs our requests in an isolated world of its page.
 The page picks its transport (src/adapters/spotify/transport.ts): the bridge when `window.__TAURI__` exists,
 else in-page (v6.1). Everything above the transport is shared: the bridge keeps `window.__wmpSpotify` and
 fires the same `wmp-spotify-auth` / `-hash` / `-state` / `-devices` events from what the host reports, by
-deno-webview/spotify.ts's rules. `__wmpSpotify.token` never exists; `hasToken` says whether the host has one.
+the rules of the Deno host's spotify.ts. `__wmpSpotify.token` never exists; `hasToken` says whether the host has one.
 Host -> page (Tauri events, to the "spotify" window only):
   - `sp:auth {loggedIn: true|false|null, hasToken: bool}` — the first bearer seen; /api/token's
     isAnonymous changing; File > Log Out.
@@ -290,16 +291,26 @@ Measured 2026-09-29, the logged-out web player 60 s in: our player window alone 
 Spotify's view in the app's browser under its own profile 553-560 MB; in a browser of its own 655-667 MB,
 and slower to come up (0.7-0.8 s against 0.25-0.55 s). The shared browser it is.
 
-## Dev-only (`--dev`; never in a release exe) — hot reload for the Spotify overlay
-`npm run dev:spotify` (deno-webview/dev.mjs) rebuilds dist/spotify-inject.js on every change and starts the host with
-`--mode=spotify --dev`. The injected bootstrap (deno-webview/spotify.ts) then fetches the bundle at mount time from the
-host's worker, `GET http://127.0.0.1:<port>/dev/inject` (CORS + private-network allowed), and opens a second, dev-only
-socket to it, `ws://127.0.0.1:<port>/dev` (deno-webview/dev.ts; the page's own `/audio` socket is untouched):
-  Host → bootstrap: {"type":"devCss","css":"<the new css>"}  — CSS-only rebuild: the adopted CSSStyleSheet is replaced in
-                    place (replaceSync; the host's #chrome/#titlebar square-corner rule is re-appended). No reload.
-                    {"type":"devReload"}                     — js or html changed: location.reload(); the document-created
-                    script fetches the new bundle; the Spotify login lives in the profile, so it persists.
-The page never sees these; it needs no code for them. Vite HMR cannot run in open.spotify.com (CSP script-src).
+## Dev-only (`tauri dev`; never in a release exe) — hot reload in the desktop windows
+`npm run dev:app` (the player) and `npm run dev:spotify` (`--mode=spotify`) run `tauri dev` with
+tauri/tauri.dev.conf.json: Vite's dev server (`npm run dev -- --strictPort`, http://localhost:5173/)
+and a debug host that loads the page from it, `http://localhost:5173/index.html?<the same query>`,
+instead of `https://wmp.localhost/`. Vite's HMR runs in the page as it does on the website. The
+globals, the audio socket and the Spotify bridge are the same (the audio plugin hands its URL to
+`localhost` too, and Tauri counts `devUrl` as the app's own origin for its IPC). The origin, and so
+`localStorage`, is the dev server's. A dev build is its own instance (identifier
+`com.ryancircelli.wmp-legacy-visualizers.dev`) with its own data folder, `tauri-dev\`, beside
+`tauri\`, and never updates its page. `tauri build` compiles Tauri's `custom-protocol` feature in, so
+`tauri::is_dev()` is false there, and its config has no `devUrl`: a release exe always serves its own.
+Retired with the Deno host: its `--dev` mode (a watch build of dist/spotify-inject.js, CSS swapped into
+the overlay over a `/dev` socket, a reload for anything else).
+
+## Retired: the Deno host
+`deno-webview/` (v4–v7's host: `Alchemy.scr` and `WmpSpotify.exe` on Deno + WebView2) and `deno/` (the
+static handler it served `dist/` with) were removed on 2026-09-30, after the Tauri host (v8) shipped in
+60d9b23. Its design record and measurements are docs/history/deno-webview.md; the sources are in git
+history. No host now uses the page's in-page Spotify transport (v6.1), dist/spotify-inject.js, or the
+`/update` worker fallback; the page still carries them.
 
 ## Retired: the system-audio application
 `WmpVisualizers.exe` (`--mode=app`, release `app-latest`) was retired 2026-09-24. v4 (Now Playing) and v5 (lyrics) now
