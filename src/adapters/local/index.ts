@@ -95,12 +95,15 @@ export function startHost(store: AppStore, opts: { hostMedia?: () => boolean; pl
 
   // The desktop host without its WASAPI helper: loopback audio with no picker (video:false: desktop
   // video capture fails on plenty of Windows machines). Never ask getUserMedia for audio alone that
-  // way — it hard-crashes the renderer.
+  // way — it hard-crashes the renderer. A host with no getDisplayMedia at all (a WKWebView: the iOS
+  // app, ios/) gets the microphone instead, which hears the phone's own speaker.
   async function startLoopback(): Promise<void> {
     audio();
+    const mic = !navigator.mediaDevices.getDisplayMedia;
     let why = '', stream: MediaStream;
     try {
-      stream = await navigator.mediaDevices.getDisplayMedia({ audio: true, video: false }).catch((e: { name?: string }) => {
+      stream = mic ? await navigator.mediaDevices.getUserMedia({ audio: true })
+        : await navigator.mediaDevices.getDisplayMedia({ audio: true, video: false }).catch((e: { name?: string }) => {
         why = 'getDisplayMedia ' + e.name + ' -> ';
         const desktop = { mandatory: { chromeMediaSource: 'desktop' } } as unknown as MediaTrackConstraints;
         return navigator.mediaDevices.getUserMedia({ audio: desktop, video: desktop });
@@ -111,7 +114,7 @@ export function startHost(store: AppStore, opts: { hostMedia?: () => boolean; pl
     }
     for (const t of stream.getVideoTracks()) { t.stop(); stream.removeTrack(t); }
     if (!stream.getAudioTracks().length) { actions.setStatus(idleStatus(store)); return; }
-    attach({ kind: 'loopback', node: audio().source(stream), label: 'System audio (loopback)',
+    attach({ kind: 'loopback', node: audio().source(stream), label: mic ? 'Microphone' : 'System audio (loopback)',
              stop: () => { for (const t of stream.getTracks()) t.stop(); } });
   }
 

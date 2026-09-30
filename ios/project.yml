@@ -1,0 +1,48 @@
+# The xcodegen spec for the iOS app; the .xcodeproj is not committed. CI runs
+# `xcodegen generate --spec ios/project.yml` and builds the ios/WmpSpotify.xcodeproj it writes.
+name: WmpSpotify
+targets:
+  WmpSpotify:
+    type: application
+    platform: iOS
+    deploymentTarget: "17.0"
+    # xcodegen writes a shared scheme only for targets that ask for one; CI builds -scheme WmpSpotify.
+    scheme: {}
+    # Listed file by file so the generated Info.plist next to them is never a resource.
+    sources:
+      - path: WmpSpotify/App.swift
+      - path: WmpSpotify/observer.js
+        buildPhase: resources
+      - path: WmpSpotify/Assets.xcassets
+    info:
+      path: WmpSpotify/Info.plist
+      properties:
+        CFBundleDisplayName: WMP Spotify
+        # xcodegen's defaults are the literals "1.0" and "1": these let CI's build number through.
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        LSRequiresIPhoneOS: true
+        UILaunchScreen: {}
+        UIBackgroundModes: [audio]
+        NSMicrophoneUsageDescription: The visualizers follow what the phone hears.
+        ITSAppUsesNonExemptEncryption: false
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        UISupportedInterfaceOrientations~ipad:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationPortraitUpsideDown
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.rcircelli.wmpspotify
+        DEVELOPMENT_TEAM: QKSF9UQ8WT
+        CODE_SIGN_STYLE: Automatic
+        MARKETING_VERSION: "0.1"
+        CURRENT_PROJECT_VERSION: 1
+        TARGETED_DEVICE_FAMILY: "1,2"
+        SWIFT_VERSION: "5.9"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        GENERATE_INFOPLIST_FILE: "NO"

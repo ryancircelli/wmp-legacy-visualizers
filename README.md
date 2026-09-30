@@ -19,6 +19,7 @@ Three formats, one port.
 | **Website** | https://wmp.ryancircelli.com | Open it, hit play, share a tab with audio. Nothing to install. |
 | **Screensaver** | [`screensaver-latest`](https://github.com/ryancircelli/wmp-legacy-visualizers/releases/download/screensaver-latest/AlchemyScreensaver-win64.zip) | `Alchemy.scr`, the same thing full-screen when the machine goes idle. |
 | **Spotify** | [`spotify-latest`](https://github.com/ryancircelli/wmp-legacy-visualizers/releases/download/spotify-latest/WmpSpotify-win64.zip) | `WmpSpotify.exe`, the player window as a Spotify client: Spotify's web player runs inside it under the WMP skin, logged in once in its own profile. |
+| **iPhone / iPad** | TestFlight (private) | The same Spotify client as an iOS app: Spotify's web player in a WKWebView under the skin. [`ios/README.md`](ios/README.md). |
 
 Both Windows downloads are rebuilt on every push, need only the WebView2 runtime (which ships with
 Windows 11 and current Windows 10), and are self-contained single files — nothing has to stay next to

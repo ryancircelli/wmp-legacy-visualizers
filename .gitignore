@@ -28,3 +28,5 @@ re/
 spec/
 NOTES-*.md
 HANDOFF.md
+ios/WmpSpotify.xcodeproj/
+ios/WmpSpotify/Info.plist

@@ -307,8 +307,21 @@ the overlay over a `/dev` socket, a reload for anything else).
 `deno-webview/` (v4–v7's host: `Alchemy.scr` and `WmpSpotify.exe` on Deno + WebView2) and `deno/` (the
 static handler it served `dist/` with) were removed on 2026-09-30, after the Tauri host (v8) shipped in
 60d9b23. Its design record and measurements are docs/history/deno-webview.md; the sources are in git
-history. No host now uses the page's in-page Spotify transport (v6.1), dist/spotify-inject.js, or the
-`/update` worker fallback; the page still carries them.
+history. The `/update` worker fallback has no host now; the page still carries it. The in-page Spotify
+transport (v6.1) and dist/spotify-inject.js live on in the iOS app (`ios/`, below).
+
+## v9 — the iOS app (`ios/`, .github/workflows/ios.yml)
+One WKWebView on https://open.spotify.com/ with v6.1's overlay: `ios/WmpSpotify/observer.js` is the
+Deno host's injected script (its observers unchanged, its host bindings answered in-page), wrapped by
+App.swift around dist/spotify-inject.js, which the app fetches from wmp.ryancircelli.com at every
+launch and keeps in Caches (offline: the last copy; none: Spotify's page bare). The user script runs at
+document start in the main frame only, with a desktop Safari user agent, since Spotify serves the web
+player to desktop browsers only. Host bindings the page sees: `alchemyElectron = {loopback:true,
+mode:'app'}` (the page then takes the microphone: startLoopback with no getDisplayMedia),
+`alchemyLog` (a WKScriptMessageHandler), `alchemySpotifyLogout` (accounts.spotify.com/logout). No audio
+socket, no lyrics from a host (LRCLIB is fetched by the page), no window bindings, no page-update
+signature (the site is trusted as the bundle's source). Built on GitHub's macOS runners, signed with
+Xcode's cloud-managed certificates through an App Store Connect API key, uploaded to TestFlight.
 
 ## Retired: the system-audio application
 `WmpVisualizers.exe` (`--mode=app`, release `app-latest`) was retired 2026-09-24. v4 (Now Playing) and v5 (lyrics) now
