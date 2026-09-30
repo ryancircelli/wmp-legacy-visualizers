@@ -58,6 +58,18 @@ function blur5(surf: Surface, p: number): void {
 
 // ---------------------------------------------------------------- ColorFader
 // 18000aed8 ctor / 18000bf70 reset / 18000afd4 tick.
+// The ease F(sin(F(tick / period) * PI_2_F)) depends on (tick, period) alone, so it is tabled per
+// period as ticks first ask for it: the same call on the same argument, made once (NaN = not yet).
+// Periods are whole numbers up to a line's step count (1023); anything else is computed as it comes.
+var EASE = new Map<number, Float32Array>();
+function ease(tick: number, period: number): number {
+  if ((period | 0) !== period || period > 4096) return F(sin(F(tick / period) * PI_2_F));
+  var t = EASE.get(period);
+  if (!t) { t = new Float32Array(period + 1).fill(NaN); EASE.set(period, t); }
+  var v = t[tick];
+  if (v !== v) v = t[tick] = F(sin(F(tick / period) * PI_2_F));
+  return v;
+}
 class ColorFader {
   declare maxPeriod: number;
   declare tick: number;
@@ -86,7 +98,7 @@ class ColorFader {
   }
   step(): void {                                  // 18000afd4 ("Tick"; `tick` is the counter field)
     if (++this.tick <= this.period) {
-      var t = F(sin(F(this.tick / this.period) * PI_2_F));   // quarter-sine ease-out
+      var t = ease(this.tick, this.period);                 // quarter-sine ease-out
       this.cur = lerp(this.from, this.to, t);
     } else if (this.ramping) {               // segments > 1: ping-pong
       this.reset(this.to, this.from, this.segments * this.period, this.segments);
@@ -100,6 +112,19 @@ ColorFader.randomRGB = randomRGB;
 ColorFader.lerp = lerp;
 
 // ------------------------------------------------------------------- Pen
+// Wiggle's envelope 0, F(|sin(loops * (i / steps) * PI_D)|), depends on (loops, steps, i) alone:
+// tabled per (loops, steps) as for the ColorFader's ease. loops is 1..20, steps a line's 1..1023.
+var ENV = new Map<number, Float32Array>();
+function envelope(loops: number, i: number, steps: number): number {
+  if ((loops | 0) !== loops || (steps | 0) !== steps || loops < 0 || loops > 64 || steps < 1 || steps > 4096 ||
+      (i | 0) !== i || i < 0 || i >= steps) return F(Math.abs(sin(loops * (i / steps) * PI_D)));
+  var key = loops * 4097 + steps, t = ENV.get(key);
+  if (!t) { t = new Float32Array(steps).fill(NaN); ENV.set(key, t); }
+  var v = t[i];
+  if (v !== v) v = t[i] = F(Math.abs(sin(loops * (i / steps) * PI_D)));
+  return v;
+}
+
 // Plotter (clip/ink/brush/surf/blendAmt) + Wiggle (audio displacement) in one object,
 // exactly as the DLL embeds them.
 class Pen {
@@ -158,7 +183,7 @@ class Pen {
     }
     var d = F(F(this.amplitude * 0.0078125) * F(v - 128));      // 0.0078125f == 1/128
     if (this.envelope === 0) {
-      d = F(d * F(Math.abs(sin(this.loops * (i / this.steps) * PI_D))));
+      d = F(d * envelope(this.loops, i, this.steps));
     } else if (this.envelope === 1) {
       var h = this.steps >> 1;
       d = F(d * F(F(i < h ? i : 2 * h - i) / h));
@@ -595,6 +620,22 @@ class AtomBalls extends A.Effect {
     var W = S.w, px = S.px;
     var bodyCol = this.invertColors ? (0xFFFFFF - this.colorA.cur) >>> 0 : this.colorA.cur;
     var haloCol = this.colorB.cur;
+    var T = ballTable(r);
+    if (T) {                                          // the same pixels, cos() from the radius's table
+      var body = T.body, halo = T.halo, m = body.length;
+      for (var x = cx - r; x <= cx + r; x++) {
+        if (x < 0 || x >= this.w) continue;
+        for (var y = cy - r; y <= cy + r; y++) {
+          if (y < 0 || y >= this.h) continue;
+          var dx = x - cx, dy = y - cy, q = dx * dx + dy * dy;
+          if (q >= m) continue;                       // outside the halo ring: neither branch
+          var p = y * W + x, v = px[p], f = body[q], g = halo[q];
+          if (f === f) { v = lerp(bodyCol, v, F(f * alpha)); px[p] = v; }
+          if (g === g) px[p] = lerp(v, haloCol, g);
+        }
+      }
+      return;
+    }
     for (var x = cx - r; x <= cx + r; x++) {
       if (x < 0 || x >= this.w) continue;             // unsigned compare in the DLL
       for (var y = cy - r; y <= cy + r; y++) {
@@ -659,6 +700,27 @@ class AtomBalls extends A.Effect {
     this.drawBall(ctx.A!, mx, my, R, alpha);           // ball B wins in the overlap
     this.colorA.step(); this.colorB.step();
   }
+}
+
+// drawBall's two cos() per pixel depend on r and the pixel's squared distance q alone: tabled per
+// radius (body[q] = the body's cos, halo[q] = the halo's F(g); NaN where that branch is not taken),
+// every entry the same expression on the same arguments as the loop above. q past r*r + 3.2r is in
+// neither. Radii are whole numbers; any other (or r < 1, or a huge one) takes the loop.
+interface BallTable { body: Float64Array; halo: Float32Array; }
+var BALLS = new Map<number, BallTable>();
+function ballTable(r: number): BallTable | null {
+  if ((r | 0) !== r || r < 1 || r > 512) return null;
+  var T = BALLS.get(r);
+  if (T) return T;
+  var m = r * r + Math.ceil(3.2 * r) + 1;
+  T = { body: new Float64Array(m), halo: new Float32Array(m) };
+  for (var q = 0; q < m; q++) {
+    var d = (r * r - q) / r;
+    if (d >= 1.0) { var t = d / r; T.body[q] = cos(t * t * PI_2_F); } else T.body[q] = NaN;
+    T.halo[q] = d > -3.140000104904175 && d < 3.140000104904175 ? F((cos(Math.abs(d)) + 1.0) * 0.5) : NaN;
+  }
+  BALLS.set(r, T);
+  return T;
 }
 
 export const Draw = { Pen: Pen, ColorFader: ColorFader, SuperStar: SuperStar,
