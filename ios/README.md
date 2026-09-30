@@ -14,24 +14,31 @@ The visualizers hear a broadcast upload extension (`WmpSpotifyBroadcast/`), the 
 screen recording uses. It receives the system's mix of every app's audio, so it has Spotify wherever it
 plays: a system screen recording of the app carries the music (checked 2026-09-30), where ReplayKit's
 in-app capture delivered only zeros from the web view (build 7; WebKit's audio comes out of a process
-in-app capture does not hear). The extension sends its audio to the app over a loopback WebSocket,
-ws://127.0.0.1:47831 (`AudioServer` in App.swift): `{"rate":n}` first, then each buffer as interleaved
-stereo int16 LE. The app cannot pass it on the same way, since WebKit refuses ws:// from Spotify's https
-page (build 6), so it runs `__wmpAudio.pcm(<base64>, n)` in the page by evaluateJavaScript, batched
-every 100 ms, and `observer.js` hands that to the page as its audio socket. There is no microphone
+in-app capture does not hear). The extension sends its audio to the app over a Unix socket,
+`audio.sock` in the App Group container group.com.rcircelli.wmpspotify (`AudioServer` in App.swift):
+loopback TCP from the extension to the app never connected (build 9). Each frame is the body's length
+(4 bytes, little-endian), a type byte and the body: type 0 `{"rate":n}` first, then type 1 with each
+buffer as interleaved stereo int16 LE. The app cannot pass it to the page over a socket, since WebKit
+refuses ws:// from Spotify's https page (build 6), so it runs `__wmpAudio.pcm(<base64>, n)` in the
+page by evaluateJavaScript, batched every 100 ms, and `observer.js` hands that to the page as its
+audio socket. There is no microphone
 anywhere: the app's audio session is plain playback, and the picker has no microphone button.
 
 To start it: about 2 s after launch the app opens iOS's broadcast sheet by itself (the button at the
 right end of the band opens it too). Tap Start Broadcast; after a 3 s countdown the red indicator in
 the status bar stays for as long as it runs. Stop it from that indicator or from Control Center. If
-the app is not running, the extension ends the broadcast with "WMP Spotify is not running". Between
-broadcasts the visualizers go dark. The band under the web view shows the host's last log line (scene
-changes go only to the list): tap it to reload the page, long-press it for the last 20 lines.
+the app cannot be reached, the extension ends the broadcast with "WMP Spotify is not running (<the
+connection's last state>)". Between broadcasts the visualizers go dark. The band under the web view
+shows the host's last log line (scene changes go only to the list): tap it to reload the page,
+long-press it for the last 60 lines. The extension logs each broadcast to `broadcast.log` in the App
+Group container; the app shows its last 40 lines in that list, prefixed `ext:`, read when the list
+opens and 8 s after the broadcast sheet comes up.
 
 ## Building
 
 No Xcode project is checked in. `ios/project.yml` is an [XcodeGen](https://github.com/yonaskolb/XcodeGen)
-spec; `xcodegen generate --spec ios/project.yml` writes `ios/WmpSpotify.xcodeproj` (scheme WmpSpotify).
+spec; `xcodegen generate --spec ios/project.yml` writes `ios/WmpSpotify.xcodeproj` (scheme WmpSpotify),
+and both targets' Info.plist and .entitlements files from it.
 `.github/workflows/ios.yml` does that on every push to master that touches `ios/`, archives a Release
 build numbered with the workflow's run number, and uploads it to TestFlight. The build is for one
 account's private TestFlight and never goes to the App Store.
@@ -54,13 +61,16 @@ The .p8 can be downloaded only once, when the key is made.
 
 1. Make the API key and add the three secrets (repository Settings > Secrets and variables > Actions).
 2. Register the App IDs com.rcircelli.wmpspotify and com.rcircelli.wmpspotify.broadcast (the
-   extension) at developer.apple.com > Identifiers (explicit, no capabilities). The archive step does
-   not register them: measured 2026-09-30, the archive signed without one and the upload failed with
-   "Error Downloading App Information".
-3. In App Store Connect, Apps > + > New App: iOS, bundle ID com.rcircelli.wmpspotify, any SKU. The name
+   extension) at developer.apple.com > Identifiers (explicit). The archive step does not register them:
+   measured 2026-09-30, the archive signed without one and the upload failed with "Error Downloading
+   App Information".
+3. Register the App Group group.com.rcircelli.wmpspotify (Identifiers > App Groups), then turn on the
+   App Groups capability on both App IDs with that group ticked. The extension's socket and log live
+   in its container; without it on both, signing fails or the two see different containers.
+4. In App Store Connect, Apps > + > New App: iOS, bundle ID com.rcircelli.wmpspotify, any SKU. The name
    has to be unique across the App Store even though this app never ships there. A pending Program
    License Agreement blocks this until the Account Holder accepts it.
-4. Run the workflow (Actions > ios > Run workflow). Once the build has processed, add yourself as an
+5. Run the workflow (Actions > ios > Run workflow). Once the build has processed, add yourself as an
    internal tester (the app's TestFlight tab > Internal Testing) and install it from the TestFlight app.
 
 ## Verified on a phone

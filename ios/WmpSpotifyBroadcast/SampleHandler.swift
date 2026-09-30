@@ -1,10 +1,13 @@
 // The broadcast upload extension (ios/README.md): what a system screen recording hears, the mix of
 // every app's audio (Spotify's web player in WMP Spotify among them), sent to the app's AudioServer
-// on ws://127.0.0.1:47831 as {"rate":n} in a text frame, then each buffer as a binary frame of
-// interleaved stereo int16 LE. Video and the microphone are dropped. No app reachable within 5 s, or
-// the socket lost, ends the broadcast with "WMP Spotify is not running". Extensions get about 50 MB,
-// so nothing is kept: a buffer that arrives while the last one is still unsent is dropped. All state
-// is on `queue`.
+// over a Unix socket, audio.sock in the App Group container (loopback TCP from here never connected,
+// build 9). Frames: the body's length (4 bytes, little-endian), a type byte, the body: type 0
+// {"rate":n} as UTF-8 JSON first, then type 1 with each buffer as interleaved stereo int16 LE. Video
+// and the microphone are dropped. No app reachable within 5 s, or the socket lost, ends the broadcast
+// with "WMP Spotify is not running (<the connection's last state>)". Each broadcast's log goes to
+// broadcast.log in the same container, which the app shows on a long press. Extensions get about
+// 50 MB, so nothing is kept: a buffer that arrives while the last one is still unsent is dropped. All
+// state is on `queue`, and log() is called only there.
 import AudioToolbox
 import CoreMedia
 import Foundation
@@ -14,48 +17,66 @@ import ReplayKit
 final class SampleHandler: RPBroadcastSampleHandler {
     private let queue = DispatchQueue(label: "broadcast-audio")
     private var connection: NWConnection?
-    private var ready = false      // the WebSocket handshake is done
+    private var lastState = "no connection"  // the connection's last state, for the log and the alert
+    private var logPath: String?   // broadcast.log in the App Group container
+    private var ready = false      // connected to the app
     private var done = false       // the broadcast is over, by the user or by fail()
     private var sentRate = 0.0     // the rate the app was last told
     private var unsent = 0         // frames handed to the connection and not yet processed
     private var described = false  // the first buffer's format was logged
+    private var measured = false   // the first buffer's frames and peak were logged
     private var skipped = false    // a buffer this cannot read was logged
+    private var sendFailed = false // a send error was logged
+
+    private static let clock: DateFormatter = {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = "HH:mm:ss"
+        return f
+    }()
 
     override func broadcastStarted(withSetupInfo setupInfo: [String: NSObject]?) {
-        let ws = NWProtocolWebSocket.Options()
-        ws.autoReplyPing = true
-        let params = NWParameters(tls: nil, tcp: NWProtocolTCP.Options())
-        params.defaultProtocolStack.applicationProtocols.insert(ws, at: 0)
-        let c = NWConnection(to: .hostPort(host: "127.0.0.1", port: 47831), using: params)
-        c.stateUpdateHandler = { [weak self] state in
-            guard let self else { return }
-            switch state {
-            case .ready:
-                NSLog("wmp broadcast: connected to the app")
-                self.ready = true
-            case .waiting(let error):
-                // Refused (the app is not running) lands here, and the deadline below ends it.
-                NSLog("wmp broadcast: waiting: %@", "\(error)")
-            case .failed(let error):
-                NSLog("wmp broadcast: failed: %@", "\(error)")
-                self.fail()
-            case .cancelled:
-                self.fail()
-            default:
-                break
+        queue.sync {
+            guard let dir = FileManager.default.containerURL(
+                forSecurityApplicationGroupIdentifier: "group.com.rcircelli.wmpspotify") else {
+                lastState = "no App Group container"
+                fail()
+                return
             }
-        }
-        queue.sync { connection = c }
-        c.start(queue: queue)
-        queue.asyncAfter(deadline: .now() + 5) { [weak self] in
-            guard let self, !self.ready else { return }
-            self.fail()
+            let logFile = dir.appendingPathComponent("broadcast.log").path
+            FileManager.default.createFile(atPath: logFile, contents: nil)  // emptied: this broadcast only
+            logPath = logFile
+            let socket = dir.appendingPathComponent("audio.sock").path
+            log("broadcastStarted, \(socket) exists: \(FileManager.default.fileExists(atPath: socket))")
+
+            let c = NWConnection(to: .unix(path: socket), using: NWParameters(tls: nil, tcp: NWProtocolTCP.Options()))
+            c.stateUpdateHandler = { [weak self] state in
+                guard let self else { return }
+                self.lastState = "\(state)"
+                self.log("connection: \(state)")
+                switch state {
+                case .ready:
+                    self.ready = true
+                case .failed, .cancelled:
+                    // Refused (the app is not running) may land in .waiting instead: the deadline ends that.
+                    self.fail()
+                default:
+                    break
+                }
+            }
+            connection = c
+            c.start(queue: queue)
+            queue.asyncAfter(deadline: .now() + 5) { [weak self] in
+                guard let self, !self.ready else { return }
+                self.fail()
+            }
         }
     }
 
     // Async: fail() calls finishBroadcastWithError on `queue`, and iOS may call this from inside it.
     override func broadcastFinished() {
         queue.async {
+            self.log("broadcastFinished")
             self.done = true
             self.connection?.cancel()
             self.connection = nil
@@ -68,22 +89,36 @@ final class SampleHandler: RPBroadcastSampleHandler {
     }
 
     private func take(_ buffer: CMSampleBuffer) {
-        guard ready, !done, unsent == 0, let s = stereo(buffer), s.frames > 0 else { return }
+        // The first buffer is read for the log even before the app is connected.
+        guard !done, ready && unsent == 0 || !measured, let s = stereo(buffer) else { return }
+        if !measured {
+            measured = true
+            log("first buffer: \(s.frames) frames, peak \(s.peak)")
+        }
+        guard ready, unsent == 0, s.frames > 0 else { return }
         if s.rate != sentRate {
             sentRate = s.rate
-            send(Data("{\"rate\":\(Int(s.rate))}".utf8), .text)
+            send(0, Data("{\"rate\":\(Int(s.rate))}".utf8))
         }
-        send(s.pcm, .binary)
+        send(1, s.pcm)
     }
 
-    private func send(_ data: Data, _ opcode: NWProtocolWebSocket.Opcode) {
+    // One frame: the body's length (4 bytes, little-endian), `type`, the body.
+    private func send(_ type: UInt8, _ body: Data) {
         guard let connection else { return }
+        var frame = withUnsafeBytes(of: UInt32(body.count).littleEndian) { Data($0) }
+        frame.append(type)
+        frame.append(body)
         unsent += 1
-        let context = NWConnection.ContentContext(identifier: "audio",
-                                                  metadata: [NWProtocolWebSocket.Metadata(opcode: opcode)])
         // The completion runs on `queue`, the connection's queue.
-        connection.send(content: data, contentContext: context, isComplete: true,
-                        completion: .contentProcessed { [weak self] _ in self?.unsent -= 1 })
+        connection.send(content: frame, completion: .contentProcessed { [weak self] error in
+            guard let self else { return }
+            self.unsent -= 1
+            if let error, !self.sendFailed {
+                self.sendFailed = true
+                self.log("send failed: \(error)")
+            }
+        })
     }
 
     // Once: the app is gone (or never came up), so the broadcast ends with iOS's alert and the reason.
@@ -91,10 +126,20 @@ final class SampleHandler: RPBroadcastSampleHandler {
         guard !done else { return }
         done = true
         ready = false
+        let why = "WMP Spotify is not running (\(lastState))"
+        log("fail: \(why)")
         connection?.cancel()
         connection = nil
-        finishBroadcastWithError(NSError(domain: "wmp", code: 1,
-                                         userInfo: [NSLocalizedDescriptionKey: "WMP Spotify is not running"]))
+        finishBroadcastWithError(NSError(domain: "wmp", code: 1, userInfo: [NSLocalizedDescriptionKey: why]))
+    }
+
+    // NSLog, and a line in broadcast.log for the app to show. On `queue` only.
+    private func log(_ s: String) {
+        NSLog("wmp broadcast: %@", s)
+        guard let logPath, let h = FileHandle(forWritingAtPath: logPath) else { return }
+        defer { try? h.close() }
+        _ = try? h.seekToEnd()
+        try? h.write(contentsOf: Data("\(Self.clock.string(from: Date())) \(s)\n".utf8))
     }
 
     /// The buffer as interleaved stereo little-endian int16 (mono doubled), with its peak (0...1),
@@ -106,7 +151,7 @@ final class SampleHandler: RPBroadcastSampleHandler {
               let asbd = CMAudioFormatDescriptionGetStreamBasicDescription(desc)?.pointee else { return nil }
         if !described {
             described = true
-            NSLog("wmp broadcast: first app audio buffer: %@", "\(asbd)")
+            log("first buffer format: \(asbd)")
         }
         let flags = asbd.mFormatFlags
         let isFloat = flags & kAudioFormatFlagIsFloat != 0
@@ -178,6 +223,6 @@ final class SampleHandler: RPBroadcastSampleHandler {
     private func skip(_ why: String) {
         if skipped { return }
         skipped = true
-        NSLog("wmp broadcast: skipping app audio buffers: %@", why)
+        log("skipping app audio buffers: \(why)")
     }
 }

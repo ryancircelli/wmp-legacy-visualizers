@@ -49,11 +49,11 @@ final class WebHolder {
 }
 
 // The host's log. print reaches nobody on a TestFlight install, so Player shows the last line under
-// the web view and the last 20 on a long press.
+// the web view and the last 60 on a long press, the broadcast extension's among them.
 final class HostLog: ObservableObject {
     static let shared = HostLog()
     @Published var last = ""
-    var lines: [String] = []
+    @Published var lines: [String] = []  // published so the open sheet takes in an import
 
     /// From any thread; the published state changes on the main thread. A quiet line goes to the
     /// long-press list only, never the band.
@@ -61,10 +61,28 @@ final class HostLog: ObservableObject {
         print(line)
         DispatchQueue.main.async {
             self.lines.append(line)
-            if self.lines.count > 20 { self.lines.removeFirst() }
+            if self.lines.count > 60 { self.lines.removeFirst(self.lines.count - 60) }
             if !quiet { self.last = line }
         }
     }
+
+    /// From any thread: the last 40 lines of the extension's log of its latest broadcast
+    /// (broadcast.log in the App Group container), prefixed "ext: ", in place of those imported before.
+    func importExtensionLog() {
+        guard let path = groupPath("broadcast.log"),
+              let text = try? String(contentsOfFile: path, encoding: .utf8) else { return }
+        let ext = text.split(separator: "\n").suffix(40).map { "ext: \($0)" }
+        DispatchQueue.main.async {
+            self.lines.removeAll { $0.hasPrefix("ext: ") }
+            self.lines += ext
+        }
+    }
+}
+
+// A file in the App Group container shared with the broadcast extension; nil without the entitlement.
+func groupPath(_ name: String) -> String? {
+    FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: "group.com.rcircelli.wmpspotify")?
+        .appendingPathComponent(name).path
 }
 
 struct Player: View {
@@ -107,6 +125,7 @@ struct Player: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding()
             }
+            .onAppear { HostLog.shared.importExtensionLog() }
         }
         .onChange(of: scenePhase, initial: true) { _, phase in
             HostLog.shared.log("scene: \(phase)", quiet: true)
@@ -121,6 +140,9 @@ struct Player: View {
             guard let picker = WebHolder.shared.picker else { return }
             HostLog.shared.log("broadcast: picker shown")
             for case let b as UIButton in picker.subviews { b.sendActions(for: .touchUpInside) }
+            // The extension's log once a broadcast has likely started (or failed to).
+            try? await Task.sleep(for: .seconds(8))
+            HostLog.shared.importExtensionLog()
         }
     }
 
@@ -220,22 +242,24 @@ struct WebView: UIViewRepresentable {
     }
 }
 
-// ws://127.0.0.1:47831 for the broadcast extension (ios/WmpSpotifyBroadcast/SampleHandler.swift),
-// which sends {"rate":n} as text, then binary frames of interleaved stereo int16 LE: all handed to
-// Forwarder. The latest connection wins. All state is on `queue`.
+// The broadcast extension's socket (ios/WmpSpotifyBroadcast/SampleHandler.swift): a Unix socket,
+// audio.sock in the App Group container, since loopback TCP from the extension never connected
+// (build 9). Frames: the body's length (4 bytes, little-endian), a type byte, the body. Type 0 is
+// {"rate":n} as UTF-8 JSON, type 1 interleaved stereo int16 LE; all handed to Forwarder. The latest
+// connection wins. All state is on `queue`.
 final class AudioServer {
     private let queue = DispatchQueue(label: "audio-server")
     private var listener: NWListener?
     private var source: NWConnection?  // the extension's latest socket
 
     func start() {
-        let ws = NWProtocolWebSocket.Options()
-        ws.autoReplyPing = true
+        guard let path = groupPath("audio.sock") else {
+            HostLog.shared.log("audio: no App Group container")
+            return
+        }
+        _ = unlink(path)  // the last launch's socket file, which would fail the bind
         let params = NWParameters(tls: nil, tcp: NWProtocolTCP.Options())
-        params.defaultProtocolStack.applicationProtocols.insert(ws, at: 0)
-        // Loopback only: nothing off the phone reaches it.
-        params.requiredLocalEndpoint = .hostPort(host: "127.0.0.1", port: 47831)
-        params.allowLocalEndpointReuse = true
+        params.requiredLocalEndpoint = .unix(path: path)
         let listener: NWListener
         do {
             listener = try NWListener(using: params)
@@ -243,8 +267,12 @@ final class AudioServer {
             HostLog.shared.log("audio: cannot listen: \(error)")
             return
         }
-        listener.stateUpdateHandler = { [weak listener] state in
-            HostLog.shared.log("audio: listener \(state), port \(listener?.port?.rawValue ?? 0)")
+        listener.stateUpdateHandler = { state in
+            if case .ready = state {
+                HostLog.shared.log("audio: listener ready at \(path)")
+            } else {
+                HostLog.shared.log("audio: listener \(state)")
+            }
         }
         listener.newConnectionHandler = { [weak self] c in self?.accept(c) }
         self.listener = listener
@@ -269,24 +297,39 @@ final class AudioServer {
         c.start(queue: queue)
     }
 
-    // The extension's frames, one at a time, until an error, a close frame or the end of the stream.
+    // The extension's frames, one at a time: the 5-byte header, then its body. An error, the end of
+    // the stream or a length out of range drops the socket.
     private func receive(_ c: NWConnection) {
-        c.receiveMessage { [weak self, weak c] data, context, _, error in
+        c.receive(minimumIncompleteLength: 5, maximumLength: 5) { [weak self, weak c] header, _, _, error in
             guard let self, let c else { return }
-            let meta = context?.protocolMetadata(definition: NWProtocolWebSocket.definition)
-                as? NWProtocolWebSocket.Metadata
-            guard error == nil, let meta, meta.opcode != .close else {
+            guard error == nil, let header, header.count == 5 else {
                 self.drop(c)
                 return
             }
-            if let data, meta.opcode == .binary {
-                Forwarder.shared.pcm(data)
-            } else if let data, meta.opcode == .text,
-                      let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                      let rate = json["rate"] as? Int {
-                Forwarder.shared.rate(rate)
+            var n: UInt32 = 0
+            _ = withUnsafeMutableBytes(of: &n) { header.prefix(4).copyBytes(to: $0) }
+            let length = Int(UInt32(littleEndian: n))
+            let type = header[header.startIndex + 4]
+            // A buffer is a few KB; anything near 1 MB is a broken stream.
+            guard (1...(1 << 20)).contains(length) else {
+                self.drop(c)
+                return
             }
-            self.receive(c)
+            c.receive(minimumIncompleteLength: length, maximumLength: length) { [weak self, weak c] body, _, _, error in
+                guard let self, let c else { return }
+                guard error == nil, let body, body.count == length else {
+                    self.drop(c)
+                    return
+                }
+                if type == 1 {
+                    Forwarder.shared.pcm(body)
+                } else if type == 0,
+                          let json = try? JSONSerialization.jsonObject(with: body) as? [String: Any],
+                          let rate = json["rate"] as? Int {
+                    Forwarder.shared.rate(rate)
+                }
+                self.receive(c)
+            }
         }
     }
 

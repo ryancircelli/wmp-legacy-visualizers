@@ -39,6 +39,12 @@ targets:
           - UIInterfaceOrientationPortraitUpsideDown
           - UIInterfaceOrientationLandscapeLeft
           - UIInterfaceOrientationLandscapeRight
+    # The App Group holds the extension's socket and log. xcodegen writes the file (not committed) and
+    # sets CODE_SIGN_ENTITLEMENTS; the group has to be on both App IDs in the portal (ios/README.md).
+    entitlements:
+      path: WmpSpotify/WmpSpotify.entitlements
+      properties:
+        com.apple.security.application-groups: [group.com.rcircelli.wmpspotify]
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.rcircelli.wmpspotify
@@ -50,7 +56,8 @@ targets:
         SWIFT_VERSION: "5.9"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         GENERATE_INFOPLIST_FILE: "NO"
-  # The broadcast upload extension (ios/README.md): the system's app audio to the app over loopback.
+  # The broadcast upload extension (ios/README.md): the system's app audio to the app over a Unix socket
+  # in the App Group container.
   WmpSpotifyBroadcast:
     type: app-extension
     platform: iOS
@@ -68,6 +75,10 @@ targets:
           NSExtensionPointIdentifier: com.apple.broadcast-services-upload
           NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).SampleHandler
           RPBroadcastProcessMode: RPBroadcastProcessModeSampleBuffer
+    entitlements:
+      path: WmpSpotifyBroadcast/WmpSpotifyBroadcast.entitlements
+      properties:
+        com.apple.security.application-groups: [group.com.rcircelli.wmpspotify]
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.rcircelli.wmpspotify.broadcast

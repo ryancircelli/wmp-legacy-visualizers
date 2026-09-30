@@ -31,3 +31,5 @@ HANDOFF.md
 ios/WmpSpotify.xcodeproj/
 ios/WmpSpotify/Info.plist
 ios/WmpSpotifyBroadcast/Info.plist
+ios/WmpSpotify/WmpSpotify.entitlements
+ios/WmpSpotifyBroadcast/WmpSpotifyBroadcast.entitlements
