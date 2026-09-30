@@ -16,6 +16,13 @@
 //! and wake commands. Each socket runs its own capture and media threads, which stop when it closes,
 //! so nothing listens to the speakers while no page is.
 //!
+//! A socket and not a Tauri `ipc::Channel`, by measurement (2026-09-29, player window, a −40 dBFS
+//! tone, 100 messages/s, four 36 s runs each, CPU as % of one core): the socket added about 3 points
+//! over no audio at all (host ~1, WebView2 browser and network ~2), the Channel about 50 (host ~10,
+//! browser ~20, network ~4, renderer +17), and its latency was worse (median 0.7-1.6 ms against
+//! 0.4-0.5 ms). A 3.8 KB Channel message is an `eval` plus an IPC fetch back through the main
+//! thread; a socket message never touches the main thread or the page's IPC.
+//!
 //! Windows only for now: WASAPI loopback (`capture.rs`) and the Global System Media Transport
 //! Controls (`media.rs`). Elsewhere the plugin is empty and the page animates on silence.
 
