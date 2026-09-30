@@ -46,12 +46,12 @@ The .p8 can be downloaded only once, when the key is made.
 4. Run the workflow (Actions > ios > Run workflow). Once the build has processed, add yourself as an
    internal tester (the app's TestFlight tab > Internal Testing) and install it from the TestFlight app.
 
-## Untested
+## Verified on a phone
 
-Nothing has run on a device yet. Above all, whether Spotify's DRM playback runs inside a WKWebView
-with a desktop user agent at all. If it does not,
-the overlay still shows and controls what the account plays on any other Spotify Connect device, the
-phone's own Spotify app included.
+2026-09-30, build 0.1 (4) on an iPhone: the skin comes up over the web player, Spotify's DRM playback
+runs inside the WKWebView itself (Play on Device shows "WMP Spotify (This Device)" as the playing
+device, the position advancing, synced lyrics on), and the player state drives the visualizers.
+Nothing had to be routed through another Spotify Connect device.
 
 ## Known gaps
 
