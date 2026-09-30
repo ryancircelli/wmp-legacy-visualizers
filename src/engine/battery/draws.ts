@@ -532,6 +532,10 @@ class CJiggyScribble extends BatteryDraw {
   }
 }
 
+// Stroke's colour, c0 + dCol + dCol + ... in doubles. Kept in a local, V8 left it boxed (the loop
+// starts it from an integer argument) and every += allocated: 6200 heap numbers a frame on CJDar.
+var CL = new Float64Array(1);
+
 // ------------------------------------------------------------------ Stroke (0x180413ca0)
 // The shared eased-arc primitive: CGalaxy here (mode 0), CJDar in 73-battery-draws-a.js (mode 3).
 // Read instruction-by-instruction from 0x180413ca0..0x18041403e; see spec/battery/15.
@@ -568,6 +572,7 @@ function Stroke(buf: Uint8Array, W: number, H: number, x0: number, y0: number, x
   var half = F(PI_ / F(2.0 * F(n)));                // float32: pi_f / (2n)
   if (n < 1) return;                                // cmp ebp,1 / jl — signed, after the setup
   var ang = th0, env = 0.0, prevX = x0, prevY = y0, k;
+  CL[0] = col;                                      // the colour accumulates in CL: see below
   var envSin = (n | 0) === n && n <= 1024 ? strokeEnvelope(n, half) : null;
   // The angles first (the same accumulation, ang += dAng), then their sin and cos in one call.
   arcRoom(n);
@@ -577,10 +582,10 @@ function Stroke(buf: Uint8Array, W: number, H: number, x0: number, y0: number, x
     var rr = (envSin ? envSin[k] : sin(env)) * (r1 - r0) + r0;
     var X = cvt(ASC[2 * k + 1] * rr + px);
     var Y = cvt(ASC[2 * k] * rr + py);
-    var c = cvt(col) & 0xff;
+    var c = cvt(CL[0]) & 0xff;
     if (bLine) { prim.LineClamped(buf, W, H, prevX, prevY, X, Y, c); prevX = X; prevY = Y; }
     else if (X >= 0 && X < W && Y >= 0 && Y < H) buf[Y * W + X] = c;
-    env += half; col += dCol;
+    env += half; CL[0] += dCol;
   }
 }
 prim.Stroke = Stroke;
