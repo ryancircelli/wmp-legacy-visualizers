@@ -36,6 +36,8 @@ export interface AlchemyNS {
   cos(x: number): number;
   /** out[0] = sin(x), out[1] = cos(x), exactly as sin()/cos() */
   sincos(x: number, out: Float64Array): void;
+  /** out[2i] = sin(x[i]), out[2i+1] = cos(x[i]) for i < n, exactly as sincos() */
+  sincosN(x: Float64Array, n: number, out: Float64Array): void;
   /** sin, cos and sincos: 'auto' = WebAssembly when available, else JS (rand.ts); the same bits either way. */
   trigMode: 'auto' | 'js' | 'wasm';
   atan2(y: number, x: number): number;

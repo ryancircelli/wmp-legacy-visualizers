@@ -147,5 +147,17 @@ export function sincos(x: f64, out: usize): void {
   }
 }
 
+/** sincos of each of the n doubles at `src`, to the 2n doubles at `dst` (sin, cos, sin, ...); an
+ *  argument that is not |x| < 2e7 is left for the caller, and counted in the return value. */
+export function sincosN(src: usize, dst: usize, n: i32): i32 {
+  let left = 0;
+  for (let i = 0; i < n; i++) {
+    const x = load<f64>(src + (<usize>i << 3));
+    if (abs<f64>(x) < 2e7) sincos(x, dst + (<usize>i << 4));
+    else left++;
+  }
+  return left;
+}
+
 /** First byte the glue may use (16-aligned). */
 export function heapBase(): usize { return (__heap_base + 15) & ~(<usize>15); }

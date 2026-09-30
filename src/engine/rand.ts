@@ -333,9 +333,12 @@ interface TrigKernel {
   sin: (x: number) => number;
   cos: (x: number) => number;
   sincos: (x: number, out: number) => void;
+  sincosN: (src: number, dst: number, n: number) => number;
 }
 var trigMode: 'auto' | 'js' | 'wasm' = 'auto', K: TrigKernel | null = null, tried = false, on = false;
 var ksin = ucrtSin, kcos = ucrtCos, ksc: TrigKernel['sincos'] = function () {}, KO = 0, KF = F64;
+// sincosN's batches: CAP arguments at KX, their 2*CAP results at KS, after the sincos slot (one page)
+var CAP = 2048, ksn: TrigKernel['sincosN'] = function () { return 0; }, KXo = 0, KSo = 0, KX = F64, KS = F64;
 function trigKernel(): TrigKernel | null {
   if (tried) return K;
   tried = true;
@@ -346,7 +349,9 @@ function trigKernel(): TrigKernel | null {
     KO = k.heapBase();
     if (k.memory.buffer.byteLength < KO + 16) k.memory.grow(1);         // it starts empty; never grown again
     KF = new Float64Array(k.memory.buffer, KO, 2);
-    ksin = k.sin; kcos = k.cos; ksc = k.sincos; K = k;
+    KXo = KO + 16; KSo = KXo + 8 * CAP;
+    KX = new Float64Array(k.memory.buffer, KXo, CAP); KS = new Float64Array(k.memory.buffer, KSo, 2 * CAP);
+    ksin = k.sin; kcos = k.cos; ksc = k.sincos; ksn = k.sincosN; K = k;
   } catch {
     K = null;                                        // no WebAssembly / CSP: JS from now on
   }
@@ -377,4 +382,29 @@ A.sincos = function (x, out) {
     if (x < 2e7 && x > -2e7) { ksc(x, KO); out[0] = KF[0]; out[1] = KF[1]; return; }
   } else if (!tried && trigMode !== 'js') settle();
   ucrtSincos(x, out);
+};
+
+// out[2i] = sin(x[i]), out[2i + 1] = cos(x[i]) for i < n: A.sincos over an array, the same bits. On
+// the WASM path a batch is one call (CAP at a time), so a loop of them pays no call per argument, and
+// no double of it is ever boxed.
+var SCT = new Float64Array(2);
+A.sincosN = function (x, n, out) {
+  var i: number;
+  if (!on && !tried && trigMode !== 'js') settle();
+  if (!on) {
+    for (i = 0; i < n; i++) { ucrtSincos(x[i], SCT); out[2 * i] = SCT[0]; out[2 * i + 1] = SCT[1]; }
+    return;
+  }
+  for (var i0 = 0; i0 < n; i0 += CAP) {
+    var m = n - i0 < CAP ? n - i0 : CAP, k: number;
+    for (k = 0; k < m; k++) KX[k] = x[i0 + k];
+    var left = ksn(KXo, KSo, m);
+    for (k = 0; k < 2 * m; k++) out[2 * i0 + k] = KS[k];
+    if (left > 0) {                                  // |x| >= 2e7, NaN, infinities: the JavaScript
+      for (k = 0; k < m; k++) {
+        var v = x[i0 + k];
+        if (!(v < 2e7 && v > -2e7)) { ucrtSincos(v, SCT); out[2 * (i0 + k)] = SCT[0]; out[2 * (i0 + k) + 1] = SCT[1]; }
+      }
+    }
+  }
 };

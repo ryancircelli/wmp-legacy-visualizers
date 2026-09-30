@@ -183,6 +183,19 @@ describe('trig: WebAssembly vs JavaScript', () => {
     expect(failures).toEqual([]);
   }, 60_000);
 
+  it('sincosN: sincos of every element, both paths, in batches and past them', () => {
+    const xs = args().subarray(0, 300000), failures: string[] = [];
+    for (const mode of ['js', 'wasm'] as const) {
+      const want = run(mode, xs), out = new Float64Array(2 * xs.length).fill(7);
+      for (const n of [0, 1, 5, 2047, 2048, 2049, 5000, xs.length]) {
+        A.sincosN(xs, n, out);
+        for (let i = 0; i < 2 * n; i++) if (!same(out[i]!, want[4 * (i >> 1) + 2 + (i & 1)]!) && failures.length < 10) failures.push(`${mode} n=${n} ${i}`);
+        if (out[2 * n] !== 7 && n < xs.length) failures.push(`${mode} n=${n} wrote past 2n`);
+      }
+    }
+    expect(failures).toEqual([]);
+  }, 60_000);
+
   it('is small enough for a synchronous compile on a browser main thread (< 4 KB)', () => {
     expect(atob(TRIG_WASM).length).toBeLessThan(4096);
   });
