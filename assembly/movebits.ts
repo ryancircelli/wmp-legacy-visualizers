@@ -4,8 +4,8 @@
 //   blur    src[i] for i in [W, (H-1)*W): m = (sum of the 4 neighbours >>> 2) per field, out =
 //           (3m + centre) >>> 2 per field, with R|B in one 0x00FF00FF lane pair and G in 0x0000FF00.
 // The blur walks the interior as one linear run, so x = 0 reads the previous row's last pixel and
-// x = W-1 the next row's first, exactly like the JS. Each 32-bit lane is one pixel; field sums stay
-// below 1024 << 16, so nothing carries between fields or lanes, and every shift is unsigned.
+// x = W-1 the next row's first, exactly like the JS. blur1 (the tail) works on one pixel's fields,
+// whose sums stay below 1024 << 16, so nothing carries between them; the vector loop on channels.
 // Pointers are byte offsets of u32/i32 arrays in this module's memory, laid out by the JS glue.
 
 const RB: u32 = 0x00FF00FF;
@@ -34,19 +34,26 @@ export function gather(src: usize, tab: usize, dst: usize, n: i32): void {
   store<u32>(src + (<usize>i << 2), (((m1 * 3 + (c & RB)) >>> 2) & RB) | (((m2 * 3 + (c & GM)) >>> 2) & GM));
 }
 
+// Four pixels an iteration, each channel in its own 16-bit lane (bytes widened, the alpha byte too):
+// a channel's 4-neighbour sum is at most 1020 and 3m + centre at most 1020, so the lanes never
+// overflow, >> 2 is the fields' >>> 2, and the narrow back to bytes never saturates; the alpha lane is
+// then cleared, as the fields' masks clear it. The same numbers per channel as blur1.
 export function blur(src: usize, dst: usize, W: i32, H: i32): void {
   const end = (H - 1) * W;
   const wb = <usize>W << 2;
-  const rb = i32x4.splat(RB), gm = i32x4.splat(GM);
+  const rgb = i32x4.splat(0x00FFFFFF);
   let i = W;
   for (; i + 4 <= end; i += 4) {
     const p = dst + (<usize>i << 2);
     const a = v128.load(p - wb), b = v128.load(p + wb), l = v128.load(p - 4), r = v128.load(p + 4), c = v128.load(p);
-    const m1 = v128.and(i32x4.shr_u(i32x4.add(i32x4.add(i32x4.add(v128.and(a, rb), v128.and(b, rb)), v128.and(l, rb)), v128.and(r, rb)), 2), rb);
-    const m2 = v128.and(i32x4.shr_u(i32x4.add(i32x4.add(i32x4.add(v128.and(a, gm), v128.and(b, gm)), v128.and(l, gm)), v128.and(r, gm)), 2), gm);
-    const o1 = v128.and(i32x4.shr_u(i32x4.add(i32x4.add(i32x4.shl(m1, 1), m1), v128.and(c, rb)), 2), rb);
-    const o2 = v128.and(i32x4.shr_u(i32x4.add(i32x4.add(i32x4.shl(m2, 1), m2), v128.and(c, gm)), 2), gm);
-    v128.store(src + (<usize>i << 2), v128.or(o1, o2));
+    const slo = i16x8.add(i16x8.add(i16x8.extend_low_i8x16_u(a), i16x8.extend_low_i8x16_u(b)),
+      i16x8.add(i16x8.extend_low_i8x16_u(l), i16x8.extend_low_i8x16_u(r)));
+    const shi = i16x8.add(i16x8.add(i16x8.extend_high_i8x16_u(a), i16x8.extend_high_i8x16_u(b)),
+      i16x8.add(i16x8.extend_high_i8x16_u(l), i16x8.extend_high_i8x16_u(r)));
+    const mlo = i16x8.shr_u(slo, 2), mhi = i16x8.shr_u(shi, 2);
+    const olo = i16x8.shr_u(i16x8.add(i16x8.add(i16x8.shl(mlo, 1), mlo), i16x8.extend_low_i8x16_u(c)), 2);
+    const ohi = i16x8.shr_u(i16x8.add(i16x8.add(i16x8.shl(mhi, 1), mhi), i16x8.extend_high_i8x16_u(c)), 2);
+    v128.store(src + (<usize>i << 2), v128.and(i8x16.narrow_i16x8_u(olo, ohi), rgb));
   }
   for (; i < end; i++) blur1(src, dst, i, W);
 }
