@@ -80,10 +80,10 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
     };
     let port = listener.local_addr().map(|a| a.port()).unwrap_or(0);
     let key = key();
-    // Only on the page's own origins (and Spotify's, where the WmpSpotify overlay runs): a page this
-    // webview is somehow navigated to must not be handed the key.
+    // Only on the page's own origins: a page this webview is somehow navigated to must not be handed
+    // the key. Spotify's own page is in a web view of its own, which gets no plugin's script.
     let script = format!(
-        "if (/^(wmp\\.localhost|localhost|open\\.spotify\\.com)$/.test(location.hostname))
+        "if (/^(wmp\\.localhost|localhost)$/.test(location.hostname))
   window.alchemyScreensaver = Object.assign(window.alchemyScreensaver || {{}},
     {{ audio: true, url: 'ws://127.0.0.1:{port}/audio?k={key}' }});"
     );
