@@ -172,6 +172,21 @@ describe('3. transport: connect-state commands', () => {
     expect(env.S.playback.position).toBe(60_500);
     expect(env.S.playback.pending).toBeNull();
   });
+  it('volume to this device also goes to the host (alchemySetVolume: the iOS app sets the system volume)', async () => {
+    const env = setup();
+    await settle();
+    const got: number[] = [];
+    window.alchemySetVolume = (pct) => { got.push(pct); };
+    window.__wmpSpotify!.activeDeviceId = ME;
+    env.S.actions.setSettings({ volume: 40 }); await settle();
+    env.S.actions.setSettings({ muted: true }); await settle();
+    env.S.actions.setSettings({ muted: false }); await settle();
+    expect(got).toEqual([40, 0, 40]);
+    window.__wmpSpotify!.activeDeviceId = FX.activeDeviceId;   // another device: Connect only
+    env.S.actions.setSettings({ volume: 55 }); await settle();
+    expect(got).toEqual([40, 0, 40]);
+    delete window.alchemySetVolume;
+  });
   it('410 from a device that went away: forgotten, the command sent to this device instead', async () => {
     const env = setup();
     await settle();

@@ -80,6 +80,8 @@ export function stop(sp: Sp): Promise<void> {
 export function volume(sp: Sp, pct: number): boolean {
   const w = W(), to = w.activeDeviceId || w.deviceId;
   if (!sp.hasState || !authed() || !w.deviceId || !to) return false;
+  // This device, on a host whose page cannot set its own volume (iOS): the host sets the system's.
+  if (to === w.deviceId) window.alchemySetVolume?.(Math.max(0, Math.min(100, +pct || 0)));
   const url = 'https://' + spclient() + '/connect-state/v1/connect/volume/from/' + w.deviceId + '/to/' + to;
   const value = Math.round((Math.max(0, Math.min(100, +pct || 0)) / 100) * 65535);
   const now = Date.now();

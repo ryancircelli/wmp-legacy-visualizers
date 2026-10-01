@@ -42,6 +42,9 @@ declare global {
     /** set by the ticker; the desktop host calls it when its window stops or starts being seen */
     alchemyOccluded?: (on: boolean) => void;
     alchemySpotifyLogout?: () => void;
+    /** the iOS app: the skin's volume (0..100, 0 = muted) as the phone's system volume, since a
+     *  page cannot change its own playback volume there */
+    alchemySetVolume?: (pct: number) => void;
     /** a newer exe is out (tauri/src/update.rs): offer the download */
     alchemyHostUpdate?: boolean;
     /** open one of the project's own URLs in the user's browser */
