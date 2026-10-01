@@ -7,11 +7,13 @@
 // toggles). Hold center: the nano's popup, Spotify's way (§4.3). Play / next / prev and their holds
 // (fast-forward, rewind: useScan) are the chrome's. A track with a Spotify Canvas shows it behind the
 // whole screen instead of the cover, the two bands made translucent over it; a tap on the cover's area
-// swaps the Canvas for the cover and back, remembered (while the cover is chosen no Canvas is fetched).
+// cycles Canvas -> cover -> the app's visualizer (on silence, as the phone has no capture) -> Canvas,
+// remembered (only while the Canvas is chosen is one fetched).
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useStore } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { createStore } from 'zustand/vanilla';
+import { Visualizer } from '../../../../app/Visualizer';
 import { lyricsShown, positionNow, type Track } from '../../../../model';
 import {
   artOk, cx, isSpotify, Karaoke, playingTrack, useAddTo, useApp, useArtist, useCanvas, useCollection, useDevices, useLyricScroll,
@@ -26,8 +28,12 @@ export function nowPlaying(): ScreenEntry {
   return { key: 'nowplaying', title: 'Now Playing', render: () => <NowPlaying /> };
 }
 
-/** the Canvas (true) or the cover, across tracks and launches; localStorage 'ipod.canvas' */
-const canvasPref = createStore<{ on: boolean }>()(persist((): { on: boolean } => ({ on: true }), { name: 'ipod.canvas' }));
+/** what the cover's area shows: the Canvas (the cover for a track without one), the cover, or the
+ *  visualizer; across tracks and launches, localStorage 'ipod.canvas' (version 0 was { on: boolean }) */
+type Show = 'video' | 'cover' | 'vis';
+const canvasPref = createStore<{ show: Show }>()(persist((): { show: Show } => ({ show: 'video' }), {
+  name: 'ipod.canvas', version: 1, migrate: (old) => ({ show: (old as { on?: boolean } | null)?.on === false ? 'cover' : 'video' }),
+}));
 
 type Pop = 'main' | 'playlists' | 'devices';
 /** a wheel scrub: the position shown, then (sent) held until the player reports the seek */
@@ -41,7 +47,7 @@ function NowPlaying() {
   const sh = useShell(), nav = useNav(), get = () => sh.store.getState(), c = () => get().commands;
   const p = useApp((s) => ({
     media: s.playback.status !== 'none', track: s.playback.track, canSeek: s.playback.canSeek, shuffle: s.playback.shuffle,
-    spotify: isSpotify(s), lyrics: lyricsShown(s) !== null, max: isSpotify(s) ? 100 : 200,
+    spotify: isSpotify(s), lyrics: lyricsShown(s) !== null, max: isSpotify(s) ? 100 : 200, kind: s.vis.kind,
   }));
   const t = p.track, uri = t?.uri ?? '', d = t?.duration ?? 0;
   const [mode, setMode] = useState<Mode>('default');
@@ -99,6 +105,9 @@ function NowPlaying() {
   const of = p.shuffle ? '' : ofText(col.rows, uri, col.total);
 
   const devices = useDevices(() => '');
+  const show = useStore(canvasPref, (x) => x.show);
+  // the visualizers in WMP's order (Alchemy, Bars and Waves, Battery), one entry each
+  const kinds = sh.presets.filter((x) => x.preset === 0), ki = kinds.findIndex((x) => x.vis === p.kind);
   /** song radio: the first seed's own station (§4.3) */
   const startRadio = () => {
     const seed = seeds[0];
@@ -117,6 +126,8 @@ function NowPlaying() {
       { id: 'artist', label: 'Browse Artist', disabled: !artistUri,
         onSelect: () => { if (artistUri) nav.push(artistScreen(artistUri, t?.artist ?? '')); } },
       { id: 'device', label: 'Play On…', disabled: !p.spotify, onSelect: () => setPopup('devices') },
+      ...(show === 'vis' && kinds.length ? [{ id: 'vis', label: 'Visualizer', right: kinds[ki]?.group,
+        onSelect: () => get().actions.setVis(kinds[(ki + 1) % kinds.length]!.vis, 0) }] : []),
       { id: 'cancel', label: 'Cancel' },
     ],
     playlists: toItems(plMenu.sub ?? []),
@@ -165,30 +176,30 @@ function NowPlaying() {
   const f = d > 0 ? Math.min(1, shown / d) : 0, [elapsed, remaining] = times(shown, d), art = artOk(t?.art);
   // the Canvas, unless the cover is chosen or its file failed to load (then the cover, as without one)
   const [failed, setFailed] = useState('');
-  const wantCanvas = useStore(canvasPref, (x) => x.on);
-  const fetched = useCanvas(wantCanvas ? uri : null), canvas = fetched && fetched.url !== failed ? fetched : null;
+  const fetched = useCanvas(show === 'video' ? uri : null), canvas = fetched && fetched.url !== failed ? fetched : null;
   const fail = () => setFailed(canvas?.url ?? '');
-  /** a tap on the cover's area: Canvas <-> cover; nothing while the Canvas is chosen and the track has none */
+  const vis = show === 'vis', bg = !!canvas || vis;
+  /** a tap on the cover's area: Canvas -> cover -> visualizer -> Canvas; a track without a Canvas shows
+   *  the cover for it, so from there the tap goes straight on to the visualizer */
   const swap = () => {
-    if (wantCanvas && !canvas) return;
     window.alchemyHaptic?.('light');
-    canvasPref.setState({ on: !wantCanvas });
+    canvasPref.setState({ show: show === 'cover' || (show === 'video' && !canvas) ? 'vis' : vis ? 'video' : 'cover' });
   };
   return (
-    <div className={css.root} data-canvas={canvas ? '' : undefined}>
-      {canvas?.type === 'video' ? <CanvasVideo src={canvas.url} poster={art || undefined} onError={fail} />
+    <div className={css.root} data-canvas={bg ? '' : undefined}>
+      {vis ? <Vis /> : canvas?.type === 'video' ? <CanvasVideo src={canvas.url} poster={art || undefined} onError={fail} />
         : canvas ? <img className={css.bg} src={canvas.url} alt="" onError={fail} /> : null}
       <div className={css.info}>
         <Line className={css.artist} text={t?.artist} />
         <Line className={css.title} text={t?.title} />
         <Line className={css.album} text={t?.album} />
       </div>
-      {canvas ? null : art ? <img className={css.art} src={art} alt="" /> : <div className={cx(css.art, css.noart)}>♪</div>}
+      {bg ? null : art ? <img className={css.art} src={art} alt="" /> : <div className={cx(css.art, css.noart)}>♪</div>}
       {/* a swipe from here is still MENU (Root suppresses the click that ends one); a tap is the swap's alone */}
       <div className={css.tap} onClick={(e) => { e.stopPropagation(); swap(); }} />
       {m === 'lyrics' && <Lyrics />}
       <div className={css.controls}>
-        {art && !canvas && <img className={css.reflection} src={art} alt="" />}
+        {art && !bg && <img className={css.reflection} src={art} alt="" />}
         {vol ? (
           <div className={css.row}>
             <Speaker />
@@ -236,6 +247,36 @@ function CanvasVideo({ src, poster, onError }: { src: string; poster?: string; o
     return () => { io.disconnect(); document.removeEventListener('visibilitychange', sync); };
   }, [src]);
   return <video ref={ref} className={css.bg} src={src} poster={poster} muted autoPlay loop playsInline onError={onError} />;
+}
+
+/** The app's visualizer behind the whole screen as the Canvas is, drawing whatever settings.vis / preset
+ *  say on silence (Alchemy and Battery animate on it, Bars and Waves waits for sound; settings.animate
+ *  off stills them). Its canvas is mounted only while this screen is the top one and the page is
+ *  visible: the ticker's loop runs only with a canvas attached, so it costs nothing elsewhere. */
+function Vis() {
+  const sh = useShell(), ref = useRef<HTMLDivElement>(null), [on, setOn] = useState(() => !document.hidden);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    let seen = true;
+    const sync = () => setOn(seen && !document.hidden);
+    const io = new IntersectionObserver(([e]) => { seen = !!e?.isIntersecting; sync(); });
+    io.observe(el);
+    document.addEventListener('visibilitychange', sync);
+    return () => { io.disconnect(); document.removeEventListener('visibilitychange', sync); };
+  }, []);
+  // The ticker holds the engine while WMP's view is off Now Playing (vis.hold: a WMP view left on
+  // Library sets it again at every Spotify start); here it is the screen, so no hold while shown,
+  // then the hold WMP's view implies.
+  useEffect(() => {
+    if (!on) return;
+    const st = sh.store, hold = (v: boolean) => st.setState((s) => ({ vis: { ...s.vis, hold: v } }));
+    const lift = () => { if (st.getState().vis.hold) hold(false); };
+    lift();
+    const off = st.subscribe(lift);
+    return () => { off(); hold(st.getState().ui.view !== 'now'); };
+  }, [on, sh]);
+  return <div ref={ref} className={css.bg}>{on && <Visualizer className={css.vis} />}</div>;
 }
 
 /** One info line; a long one marquees as the nano's do (§2.2): after 1 s, at 30 units/s, pausing 1 s at each end. */

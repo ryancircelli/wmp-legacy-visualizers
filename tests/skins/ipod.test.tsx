@@ -359,7 +359,7 @@ it('the dark status row\'s Like: dimmed and inert with no track, else the playin
   expect(haptic).toHaveBeenCalledWith('light');
 });
 
-it('a tap on the cover area swaps the Canvas for the cover and back, remembered; none is fetched while the cover is chosen', async () => {
+it('a tap on the cover area cycles Canvas -> cover -> visualizer -> Canvas, remembered; a Canvas is fetched only while chosen', async () => {
   vi.stubGlobal('IntersectionObserver', class { observe() {} disconnect() {} });
   const haptic = vi.fn();
   window.alchemyHaptic = haptic;
@@ -372,20 +372,31 @@ it('a tap on the cover area swaps the Canvas for the cover and back, remembered;
     await settle();
   };
   const np = m.getByTestId('np'), tap = () => act(() => { fireEvent.click(np.querySelector('[class*=tap]')!); });
+  // [the Canvas clip, the cover (no art: the ♪ tile), the visualizer's canvas, the choice saved]
+  const shows = () => [np.querySelector('video')?.getAttribute('src') ?? null, !!np.querySelector('[class*=noart]'), !!np.querySelector('canvas'),
+                       (JSON.parse(localStorage.getItem('ipod.canvas') ?? 'null') as { state?: { show?: string } } | null)?.state?.show];
   await play('spotify:track:a');
-  expect(np.querySelector('video')?.getAttribute('src')).toBe('spotify:track:a.mp4');
+  expect(shows().slice(0, 3)).toEqual(['spotify:track:a.mp4', false, false]);
   tap();
-  expect(np.querySelector('video')).toBeNull();
+  expect(shows()).toEqual([null, true, false, 'cover']);
   expect(haptic).toHaveBeenCalledWith('light');
-  expect(localStorage.getItem('ipod.canvas')).toContain('"on":false');
   await play('spotify:track:b');                     // the cover stays chosen: nothing fetched
+  expect(m.queries.fetchCanvas).not.toHaveBeenCalledWith('spotify:track:b');
+  act(() => { m.store.setState((s) => ({ vis: { ...s.vis, hold: true } })); });   // WMP's view left on Library
+  tap();                                             // the visualizer: the app's canvas, unheld while shown
+  expect(shows()).toEqual([null, false, true, 'vis']);
+  expect(m.S().vis.hold).toBe(false);
   expect(m.queries.fetchCanvas).not.toHaveBeenCalledWith('spotify:track:b');
   tap();
   await settle();
-  expect(np.querySelector('video')?.getAttribute('src')).toBe('spotify:track:b.mp4');
-  await play('spotify:track:none');                  // no Canvas: the cover, and a tap does nothing
+  expect(shows()).toEqual(['spotify:track:b.mp4', false, false, 'video']);
+  expect(m.S().vis.hold).toBe(false);                // the view is Now Playing: no hold put back
+  await play('spotify:track:none');                  // no Canvas: the cover, and a tap goes on to the visualizer
+  expect(shows()).toEqual([null, true, false, 'video']);
   haptic.mockClear();
   tap();
-  expect(haptic).not.toHaveBeenCalled();
-  expect(localStorage.getItem('ipod.canvas')).toContain('"on":true');
+  expect(shows()).toEqual([null, false, true, 'vis']);
+  expect(haptic).toHaveBeenCalledWith('light');
+  tap();                                             // back to the default for the tests after
+  expect(shows()).toEqual([null, true, false, 'video']);
 });
