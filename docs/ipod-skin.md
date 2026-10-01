@@ -21,6 +21,14 @@ the end.
 
 ---
 
+> **Status (2026-10-01).** Built: `src/skins/ipod/` (View > Skin in WMP 9; Settings > Skin on the
+> iPod). Since this spec was written the adapter gained the three things §4.6 and §6 (items 1, 3, 7)
+> call impossible: Liked Songs as a playback context (`spotify:user:<name>:collection`), followed
+> artists (`libraryV3` filtered to Artists) and add-to-queue (`add_to_queue`), so Songs, Shuffle
+> Songs, Artists and On-The-Go are real. The skin keeps the desktop viewport (a phone-wide one
+> left Spotify's web player without state) and the chrome's §1.6 sizing gave way to the owner's:
+> the screen spans the width inside a 3% margin, the wheel below it.
+
 ## 0. At a glance
 
 | | |
