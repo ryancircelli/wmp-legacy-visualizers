@@ -58,6 +58,12 @@ export async function mount(): Promise<void> {
   if (spotify) await persistQueries(client);
   createRoot(el).render(<App store={store} ticker={ticker} root={root} client={client} />);
   window.Alchemy = shim(store, ticker, client);
+  // This skin's choice on the phone (ios/README.md): the visualizers want the broadcast, so iOS's
+  // sheet for it comes up 2 s in unless one already feeds the app. A skin without visuals asks never.
+  if (spotify && wasLoggedIn() && window.alchemyBroadcast) {
+    window.alchemyBroadcast('state');
+    setTimeout(() => { if (!window.__wmpBroadcast?.running) window.alchemyBroadcast?.('picker'); }, 2000);
+  }
 }
 
 /** window.Alchemy: what the host's log line and the smokes read (the old Alchemy.Shell's names). */

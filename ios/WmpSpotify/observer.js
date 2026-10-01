@@ -94,6 +94,7 @@ window.alchemyOrientation = function (mode) { post('orientation', mode || 'any')
 // 'wmp-broadcast' event on window, whenever it changes.
 window.__wmpBroadcast = { running: false };
 window.alchemyBroadcast = function (cmd) { post('broadcast', cmd || 'state'); };
+post('broadcast', 'manual');  // the app never opens the sheet by itself: each skin asks (src/app/mount.tsx does, for the visualizers)
 // What the phone reports, each as a window global with an event of the same name on window when it
 // changes: __wmpVolume (0..100, the buttons too) 'wmp-volume'; __wmpBattery {level 0..100 or -1,
 // charging} 'wmp-battery'; __wmpRoute {name, type} (AirPods, Speaker) 'wmp-route'; __wmpBrightness
@@ -152,6 +153,7 @@ window.alchemyOrientation = function (mode) { post('orientation', mode || 'any')
 // 'wmp-broadcast' event on window, whenever it changes.
 window.__wmpBroadcast = { running: false };
 window.alchemyBroadcast = function (cmd) { post('broadcast', cmd || 'state'); };
+post('broadcast', 'manual');  // the app never opens the sheet by itself: each skin asks (src/app/mount.tsx does, for the visualizers)
 // What the phone reports, each as a window global with an event of the same name on window when it
 // changes: __wmpVolume (0..100, the buttons too) 'wmp-volume'; __wmpBattery {level 0..100 or -1,
 // charging} 'wmp-battery'; __wmpRoute {name, type} (AirPods, Speaker) 'wmp-route'; __wmpBrightness

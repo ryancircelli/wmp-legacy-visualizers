@@ -330,7 +330,9 @@ real ws://127.0.0.1:47831; no microphone; ReplayKit's in-app capture hears zeros
 and a `wmp-safe-area` event), `alchemyShowLog` (the host's log sheet), and for a click-wheel skin
 `alchemyHaptic(kind)`, `alchemyAwake(on)`, `alchemyStatusBar(hidden)`, `alchemyOrientation(mode)`,
 `alchemyBroadcast('picker'|'auto'|'manual'|'state')` with `window.__wmpBroadcast = {running}` and a
-`wmp-broadcast` event: the page owns the broadcast. The phone's reports, each a window global with
+`wmp-broadcast` event: the page owns the broadcast (observer.js sets 'manual' at start, so the app
+never opens the sheet by itself; the WMP 9 skin asks for it 2 s into a logged-in mount, in
+src/app/mount.tsx, since its visualizers want the audio; a skin without visuals never asks). The phone's reports, each a window global with
 an event of the same name: `__wmpVolume` (the buttons too), `__wmpBattery`, `__wmpRoute`,
 `__wmpBrightness`, `__wmpHost`, and `wmp-shake`; `alchemyHost()` asks for all at once. Also
 `alchemyBrightness(v?)`, `alchemyShare(text)`, `alchemyHomeIndicator(hidden)`, `alchemyOpenSettings()`,
