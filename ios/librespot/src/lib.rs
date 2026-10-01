@@ -271,6 +271,7 @@ async fn run(name: String, dir: String, mut stop: oneshot::Receiver<()>) {
                     }
                     Err(e) => {
                         say(&format!("librespot: connect failed: {e}"));
+                        session.shutdown(); // a fresh session for the next try
                         connecting = again(&mut reconnects, WINDOW, RECONNECTS);
                         retry = true;
                     }

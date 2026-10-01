@@ -107,6 +107,97 @@ timestamped, a `---- launch <date> ----` line at each start). The extension logs
 `broadcast.log` in the same container; the app merges its lines into the host log, prefixed `ext:`,
 when the list opens and 8 s after the broadcast sheet comes up, each line once.
 
+## Librespot (branch)
+
+On the `librespot` branch the app is also a Spotify Connect receiver, through
+[librespot](https://github.com/librespot-org/librespot) 0.8.0. It shows up in Spotify's device list as
+**WMP Spotify** (a speaker); picked, Spotify plays to the app itself, and the app gets the raw audio.
+The music plays out of the app's own audio session, and the visualizers get the same audio with no
+broadcast. The web view stays the control plane exactly as on master (sign-in, library, commands);
+librespot is only the audio sink. The page's own player shows up as "WMP Spotify (This Device)", next to
+librespot's "WMP Spotify".
+
+- `ios/librespot/` is a small Rust crate (`wmp-librespot`, staticlib and cdylib) on librespot-core,
+  -connect, -playback and -discovery 0.8.0 with no audio backend, rustls with compiled-in roots, and a
+  sink that hands the app interleaved stereo float32 at 44100 Hz. Its C ABI is `wmp_librespot.h`:
+  `wmp_ls_start(name, cache_dir, pcm, log, ctx)` and `wmp_ls_stop()`. `build.sh` builds it for
+  aarch64-apple-ios into `ios/librespot/out/`, which `project.yml` links (with a bridging header). CI
+  runs it before xcodegen, its cargo work cached by Cargo.lock.
+- `Librespot` in App.swift starts it at launch with the cache in Application Support/librespot. Each
+  packet plays through an AVAudioEngine player node and, as it is heard, goes to `Forwarder`, which
+  feeds the page from librespot while it plays and from the broadcast otherwise. The callback blocks
+  while half a second is queued, which paces librespot's decoding. A pause flushes the queue and the
+  visualizers go dark.
+- Discovery goes through iOS's own mDNSResponder (librespot's `with-dns-sd`). librespot's default,
+  libmdns, opens its own multicast socket, which iOS 14 and later allow only with Apple's multicast
+  entitlement. The Bonjour route needs `_spotify-connect._tcp` in `NSBonjourServices`, and iOS asks
+  once to allow the local network (`NSLocalNetworkUsageDescription`).
+- librespot-core is patched by one line (`build.sh` fetches the crate, checks it against crates.io's
+  checksum, and sets `OS` to `"linux"` on iOS). Built for iOS, librespot tells Spotify it is an iPhone,
+  and Spotify's access points turn that away with "Tried too many access points"
+  ([librespot#1477](https://github.com/librespot-org/librespot/issues/1477), open since 2025-03). The
+  same happened on Android, and [librespot#1403](https://github.com/librespot-org/librespot/pull/1403)
+  fixed it by presenting as Linux. On an iPhone's arm64 this is what a Raspberry Pi running librespot
+  sends.
+- Once paired, the page's broadcast prompt is skipped (`broadcast: librespot paired, no picker`). The
+  broadcast still works as the fallback, from the band's button.
+
+**Sign-in.** There is no second sign-in. Spotify ended username and password login for librespot in
+July 2024 ([librespot#1308](https://github.com/librespot-org/librespot/issues/1308)), and librespot
+0.8.0's own binary refuses `--password` ("Password authentication no longer supported, use OAuth",
+src/main.rs). What remains is an OAuth sign-in in a browser (librespot-oauth) or zeroconf. Zeroconf is
+what this uses: a signed-in Spotify app on the same network finds the device, and when the device is
+picked it hands over a credentials blob encrypted for it
+([docs/authentication.md](https://github.com/librespot-org/librespot/blob/v0.8.0/docs/authentication.md)).
+librespot then caches reusable credentials (`credentials.json`) and connects with them at every later
+start, upstream's advice for avoiding repeated logins. After the first pick, the device shows up in
+every Spotify app on any network for as long as the app is running.
+
+**License.** librespot is MIT, as is this crate. Most of the dependencies are permissive (MIT,
+Apache-2.0, ISC, BSD, Zlib, Unicode-3.0; webpki-roots' certificates are CDLA-Permissive-2.0). Two are
+MPL-2.0: Symphonia (the decoder) and priority-queue. MPL-2.0 is file-level copyleft: it asks only
+that changes to those crates' own files be shared, and they are unmodified here. Nothing goes beyond
+the private TestFlight.
+
+**Account risk.** librespot is unofficial and Spotify's terms do not allow it. Lockouts have been
+documented in 2024 and 2025: forced password resets for accounts used with librespot, mostly tied to
+password logins
+([librespot discussion #1311](https://github.com/librespot-org/librespot/discussions/1311)). No bans
+have been documented. This uses cached token credentials, not a password, and reconnects at most 5 times
+in 10 minutes (librespot's own limit) before it waits to be picked again.
+
+**Pairing, once.** The phone and the Spotify app have to be on the same Wi-Fi.
+
+1. Open WMP Spotify and allow the local network when iOS asks. The log says `librespot: discovery up`.
+2. Pick **WMP Spotify** in a Spotify app's device list. The easiest is Spotify on a computer on the same
+   Wi-Fi, with WMP Spotify open on the phone. From the Spotify app on the same phone, start something
+   playing in WMP Spotify first: iOS suspends an app in the background that plays nothing, and a
+   suspended app cannot answer the pick.
+3. The log says `librespot: credentials from discovery`, then `librespot: session up`, and
+   `librespot: playing` once the music starts. Later launches say `librespot: cached credentials` and
+   connect without a pick.
+
+Log lines to look for (the band, or the long-press list): `librespot: discovery up` or
+`librespot: discovery failed: ...` (a refused local network shows as a dns_sd error, policy denied
+-65570); `librespot: session up` or `librespot: connect failed: ...`; `librespot: playing`,
+`paused`, `stopped`, `unavailable: ...`; `librespot: session ended` and the reconnects;
+`librespot: output failed: ...` (the audio engine); and librespot's own info, warnings and errors,
+all prefixed `librespot:`.
+
+**Not yet verified** (it builds in CI, but nothing below has been seen on a phone):
+
+- Whether Spotify's access points take the Linux-presenting session from an iPhone, and whether the
+  iOS Spotify app offers a zeroconf device on its own phone and hands it credentials.
+- Whether the Spotify app on the same phone can reach the app's discovery server while WMP Spotify is
+  in the background (step 2's workaround).
+- Whether the audio engine, which runs from launch and renders silence between songs, keeps the app and
+  its session alive in the background as intended, and what it costs in battery.
+- How the visualizers keep time with librespot's audio. The page gets each buffer as it is played;
+  the broadcast's latency was never measured either.
+- Prior art: [lufinkey/librespot-swift](https://github.com/lufinkey/librespot-swift) (2025, OAuth and
+  rodio, built for aarch64-apple-ios) is the only iOS build of librespot found. The same author opened
+  #1477. No iOS Connect receiver built on librespot was found, nor any other open-source one.
+
 ## Building
 
 No Xcode project is checked in. `ios/project.yml` is an [XcodeGen](https://github.com/yonaskolb/XcodeGen)
