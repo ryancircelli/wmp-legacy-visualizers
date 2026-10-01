@@ -2,9 +2,9 @@
 // row: artist / title / album on the dark band, the 240×240 cover, then the controls band with the
 // cover's reflection, the mode row and "N of M". Ticks change the volume (the row becomes a volume bar
 // for 2 s); the center cycles the mode row: scrubber (ticks seek 1 % a detent, accelerated, sent 400 ms
-// after the last or on center; MENU cancels) -> Radio slider (the nano's Genius) -> shuffle Off | Songs
-// -> Like ♡ | ♥ (the rating slot) -> lyrics over the cover -> back; each but lyrics falls back after
-// 5 s idle. Hold center: the nano's popup, Spotify's way (§4.3). Play / next / prev and their holds
+// after the last or on center; MENU cancels) -> Radio slider (the nano's Genius) -> lyrics over the
+// cover -> back; each but lyrics falls back after 5 s idle (shuffle and Like: the status row's
+// toggles). Hold center: the nano's popup, Spotify's way (§4.3). Play / next / prev and their holds
 // (fast-forward, rewind: useScan) are the chrome's. A track with a Spotify Canvas shows it behind the
 // whole screen instead of the cover, the two bands made translucent over it; a tap on the cover's area
 // swaps the Canvas for the cover and back, remembered (while the cover is chosen no Canvas is fetched).
@@ -52,7 +52,7 @@ function NowPlaying() {
   const lastTick = useRef(0);
   const seeds = useRadioSeeds(), addTo = useAddTo(useApp(playingTrack)), plMenu = addTo.playlistMenu();
   const has: Record<Mode, boolean> = {
-    default: true, scrub: p.media && p.canSeek && d > 0, radio: seeds.length > 0, shuffle: p.spotify, like: !!addTo.uri, lyrics: p.lyrics,
+    default: true, scrub: p.media && p.canSeek && d > 0, radio: seeds.length > 0, lyrics: p.lyrics,
   };
   const m: Mode = has[mode] ? mode : 'default';
   const held = scrub?.uri === uri ? scrub.ms : null;
@@ -127,17 +127,13 @@ function NowPlaying() {
     // an open Popup registers after this screen, so it takes the ticks, center and MENU while open
     onTick: (dir) => {
       setPoke((n) => n + 1);
-      const s = get(), on = dir > 0;
+      const s = get();
       if (m === 'scrub') {
         const now = Date.now(), a = scrubAccel(now - lastTick.current);
         lastTick.current = now;
         setScrub((x) => ({ uri, ms: scrubStep(x?.uri === uri ? x.ms : positionNow(s), dir, d, a) }));
       } else if (m === 'radio') {
-        if (on) { startRadio(); setMode('default'); }
-      } else if (m === 'shuffle') {
-        if (on !== s.playback.shuffle) s.commands.toggleShuffle();
-      } else if (m === 'like') {
-        if (on !== !!(s.saved[uri] ?? addTo.saved)) addTo.toggle();
+        if (dir > 0) { startRadio(); setMode('default'); }
       } else {
         const v = volumeStep(s.settings.muted ? 0 : s.settings.volume, dir, p.max);
         s.actions.setVolume(v);
@@ -203,15 +199,6 @@ function NowPlaying() {
             <div className={cx(css.track, css.slider)}><span className={css.knob}>⇨</span></div>
             <span className={css.right}>Start</span>
           </div>
-        ) : m === 'shuffle' ? (
-          <div className={css.row}>
-            <svg className={css.spk} viewBox="0 0 12 10" aria-label="Shuffle">
-              <path d="M0 2h3l5 6h2M0 8h3l5-6h2" fill="none" stroke="currentColor" strokeWidth="1.4" /><path d="M10 0v4l2-2zM10 6v4l2-2z" fill="currentColor" />
-            </svg>
-            <Segments value={p.shuffle ? 1 : 0} labels={['Off', 'Songs']} />
-          </div>
-        ) : m === 'like' ? (
-          <div className={css.row}><Segments value={addTo.saved ? 1 : 0} labels={['♡', '♥']} /></div>
         ) : (
           <div className={css.row}>
             <span className={css.left}>{elapsed}</span>
@@ -269,15 +256,6 @@ function Line({ className, text }: { className?: string; text?: string }) {
     return () => { ro.disconnect(); a?.cancel(); };
   }, [text]);
   return <div ref={box} className={cx(css.line, className)}><span>{text}</span></div>;
-}
-
-/** a two-position control (shuffle Off | Songs, Like ♡ | ♥): the active segment light */
-function Segments({ value, labels }: { value: number; labels: string[] }) {
-  return (
-    <div className={cx(css.track, css.seg)}>
-      {labels.map((l, i) => <span key={l} data-on={i === value || undefined}>{l}</span>)}
-    </div>
-  );
 }
 
 function Speaker({ loud }: { loud?: boolean }) {

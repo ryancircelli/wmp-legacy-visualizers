@@ -165,6 +165,24 @@ it('the dark status row: shuffle and repeat are toggles (dimmed when off), a tap
   expect([one.getAttribute('aria-pressed'), one.textContent]).toEqual(['true', '1']);
 });
 
+it('the dark status row\'s Like: dimmed and inert with no track, else the playing track\'s saved flag, toggled by a tap', async () => {
+  const haptic = vi.fn();
+  window.alchemyHaptic = haptic;
+  const m = mountSkinNow('spotify', fakeData({ saved: { 'spotify:track:a': true } }), <div data-testid="row"><StatusRow title="" dark /></div>);
+  const row = within(m.getByTestId('row'));
+  const none = row.getByRole('button', { name: 'Like' });
+  expect([none.getAttribute('aria-disabled'), none.hasAttribute('data-off')]).toEqual(['true', true]);
+  act(() => { fireEvent.click(none); });
+  expect([m.cmd.addTo.mock.calls.length, haptic.mock.calls.length]).toEqual([0, 0]);
+  act(() => { m.store.setState((s) => ({ playback: { ...s.playback, status: 'playing', track: { uri: 'spotify:track:a', title: 'T', artist: 'A', duration: 1 } } })); });
+  await settle();
+  const liked = row.getByRole('button', { name: 'Unlike' });
+  expect([liked.getAttribute('aria-pressed'), liked.hasAttribute('data-off')]).toEqual(['true', false]);
+  act(() => { fireEvent.click(liked); });
+  expect(m.cmd.addTo).toHaveBeenCalledExactlyOnceWith('spotify:track:a', expect.any(String), false);
+  expect(haptic).toHaveBeenCalledWith('light');
+});
+
 it('a tap on the cover area swaps the Canvas for the cover and back, remembered; none is fetched while the cover is chosen', async () => {
   vi.stubGlobal('IntersectionObserver', class { observe() {} disconnect() {} });
   const haptic = vi.fn();

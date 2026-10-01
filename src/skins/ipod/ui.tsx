@@ -5,7 +5,7 @@ import { useContext, useEffect, useLayoutEffect, useRef, useState, type CSSPrope
 import { useStore } from 'zustand';
 import { createStore } from 'zustand/vanilla';
 import { hasMedia, positionNow } from '../../model';
-import { cx, duration, isPlaying, isSpotify, useApp, useShell, type Shell } from '../../ui';
+import { cx, duration, isPlaying, isSpotify, playingTrack, useAddTo, useApp, useShell, type Shell } from '../../ui';
 import { useHostGlobal } from './host';
 import type { Chrome } from './screens/contract';
 import { useClockPrefs } from './screens';
@@ -140,13 +140,13 @@ export function useTime(h24: boolean): string {
 /** The status bar (§2.2, §2.4). Over menus (light): the title at the left, or the time with Settings >
  *  Date & Time > Time in Title. Over Now Playing and the media pages (`dark`): shuffle and repeat at
  *  the left (Spotify only), the time centred. At the right always: ▶ playing / ❚❚ paused (the spinner
- *  while the screen loads), then the battery (the phone's, when the iOS app reports it). Shuffle and
- *  repeat are toggles, dimmed when off: a tap flips shuffle, or steps repeat Off -> All -> One. */
+ *  while the screen loads), then the battery (the phone's, when the iOS app reports it). Shuffle,
+ *  repeat and Like are toggles: a tap flips shuffle (dimmed when off), steps repeat Off -> All -> One
+ *  (dimmed when off), or likes / unlikes the track (♡ / ♥, dimmed with none). */
 export const StatusRow = ({ title, dark, busy: loading }: { title: string; dark?: boolean; busy?: boolean }) => {
   const sh = useShell();
   const st = useApp((x) => ({ media: hasMedia(x), playing: isPlaying(x), paused: x.playback.status === 'paused',
                                shuffle: x.playback.shuffle, repeat: x.playback.repeat, spotify: isSpotify(x) }));
-  // a swipe that starts here is still MENU (Root); a tap is the toggle's alone
   const tap = (e: MouseEvent, act: () => void) => { e.stopPropagation(); window.alchemyHaptic?.('light'); act(); };
   const prefs = useClockPrefs(), time = useTime(prefs.twentyFourHour);
   const bat = useHostGlobal('__wmpBattery', 'wmp-battery');
@@ -155,17 +155,19 @@ export const StatusRow = ({ title, dark, busy: loading }: { title: string; dark?
   return (
     <div className={s.status} data-dark={dark || undefined}>
       {dark && <span className={s.modes}>{st.spotify && <>
-        <span className={s.mode} role="button" aria-label="Shuffle" aria-pressed={st.shuffle}
+        <span className={s.mode} role="button" aria-label="Shuffle" aria-pressed={st.shuffle} data-off={!st.shuffle || undefined}
               onClick={(e) => tap(e, () => sh.store.getState().commands.toggleShuffle())}>
           <svg className={s.glyph} viewBox="0 0 12 9" aria-hidden="true">
             <path d="M0 2h3l5 5h2M0 7h3l5-5h2" fill="none" stroke="currentColor" strokeWidth="1.4" /><path d="M10 0v4l2-2zM10 5v4l2-2z" /></svg>
         </span>
         <span className={s.mode} role="button" aria-label={st.repeat === 'track' ? 'Repeat one' : 'Repeat'} aria-pressed={st.repeat !== 'off'}
+              data-off={st.repeat === 'off' || undefined}
               onClick={(e) => tap(e, () => sh.store.getState().commands.cycleRepeat())}>
           <svg className={s.glyph} viewBox="0 0 12 9" aria-hidden="true">
             <path d="M1 5V3h8M11 4v2H3" fill="none" stroke="currentColor" strokeWidth="1.4" /><path d="M8.5 1l2.5 2-2.5 2zM3.5 4L1 6l2.5 2z" />
             {st.repeat === 'track' && <text x="6" y="7.5" fontSize="5" textAnchor="middle">1</text>}</svg>
         </span>
+        <Like tap={tap} />
       </>}</span>}
       <span key={text} className={cx(s.title, 'min-w-0 truncate', dark && 'text-center')}>{text}</span>
       <span className={s.icons}>
@@ -177,6 +179,19 @@ export const StatusRow = ({ title, dark, busy: loading }: { title: string; dark?
     </div>
   );
 };
+
+/** The status row's Like: the playing track's, by Now Playing's own useAddTo (one saved query for both) */
+function Like({ tap }: { tap: (e: MouseEvent, act: () => void) => void }) {
+  const like = useAddTo(useApp(playingTrack)), on = !!like.saved;
+  return (
+    <span className={s.mode} role="button" aria-label={on ? 'Unlike' : 'Like'} aria-pressed={on} aria-disabled={!like.uri || undefined}
+          data-off={!like.uri || undefined} onClick={(e) => { if (like.uri) tap(e, like.toggle); else e.stopPropagation(); }}>
+      <svg className={s.glyph} viewBox="0 1 12 11" aria-hidden="true">
+        <path d="M6 10.4C3.3 8.4 1.3 6.8 1.3 4.5 1.3 3 2.5 1.9 3.8 1.9c1 0 1.7.5 2.2 1.3.5-.8 1.2-1.3 2.2-1.3 1.3 0 2.5 1.1 2.5 2.6 0 2.3-2 3.9-4.7 5.9Z"
+              fill={on ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" /></svg>
+    </span>
+  );
+}
 
 /** The iPod's glossy blue progress bar. With `onSeek` it is touch-seekable: a tap seeks there, a
  *  drag scrubs (the bar follows the finger) and the release seeks, once, with the fraction 0..1. */

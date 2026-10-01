@@ -2,10 +2,10 @@
 // mode cycle and the "N of M" line (docs/ipod-skin.md §2.4, §3.1).
 
 /** The mode row, in the order the center cycles it (§2.4): the progress bar (ticks: volume), the
- *  scrubber (ticks: seek), the nano's Genius slider as Spotify radio, shuffle Off | Songs, the rating
- *  slot as Like (§6 item 4), the lyrics over the cover. */
-export type Mode = 'default' | 'scrub' | 'radio' | 'shuffle' | 'like' | 'lyrics';
-export const MODES: readonly Mode[] = ['default', 'scrub', 'radio', 'shuffle', 'like', 'lyrics'];
+ *  scrubber (ticks: seek), the nano's Genius slider as Spotify radio, the lyrics over the cover. The
+ *  nano's shuffle and rating modes are the status row's toggles here (shuffle, Like). */
+export type Mode = 'default' | 'scrub' | 'radio' | 'lyrics';
+export const MODES: readonly Mode[] = ['default', 'scrub', 'radio', 'lyrics'];
 
 /** ms: a scrub seeks this long after its last detent (§3.1); a mode falls back to the progress bar
  *  after IDLE without input (§2.4, 5 s reconstructed); the volume bar goes VOLUME after its last tick */

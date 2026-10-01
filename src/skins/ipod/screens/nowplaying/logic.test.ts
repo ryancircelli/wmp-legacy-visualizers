@@ -27,14 +27,14 @@ describe('Now Playing logic', () => {
     expect(volumeStep(199, 1, 200)).toBe(200);
   });
   it('cycles the modes on center in the nano order, skipping what the track lacks', () => {
-    const all = { scrub: true, radio: true, shuffle: true, like: true, lyrics: true };
+    const all = { scrub: true, radio: true, lyrics: true };
     const order: Mode[] = ['default'];
-    for (let i = 0; i < 6; i++) order.push(nextMode(order[i]!, all));
-    expect(order).toEqual(['default', 'scrub', 'radio', 'shuffle', 'like', 'lyrics', 'default']);
+    for (let i = 0; i < 4; i++) order.push(nextMode(order[i]!, all));
+    expect(order).toEqual(['default', 'scrub', 'radio', 'lyrics', 'default']);
     expect(nextMode('default', { radio: true, lyrics: true })).toBe('radio');
     expect(nextMode('radio', { radio: true, lyrics: true })).toBe('lyrics');
-    expect(nextMode('scrub', { like: true })).toBe('like');
-    expect(nextMode('like', { scrub: true, like: true })).toBe('default');
+    expect(nextMode('scrub', { lyrics: true })).toBe('lyrics');
+    expect(nextMode('radio', { scrub: true, radio: true })).toBe('default');
     expect(nextMode('default', {})).toBe('default');
   });
   it('says N of M only when the track is among the rows', () => {

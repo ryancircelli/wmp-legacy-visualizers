@@ -67,19 +67,10 @@
   background: #4785fc; border: calc(var(--unit) * 1) solid #fff;
   transform: translate(-50%, -50%) rotate(45deg);
 }
-/* the volume bar's speakers, the shuffle glyph */
+/* the volume bar's speakers */
 .spk, .loud { position: absolute; top: calc(var(--unit) * 3); width: calc(var(--unit) * 12); height: calc(var(--unit) * 12); }
 .spk { left: calc(var(--unit) * 28); }
 .loud { left: calc(var(--unit) * 200); }
-/* shuffle Off | Songs, Like ♡ | ♥: the active segment light grey with dark text */
-.seg {
-  top: calc(var(--unit) * 1); height: calc(var(--unit) * 16); display: flex; overflow: hidden;
-  border-radius: calc(var(--unit) * 3); border: 1px solid #1a1a1a; background: #3a3a3a;
-  line-height: calc(var(--unit) * 14);
-}
-.seg > span { flex: 1; text-align: center; }
-.seg > span + span { border-left: 1px solid #1a1a1a; }
-.seg > [data-on] { background: #d8d8d8; color: #222; }
 /* the Radio slider (the nano's Genius slider): its knob at the left until it starts */
 .slider {
   top: calc(var(--unit) * 1); height: calc(var(--unit) * 16); border-radius: calc(var(--unit) * 8);
