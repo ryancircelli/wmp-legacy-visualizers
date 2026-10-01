@@ -209,8 +209,8 @@ the AP took it); `librespot: playing`,
 `librespot: output failed: ...` (the audio engine); and librespot's own info, warnings and errors,
 all prefixed `librespot:`.
 
-**Not yet verified.** CI builds, links, archives and uploads it (builds 19 and 20, 2026-10-01; 20
-is the current one), but none of the following has been seen on a phone:
+**Not yet verified.** CI builds, links, archives and uploads it (builds 19, 20 and 22, 2026-10-01;
+22, the first with the token path, is the current one), but none of the following has been seen on a phone:
 
 - Whether Spotify's access points take the web player's token from librespot presenting as Linux
   (and then login5, with Keymaster's client id, the credentials that login gave).
