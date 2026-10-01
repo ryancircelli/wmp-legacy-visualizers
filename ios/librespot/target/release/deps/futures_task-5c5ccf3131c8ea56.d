@@ -1,0 +1,11 @@
+/home/ryanc/dev/wmp-legacy-visualizers/ios/librespot/target/release/deps/futures_task-5c5ccf3131c8ea56.d: /home/ryanc/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/futures-task-0.3.34/src/lib.rs /home/ryanc/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/futures-task-0.3.34/src/spawn.rs /home/ryanc/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/futures-task-0.3.34/src/arc_wake.rs /home/ryanc/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/futures-task-0.3.34/src/waker.rs /home/ryanc/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/futures-task-0.3.34/src/waker_ref.rs /home/ryanc/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/futures-task-0.3.34/src/future_obj.rs /home/ryanc/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/futures-task-0.3.34/src/noop_waker.rs
+
+/home/ryanc/dev/wmp-legacy-visualizers/ios/librespot/target/release/deps/libfutures_task-5c5ccf3131c8ea56.rmeta: /home/ryanc/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/futures-task-0.3.34/src/lib.rs /home/ryanc/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/futures-task-0.3.34/src/spawn.rs /home/ryanc/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/futures-task-0.3.34/src/arc_wake.rs /home/ryanc/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/futures-task-0.3.34/src/waker.rs /home/ryanc/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/futures-task-0.3.34/src/waker_ref.rs /home/ryanc/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/futures-task-0.3.34/src/future_obj.rs /home/ryanc/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/futures-task-0.3.34/src/noop_waker.rs
+
+/home/ryanc/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/futures-task-0.3.34/src/lib.rs:
+/home/ryanc/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/futures-task-0.3.34/src/spawn.rs:
+/home/ryanc/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/futures-task-0.3.34/src/arc_wake.rs:
+/home/ryanc/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/futures-task-0.3.34/src/waker.rs:
+/home/ryanc/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/futures-task-0.3.34/src/waker_ref.rs:
+/home/ryanc/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/futures-task-0.3.34/src/future_obj.rs:
+/home/ryanc/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/futures-task-0.3.34/src/noop_waker.rs:

@@ -57,6 +57,8 @@ function SettingsMenu() {
     // The newest player from the site, in place: the music goes on (ios/WmpSpotify/observer.js alchemyRestart)
     !!window.alchemyRestart && { id: 'refresh', label: 'Refresh Player', onSelect: restartApp },
     { id: 'support', label: 'Support', chevron: true, onSelect: to(nav, menu('settings/support', 'Support', () => [
+      // the iOS app's log sheet (the band that opens it is hidden under this skin)
+      ...(window.alchemyShowLog ? [{ id: 'log', label: 'Host Log', onSelect: () => window.alchemyShowLog?.() }] : []),
       { id: 'repo', label: 'Source Code', onSelect: () => openLink(LINKS.repo) },
       { id: 'issues', label: 'Report a Problem', onSelect: () => openLink(LINKS.repo + '/issues') }])) },
     st.canLogout && { id: 'logout', label: 'Log Out', chevron: true,
