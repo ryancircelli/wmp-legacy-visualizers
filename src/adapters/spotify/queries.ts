@@ -8,7 +8,7 @@ import type {
 } from '../../model';
 import { fetchAlbumMeta as albumMeta, fetchArtist as artist } from './artist';
 import { fetchHome as home } from './home';
-import { fetchCollectionPage as page, fetchLibraryList as list, remember as rememberIn } from './library';
+import { fetchCollectionPage as page, fetchFollowedArtists as followed, fetchLibraryList as list, remember as rememberIn } from './library';
 import { fetchRadio as radio, radioSeeds as seeds } from './radio';
 import { fetchSearch as search } from './search';
 import { acceptLyrics as accept, fetchLyrics as lyrics } from './lyrics';
@@ -29,6 +29,8 @@ function bound(): Sp {
 export const keys = {
   all: ['spotify'] as const,
   libraryList: () => ['spotify', 'library'] as const,
+  /** under the library's key: a follow / unfollow (setLiked) refetches it with the list */
+  followedArtists: () => ['spotify', 'library', 'artists'] as const,
   collection: (uri: string) => ['spotify', 'collection', uri] as const,
   collectionPage: (uri: string, offset: number) => ['spotify', 'collection', uri, offset] as const,
   search: (q: string, type: SearchType, offset = 0) => ['spotify', 'search', q.trim(), type, offset] as const,
@@ -47,6 +49,8 @@ export const savedKey = (uri: string) => ['spotify', 'saved', uri] as const;
 
 /** The playlists and saved albums of the library (libraryV3, up to 400). */
 export const fetchLibraryList = (): Promise<LibraryItem[]> => list(bound());
+/** The followed artists (libraryV3, the Artists filter; up to 400) as { uri, name, image, kind: 'artist' }, in Spotify's order. */
+export const fetchFollowedArtists = (): Promise<LibraryItem[]> => followed(bound());
 /** One page of a playlist / album / Liked Songs (meta with offset 0); nextOffset absent = the end. */
 export const fetchCollectionPage = (uri: string, offset = 0): Promise<CollectionPage> => page(bound(), uri, offset);
 /** Type 'all': SearchResults (every bucket's first page + top result); a typed search: one SearchPage. */

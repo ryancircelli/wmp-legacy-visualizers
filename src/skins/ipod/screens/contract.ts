@@ -104,7 +104,7 @@ export interface Screens {
   /** Music > Genius Mixes: Spotify Home's shelves (the same screen videos() showed; §4.2) */
   geniusMixes(): ScreenEntry;
   // group lists/: Playlists' first row on the nano
-  /** On-The-Go: the queue, read-only until an add-to-queue command exists (§6 item 7) */
+  /** On-The-Go: the queue (commands.addToQueue adds to it) */
   onTheGo(): ScreenEntry;
   // group settings/ (Settings and Extras; the 5G's Extras: Alarms, Calendars, Clocks, Contacts,
   // Fitness, Games, Notes, Screen Lock, Stopwatch, Voice Memos (§2.3))

@@ -3,7 +3,7 @@
 // channels the web player itself uses, never its DOM and never the public Web API; from inside its
 // page (the Deno host's overlay) or through the host (Tauri), whichever transport.ts finds. The host
 // socket (PCM, lyrics, GSMTC as a fallback) comes from the local adapter's startHost.
-import { noCommands, type AppStore } from '../../model';
+import { LIKED, noCommands, type AppStore } from '../../model';
 import { announceHostUpdate, checkForUpdates, detectMode, hostWindow, win } from '../host';
 import { hostTransport, startHost, type HostLink } from '../local';
 import * as C from './connect';
@@ -59,13 +59,14 @@ export function spotifyCommands(sp: Sp, host: HostLink | null) {
     playContext: (ctx, track) => void C.playContext(sp, ctx, track),
     playItem: (it) => void (/^spotify:(track|episode):/.test(it.uri)
       ? C.playContext(sp, it.ctx || it.uri, it.ctx ? it.uri : null) : C.playContext(sp, it.uri, null)),
-    /** Play all: from the first track (a bare replay of the playing context would not move). Liked
-     *  Songs has no context we can name, so it starts its first track in that track's album. */
+    /** Play all: from the first track (a bare replay of the playing context would not move); with
+     *  shuffle on, from a random one of the first page, shuffled. Liked Songs (LIKED) too. */
     playAll: (uri) => {
-      const f = sp.cache.lists.get(uri)?.[0];
-      if (/^spotify:(playlist|album|artist):/.test(uri)) void C.playContext(sp, uri, f ? f.uri : null);
-      else if (f?.ctx) void C.playContext(sp, f.ctx, f.uri);
+      const rows = sp.cache.lists.get(uri) ?? [], shuffle = store.getState().playback.shuffle;
+      const f = rows[shuffle ? Math.floor(Math.random() * rows.length) : 0];
+      if (/^spotify:(playlist|album|artist):/.test(uri) || uri === LIKED) void C.playContext(sp, uri, f ? f.uri : null, shuffle);
     },
+    addToQueue: (uri: string) => void C.addToQueue(sp, uri),
     search: (q) => store.getState().actions.setUi({ searchQ: String(q ?? ''), searchOnly: null }),
     openInLibrary,
     openAlbum,

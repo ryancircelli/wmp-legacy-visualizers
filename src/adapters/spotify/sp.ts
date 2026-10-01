@@ -38,6 +38,8 @@ export interface Sp {
   blockedUntil: number;
   /** context uri -> its name, once known */
   ctxNames: Record<string, string>;
+  /** Liked Songs as the player names it (spotify:user:<username>:collection), once known */
+  liked?: string;
   /** radio seed uri -> station playlist uri (null = none) */
   seeds: Record<string, string | null>;
   /** the volumes we PUT (0..65535) in the last 1.5 s: the device echoing any of them is not a change */
@@ -70,6 +72,8 @@ export async function post(sp: Sp, url: string, body: unknown, method = 'POST', 
 }
 
 export const kindOf = (uri: string | undefined) => /^spotify:(\w+):/.exec(uri || '')?.[1] ?? '';
+/** Liked Songs as the player plays it (the web player's own context uri for it) */
+export const LIKED_CTX = /^spotify:user:[^:]+:collection$/;
 export const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
 /** The enrichment cache: every track row and name the fetches returned, so a player_state that

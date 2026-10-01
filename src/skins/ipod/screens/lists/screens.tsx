@@ -1,12 +1,14 @@
 // The nano 5G's Music screens over the Spotify library (docs/ipod-skin.md §2.4, §4.2): Playlists
-// (On-The-Go first: the queue), Artists, Albums, Songs, Search, Cover Flow, and the empty pages
-// Spotify has nothing for. Lists are the chrome's MenuScreen (center fires the row, hold-center its
-// menu, Play/Pause plays the row); Search and Cover Flow draw themselves. What a screen comes back to
-// (the selected row, the typed query) is kept on its entry, so it outlives the screen's unmount.
+// (On-The-Go first: the queue, which any song's hold-centre > Add to On-The-Go adds to), Artists,
+// Albums, Songs, Search, Cover Flow, and the empty pages Spotify has nothing for. Lists are the
+// chrome's MenuScreen (center fires the row, hold-center its menu, Play/Pause plays the row); Search
+// and Cover Flow draw themselves. What a screen comes back to (the selected row, the typed query) is
+// kept on its entry, so it outlives the screen's unmount.
+import { useQuery } from '@tanstack/react-query';
 import { useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { LIKED, type AppStore, type LibraryItem, type SearchResults, type Track } from '../../../../model';
 import {
-  canSave, isAlbum, useAddTo, useApp, useArtist, useCollection, useLibraryList, useSearch, useSearchAll, useShell, type Bucket, type Shell,
+  canSave, isAlbum, STALE, useAddTo, useApp, useArtist, useCollection, useLibraryList, useSearch, useSearchAll, useShell, type Bucket, type Shell,
 } from '../../../../ui';
 import { MenuScreen, Popup, useNav, useWheel } from '../../ui';
 import type { MenuItem, Nav, ScreenEntry } from '../contract';
@@ -49,8 +51,8 @@ function List({ keep, items, near, loading, empty, play }: {
 
 // ---- playing -------------------------------------------------------------------------------------
 
-/** Play a song where it was listed (its playlist / album / artist; a Liked Songs row in its album,
- *  as everywhere in the app), then Now Playing, as the iPod does once a song is chosen. */
+/** Play a song where it was listed (its playlist / album / artist / Liked Songs), then Now Playing,
+ *  as the iPod does once a song is chosen. */
 const playSong = (sh: Shell, nav: Nav, t: Track) => { sh.store.getState().commands.playItem(t); nav.toNowPlaying(); };
 /** Play a collection from its top (an artist: their context), then Now Playing (§4.1). */
 function playUri(sh: Shell, nav: Nav, uri: string) {
@@ -58,8 +60,7 @@ function playUri(sh: Shell, nav: Nav, uri: string) {
   if (uri.startsWith('spotify:artist:')) c.playContext(uri, null); else c.playAll(uri);
   nav.toNowPlaying();
 }
-/** A page's Shuffle row: shuffle on, then a random song of it (Spotify names no Liked Songs context,
- *  so a Liked song plays shuffled inside its album; §4.2 Shuffle Songs). */
+/** A page's Shuffle row: shuffle on, then a random song of it, in its playlist / album / Liked Songs. */
 function shufflePlay(sh: Shell, nav: Nav, rows: readonly Track[]) {
   const s = sh.store.getState(), t = rows[Math.floor(Math.random() * rows.length)];
   if (!t) return;
@@ -114,16 +115,18 @@ async function startRadio(sh: Shell, nav: Nav, t: Track): Promise<void> {
 /** A song's hold-center menu, and whether it shows the playlists page. */
 type Held = { t: Track; lists?: boolean } | null;
 
-/** Hold-center on a song (§3.1): Like, Add to Playlist (the editable ones, ✓ where it is; a pick
- *  toggles), Start Radio, Browse Album, Browse Artist, Cancel. The Popup closes on any choice, so Add
- *  to Playlist reopens it on the playlists page (both updates land in one render). */
+/** Hold-center on a song (§3.1): Add to On-The-Go (Spotify's queue), Like, Add to Playlist (the
+ *  editable ones, ✓ where it is; a pick toggles), Start Radio, Browse Album, Browse Artist, Cancel.
+ *  The Popup closes on any choice, so Add to Playlist reopens it on the playlists page (both updates
+ *  land in one render). */
 function TrackPopup({ held: { t, lists }, set }: { held: NonNullable<Held>; set: (h: Held) => void }) {
-  const sh = useShell(), nav = useNav(), a = useAddTo(canSave(t.uri) ? t.uri : null);
+  const sh = useShell(), nav = useNav(), a = useAddTo(canSave(t.uri) ? t.uri : null), queues = useApp((s) => !!s.commands.addToQueue);
   const artist = t.artistUris?.[0], album = t.albumUri;
   const items: MenuItem[] = lists
     ? (a.playlistMenu().sub ?? []).flatMap((e, i): MenuItem[] => ('label' in e
       ? [{ id: 'pl' + i, label: e.label, right: e.check ? '✓' : undefined, disabled: e.disabled, onSelect: e.act }] : []))
     : [
+      { id: 'queue', label: 'Add to On-The-Go', disabled: !queues, onSelect: () => sh.store.getState().commands.addToQueue?.(t.uri) },
       { id: 'like', label: a.saved ? 'Unlike' : 'Like', disabled: !a.uri, onSelect: a.toggle },
       { id: 'add', label: 'Add to Playlist', chevron: true, disabled: !a.uri, onSelect: () => { a.playlistMenu().onOpen?.(); set({ t, lists: true }); } },
       { id: 'radio', label: 'Start Radio', onSelect: () => void startRadio(sh, nav, t) },
@@ -151,7 +154,8 @@ function Playlists({ keep }: { keep: Box<number> }) {
   return <List keep={keep} items={items} loading={lib.loading} play={(i) => { if (i) playUri(sh, nav, items[i]!.id); }} />;
 }
 
-/** On-The-Go: what Spotify plays next, read-only (no add-to-queue command yet; §4.6 1d). */
+/** On-The-Go: what Spotify plays next (its queue); a song joins it from any list's hold-centre >
+ *  Add to On-The-Go, and shows here with the player's next state. */
 function OnTheGo({ keep }: { keep: Box<number> }) {
   const rows = useApp((s) => s.queue.next);
   return <TrackList keep={keep} rows={rows} loading={false} />;
@@ -164,18 +168,27 @@ function Albums({ keep }: { keep: Box<number> }) {
   return <List keep={keep} items={items} loading={lib.loading} empty="No Albums" play={(i) => playUri(sh, nav, items[i]!.id)} />;
 }
 
-/** The adapter lists no followed artists: these are the liked songs' and the saved albums' artists,
- *  A–Z (§6 item 1). The selection is kept by artist, as later pages of liked songs land in between.
- *  ponytail: complete A–Z needs every liked page; they load as the selection nears the end. */
+/** Followed artists (Your Library > Artists) in Spotify's order; none under the local engine. */
+function useFollowedArtists(): { items: LibraryItem[]; loading: boolean } {
+  const q = useShell().queries, on = useApp((s) => s.auth.loggedIn === true);
+  const r = useQuery({ queryKey: q.keys.followedArtists(), queryFn: q.fetchFollowedArtists, enabled: on, staleTime: STALE.list });
+  return { items: (r.data ?? []) as LibraryItem[], loading: on && r.isPending };
+}
+
+/** The followed artists, A–Z; with none, the liked songs' and saved albums' artists (§6 item 1). The
+ *  selection is kept by artist, as later pages of liked songs land in between.
+ *  ponytail: the fallback's complete A–Z needs every liked page; they load as the selection nears the end. */
 function Artists({ keep }: { keep: Box<string> }) {
-  const sh = useShell(), nav = useNav(), liked = useCollection(LIKED), lib = useLibraryList(), [id, setId] = useKept(keep);
-  const list = artistList(artistsOf(liked.rows), lib.items.filter((x) => isAlbum(x.uri)));
+  const sh = useShell(), nav = useNav(), followed = useFollowedArtists(), liked = useCollection(LIKED), lib = useLibraryList(), [id, setId] = useKept(keep);
+  const derived = !followed.loading && !followed.items.length;
+  const list = followed.loading ? [] : derived ? artistList(artistsOf(liked.rows), lib.items.filter((x) => isAlbum(x.uri)))
+    : followed.items.map((x) => ({ key: x.uri, name: x.name, uri: x.uri })).sort((a, b) => az(a.name, b.name));
   const sel = Math.max(0, list.findIndex((a) => a.key === id)), a = list[sel];
   useWheel({ onPlay: a?.uri ? () => playUri(sh, nav, a.uri!) : undefined });
   const items = list.map((x): MenuItem => ({
     id: x.key, label: x.name, chevron: true, onSelect: () => nav.push(x.uri ? artistPage(x.uri, x.name) : savedArtist(x.name)) }));
-  return <MenuScreen items={items} selected={sel} loading={!items.length && (liked.loading || lib.loading)} empty="No Artists"
-                     onSelectedChange={(n) => { setId(items[n]!.id); if (n >= items.length - NEAR) liked.loadMore(); }} />;
+  return <MenuScreen items={items} selected={sel} loading={followed.loading || (!items.length && (liked.loading || lib.loading))} empty="No Artists"
+                     onSelectedChange={(n) => { setId(items[n]!.id); if (derived && n >= items.length - NEAR) liked.loadMore(); }} />;
 }
 
 /** An artist: All Songs (their top songs; played in the artist's context) then the discography.
@@ -381,10 +394,10 @@ export const podcasts = () => none('podcasts', 'Podcasts');
 export const search = () => screen<Strip>('search', 'Search', STRIP0, (k) => <Search keep={k} />);
 export const coverFlow = () => screen('coverFlow', 'Cover Flow', 0, (k) => <CoverFlow keep={k} />);
 
-/** Shuffle Songs: shuffle on, then Liked Songs from the top (Spotify names no Liked Songs context, so
- *  that is the first liked song's album; §4.2, §6 item 3). Only starts playback: the chrome's main
- *  menu pushes Now Playing after calling this. The contract hands it no store: the chrome may pass
- *  its shell's, else it is the page's own (app/mount.tsx sets window.Alchemy.store). */
+/** Shuffle Songs: shuffle on, then Liked Songs played whole (one play of the Liked Songs context,
+ *  shuffled, from a random song; §4.2, §6 item 3). Only starts playback: the chrome's main menu
+ *  pushes Now Playing after calling this. The contract hands it no store: the chrome may pass its
+ *  shell's, else it is the page's own (app/mount.tsx sets window.Alchemy.store). */
 export function shuffleSongs(_nav: Nav, store = (window.Alchemy as { store?: AppStore } | undefined)?.store): void {
   if (!store) return;
   const { playback, commands } = store.getState();

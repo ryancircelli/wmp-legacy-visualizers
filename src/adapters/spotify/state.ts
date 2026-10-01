@@ -1,9 +1,9 @@
 // player_state -> playback + queue (CONTRACT v6.1). Every number in it is a string; is_playing
 // stays true while paused, so is_paused is the one to read (SPIKE2.md §3).
-import type { Playback, Track } from '../../model';
+import { LIKED, type Playback, type Track } from '../../model';
 import { setSession } from '../host/media';
 import { fetchCollectionPage } from './library';
-import { W, cap, kindOf, type PlayerState, type Sp } from './sp';
+import { LIKED_CTX, W, cap, kindOf, type PlayerState, type Sp } from './sp';
 
 export function img(u: string | undefined): string | null {
   const m = /^spotify:image:([0-9a-f]+)$/.exec(u || '');
@@ -26,6 +26,7 @@ function contextName(sp: Sp, ps: PlayerState): string {
 }
 /** "Playlist: lawnmower classics", "Album: Silver Side Up" — or just the kind until the name is known. */
 export function fromText(sp: Sp, ps: PlayerState): string {
+  if (LIKED_CTX.test(ps.context_uri ?? '')) return 'Liked Songs';
   const k = kindOf(ps.context_uri), name = contextName(sp, ps), label = k ? cap(k) : 'Spotify';
   return name === label ? label : label + ': ' + name;
 }
@@ -53,7 +54,7 @@ export function toPlayback(sp: Sp, ps: PlayerState): Partial<Playback> {
   const pos = (+(ps.position_as_of_timestamp ?? 0) || 0) + (paused ? 0 : (now - (+(ps.timestamp ?? 0) || now)) * speed);
   const dur = +(ps.duration ?? 0) || +(md.duration ?? 0) || 0;
   const o = ps.options ?? {};
-  const ctx = ps.context_uri;
+  const ctx = LIKED_CTX.test(ps.context_uri ?? '') ? LIKED : ps.context_uri;   // Liked Songs: its library uri
   return {
     status: !t.uri ? 'stopped' : paused ? 'paused' : 'playing', source: 'spotify', paused, at: now,
     position: Math.max(0, dur ? Math.min(pos, dur) : pos),
@@ -65,7 +66,8 @@ export function toPlayback(sp: Sp, ps: PlayerState): Partial<Playback> {
     canPrev: !!t.uri && none(rs.disallow_skipping_prev_reasons),
     shuffle: !!o.shuffling_context,
     repeat: o.repeating_track ? 'track' : o.repeating_context ? 'context' : 'off',
-    context: ctx && /^spotify:(playlist|album|artist|show):/.test(ctx) ? { uri: ctx, kind: kindOf(ctx), label: fromText(sp, ps) } : null,
+    context: ctx === LIKED ? { uri: LIKED, kind: 'liked', label: 'Liked Songs' }
+      : ctx && /^spotify:(playlist|album|artist|show):/.test(ctx) ? { uri: ctx, kind: kindOf(ctx), label: fromText(sp, ps) } : null,
     from: t.uri ? fromText(sp, ps) : '',
     app: 'Spotify',
   };
@@ -78,6 +80,7 @@ export function onState(sp: Sp, ps: PlayerState | null | undefined, replay = fal
   if (!ps) return;
   sp.hasState = true;
   sp.last = ps;
+  if (LIKED_CTX.test(ps.context_uri ?? '')) sp.liked = ps.context_uri;
   const st = sp.store.getState(), p = toPlayback(sp, ps);
   let pending = replay ? st.playback.pending : null;
   // A seek still pending against a state that does not show it: Spotify pushes a cluster on the

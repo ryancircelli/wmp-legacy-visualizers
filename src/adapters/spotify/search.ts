@@ -3,7 +3,7 @@
 // every bucket, 10 each, and the top result); a typed search pages one bucket with the web
 // player's per-type op (searchTracks / searchArtists / searchAlbums / searchPlaylists).
 import { SEARCH_CAP, type LibraryItem, type SearchPage, type SearchResults, type SearchType, type Track } from '../../model';
-import { contextRow, midImage, remember, trackRow } from './library';
+import { artistRow, contextRow, remember, trackRow } from './library';
 import { hashFor, query, searchRoute } from './pathfinder';
 import { RateLimitError, type Sp } from './sp';
 
@@ -13,13 +13,6 @@ const ok = <T>(l: (T | null)[]) => l.filter((x): x is T => !!x);
 
 export const SEARCH_OPS: Record<Bucket, string> = {
   tracks: 'searchTracks', artists: 'searchArtists', albums: 'searchAlbums', playlists: 'searchPlaylists' };
-
-/** An artist from any shape (searchV2 artists, topResults): { uri, name, image, kind: 'artist' }. */
-export function artistRow(d: any): LibraryItem | null {
-  if (!d || !/^spotify:artist:/.test(d.uri || '') || !(d.profile && d.profile.name)) return null;
-  const img = midImage(d.visuals && d.visuals.avatarImage && d.visuals.avatarImage.sources);
-  return { uri: d.uri, name: d.profile.name, ...(img ? { image: img } : {}), kind: 'artist' };
-}
 
 /** One bucket of a searchV2 response. */
 interface Got { items: (Track | LibraryItem)[]; total: number; next?: number | null }

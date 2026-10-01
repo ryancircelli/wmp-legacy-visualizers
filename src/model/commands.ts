@@ -26,12 +26,16 @@ export interface Commands {
   setRepeat(mode: RepeatMode): void;
   /** Off -> Playlist (context) -> Track -> Off */
   cycleRepeat(): void;
-  /** play a context (playlist/album/artist/station), optionally starting at one of its tracks */
+  /** play a context (playlist/album/artist/station, Liked Songs as LIKED), optionally starting at one of its tracks */
   playContext(ctx: string, track?: string | null): void;
   /** a tile / row: a track plays in its ctx from itself, anything else as a context */
   playItem(item: { uri: string; ctx?: string | null }): void;
-  /** Media Library > Play all: the collection from its first track */
+  /** Media Library > Play all: the collection (Liked Songs too) from its first track; with shuffle on,
+   *  shuffled from a random one (the iPod's Shuffle Songs is this on LIKED) */
   playAll(uri: string): void;
+  /** Add to the queue (the iPod's On-The-Go; WMP 9's details pane shows its button when present);
+   *  `queue.next` follows with the player's next state. Absent: the engine has no queue (local). */
+  addToQueue?(trackUri: string): void;
 
   // selection (fetched data is TanStack Query's: see adapters/*/queries.ts)
   /** the Search view's query: sets ui.searchQ (the results are a query keyed on it) */

@@ -1,8 +1,9 @@
 // Connect-state commands: the player command the web player sends itself, from our device to
 // whichever device is playing. A command that fails (network, or non-2xx: Spotify's own account
 // rules) goes to the host's mediaCmd (SMTC) instead — that command only, never the session.
-import { positionNow, type Playback, type RepeatMode } from '../../model';
+import { LIKED, positionNow, type Playback, type RepeatMode } from '../../model';
 import { optimistic, pausedPatch } from '../host/media';
+import { query } from './pathfinder';
 import { W, post, status, type Sp } from './sp';
 import { transport as via } from './transport';
 
@@ -137,12 +138,42 @@ export function toggleShuffle(sp: Sp): Promise<void> {
   return optimistic(sp.store, { shuffle: on }, () => command(sp, { endpoint: 'set_shuffling_context', value: on }));
 }
 
-/** A context (playlist/album/artist/station), optionally starting at one of its tracks. */
-export function playContext(sp: Sp, ctx: string, track?: string | null): Promise<void> {
+/** The web player's Liked Songs context, spotify:user:<username>:collection (sp.ts LIKED_CTX):
+ *  learned from a state that played it, else from profileAttributes (the query the page sends
+ *  itself at load; its hash from W.hashes or the scan, none baked). null = unknown. */
+export async function likedContext(sp: Sp): Promise<string | null> {
+  if (!sp.liked) {
+    const d = await query<{ me?: { profile?: { uri?: string; username?: string } } }>(sp, 'profileAttributes', {}, { quiet: true }).catch(() => null);
+    const p = d?.me?.profile, user = p?.uri || (p?.username ? 'spotify:user:' + encodeURIComponent(p.username) : '');
+    if (/^spotify:user:[^:]+$/.test(user)) sp.liked = user + ':collection';
+  }
+  return sp.liked ?? null;
+}
+
+/** A context (playlist/album/artist/station, LIKED), optionally starting at one of its tracks.
+ *  shuffle: the play turns shuffle on with it (player_options_override), whatever the old context had. */
+export async function playContext(sp: Sp, ctx: string, track?: string | null, shuffle = false): Promise<void> {
+  if (ctx === LIKED) {
+    const liked = await likedContext(sp);
+    if (!liked) {   // no username known: the track in its album, as before Liked Songs had a context
+      const t = track ?? sp.cache.lists.get(LIKED)?.[0]?.uri, al = t && sp.cache.tracks.get(t)?.albumUri;
+      return t ? playContext(sp, al || t, al ? t : null, shuffle) : undefined;
+    }
+    ctx = liked;
+  }
   const c: Cmd = { endpoint: 'play', context: { uri: ctx, url: 'context://' + ctx },
                    play_origin: { feature_identifier: 'playlist', feature_version: 'xpui' } };
-  if (track) c.options = { skip_to: { track_uri: track } };
-  return command(sp, c, null).then(() => {});
+  const o: Record<string, unknown> = {};
+  if (track) o.skip_to = { track_uri: track };
+  if (shuffle) o.player_options_override = { shuffling_context: true };
+  if (track || shuffle) c.options = o;
+  await command(sp, c, null);
+}
+
+/** Add to queue: the web player's add_to_queue (the track marked queued, from the queue provider).
+ *  The queue (queue.next) follows from the cluster Spotify pushes next. */
+export function addToQueue(sp: Sp, uri: string): Promise<void> {
+  return command(sp, { endpoint: 'add_to_queue', track: { uri, metadata: { is_queued: 'true' }, provider: 'queue' } }, null).then(() => {});
 }
 
 /** Connect transfer (spike 3 §3). The target lights at once (pending 'device'); the cluster push

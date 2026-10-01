@@ -478,17 +478,20 @@ describe('6. library list and collection pages (the query functions)', () => {
     const all = env.cmds().pop();
     expect([all.context.uri, all.options.skip_to.track_uri]).toEqual([PL, 'spotify:track:0gEyKnHvgkrkBM6fbeHdwK']);
   });
-  it('Liked Songs pages in 50s; Play all starts its first track in that track\'s album', async () => {
+  it('Liked Songs pages in 50s; rows play in Liked Songs; with no username known, Play all starts its first track in its album', async () => {
     const env = setup();
     const pg = await Q.fetchCollectionPage(LIKED);
     expect(trackLabel(pg.tracks[0]!)).toBe('Brokenhearted – Karmin');
-    expect([pg.total, pg.nextOffset]).toEqual([1814, 2]);
+    expect([pg.total, pg.nextOffset, pg.tracks[0]!.ctx]).toEqual([1814, 2, LIKED]);
     await Q.fetchCollectionPage(LIKED, 2);
     const lt = env.pf().filter((c) => c.body.operationName === 'fetchLibraryTracks').pop()!;
     expect(lt.body.variables.offset + '/' + lt.body.variables.limit).toBe('2/50');
     env.C.playAll(LIKED); await settle();
     const lp = env.cmds().pop();
-    expect([lp.context.uri, lp.options.skip_to.track_uri]).toEqual([pg.tracks[0]!.ctx, pg.tracks[0]!.uri]);
+    expect([lp.context.uri, lp.options.skip_to.track_uri]).toEqual([pg.tracks[0]!.albumUri, pg.tracks[0]!.uri]);
+    // no profileAttributes hash anywhere: nothing sent for it, and nothing said
+    expect(env.pf().some((c) => c.body.operationName === 'profileAttributes')).toBe(false);
+    expect(env.S.ui.status).not.toMatch(/profileAttributes/);
   });
   it('openInLibrary / the saved view: selection only', () => {
     const env = setup();
@@ -793,6 +796,7 @@ describe('13. artist collections and typed search against spike 4\'s captured pa
       { uri: 'spotify:album:1BGiS3fcRGNi1Fw68WCC2W', name: 'Tie Your Mother Down (Live in Budapest)', total: 1, image: expect.stringMatching(/ab67616d00001e02/) as unknown },
       { uri: 'spotify:album:1phOF1iJfhjm64XX3P6Vny', name: 'Who Wants to Live Forever (Live in Budapest)', total: 1, image: expect.any(String) as unknown },
       { uri: 'spotify:album:2i3G9uRIMioVziTJ4T5fxI', name: 'Radio Ga Ga (Live in Budapest)', total: 1, image: expect.any(String) as unknown }]);
+    vi.spyOn(Math, 'random').mockReturnValue(0);                       // shuffle is on in the sample state: a random start
     env.C.playAll(AR); await settle();                                 // the remembered top tracks
     const p = env.cmds().pop();
     expect([p.context.uri, p.options.skip_to.track_uri]).toEqual([AR, 'spotify:track:1NHWG8zxSEypSRF3UufrnO']);
@@ -1426,6 +1430,98 @@ describe('23. membership: isCuratedEntities is a gate (captured shape)', () => {
     const env2 = setup({ status: 200, json: { data: { lookup: [{ data: { isCurated: false } }] } } });   // not lookupEntities
     await Q.fetchMembership(TRK, [B]);
     expect(env2.ops('fetchPlaylist').length).toBe(1);
+  });
+});
+
+describe('24. Liked Songs as a context, followed artists, add to queue (request shapes as the web player sends them; responses synthetic)', () => {
+  const ME_USER = 'spotify:user:u1', T1 = 'spotify:track:4urcG6Nfubqsuqy3juMjBi', T2 = 'spotify:track:50v47bZxJ7sIhiOn0iJWbL';   // the Liked fixture's rows
+  const PROFILE = 'a'.repeat(64);
+  /** libraryV3's Artists chip: spike 4's captured Artist objects in libraryV3's item wrapper, two pages */
+  const artistPage = (offset: number) => {
+    const found: { data: { uri: string } }[] = FX.spike4.searchArtists.response.data.searchV2.artists.items;
+    const all = found.map((i) => ({ item: { __typename: 'ArtistResponseWrapper', _uri: i.data.uri, data: clone(i.data) } }));
+    return { data: { me: { libraryV3: { __typename: 'LibraryPage', totalCount: 52, items: offset ? all.slice(2) : all.slice(0, 2) } } } };
+  };
+  function setup(state: unknown = FX.playerState) {
+    const env = boot({ loggedIn: true, state, hashes: { ...FX.hashes, profileAttributes: PROFILE } });
+    env.route(/player\/command/, { status: 200, json: { ack_id: 'q' } });
+    env.route(/pathfinder/, (_u, init) => {
+      const b = JSON.parse(init.body);
+      if (b.operationName === 'profileAttributes') return { status: 200, json: { data: { me: { profile: { uri: ME_USER, username: 'u1', name: 'Me' } } } } };
+      if (b.operationName === 'libraryV3' && b.variables.filters[0] === 'Artists') return { status: 200, json: artistPage(b.variables.offset) };
+      const cap = (FX[b.operationName] || {}).response;
+      return { status: 200, json: cap ? clone(cap) : { data: {} } };
+    });
+    env.start();
+    const ops = (name: string) => env.pf().filter((c) => c.body.operationName === name);
+    return Object.assign(env, { ops });
+  }
+  const play = (ctx: string, options?: object) => JSON.stringify({ command: { endpoint: 'play', context: { uri: ctx, url: 'context://' + ctx },
+    play_origin: { feature_identifier: 'playlist', feature_version: 'xpui' }, ...(options ? { options } : {}) } });
+
+  it('Liked Songs plays as spotify:user:<username>:collection, the username from profileAttributes (asked once)', async () => {
+    const env = setup();
+    const pg = await Q.fetchCollectionPage(LIKED);
+    env.C.playContext(LIKED, T2); await settle();
+    expect(JSON.stringify({ command: env.cmds().pop() })).toBe(play(ME_USER + ':collection', { skip_to: { track_uri: T2 } }));
+    const pa = env.ops('profileAttributes');
+    expect(pa.map((c) => [c.body.variables, c.body.extensions.persistedQuery.sha256Hash])).toEqual([[{}, PROFILE]]);
+    env.C.playItem(pg.tracks[0]!); await settle();                    // a Liked row: ctx LIKED
+    expect(JSON.stringify({ command: env.cmds().pop() })).toBe(play(ME_USER + ':collection', { skip_to: { track_uri: T1 } }));
+    expect(env.ops('profileAttributes').length).toBe(1);
+  });
+  it('Shuffle Songs: shuffle on, then playAll(LIKED): one play of Liked Songs, shuffled, from a random liked song', async () => {
+    const ps = clone(FX.playerState);
+    ps.options.shuffling_context = false;
+    const env = setup(ps);
+    await Q.fetchCollectionPage(LIKED);
+    vi.spyOn(Math, 'random').mockReturnValue(0.99);                   // the last row of the page
+    env.C.toggleShuffle();
+    env.C.playAll(LIKED); await settle();
+    const [sh, pl] = env.cmds().slice(-2);
+    expect(JSON.stringify(sh)).toBe('{"endpoint":"set_shuffling_context","value":true}');
+    expect(JSON.stringify({ command: pl })).toBe(play(ME_USER + ':collection',
+      { skip_to: { track_uri: T2 }, player_options_override: { shuffling_context: true } }));
+    // shuffle off: from the top, the player's options left alone
+    env.fire('wmp-spotify-state', ps);
+    env.C.playAll(LIKED); await settle();
+    expect(JSON.stringify({ command: env.cmds().pop() })).toBe(play(ME_USER + ':collection', { skip_to: { track_uri: T1 } }));
+  });
+  it('a state playing Liked Songs: "Liked Songs", context LIKED, and its username kept (no profileAttributes)', async () => {
+    const ps = clone(FX.playerState);
+    ps.context_uri = 'spotify:user:u2:collection';
+    const env = setup(ps);
+    await settle();
+    expect(env.S.playback.context).toEqual({ uri: LIKED, kind: 'liked', label: 'Liked Songs' });
+    expect([env.S.playback.from, env.S.playback.track!.ctx]).toEqual(['Liked Songs', LIKED]);
+    env.C.playContext(LIKED, T1); await settle();
+    expect(env.cmds().pop().context.uri).toBe('spotify:user:u2:collection');
+    expect(env.ops('profileAttributes').length).toBe(0);
+  });
+  it('fetchFollowedArtists: libraryV3 with the Artists filter, page by page; artist rows in Spotify\'s order', async () => {
+    const env = setup();
+    const got = await Q.fetchFollowedArtists();
+    expect(got.map((a) => a.name)).toEqual(['Queen', 'Queen Key', 'Queen Butterfly']);
+    expect(got[0]).toEqual({ uri: 'spotify:artist:1dfeR4HaWDbWqFHLkxsg1d', name: 'Queen', kind: 'artist',
+                             image: 'https://i.scdn.co/image/ab6761610000517473e4d22612ac8d944b5789b4' });
+    const lv = env.ops('libraryV3');
+    expect(JSON.stringify(lv[0]!.body.variables)).toBe(JSON.stringify({ ...FX.libraryV3.request.variables, filters: ['Artists'] }));
+    expect(lv.map((c) => c.body.variables.offset)).toEqual([0, 50]);
+    expect(lv[0]!.body.extensions.persistedQuery.sha256Hash).toBe(FX.hashes.libraryV3);
+    // under the library's key, so a follow (setLiked's ['spotify', 'library'] invalidation) refetches it
+    expect(Q.keys.followedArtists()).toEqual([...Q.keys.libraryList(), 'artists']);
+  });
+  it('addToQueue: add_to_queue with the track as the web player sends it; Up Next follows the next state', async () => {
+    const env = setup();
+    env.C.addToQueue!(T1); await settle();
+    const c = env.calls.filter((x) => /player\/command/.test(x.url)).pop()!;
+    expect(c.url).toMatch(new RegExp('/connect-state/v1/player/command/from/' + ME + '/to/' + FX.activeDeviceId + '$'));
+    expect(JSON.stringify(c.body)).toBe(JSON.stringify({ command: { endpoint: 'add_to_queue',
+      track: { uri: T1, metadata: { is_queued: 'true' }, provider: 'queue' } } }));
+    const ps = clone(FX.playerState);
+    ps.next_tracks = [{ uri: T1, metadata: { title: 'Brokenhearted', artist_name: 'Karmin', is_queued: 'true' }, provider: 'queue' }, ...ps.next_tracks];
+    env.fire('wmp-spotify-state', ps);
+    expect(trackLabel(env.S.queue.next[0]!)).toBe('Brokenhearted – Karmin');
   });
 });
 

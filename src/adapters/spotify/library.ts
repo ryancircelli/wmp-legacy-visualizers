@@ -118,6 +118,12 @@ export function contextRow(d: any): LibraryItem | null {
     owner: (o && o.name) || undefined, total,
     editable: d.currentUserCapabilities && d.currentUserCapabilities.canEditItems === true ? true : undefined });
 }
+/** An artist from any shape (searchV2 artists, topResults, libraryV3): { uri, name, image, kind: 'artist' }. */
+export function artistRow(d: any): LibraryItem | null {
+  if (!d || !/^spotify:artist:/.test(d.uri || '') || !(d.profile && d.profile.name)) return null;
+  const img = midImage(d.visuals && d.visuals.avatarImage && d.visuals.avatarImage.sources);
+  return { uri: d.uri, name: d.profile.name, ...(img ? { image: img } : {}), kind: 'artist' };
+}
 const rows = <T>(l: (T | null | undefined)[]) => l.filter((x): x is T => !!x);
 const withUid = (t: Track | null, uid: unknown): Track | null => (t && typeof uid === 'string' && uid ? { ...t, uid } : t);
 
@@ -128,28 +134,44 @@ export function remember(sp: Sp, tracks: Track[], list?: string, items: LibraryI
   for (const it of items) sp.cache.names.set(it.uri, it.name);
 }
 
-/** libraryV3: the user's playlists and saved albums, in library order (8 pages of 50 at most;
- *  folders are not opened). Liked Songs is its own collection; its cover is remembered. */
-export async function fetchLibraryList(sp: Sp): Promise<LibraryItem[]> {
-  let acc: LibraryItem[] = [];
+/** libraryV3 as Your Library asks for it (filters [] = everything, ['Artists'] = the Artists chip),
+ *  page by page in library order: 8 pages of 50 at most; folders are not opened. */
+async function libraryPages(sp: Sp, filters: string[], each: (L: any) => void): Promise<void> {
   // ponytail: 8 pages (400 entries); folders are not opened.
   for (let offset = 0; offset < 400; offset += 50) {
-    const d = await query(sp, 'libraryV3', { filters: [], order: null, textFilter: '',
+    const d = await query(sp, 'libraryV3', { filters, order: null, textFilter: '',
       features: ['LIKED_SONGS', 'YOUR_EPISODES_V2', 'PRERELEASES', 'EVENTS'], limit: 50, offset, flatten: false,
       expandedFolders: [], folderUri: null, includeFoldersWhenFlattening: true });
     const L = d && d.me && d.me.libraryV3;
     if (!L) break;
+    each(L);
+    if (offset + 50 >= (L.totalCount || 0)) break;
+  }
+}
+
+/** libraryV3: the user's playlists and saved albums, in library order. Liked Songs is its own
+ *  collection; its cover is remembered. */
+export async function fetchLibraryList(sp: Sp): Promise<LibraryItem[]> {
+  const acc: LibraryItem[] = [];
+  await libraryPages(sp, [], (L) => {
     const got = rows((L.items || []).map((i: any) => contextRow(i.item && i.item.data)) as (LibraryItem | null)[]);
     const pseudo = (L.items || []).map((i: any) => i.item && i.item.data).find((x: any) => x && x.uri === LIKED);
     if (pseudo) sp.cache.likedImage = bigImage(pseudo.image && pseudo.image.sources) ?? sp.cache.likedImage;
-    acc = acc.concat(got);
+    acc.push(...got);
     remember(sp, [], undefined, got);
     for (const i of L.items || []) {
       const d = i.item && i.item.data, o = d && d.ownerV2 && d.ownerV2.data;
       if (d && d.uri && o && o.uri) sp.cache.owners.set(d.uri, o.uri);
     }
-    if (offset + 50 >= (L.totalCount || 0)) break;
-  }
+  });
+  return acc;
+}
+
+/** The followed artists (Your Library's Artists chip: libraryV3 filters ['Artists']), in Spotify's order. */
+export async function fetchFollowedArtists(sp: Sp): Promise<LibraryItem[]> {
+  const acc: LibraryItem[] = [];
+  await libraryPages(sp, ['Artists'], (L) => { acc.push(...rows((L.items || []).map((i: any) => artistRow(i.item && i.item.data)) as (LibraryItem | null)[])); });
+  remember(sp, [], undefined, acc);
   return acc;
 }
 
@@ -172,7 +194,7 @@ export async function fetchCollectionPage(sp: Sp, uri: string, offset = 0, quiet
   if (!liked && root && root.name) { sp.ctxNames[uri] = root.name; sp.cache.names.set(uri, root.name); }
   const albumInfo: AlbumInfo = album && root ? { name: root.name, uri, image: smallImage(root.coverArt && root.coverArt.sources), date: dateOf(root.date) } : {};
   const tracks = rows(((page && page.items) || []).map((i: any) =>
-    liked ? i.track && trackRow(i.track.data, null, i.track._uri)
+    liked ? i.track && trackRow(i.track.data, LIKED, i.track._uri)
     : album ? trackRow(i.track, uri, null, albumInfo) : withUid(trackRow(i.itemV2 && i.itemV2.data, uri), i.uid)) as (Track | null)[]);
   const total = Math.max((page && page.totalCount) || 0, offset + tracks.length);
   const next = offset + tracks.length;

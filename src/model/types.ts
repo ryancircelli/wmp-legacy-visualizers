@@ -21,7 +21,7 @@ export interface Track {
   /** ms, 0 when unknown */
   duration: number;
   art?: string | null;
-  /** the context it plays in (its playlist/album); a click plays ctx starting at uri */
+  /** the context it plays in (its playlist/album, LIKED for a Liked Songs row); a click plays ctx starting at uri */
   ctx?: string | null;
   // Spotify only (absent from local sources):
   playcount?: number;
@@ -126,7 +126,7 @@ export interface ArtistPage {
 
 export interface PlayingContext {
   uri: string;
-  /** 'playlist' | 'album' | 'artist' | 'show' */
+  /** 'playlist' | 'album' | 'artist' | 'show' | 'liked' (uri LIKED) */
   kind: string;
   /** "Playlist: Road Trip", or just "Playlist" until the name is known */
   label: string;
