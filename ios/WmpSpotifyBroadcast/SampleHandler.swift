@@ -27,6 +27,9 @@ final class SampleHandler: RPBroadcastSampleHandler {
     private var measured = false   // the first buffer's frames and peak were logged
     private var skipped = false    // a buffer this cannot read was logged
     private var sendFailed = false // a send error was logged
+    private var socket = ""        // audio.sock's path
+    private var lastSeen = Date()  // when the app was last connected (or the broadcast started)
+    private static let giveUp: TimeInterval = 300  // without the app this long, the broadcast ends
 
     private static let clock: DateFormatter = {
         let f = DateFormatter()
@@ -46,31 +49,42 @@ final class SampleHandler: RPBroadcastSampleHandler {
             let logFile = dir.appendingPathComponent("broadcast.log").path
             FileManager.default.createFile(atPath: logFile, contents: nil)  // emptied: this broadcast only
             logPath = logFile
-            let socket = dir.appendingPathComponent("audio.sock").path
+            socket = dir.appendingPathComponent("audio.sock").path
             log("broadcastStarted, \(socket) exists: \(FileManager.default.fileExists(atPath: socket))")
+            lastSeen = Date()
+            connect()
+        }
+    }
 
-            let c = NWConnection(to: .unix(path: socket), using: NWParameters(tls: nil, tcp: NWProtocolTCP.Options()))
-            c.stateUpdateHandler = { [weak self] state in
-                guard let self else { return }
-                self.lastState = "\(state)"
-                self.log("connection: \(state)")
-                switch state {
-                case .ready:
-                    self.ready = true
-                case .failed, .cancelled:
-                    // Refused (the app is not running) may land in .waiting instead: the deadline ends that.
-                    self.fail()
-                default:
-                    break
-                }
-            }
-            connection = c
-            c.start(queue: queue)
-            queue.asyncAfter(deadline: .now() + 5) { [weak self] in
-                guard let self, !self.ready else { return }
-                self.fail()
+    /// One attempt at the app's socket. Lost or refused (the app closed, or not yet open), the next
+    /// attempt comes a second later and the broadcast goes on, so closing and reopening the app
+    /// resumes the visualizers without a new broadcast; 5 min without the app ends it. On `queue`.
+    private func connect() {
+        guard !done else { return }
+        if Date().timeIntervalSince(lastSeen) > Self.giveUp { fail(); return }
+        let c = NWConnection(to: .unix(path: socket), using: NWParameters(tls: nil, tcp: NWProtocolTCP.Options()))
+        c.stateUpdateHandler = { [weak self, weak c] state in
+            guard let self, let c, c === self.connection else { return }
+            self.lastState = "\(state)"
+            self.log("connection: \(state)")
+            switch state {
+            case .ready:
+                self.ready = true
+                self.lastSeen = Date()
+                self.sentRate = 0  // a new app: the rate again before its first buffer
+            case .waiting, .failed, .cancelled:
+                // .waiting is what a refused connect lands in; a lost peer is .failed.
+                self.ready = false
+                self.unsent = 0
+                c.cancel()
+                self.connection = nil
+                self.queue.asyncAfter(deadline: .now() + 1) { [weak self] in self?.connect() }
+            default:
+                break
             }
         }
+        connection = c
+        c.start(queue: queue)
     }
 
     // Async: fail() calls finishBroadcastWithError on `queue`, and iOS may call this from inside it.
@@ -113,7 +127,7 @@ final class SampleHandler: RPBroadcastSampleHandler {
         // The completion runs on `queue`, the connection's queue.
         connection.send(content: frame, completion: .contentProcessed { [weak self] error in
             guard let self else { return }
-            self.unsent -= 1
+            self.unsent = max(0, self.unsent - 1)  // 0 again after a reconnect: an old send's completion must not go below
             if let error, !self.sendFailed {
                 self.sendFailed = true
                 self.log("send failed: \(error)")

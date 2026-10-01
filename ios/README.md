@@ -26,9 +26,11 @@ anywhere: the app's audio session is plain playback, and the picker has no micro
 
 To start it: about 2 s after launch the app opens iOS's broadcast sheet by itself (the button at the
 right end of the band opens it too). Tap Start Broadcast; after a 3 s countdown the red indicator in
-the status bar stays for as long as it runs. Stop it from that indicator or from Control Center. If
-the app cannot be reached, the extension ends the broadcast with "WMP Spotify is not running (<the
-connection's last state>)". Between broadcasts the visualizers go dark. The band under the web view
+the status bar stays for as long as it runs. Stop it from that indicator or from Control Center. When
+the app closes, the extension keeps the broadcast and tries its socket again every second, so the
+app opened again resumes the visualizers on the same broadcast; 5 min without the app ends it with
+"WMP Spotify is not running (<the connection's last state>)". Between broadcasts the visualizers go
+dark. The band under the web view
 shows the host's last log line (scene changes go only to the list): tap it to reload the page,
 long-press it for the whole log, scrolled to its end, with Copy (all of it to the clipboard) and Clear.
 The log persists across launches in `host.log` in the App Group container (the last 3000 lines, each
