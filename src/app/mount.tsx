@@ -5,7 +5,7 @@ import { createRoot } from 'react-dom/client';
 import { createLocalAdapter } from '../adapters/local';
 import { createSpotifyAdapter } from '../adapters/spotify';
 import { wasLoggedIn } from '../adapters/spotify/observers';
-import { persistQueries } from '../ui';
+import { BUILD, persistQueries } from '../ui';
 import { detectMode, hostWindow, nativeTitle } from '../adapters/host';
 import { idleStatus } from '../adapters/host/media';
 import { createAppStore, SCALE_OPTS, type Scale, type VisKind } from '../model';
@@ -17,13 +17,15 @@ import { createTicker, type Ticker } from './ticker';
 
 declare global {
   interface Window {
-    /** the host's diagnostics and the smokes: the store and the ticker's view of the engine */
-    Alchemy?: unknown;
+    /** the host's diagnostics and the smokes: the store and the ticker's view of the engine; unmount
+     *  = a refresh in place (the iOS observer fetches the newest bundle and runs it in this document) */
+    Alchemy?: ReturnType<typeof shim> & { unmount?: () => void };
   }
 }
 
 export async function mount(): Promise<void> {
   window.alchemyMarks?.push('mount=' + Math.round(performance.now()));
+  window.__wmpPageBuild = BUILD;   // the iOS observer's update check compares it with the site's
   const store = createAppStore();
   const { actions } = store.getState();
   const spotify = window.alchemyEngine === 'spotify';
@@ -58,8 +60,11 @@ export async function mount(): Promise<void> {
   const client = createQueryClient(getQueries());
   // Spotify: the last session's library, Media Guide, radio and playlists before the first render
   if (spotify) await persistQueries(client);
-  createRoot(el).render(<App store={store} ticker={ticker} root={root} client={client} />);
+  const reactRoot = createRoot(el);
+  reactRoot.render(<App store={store} ticker={ticker} root={root} client={client} />);
   window.Alchemy = shim(store, ticker, client);
+  // A refresh in place (the iOS observer's alchemyRestart): this page gone, the host's page kept.
+  window.Alchemy.unmount = () => { reactRoot.unmount(); adapter.stop(); el?.remove(); delete window.Alchemy; };
   // A skin with no visualizer (the iPod) never has the ticker draw a frame, so the ticker never
   // reports one: the adapter starts after this skin's first painted frame instead, whichever comes
   // first (measured on the phone, 2026-10-01: the iPod skin alone saw no login and no state).

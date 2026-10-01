@@ -54,6 +54,8 @@ function SettingsMenu() {
       { id: 'wmp9', label: 'Windows Media Player 9', onSelect: () => a().setSettings({ skin: 'wmp9' }) }])) },
     !!window.alchemyAppearance && { id: 'appearance', label: 'Appearance', chevron: true, onSelect: to(nav, page('settings/appearance', 'Appearance', Appearance)) },
     { id: 'updates', label: 'Check for Updates', chevron: true, onSelect: to(nav, page('settings/updates', 'Check for Updates', Updates)) },
+    // The newest player from the site, in place: the music goes on (ios/WmpSpotify/observer.js alchemyRestart)
+    !!window.alchemyRestart && { id: 'refresh', label: 'Refresh Player', onSelect: restartApp },
     { id: 'support', label: 'Support', chevron: true, onSelect: to(nav, menu('settings/support', 'Support', () => [
       { id: 'repo', label: 'Source Code', onSelect: () => openLink(LINKS.repo) },
       { id: 'issues', label: 'Report a Problem', onSelect: () => openLink(LINKS.repo + '/issues') }])) },

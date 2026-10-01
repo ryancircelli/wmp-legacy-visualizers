@@ -68,11 +68,33 @@ window.alchemySpotifyLogout = function () { log('log out'); location.replace(SPO
 // The skin's volume and mute as the phone's system volume (App.swift SystemVolume): a page cannot
 // change its own playback volume on iOS, so Spotify's volume command to this device does nothing.
 window.alchemySetVolume = function (pct) { try { webkit.messageHandlers.volume.postMessage(pct); } catch (e) {} };
-// Help's links in Safari (App.swift: the "open" message), Help > Restart as a reload of this page,
-// and the update check answered in words: the page and this script come from the site at every launch.
+// Help's links in Safari (App.swift: the "open" message).
 window.alchemyOpenUrl = function (url) { try { webkit.messageHandlers.open.postMessage(String(url)); } catch (e) {} };
-window.alchemyRestart = function () { log('restart: reloading'); location.reload(); };
-window.alchemyCheckUpdate = function () { return Promise.resolve({ error: 'The newest player loads at every launch: close and reopen the app.' }); };
+// Help > Check for Player Updates: the site's build against the page's own (window.__wmpPageBuild,
+// set by the page at mount); Restart is then a refresh IN PLACE: the newest bundle fetched from the
+// site, the page torn down (window.Alchemy.unmount) and the new one run in this same document, so
+// Spotify's page underneath, and the music, go on. The page's build is a git sha (CI) or 'dev'.
+var SITE = 'https://wmp.ryancircelli.com/';
+window.alchemyCheckUpdate = function () {
+  return fetch(SITE + 'version.json', { cache: 'no-store' }).then(function (r) { return r.json(); }).then(function (j) {
+    var mine = window.__wmpPageBuild || '';
+    return j.version && j.version !== mine ? { ready: String(j.version).slice(0, 7) } : {};
+  }, function () { return { error: 'The site could not be reached.' }; });
+};
+window.alchemyRestart = function () {
+  log('restart: refreshing the page in place');
+  fetch(SITE + 'spotify-inject.js', { cache: 'no-store' }).then(function (r) { return r.json(); }).then(function (B) {
+    var root = window.alchemyRoot;
+    if (!root || !B || typeof B.js !== 'string') throw new Error('no bundle');
+    try { if (window.Alchemy && window.Alchemy.unmount) window.Alchemy.unmount(); } catch (e) { log('unmount: ' + e); }
+    var sheet = root.adoptedStyleSheets[0];
+    if (sheet) sheet.replaceSync(B.css + '\n#chrome,#titlebar{border-radius:0!important}');
+    root.innerHTML = B.html;
+    // open.spotify.com's CSP allows 'unsafe-eval' (measured 2026-09-24: the Deno host's dev mode ran on it)
+    (0, eval)('(function () {"use strict";\n' + B.js + '\n})()');
+    log('refreshed in place');
+  }).catch(function (e) { log('refresh failed (' + e + '): reloading'); location.reload(); });
+};
 // For a skin made for the phone: the web view edge to edge ('edge') or inside the safe area
 // ('safe', the default); the insets in points arrive as window.__wmpSafeArea with a 'wmp-safe-area'
 // event on window; alchemyShowLog opens the host's log sheet, which edge to edge has no band for.
@@ -126,68 +148,6 @@ window.alchemyScroll = function (on) { post('scroll', on ? 'on' : 'off'); };    
 // __wmpThermal 'wmp-thermal', __wmpScene 'wmp-scene', __wmpKeyboard (pt) 'wmp-keyboard', and 'wmp-memory'.
 window.__wmpProximity = false; window.__wmpLowPower = false; window.__wmpThermal = 'nominal'; window.__wmpScene = 'active'; window.__wmpKeyboard = 0;
 
-window.alchemyMarks = [];
-window.alchemySpotifyLogout = function () { log('log out'); location.replace(SPOTIFY_LOGOUT); };
-// The skin's volume and mute as the phone's system volume (App.swift SystemVolume): a page cannot
-// change its own playback volume on iOS, so Spotify's volume command to this device does nothing.
-window.alchemySetVolume = function (pct) { try { webkit.messageHandlers.volume.postMessage(pct); } catch (e) {} };
-// Help's links in Safari (App.swift: the "open" message), Help > Restart as a reload of this page,
-// and the update check answered in words: the page and this script come from the site at every launch.
-window.alchemyOpenUrl = function (url) { try { webkit.messageHandlers.open.postMessage(String(url)); } catch (e) {} };
-window.alchemyRestart = function () { log('restart: reloading'); location.reload(); };
-window.alchemyCheckUpdate = function () { return Promise.resolve({ error: 'The newest player loads at every launch: close and reopen the app.' }); };
-// For a skin made for the phone: the web view edge to edge ('edge') or inside the safe area
-// ('safe', the default); the insets in points arrive as window.__wmpSafeArea with a 'wmp-safe-area'
-// event on window; alchemyShowLog opens the host's log sheet, which edge to edge has no band for.
-window.__wmpSafeArea = { top: 0, right: 0, bottom: 0, left: 0 };
-window.alchemyLayout = function (mode) { try { webkit.messageHandlers.layout.postMessage(mode === 'edge' ? 'edge' : 'safe'); } catch (e) {} };
-window.alchemyShowLog = function () { try { webkit.messageHandlers.showlog.postMessage(''); } catch (e) {} };
-// For a click-wheel skin (App.swift): a haptic ('selection' for a detent, 'light'|'medium'|'heavy'|
-// 'rigid'|'soft', 'success'|'warning'|'error', 'prepare' to warm the tick), the screen kept awake,
-// the status bar, and the orientations allowed ('portrait'|'landscape'|'any').
-var post = function (name, body) { try { webkit.messageHandlers[name].postMessage(String(body)); } catch (e) {} };
-window.alchemyHaptic = function (kind) { post('haptic', kind || 'selection'); };
-window.alchemyAwake = function (on) { post('awake', on ? 'on' : 'off'); };
-window.alchemyStatusBar = function (hidden) { post('statusbar', hidden ? 'hidden' : 'shown'); };
-window.alchemyOrientation = function (mode) { post('orientation', mode || 'any'); };
-// The broadcast (the app's audio, ios/README.md) from the page: 'picker' opens iOS's sheet, which
-// starts a broadcast or, while one runs, offers to stop it; 'auto'|'manual' is whether the app opens
-// that sheet by itself at launch (kept across launches; a skin without visuals wants 'manual');
-// 'state' asks for window.__wmpBroadcast = {running} now, which also arrives, with a
-// 'wmp-broadcast' event on window, whenever it changes.
-window.__wmpBroadcast = { running: false };
-window.alchemyBroadcast = function (cmd) { post('broadcast', cmd || 'state'); };
-post('broadcast', 'manual');  // the app never opens the sheet by itself: each skin asks (src/app/mount.tsx does, for the visualizers)
-// What the phone reports, each as a window global with an event of the same name on window when it
-// changes: __wmpVolume (0..100, the buttons too) 'wmp-volume'; __wmpBattery {level 0..100 or -1,
-// charging} 'wmp-battery'; __wmpRoute {name, type} (AirPods, Speaker) 'wmp-route'; __wmpBrightness
-// (0..1) 'wmp-brightness'; __wmpHost {build, version, ios, model} 'wmp-host'; and 'wmp-shake'.
-// alchemyHost() asks for all of them at once (a skin does so when it mounts).
-window.__wmpVolume = -1; window.__wmpBattery = { level: -1, charging: false }; window.__wmpRoute = { name: '', type: '' };
-window.__wmpBrightness = -1; window.__wmpHost = { build: '', version: '', ios: '', model: '' };
-window.alchemyHost = function () { post('host', ''); };
-window.alchemyBrightness = function (v) { post('brightness', typeof v === 'number' ? Math.max(0, Math.min(1, v)) : 'state'); };
-window.alchemyShare = function (text) { post('share', text); };
-window.alchemyHomeIndicator = function (hidden) { post('homeindicator', hidden ? 'hidden' : 'shown'); };
-window.alchemyOpenSettings = function () { post('open', 'settings'); };
-window.alchemyReset = function () { log('reset asked'); post('reset', ''); };
-// The rest of the phone, mapped whether a skin uses it or not (ios/README.md has each one):
-window.alchemyViewport = function (mode) { post('viewport', mode === 'mobile' ? 'mobile' : 'desktop'); };   // kept; reloads
-window.alchemyHapticPattern = function (events) { post('hapticpattern', JSON.stringify({ events: events || [] })); }; // [{t,i,s,d}]
-window.alchemySound = function (id) { post('sound', (id | 0) || 1104); };                                       // 1104 = the keyboard tick
-window.alchemyRoutePicker = function () { post('routepicker', ''); };                                          // AirPlay
-window.alchemyAudioSession = function (mode) { post('audiosession', mode || 'solo'); };                       // solo|mix|duck
-window.alchemyNotify = function (n) { post('notify', typeof n === 'string' ? n : JSON.stringify(n || {})); };  // {title,body,seconds,id} or 'cancel:<id>'
-window.alchemyAppearance = function (mode) { post('appearance', mode || 'auto'); };                           // light|dark|auto
-window.alchemyClipboard = function (text) { post('clipboard', text); };
-window.alchemyProximity = function (on) { post('proximity', on ? 'on' : 'off'); };                            // on: the screen blanks when covered
-window.alchemyBand = function (hidden) { post('band', hidden ? 'hidden' : 'shown'); };                         // the host's log band, in the safe-area layout
-window.alchemyBackground = function (hex) { post('background', hex || '#000000'); };                          // behind the web view (the safe-area bars)
-window.alchemyKeyboard = function (avoid) { post('keyboard', avoid ? 'avoid' : 'ignore'); };                  // the layout shrinks for the keyboard, or not
-window.alchemyScroll = function (on) { post('scroll', on ? 'on' : 'off'); };                                  // native scrolling of the whole page
-// Reports with an event of the same name: __wmpProximity 'wmp-proximity', __wmpLowPower 'wmp-lowpower',
-// __wmpThermal 'wmp-thermal', __wmpScene 'wmp-scene', __wmpKeyboard (pt) 'wmp-keyboard', and 'wmp-memory'.
-window.__wmpProximity = false; window.__wmpLowPower = false; window.__wmpThermal = 'nominal'; window.__wmpScene = 'active'; window.__wmpKeyboard = 0;
 
 // ---- 1. observers on the web player's own channels (never its DOM). Everything lands in
 // window.__wmpSpotify; each change is also a CustomEvent on window:

@@ -9,7 +9,7 @@ import { persistQueryClient } from '@tanstack/react-query-persist-client';
 import { createStore, del, get, set } from 'idb-keyval';
 
 declare const __PAGE_BUILD__: string | undefined;
-const BUILD = typeof __PAGE_BUILD__ === 'string' ? __PAGE_BUILD__ : 'dev';
+export const BUILD = typeof __PAGE_BUILD__ === 'string' ? __PAGE_BUILD__ : 'dev';
 /** ['spotify', kind, ...]: what is worth keeping (not saved flags, membership, search or lyrics) */
 const KINDS = new Set(['library', 'collection', 'home', 'radio', 'album', 'artist']);
 export const keepable = (k: readonly unknown[]): boolean => k[0] === 'spotify' && KINDS.has(k[1] as string);

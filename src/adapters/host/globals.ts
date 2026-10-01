@@ -105,6 +105,8 @@ declare global {
     __wmpThermal?: 'nominal' | 'fair' | 'serious' | 'critical';
     __wmpScene?: 'active' | 'inactive' | 'background';
     __wmpKeyboard?: number;
+    /** this page's build (a git sha from CI, or 'dev'), for the iOS observer's update check */
+    __wmpPageBuild?: string;
     __wmpSafeArea?: { top: number; right: number; bottom: number; left: number };
     /** a newer exe is out (tauri/src/update.rs): offer the download */
     alchemyHostUpdate?: boolean;
