@@ -14,7 +14,7 @@ import { fmRadio, nowPlaying, useVolumeLimit } from './screens';
 import { createNav, top, type NavStore, type Slot } from './nav';
 import type { WheelInput } from './screens/contract';
 import { bodyVars, ipodSettings, useIpodSettings } from './settings';
-import { scan, StatusRow, useBusy } from './ui';
+import { NowPlayingBar, scan, StatusRow, useBusy } from './ui';
 import { FrameContext, handler, NavContext, type Hub } from './wheel';
 import s from './ipod.module.css';
 
@@ -31,8 +31,10 @@ export function Root() {
   const sh = useShell(), [ipod] = useIpodSettings();
   const [nav] = useState(() => createNav(mainMenu(), () => nowPlaying())), [hub] = useState<Hub>(() => new Map());
   // the screens under the dark status bar (§2.2)
-  const [dark] = useState(() => new Set([nowPlaying, fmRadio].map((f) => f().key)));
+  const [dark] = useState(() => new Set([nowPlaying, fmRadio].map((f) => f().key))), [npKey] = useState(() => nowPlaying().key);
   const { stack, dir } = useStore(nav.store), topSlot = stack[stack.length - 1]!, busy = useBusy(topSlot.id);
+  // the Now Playing bar: under every screen but Now Playing while a track is loaded
+  const bar = useApp((x) => !!x.playback.track) && topSlot.entry.key !== npKey;
   const safe = useHostGlobal('__wmpSafeArea', 'wmp-safe-area');
   const win = useWindowControls(), caption = useApp((x) => x.auth.hostWindow && !x.auth.nativeTitle);
   const [asleep, setAsleep] = useState(false);
@@ -118,14 +120,16 @@ export function Root() {
   return (
     <NavContext.Provider value={nav}>
       <div className={s.backdrop} data-ui-root="" onMouseDown={caption ? drag : undefined}>
-        <div className={s.body} data-wheel={ipod.wheel} style={{ ...bodyVars(ipod), ...insets }}>
+        {/* on the phone (the iOS app) the body always fills the screen, whatever shape its viewport */}
+        <div className={s.body} data-wheel={ipod.wheel} data-phone={window.alchemyLayout ? '' : undefined} style={{ ...bodyVars(ipod), ...insets }}>
           <div className={s.device} ref={device}>
             <div className={s.bezel}>
-              <div className={s.screen} data-asleep={asleep || undefined} {...screenTouch}>
+              <div className={s.screen} data-asleep={asleep || undefined} data-bar={bar || undefined} {...screenTouch}>
                 <StatusRow title={topSlot.entry.title} dark={dark.has(topSlot.entry.key)} busy={busy} />
                 <div className={s.frames} style={{ '--dir': dir } as CSSProperties}>
                   {stack.map((slot, i) => <Frame key={slot.id} hub={hub} slot={slot} nav={nav} shown={i === stack.length - 1} />)}
                 </div>
+                {bar && <NowPlayingBar onOpen={() => nav.toNowPlaying()} />}
               </div>
             </div>
             <ClickWheel

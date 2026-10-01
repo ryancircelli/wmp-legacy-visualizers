@@ -251,6 +251,40 @@ it('a swipe right on the screen is MENU, and not also a tap on the row it ended 
   expect(m.sel()).toEqual(['QueueUp next']);
 });
 
+it('the Now Playing bar: with a track, under every screen but Now Playing; a tap opens it, the button plays / pauses, a swipe left is next and not also a tap', () => {
+  const m = mount();
+  const bar = () => m.shown('[aria-label="Now Playing"][role=button]')[0] as HTMLElement | undefined;
+  const rect = () => ({ left: 0, width: 228, top: 0, height: 44, right: 228, bottom: 44, x: 0, y: 0, toJSON: () => ({}) });
+  expect(bar()).toBeUndefined();
+  act(() => { m.store.setState((s) => ({ playback: { ...s.playback, status: 'paused', track: { uri: 'spotify:track:a', title: 'Song', artist: 'Band', duration: 1000 } } })); });
+  expect(bar()!.textContent).toContain('Song • Band');
+  act(() => { fireEvent.click(within(bar()!).getByRole('button', { name: 'Play' })); });
+  expect(m.cmd.playPause).toHaveBeenCalledTimes(1);
+  expect(bar()).toBeDefined();                         // the button is not a tap on the bar
+  const b = bar()!;
+  b.getBoundingClientRect = rect;
+  act(() => { fireEvent.pointerDown(b, { pointerId: 1, clientX: 200, clientY: 20 }); });
+  act(() => { fireEvent.pointerUp(b, { pointerId: 1, clientX: 120, clientY: 24 }); });
+  act(() => { fireEvent.click(b); });
+  expect(m.cmd.next).toHaveBeenCalledTimes(1);
+  expect(bar()).toBeDefined();                          // still on the main menu
+  expect(m.sel()).toEqual(['Home']);                    // and the swipe was not the screen's MENU either
+  key('ArrowDown');
+  key('ArrowDown');
+  key('Enter');                                          // Library: a swipe right on the bar is prev, not MENU
+  const c = bar()!;
+  c.getBoundingClientRect = rect;
+  act(() => { fireEvent.pointerDown(c, { pointerId: 2, clientX: 40, clientY: 20 }); });
+  act(() => { fireEvent.pointerUp(c, { pointerId: 2, clientX: 140, clientY: 18 }); });
+  act(() => { fireEvent.click(c); });
+  expect(m.cmd.prev).toHaveBeenCalledTimes(1);
+  expect(m.rows()).not.toContain('Home');
+  act(() => { fireEvent.click(bar()!); });
+  expect(bar()).toBeUndefined();                        // Now Playing on top: no bar over it
+  key('Escape');
+  expect(bar()).toBeDefined();
+});
+
 it('a seekable Bar follows a drag and seeks once, on release', () => {
   const seek = vi.fn();
   const { getByRole } = render(<Bar value={0.2} onSeek={seek} />);

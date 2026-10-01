@@ -118,12 +118,11 @@ function General() {
   ]} />;
 }
 
-/** Main Menu and Library Filters: a checklist of the rows or chips (✓ shows it), then Preview Panel / Reset Filters. */
+/** Main Menu and Library Filters: a checklist of the rows or chips (✓ shows it), then Reset Filters. */
 function MainMenu() {
   const vis = useMenuVisibility().main;
   return <MenuScreen items={[
     ...MAIN_MENU.map(([id, label]) => ({ id, label, right: check(vis[id] !== false), onSelect: () => setMenuItem('main', id, vis[id] === false) })),
-    { id: 'previewpanel', label: 'Preview Panel', right: onOff(vis.previewpanel !== false), onSelect: () => setMenuItem('main', 'previewpanel', vis.previewpanel === false) },
   ]} />;
 }
 function LibraryFilters() {

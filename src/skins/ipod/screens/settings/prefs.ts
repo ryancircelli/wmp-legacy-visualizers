@@ -61,12 +61,12 @@ export const LIBRARY_FILTERS = rows(['Playlists', 'Albums', 'Artists', 'Podcasts
 /** Off until turned on: Extras, Podcasts (the adapter lists no shows yet). */
 const OFF = new Set(['extras', 'podcasts']);
 /** 'ipod.menus': which main-menu rows and Library chips show, by id (MAIN_MENU, LIBRARY_FILTERS), and
- *  main.previewpanel (General > Main Menu > Preview Panel). Every listed id is present; an id not
+ *  Every listed id is present; an id not
  *  listed (Settings, Now Playing) is undefined: show it. Only the user's own choices are stored; a
  *  stored id no menu lists any more is ignored. */
 export interface MenuVisibility { main: Record<string, boolean>; music: Record<string, boolean> }
 const shown = (l: typeof MAIN_MENU) => Object.fromEntries(l.map(([id]) => [id, !OFF.has(id)]));
-const MENUS0: MenuVisibility = { main: { ...shown(MAIN_MENU), previewpanel: true }, music: shown(LIBRARY_FILTERS) };
+const MENUS0: MenuVisibility = { main: shown(MAIN_MENU), music: shown(LIBRARY_FILTERS) };
 const CHOSEN0: MenuVisibility = { main: {}, music: {} };
 
 export function useMenuVisibility(): MenuVisibility {

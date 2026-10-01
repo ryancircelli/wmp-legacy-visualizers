@@ -30,19 +30,20 @@
   --hi: hsl(calc(var(--h) + 6) var(--sh) min(80%, calc(var(--l) * 1.36)));
   --hi2: hsl(calc(var(--h) + 3) var(--sh) min(80%, calc(var(--l) * 1.16)));
   --mid: hsl(var(--h) var(--s) calc(var(--l) * .84));
-  --lo: hsl(var(--h) var(--s) calc(var(--l) * .6));
-  --deep: hsl(var(--h) var(--s) calc(var(--l) * .28));
-  --edge: hsl(var(--h) var(--s) calc(var(--l) * .12));
-  /* across the width the slab is a glossy cylinder (the owner's orange nano): out of black at the
-     edge, a broad bright band on the left third, a soft fall to the mid tone, a narrower dimmer
-     streak toward the right, and into shadow and black at the right edge; a thin bright line runs
-     in the band. In percent of the width, so any viewport scales it alike */
+  --shade: hsl(var(--h) var(--s) calc(var(--l) * .6));
+  --rise: hsl(calc(var(--h) + 4) var(--sh) min(82%, calc(var(--l) * 1.2)));
+  /* the thin edge line: the hue at about 25 % (orange's), never black */
+  --edge: hsl(var(--h) var(--s) calc(var(--l) * .5));
+  /* across the width the slab is a glossy cylinder lit from both sides, mirror-symmetric: a thin
+     darker line at each edge, a broad bright band near each side (18 % and 82 %) with a thin bright
+     line beside it, the mid tone in the centre. It spans the whole width, so nothing shows round it.
+     In percent of the width, so any viewport scales it alike */
   --metal:
-    linear-gradient(90deg, transparent 16.3%, var(--line) 17%, transparent 17.7%),
-    linear-gradient(90deg, transparent 69%, hsl(calc(var(--h) + 3) var(--sh) min(80%, calc(var(--l) * 1.16)) / .75) 77%, transparent 85%),
-    linear-gradient(90deg, #000 0, var(--edge) .7%, var(--lo) 2%, hsl(calc(var(--h) + 4) var(--sh) min(82%, calc(var(--l) * 1.2))) 9%,
-                    var(--hi) 18%, var(--hi2) 26%, var(--mid) 50%, hsl(var(--h) var(--s) calc(var(--l) * .78)) 68%,
-                    var(--lo) 90%, var(--deep) 96.5%, var(--edge) 99.2%, #000 100%);
+    linear-gradient(90deg, transparent 16.3%, var(--line) 17%, transparent 17.7%,
+                    transparent 82.3%, var(--line) 83%, transparent 83.7%),
+    linear-gradient(90deg, var(--edge) 0, var(--edge) .4%, var(--shade) .9%, var(--rise) 9%, var(--hi) 18%, var(--hi2) 26%,
+                    var(--mid) 50%,
+                    var(--hi2) 74%, var(--hi) 82%, var(--rise) 91%, var(--shade) 99.1%, var(--edge) 99.6%, var(--edge) 100%);
   --ipod-font: Helvetica, "Helvetica Neue", Arial, sans-serif;
   /* the screen (screens read these names too) */
   --ipod-screen-bg: #FFFFFF;
@@ -76,7 +77,7 @@
   background: linear-gradient(180deg, transparent 55%, rgb(0 0 0 / .2)), var(--metal);
 }
 @media (min-aspect-ratio: 3/4) {
-  .body {
+  .body:not([data-phone]) {
     --bw: min(100vw, 96vh * .46);
     height: 96vh;
     border-radius: 12% / 5.5%;
@@ -493,11 +494,43 @@
   overflow: hidden;
   background: #000000;
 }
-.tile {
+/* the Now Playing bar (Root, ui.tsx NowPlayingBar): Spotify's mini player, 44 tall with 6 round it,
+   so a plain list above it keeps whole rows: 10 of 30 in the 300 left */
+.screen[data-bar] { --ipod-row-h: calc(var(--unit) * 30); }
+.npbar {
+  position: relative;
   flex: none;
-  width: calc(var(--unit) * 80);
-  height: calc(var(--unit) * 80);
-  object-fit: cover;
+  display: flex;
+  align-items: center;
+  gap: calc(var(--unit) * 8);
+  height: calc(var(--unit) * 44);
+  margin: calc(var(--unit) * 6);
+  padding: 0 calc(var(--unit) * 4) 0 calc(var(--unit) * 6);
+  overflow: hidden;
+  border-radius: calc(var(--unit) * 6);
+  background: #2A2A2A;
+  color: #FFFFFF;
+  touch-action: none;
+  cursor: pointer;
+}
+.nparts { flex: none; width: calc(var(--unit) * 32); }
+.nptext { flex: auto; min-width: 0; }
+.nptitle, .npline { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.nptitle { font-size: calc(var(--unit) * 13); line-height: 1.3; }
+.nptitle > span, .npline { font-weight: 400; color: #B3B3B3; }
+.npline { font-size: calc(var(--unit) * 11); line-height: 1.3; }
+.npbtn { flex: none; display: grid; place-items: center; width: calc(var(--unit) * 32); height: calc(var(--unit) * 32); }
+.npbtn svg { width: calc(var(--unit) * 14); fill: currentColor; }
+/* the progress line along the foot */
+.npbar::after {
+  content: "";
+  position: absolute;
+  left: calc(var(--unit) * 6);
+  right: calc(var(--unit) * 6);
+  bottom: 0;
+  height: calc(var(--unit) * 2);
+  border-radius: var(--unit);
+  background: linear-gradient(90deg, #FFFFFF calc(var(--v, 0) * 100%), rgb(255 255 255 / .25) 0);
 }
 .bar {
   position: relative;
@@ -593,6 +626,6 @@
   position: absolute;
   inset: 25.5%;
   border-radius: 50%;
-  background: radial-gradient(120% 95% at 32% 22%, var(--hi), var(--base) 45%, var(--mid) 70%, var(--lo) 100%);
+  background: radial-gradient(120% 95% at 32% 22%, var(--hi), var(--base) 45%, var(--mid) 70%, var(--shade) 100%);
   box-shadow: inset 0 1px 2px rgb(0 0 0 / .35), 0 1px 0 rgb(255 255 255 / .5);
 }

@@ -5,7 +5,7 @@ import { createContext, useContext, useEffect, useLayoutEffect, useRef, useState
 import { useStore } from 'zustand';
 import { createStore } from 'zustand/vanilla';
 import { hasMedia, positionNow } from '../../model';
-import { artOk, cx, duration, isPlaying, isSpotify, playingTrack, useAddTo, useApp, useShell, type Shell } from '../../ui';
+import { artOk, cx, duration, isPlaying, isSpotify, playingTrack, seekFraction, useAddTo, useApp, usePosition, useShell, type Shell } from '../../ui';
 import { useHostGlobal } from './host';
 import type { Chrome, GridItem, HeadAction, MenuItem } from './screens/contract';
 import { useClockPrefs } from './screens';
@@ -395,6 +395,53 @@ export function Bar({ value, className, onSeek }: { value: number; className?: s
          onPointerMove={onSeek && ((e) => { if (drag !== null) setDrag(at(e)); })}
          onPointerUp={onSeek && ((e) => { if (drag === null) return; setDrag(null); onSeek(at(e)); })}
          onPointerCancel={onSeek && (() => setDrag(null))} />
+  );
+}
+
+/** Spotify's mini player under the screens (Root shows it while a track is loaded, never over Now
+ *  Playing): the cover, "Title • Artist" and the playing device (else where it plays from), play /
+ *  pause, and a thin progress line along its foot. The wheel ignores it; touch: a tap opens Now
+ *  Playing (`onOpen`), the button plays / pauses, a swipe across (40 units, more across than down)
+ *  skips, left to the next, right to the previous, the bar nudged that way. Its touches are its
+ *  own, never the screen's swipe-back; a light haptic each. */
+export function NowPlayingBar({ onOpen }: { onOpen: () => void }) {
+  const sh = useShell(), t = useApp((x) => x.playback.track), playing = useApp(isPlaying);
+  const line = useApp((x) => x.devices.list.find((d) => d.active)?.name || x.playback.from || '');
+  const f = usePosition((_, st) => Math.round(Math.max(0, seekFraction(st)) * 500) / 500);
+  const swipe = useRef<{ id: number; x: number; y: number; done: boolean } | null>(null);
+  if (!t) return null;
+  const cmd = () => sh.store.getState().commands;
+  return (
+    <div className={s.npbar} role="button" aria-label="Now Playing" style={{ '--v': f } as CSSProperties}
+         onPointerDown={(e) => { e.stopPropagation(); swipe.current = { id: e.pointerId, x: e.clientX, y: e.clientY, done: false }; }}
+         onPointerUp={(e) => {
+           e.stopPropagation();
+           const g = swipe.current, el = e.currentTarget;
+           if (!g || g.id !== e.pointerId) return;
+           const dx = e.clientX - g.x, dy = e.clientY - g.y, unit = el.getBoundingClientRect().width / 228;
+           if (Math.abs(dx) < 40 * unit || Math.abs(dy) >= Math.abs(dx)) return;
+           g.done = true;
+           window.alchemyHaptic?.('light');
+           void (dx < 0 ? cmd().next() : cmd().prev());
+           el.animate?.([{ transform: 'none' }, { transform: `translateX(${Math.sign(dx) * 14 * unit}px)` }, { transform: 'none' }], { duration: 240, easing: 'ease-out' });
+         }}
+         onPointerCancel={() => { swipe.current = null; }}
+         onClick={(e) => {
+           e.stopPropagation();
+           if (swipe.current?.done) { swipe.current = null; return; }
+           window.alchemyHaptic?.('light');
+           onOpen();
+         }}>
+      <Art src={t.art || t.image} className={s.nparts} />
+      <div className={s.nptext}>
+        <div className={s.nptitle}>{t.title}{t.artist && <span> • {t.artist}</span>}</div>
+        {line && <div className={s.npline}>{line}</div>}
+      </div>
+      <div className={s.npbtn} role="button" aria-label={playing ? 'Pause' : 'Play'}
+           onClick={(e) => { e.stopPropagation(); window.alchemyHaptic?.('light'); void cmd().playPause(); }}>
+        <svg viewBox="0 0 12 12" aria-hidden="true"><path d={playing ? 'M2 1h3v10H2zM7 1h3v10H7z' : 'M2.5 1l8.5 5-8.5 5z'} /></svg>
+      </div>
+    </div>
   );
 }
 
