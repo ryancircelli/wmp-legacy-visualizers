@@ -5,6 +5,7 @@ import AVFoundation
 import Network
 import ReplayKit
 import SwiftUI
+import UIKit
 import WebKit
 
 @main
@@ -49,33 +50,83 @@ final class WebHolder {
 }
 
 // The host's log. print reaches nobody on a TestFlight install, so Player shows the last line under
-// the web view and the last 60 on a long press, the broadcast extension's among them.
+// the web view and the whole log on a long press, the broadcast extension's lines merged in. It
+// persists in host.log in the App Group container (Application Support without one), the last 3000
+// lines kept.
 final class HostLog: ObservableObject {
     static let shared = HostLog()
+    private static let cap = 3000
     @Published var last = ""
-    @Published var lines: [String] = []  // published so the open sheet takes in an import
+    @Published var lines: [String] = []  // published so the open sheet takes in new lines
+    private let queue = DispatchQueue(label: "host-log")  // the file's writes, in call order
+    private let path: String = groupPath("host.log") ?? {
+        let dir = URL.applicationSupportDirectory
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir.appending(path: "host.log").path
+    }()
+    private lazy var file: FileHandle? = {  // on `queue`, open for the app's lifetime
+        if !FileManager.default.fileExists(atPath: self.path) {
+            FileManager.default.createFile(atPath: self.path, contents: nil)
+        }
+        return FileHandle(forWritingAtPath: self.path)
+    }()
+    private static let clock: DateFormatter = {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = "HH:mm:ss"
+        return f
+    }()
+
+    /// The earlier launches' lines, the file cut back to the last 3000, then this launch's marker.
+    private init() {
+        let old = FileManager.default.contents(atPath: path)
+            .map { String(decoding: $0, as: UTF8.self).split(whereSeparator: \.isNewline).map(String.init) } ?? []
+        lines = Array(old.suffix(Self.cap))
+        if old.count > Self.cap {
+            try? (lines.joined(separator: "\n") + "\n").write(toFile: path, atomically: true, encoding: .utf8)
+        }
+        let now = ISO8601DateFormatter.string(from: Date(), timeZone: .current, formatOptions: .withInternetDateTime)
+        log("---- launch \(now) ----", quiet: true)
+    }
 
     /// From any thread; the published state changes on the main thread. A quiet line goes to the
     /// long-press list only, never the band.
     func log(_ line: String, quiet: Bool = false) {
         print(line)
+        let stamped = "\(Self.clock.string(from: Date())) \(line)"
+        queue.async {
+            _ = try? self.file?.seekToEnd()
+            try? self.file?.write(contentsOf: Data((stamped + "\n").utf8))
+        }
         DispatchQueue.main.async {
-            self.lines.append(line)
-            if self.lines.count > 60 { self.lines.removeFirst(self.lines.count - 60) }
+            self.lines.append(stamped)
+            if self.lines.count > Self.cap { self.lines.removeFirst(self.lines.count - Self.cap) }
             if !quiet { self.last = line }
         }
     }
 
-    /// From any thread: the last 40 lines of the extension's log of its latest broadcast
-    /// (broadcast.log in the App Group container), prefixed "ext: ", in place of those imported before.
+    /// On the main thread: host.log and the list emptied.
+    func clear() {
+        queue.async { try? self.file?.truncate(atOffset: 0) }
+        lines = []
+        log("log cleared")
+    }
+
+    /// From the main thread: the lines of the extension's log of its latest broadcast (broadcast.log
+    /// in the App Group container) not yet taken in, as quiet "ext: " lines. A broadcast is known by
+    /// its first line, which carries its start time; a line still being written waits for the next call.
     func importExtensionLog() {
         guard let path = groupPath("broadcast.log"),
-              let text = try? String(contentsOfFile: path, encoding: .utf8) else { return }
-        let ext = text.split(separator: "\n").suffix(40).map { "ext: \($0)" }
-        DispatchQueue.main.async {
-            self.lines.removeAll { $0.hasPrefix("ext: ") }
-            self.lines += ext
-        }
+              let data = FileManager.default.contents(atPath: path) else { return }
+        let ext = String(decoding: data, as: UTF8.self)
+            .split(separator: "\n", omittingEmptySubsequences: false).dropLast()
+        guard let first = ext.first.map({ String($0) }) else { return }
+        let d = UserDefaults.standard
+        let done = d.string(forKey: "extFirst") == first ? d.integer(forKey: "extCount") : 0
+        guard ext.count > done else { return }
+        d.set(first, forKey: "extFirst")
+        d.set(ext.count, forKey: "extCount")
+        for line in ext.dropFirst(done) { log("ext: \(line)", quiet: true) }
     }
 }
 
@@ -118,12 +169,28 @@ struct Player: View {
             .ignoresSafeArea(.keyboard)
         }
         .sheet(isPresented: $showLog) {
-            ScrollView {
-                Text(log.lines.joined(separator: "\n"))
-                    .font(.system(size: 10, design: .monospaced))
-                    .textSelection(.enabled)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding()
+            VStack(spacing: 0) {
+                HStack(spacing: 24) {
+                    Button("Copy") { UIPasteboard.general.string = log.lines.joined(separator: "\n") }
+                    Button("Clear") { HostLog.shared.clear() }
+                    Spacer()
+                }
+                .padding()
+                // A Text per line, laid out lazily: 3000 lines in one Text would all be laid out again at
+                // every new line.
+                ScrollViewReader { proxy in
+                    ScrollView {
+                        LazyVStack(alignment: .leading, spacing: 0) {
+                            ForEach(Array(log.lines.enumerated()), id: \.offset) { _, line in Text(line) }
+                            Color.clear.frame(height: 1).id("end")
+                        }
+                        .font(.system(size: 10, design: .monospaced))
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal)
+                    }
+                    .onAppear { proxy.scrollTo("end", anchor: .bottom) }
+                }
             }
             .onAppear { HostLog.shared.importExtensionLog() }
         }

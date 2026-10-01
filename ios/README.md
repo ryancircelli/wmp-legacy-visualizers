@@ -30,9 +30,11 @@ the status bar stays for as long as it runs. Stop it from that indicator or from
 the app cannot be reached, the extension ends the broadcast with "WMP Spotify is not running (<the
 connection's last state>)". Between broadcasts the visualizers go dark. The band under the web view
 shows the host's last log line (scene changes go only to the list): tap it to reload the page,
-long-press it for the last 60 lines. The extension logs each broadcast to `broadcast.log` in the App
-Group container; the app shows its last 40 lines in that list, prefixed `ext:`, read when the list
-opens and 8 s after the broadcast sheet comes up.
+long-press it for the whole log, scrolled to its end, with Copy (all of it to the clipboard) and Clear.
+The log persists across launches in `host.log` in the App Group container (the last 3000 lines, each
+timestamped, a `---- launch <date> ----` line at each start). The extension logs each broadcast to
+`broadcast.log` in the same container; the app merges its lines into the host log, prefixed `ext:`,
+when the list opens and 8 s after the broadcast sheet comes up, each line once.
 
 ## Building
 
