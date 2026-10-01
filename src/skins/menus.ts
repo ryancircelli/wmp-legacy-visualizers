@@ -6,6 +6,8 @@ import {
   appDownload, detailsPaneOn, isPlaying, libraryView, LINKS, openLink, playingTrack, prevNext, toggleSaved, uiSettings, VIEW_LABELS, VOL_STEP, type AddToApi, type MenuEntry,
   type MenuItem, type Shell,
 } from '../ui';
+// a cycle (registry -> wmp9 -> here), safe: `skins` is read only when a menu opens
+import { skinFor, skins } from './registry';
 export type { MenuEntry, MenuItem } from '../ui';
 export type MenuName = 'file' | 'view' | 'play' | 'tools' | 'help';
 export const MENUS: readonly [MenuName, string][] = [
@@ -75,6 +77,8 @@ export function menuItems(name: MenuName, sh: Shell, addTo?: AddToApi): MenuEntr
             label: v === 'details' ? 'Details' : 'Tiles', radio: true, accel: v === 'tiles' ? 'Ctrl+Shift+T' : undefined, check: libraryView(s) === v,
             act: () => a.setSettings(uiSettings({ libraryView: v })) })) }] : []),
         SEP,
+        { label: 'Skin', sub: Object.values(skins).map((k) => ({ label: k.name, radio: true, check: skinFor(S.skin).id === k.id,
+                                                             act: () => a.setSettings({ skin: k.id }) })) },
         { label: 'Full Screen', accel: 'Alt+Enter', check: full, act: () => sh.toggleFullscreen() },
       ];
     }

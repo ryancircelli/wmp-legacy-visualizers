@@ -3,6 +3,7 @@
 // smokes and anything that looks an element up by the old name. The app states the skin's
 // classes key on (bare / spotify / nopl / notask variants, src/ui/theme.css) are data attributes
 // on #chrome.
+import { useEffect } from 'react';
 import { cx, isBare, isSpotify, useApp, useShell, ViewHost } from '../../ui';
 import { TaskPane, TitleBar, TopBar, WmpMenuBar } from './components/Chrome';
 import { Modal } from './components/Dialogs';
@@ -15,6 +16,7 @@ export function Root() {
   const sh = useShell();
   const st = useApp((x) => ({ bare: isBare(x), spotify: isSpotify(x), nativeTitle: x.auth.nativeTitle === true,
                               taskPane: x.settings.taskPane !== false, playlistPane: x.settings.playlistPane !== false }));
+  useBroadcastPrompt();
   return (
     <div className="font-xp text-11 leading-[1.4] text-ink" data-ui-root="">
       {/* Luna: the title bar across the top with rounded top corners, and a 4px blue border of the
@@ -45,4 +47,20 @@ export function Root() {
       <Modal />
     </div>
   );
+}
+
+/** This skin's choice on the phone (ios/README.md): the visualizers want the broadcast, so iOS's
+ *  sheet for it comes up 2 s into a logged-in mount unless one already feeds the app. A skin
+ *  without visuals asks never. "Logged in" is the last session's hint (adapters/spotify/observers.ts
+ *  wasLoggedIn), read here since a skin does not import adapters. */
+function useBroadcastPrompt() {
+  const store = useShell().store;
+  useEffect(() => {
+    let was = false;
+    try { was = localStorage.getItem('wmp.loggedIn') === '1'; } catch { /* blocked storage */ }
+    if (store.getState().auth.engine !== 'spotify' || !was || !window.alchemyBroadcast) return;
+    window.alchemyBroadcast('state');
+    const t = setTimeout(() => { if (!window.__wmpBroadcast?.running) window.alchemyBroadcast?.('picker'); }, 2000);
+    return () => clearTimeout(t);
+  }, [store]);
 }

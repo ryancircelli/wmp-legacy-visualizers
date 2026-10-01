@@ -1,0 +1,1 @@
+export { nowPlaying } from './NowPlaying';

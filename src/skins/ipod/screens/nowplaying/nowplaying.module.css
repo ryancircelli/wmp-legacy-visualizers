@@ -1,0 +1,64 @@
+/* iPod nano 5G Now Playing. Every metric is in nano pixels, calc(var(--unit) * N) (the chrome sets
+   --unit to a 240th of the screen's width), measured from the top of this area, which starts under
+   the 20 px status row (screen y = 20 + N). Colours are the chrome's, with the nano's as fallbacks. */
+.root {
+  position: relative; height: 100%; overflow: hidden;
+  color: var(--ipod-text, #000);
+  font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+}
+.line {
+  position: absolute; left: calc(var(--unit) * 8); right: calc(var(--unit) * 8);
+  text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  height: calc(var(--unit) * 14); line-height: calc(var(--unit) * 14); font-size: calc(var(--unit) * 11);
+  color: var(--ipod-dim, #666);
+}
+.artist { top: calc(var(--unit) * 4); }
+.title {
+  top: calc(var(--unit) * 18); height: calc(var(--unit) * 16); line-height: calc(var(--unit) * 16);
+  font-size: calc(var(--unit) * 13); font-weight: bold; color: var(--ipod-text, #000);
+}
+.album { top: calc(var(--unit) * 34); }
+.art {
+  position: absolute; top: calc(var(--unit) * 72); left: calc(var(--unit) * 40);
+  width: calc(var(--unit) * 160); height: calc(var(--unit) * 160); object-fit: cover;
+}
+/* the nano's grey "no artwork" square with its note */
+.noart {
+  display: grid; place-items: center; background: linear-gradient(#ececec, #c9c9c9);
+  color: #fff; font-size: calc(var(--unit) * 72);
+}
+.of {
+  position: absolute; top: calc(var(--unit) * 262); left: calc(var(--unit) * 12);
+  font-size: calc(var(--unit) * 10); line-height: 1; color: var(--ipod-dim, #666);
+}
+/* the progress bar (screen y ~300) and the times under its ends */
+.bar {
+  position: absolute; top: calc(var(--unit) * 278); left: calc(var(--unit) * 12); right: calc(var(--unit) * 12);
+  height: calc(var(--unit) * 8);
+}
+.fill { display: block; width: 100%; height: 100%; }
+/* scrub mode: the diamond the nano puts on the bar */
+.diamond {
+  position: absolute; top: 50%; width: calc(var(--unit) * 9); height: calc(var(--unit) * 9);
+  background: var(--ipod-text, #000); border: calc(var(--unit) * 1) solid #fff;
+  transform: translate(-50%, -50%) rotate(45deg);
+}
+.times {
+  position: absolute; top: calc(var(--unit) * 290); left: calc(var(--unit) * 12); right: calc(var(--unit) * 12);
+  display: flex; justify-content: space-between; font-size: calc(var(--unit) * 10); font-weight: bold;
+}
+/* the volume bar in the progress bar's place, a speaker either side */
+.vol {
+  position: absolute; top: calc(var(--unit) * 274); left: calc(var(--unit) * 8); right: calc(var(--unit) * 8);
+  height: calc(var(--unit) * 16); display: flex; align-items: center; gap: calc(var(--unit) * 6);
+}
+.vol .fill { flex: 1; height: calc(var(--unit) * 8); }
+.spk { flex: none; width: calc(var(--unit) * 12); height: calc(var(--unit) * 12); }
+/* lyrics mode: the lines in the art's and the names' place, the sung one dark and bold */
+.lyrics {
+  position: absolute; top: calc(var(--unit) * 4); bottom: calc(var(--unit) * 92);
+  left: calc(var(--unit) * 10); right: calc(var(--unit) * 10); overflow: hidden; scroll-behavior: smooth;
+  text-align: center; white-space: pre-line; font-size: calc(var(--unit) * 12); line-height: calc(var(--unit) * 17);
+  color: var(--ipod-dim, #666);
+}
+.cur { color: var(--ipod-text, #000); font-weight: bold; }

@@ -36,7 +36,7 @@ describe('menus', () => {
     const { $ } = setup();
     press($('[data-menu=view]')!);
     expect([...menu(0)!.querySelectorAll<HTMLElement>('[role^=menuitem]')].map((b) => b.children[1]!.textContent))
-      .toEqual(['Visualizations', 'Refresh Rate', 'Karaoke Highlight', 'Full Screen']);
+      .toEqual(['Visualizations', 'Refresh Rate', 'Karaoke Highlight', 'Skin', 'Full Screen']);
     fireEvent.click(item(0, 'Visualizations'));
     fireEvent.click(item(1, 'Bars and Waves'));
     fireEvent.click(item(2, 'Fire Storm'));
@@ -47,6 +47,15 @@ describe('menus', () => {
     fireEvent.click(item(0, 'Visualizations'));
     fireEvent.click(item(1, 'Bars and Waves'));
     expect(item(2, 'Fire Storm').children[0]!.textContent).toBe('✓');
+  });
+
+  it('View > Skin lists the skins, this one checked, and switches', () => {
+    const { $ } = setup();
+    press($('[data-menu=view]')!);
+    fireEvent.click(item(0, 'Skin'));
+    expect(item(1, 'Windows Media Player 9 (Corporate)').children[0]!.textContent).toBe('✓');
+    fireEvent.click(item(1, 'iPod nano'));
+    expect(S().settings.skin).toBe('ipod');
   });
 
   it('keyboard: ArrowDown opens focused, arrows walk, Right opens a submenu, Left closes it, Escape closes all', async () => {
@@ -167,7 +176,7 @@ describe('menus', () => {
     expect(labels('file')).toEqual(['Open Spotify Link...|', 'Exit|Alt+F4']);
     expect(labels('view')).toEqual(['Now Playing|Ctrl+1', 'Media Guide|Ctrl+2', 'Media Library|Ctrl+3', 'Search|Ctrl+4',
       'Radio Tuner|Ctrl+5', 'Visualizations|▶', 'Refresh Rate|▶', 'Karaoke Highlight|Ctrl+K', 'Task Pane|', 'Playlist Pane|', 'Details Pane|', 'Library View|▶',
-      'Full Screen|Alt+Enter']);
+      'Skin|▶', 'Full Screen|Alt+Enter']);
     expect(labels('play')).toEqual(['Play|Ctrl+P', 'Stop|Ctrl+S', 'Previous|Ctrl+B', 'Next|Ctrl+F', 'Shuffle|Ctrl+H', 'Repeat|▶',
       'Like|Ctrl+D', 'Add to Playlist|▶', 'Rewind|Ctrl+Shift+B', 'Fast Forward|Ctrl+Shift+F', 'Volume Up|F9', 'Volume Down|F8', 'Mute|F7']);
     expect(labels('help')).toEqual(['Keyboard Shortcuts|', 'Check for Player Updates...|', 'About Windows Media Player|']);
