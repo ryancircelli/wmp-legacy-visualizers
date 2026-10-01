@@ -45,7 +45,9 @@ export async function mount(): Promise<void> {
   // Audio last, and not until a frame has been painted: attaching system audio spawns the host's
   // WASAPI helper, which was measured to push the first frame from 180 ms to two seconds.
   const adapter = spotify ? createSpotifyAdapter(store) : createLocalAdapter(store);
-  const ticker = createTicker(store, () => adapter.start());
+  let started = false;
+  const startOnce = () => { if (!started) { started = true; adapter.start(); } };
+  const ticker = createTicker(store, startOnce);
 
   let el = root.getElementById('root');
   if (!el) {
@@ -58,6 +60,10 @@ export async function mount(): Promise<void> {
   if (spotify) await persistQueries(client);
   createRoot(el).render(<App store={store} ticker={ticker} root={root} client={client} />);
   window.Alchemy = shim(store, ticker, client);
+  // A skin with no visualizer (the iPod) never has the ticker draw a frame, so the ticker never
+  // reports one: the adapter starts after this skin's first painted frame instead, whichever comes
+  // first (measured on the phone, 2026-10-01: the iPod skin alone saw no login and no state).
+  requestAnimationFrame(() => setTimeout(startOnce, 0));
 }
 
 /** window.Alchemy: what the host's log line and the smokes read (the old Alchemy.Shell's names). */
