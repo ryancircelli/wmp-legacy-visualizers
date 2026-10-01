@@ -10,7 +10,7 @@ import { useApp, useShell, useWindowControls } from '../../ui';
 import { ClickWheel } from './ClickWheel';
 import { useHostChrome, useHostGlobal, useDesktopViewport } from './host';
 import { mainMenu } from './menus';
-import { coverFlow, fmRadio, nowPlaying, useVolumeLimit } from './screens';
+import { fmRadio, nowPlaying, useVolumeLimit } from './screens';
 import { createNav, top, type NavStore, type Slot } from './nav';
 import type { WheelInput } from './screens/contract';
 import { bodyVars, ipodSettings, useIpodSettings } from './settings';
@@ -31,7 +31,7 @@ export function Root() {
   const sh = useShell(), [ipod] = useIpodSettings();
   const [nav] = useState(() => createNav(mainMenu(), () => nowPlaying())), [hub] = useState<Hub>(() => new Map());
   // the screens under the dark status bar (§2.2)
-  const [dark] = useState(() => new Set([nowPlaying, fmRadio, coverFlow].map((f) => f().key)));
+  const [dark] = useState(() => new Set([nowPlaying, fmRadio].map((f) => f().key)));
   const { stack, dir } = useStore(nav.store), topSlot = stack[stack.length - 1]!, busy = useBusy(topSlot.id);
   const safe = useHostGlobal('__wmpSafeArea', 'wmp-safe-area');
   const win = useWindowControls(), caption = useApp((x) => x.auth.hostWindow && !x.auth.nativeTitle);

@@ -1,19 +1,20 @@
 // The Library's screens over the Spotify library, in the nano 5G's look (docs/ipod-skin.md §2.4, §4.2):
-// Playlists (Queue first, which any song's hold-centre > Add to Queue adds to), Liked Songs, Albums,
-// Artists, Podcasts & Shows (empty: the adapter lists none), Queue, Cover Flow; and Search. Lists are the
-// chrome's MenuScreen (center fires the row, hold-center its menu, Play/Pause plays the row), or, for
-// the lists with covers in Settings > General > Library View: Grid, its GridScreen; songs are always
-// rows (a playlist's, album's or Liked Songs' under Spotify's header). Search and Cover Flow draw themselves. What a screen comes back to (the selected row, the typed query) is
-// kept on its entry, so it outlives the screen's unmount.
+// the Library as Spotify's Your Library, filter chips over a grid: Playlists (the Queue first, which any
+// song's hold-centre > Add to Queue adds to, then Liked Songs), Albums, Artists, Podcasts (empty: the
+// adapter lists none); and Search. Lists are the chrome's GridScreen (center fires the tile, hold-center
+// its menu, Play/Pause plays it), or its MenuScreen in Settings > General > Library View: List; songs
+// are always rows (a playlist's, album's or Liked Songs' under Spotify's header). Search draws itself.
+// What a screen comes back to (the selected row, the typed query) is kept on its entry, so it outlives
+// the screen's unmount.
 import { useQuery } from '@tanstack/react-query';
 import { useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { LIKED, type LibraryItem, type SearchResults, type Track } from '../../../../model';
 import {
   canSave, isAlbum, STALE, useAddTo, useApp, useArtist, useCollection, useLibraryList, useSearch, useSearchAll, useShell, type Bucket, type Shell,
 } from '../../../../ui';
-import { CollectionHeader, GridScreen, MenuScreen, Popup, Tile, useNav, useWheel } from '../../ui';
+import { CollectionHeader, FilterChips, GridScreen, MenuScreen, Popup, Tile, useNav, useWheel } from '../../ui';
 import type { GridItem, HeadAction, MenuItem, Nav, ScreenEntry } from '../contract';
-import { useLibraryView } from '../settings';
+import { LIBRARY_FILTERS, useLibraryFilter, useLibraryView, useMenuVisibility } from '../settings';
 import { albumsBy, artistList, artistsOf, az, SLOTS, strip, STRIP0, subline, type Strip, type StripAct } from './logic';
 
 /** nano pixels */
@@ -182,11 +183,30 @@ function TrackPopup({ held: { t, lists }, set }: { held: NonNullable<Held>; set:
   return <Popup key={lists ? 'lists' : 'track'} items={items} onClose={() => set(null)} />;
 }
 
-// ---- the Library's lists ------------------------------------------------------------------------
+// ---- the Library: Spotify's Your Library, filter chips over the chosen filter's grid ----------------
+
+/** the chips over a filter's list: its first items, and the head that draws them */
+interface Bar { chips: MenuItem[]; head?: ReactNode }
+
+/** A filter's items under the chips: GridScreen (MenuScreen in List view), the selection kept by item
+ *  id on the Library's entry (none kept: the first tile, so it never starts on a chip); `play` is
+ *  Play/Pause on a tile; `near` runs as the selection nears the loaded end. */
+function Filtered({ bar, keep, items, loading, empty, play, near }: {
+  bar: Bar; keep: Box<string>; items: GridItem[]; loading?: boolean; empty?: string; play?: (it: GridItem) => void; near?: () => void;
+}) {
+  const [id, setId] = useKept(keep), all = [...bar.chips, ...items], lead = bar.chips.length;
+  const found = all.findIndex((x) => x.id === id), sel = found < 0 ? lead : found, it = sel >= lead ? all[sel] : undefined;
+  useWheel({ onPlay: play && it ? () => play(it) : undefined });
+  const p = { items: all, selected: sel, loading, empty, head: bar.head, lead,
+              onSelectedChange: (n: number) => { setId(all[n]!.id); if (near && n >= all.length - NEAR) near(); } };
+  return useGrid() ? <GridScreen {...p} /> : <MenuScreen {...p} />;
+}
+
+type Body = (p: { bar: Bar; keep: Box<string> }) => ReactNode;
 
 /** The Queue (§6 item 7), then Liked Songs (where Spotify pins it), then the library's
  *  playlists in library order. */
-function Playlists({ keep }: { keep: Box<number> }) {
+const Playlists: Body = ({ bar, keep }) => {
   const sh = useShell(), nav = useNav(), lib = useLibraryList(), liked = useCollection(LIKED), next = useApp((s) => s.queue.next[0]);
   const items: GridItem[] = [
     // the Queue's tile: the next song's cover
@@ -196,8 +216,8 @@ function Playlists({ keep }: { keep: Box<number> }) {
     ...lib.items.filter((x) => !isAlbum(x.uri)).map((x) => opens(nav, x)),
   ];
   // Play/Pause on the Queue is the plain play/pause: the queue is already what plays next
-  return <List keep={keep} items={items} loading={lib.loading} tiles play={(i) => { if (i) playUri(sh, nav, items[i]!.id); }} />;
-}
+  return <Filtered bar={bar} keep={keep} items={items} loading={lib.loading} play={(it) => { if (it.id !== 'queue') playUri(sh, nav, it.id); }} />;
+};
 
 /** The Queue: what Spotify plays next; a song joins it from any list's hold-centre > Add to Queue,
  *  and shows here with the player's next state. */
@@ -205,13 +225,14 @@ function OnTheGo({ keep }: { keep: Box<number> }) {
   const rows = useApp((s) => s.queue.next);
   return <TrackList keep={keep} rows={rows} loading={false} />;
 }
+const onTheGo = () => screen('onTheGo', 'Queue', 0, (k) => <OnTheGo keep={k} />);
 
 /** Saved albums, A–Z (§6 item 11). */
-function Albums({ keep }: { keep: Box<number> }) {
+const Albums: Body = ({ bar, keep }) => {
   const sh = useShell(), nav = useNav(), lib = useLibraryList();
   const items = lib.items.filter((x) => isAlbum(x.uri)).sort((a, b) => az(a.name, b.name)).map((x) => opens(nav, x));
-  return <List keep={keep} items={items} loading={lib.loading} empty="No Albums" tiles play={(i) => playUri(sh, nav, items[i]!.id)} />;
-}
+  return <Filtered bar={bar} keep={keep} items={items} loading={lib.loading} empty="No Albums" play={(it) => playUri(sh, nav, it.id)} />;
+};
 
 /** Followed artists (Your Library > Artists) in Spotify's order; none under the local engine. */
 function useFollowedArtists(): { items: LibraryItem[]; loading: boolean } {
@@ -220,20 +241,37 @@ function useFollowedArtists(): { items: LibraryItem[]; loading: boolean } {
   return { items: r.data ?? [], loading: on && r.isPending };
 }
 
-/** The followed artists, A–Z; with none, the liked songs' and saved albums' artists (§6 item 1). The
- *  selection is kept by artist, as later pages of liked songs land in between.
+/** The followed artists, A–Z; with none, the liked songs' and saved albums' artists (§6 item 1), kept
+ *  by artist (Filtered) as later pages of liked songs land in between.
  *  ponytail: the fallback's complete A–Z needs every liked page; they load as the selection nears the end. */
-function Artists({ keep }: { keep: Box<string> }) {
-  const sh = useShell(), nav = useNav(), followed = useFollowedArtists(), liked = useCollection(LIKED), lib = useLibraryList(), [id, setId] = useKept(keep);
-  const derived = !followed.loading && !followed.items.length, Screen = useGrid() ? GridScreen : MenuScreen;
+const Artists: Body = ({ bar, keep }) => {
+  const sh = useShell(), nav = useNav(), followed = useFollowedArtists(), liked = useCollection(LIKED), lib = useLibraryList();
+  const derived = !followed.loading && !followed.items.length;
   const list = followed.loading ? [] : derived ? artistList(artistsOf(liked.rows), lib.items.filter((x) => isAlbum(x.uri)))
     : followed.items.map((x) => ({ key: x.uri, name: x.name, uri: x.uri, image: x.image })).sort((a, b) => az(a.name, b.name));
-  const sel = Math.max(0, list.findIndex((a) => a.key === id)), a = list[sel];
-  useWheel({ onPlay: a?.uri ? () => playUri(sh, nav, a.uri!) : undefined });
+  // an artist known by uri plays (their context); one known only by a saved album's credit does not
   const items = list.map((x): GridItem => ({
     id: x.key, label: x.name, chevron: true, art: x.image, sub: 'Artist', onSelect: () => nav.push(x.uri ? artistPage(x.uri, x.name) : savedArtist(x.name)) }));
-  return <Screen items={items} selected={sel} loading={followed.loading || (!items.length && (liked.loading || lib.loading))} empty="No Artists"
-                     onSelectedChange={(n) => { setId(items[n]!.id); if (derived && n >= items.length - NEAR) liked.loadMore(); }} />;
+  return <Filtered bar={bar} keep={keep} items={items} loading={followed.loading || (!items.length && (liked.loading || lib.loading))} empty="No Artists"
+                   play={(it) => { if (it.id.startsWith('spotify:')) playUri(sh, nav, it.id); }} near={derived ? liked.loadMore : undefined} />;
+};
+
+/** libraryV3 is asked for episodes, but the adapter's list keeps playlists and albums only */
+const Podcasts: Body = ({ bar, keep }) => <Filtered bar={bar} keep={keep} items={[]} empty="No Podcasts" />;
+
+const BODIES: Record<string, Body> = { playlists: Playlists, albums: Albums, artists: Artists, podcasts: Podcasts };
+
+/** The chips Settings > General > Library Filters shows ('ipod.libraryFilter' the chosen one, filled)
+ *  over its filter's list. Picking a chip (the centre on it, or a tap) switches the list and puts the
+ *  selection on its first tile. */
+function Library({ keeps }: { keeps: Record<string, Box<string>> }) {
+  const [chosen, choose] = useLibraryFilter(), shown = useMenuVisibility().music, [n, setN] = useState(0);
+  const filters = LIBRARY_FILTERS.filter(([id]) => shown[id] !== false);
+  const f = filters.some(([id]) => id === chosen) ? chosen : filters[0]?.[0] ?? 'playlists';
+  const chips = filters.map(([id, label]): MenuItem => ({ id: 'chip:' + id, label, onSelect: () => { keeps[id]!.set(''); choose(id); setN(n + 1); } }));
+  const View = BODIES[f]!;
+  // keyed by the pick: a fresh list, from its first tile
+  return <View key={f + n} bar={{ chips, head: chips.length ? <FilterChips chips={chips} active={'chip:' + f} /> : undefined }} keep={keeps[f]!} />;
 }
 
 /** An artist: All Songs (their top songs; played in the artist's context) then the discography.
@@ -389,56 +427,10 @@ function More({ q, bucket, kind, keep }: { q: string; bucket: Bucket; kind: Kind
 const more = (q: string, b: Bucket, kind: Kind, title: string) =>
   screen('search:' + b, title, 0, (k) => <More q={q} bucket={b} kind={kind} keep={k} />);
 
-// ---- Cover Flow (§2.4: ours, a portrait page) -------------------------------------------------------
-
-const COVER = 150, PITCH = 38;
-
-/** The saved albums by artist (the iPod's order [UG p.37]): the centred cover flat, its neighbours
- *  turned toward it. Wheel and ⏮⏭ flip; center pushes the album's songs; Play/Pause plays it. */
-function CoverFlow({ keep }: { keep: Box<number> }) {
-  const sh = useShell(), nav = useNav(), lib = useLibraryList();
-  const albs = lib.items.filter((x) => isAlbum(x.uri)).sort((a, b) => az(a.artist ?? '', b.artist ?? '') || az(a.name, b.name));
-  const [at, setAt] = useKept(keep), i = Math.min(at, Math.max(0, albs.length - 1)), cur = albs[i];
-  /** false when nothing moved (the chrome then does not click) */
-  const flip = (d: number) => { const k = Math.max(0, Math.min(albs.length - 1, i + d)); if (k === i) return false; setAt(k); };
-  useWheel({
-    onTick: flip, onPrev: () => flip(-1), onNext: () => flip(1),
-    onCenter: () => { if (cur) nav.push(collection(cur.uri, cur.name)); },
-    onPlay: cur ? () => playUri(sh, nav, cur.uri) : undefined,
-  });
-  if (!cur) return <MenuScreen items={[]} loading={lib.loading} empty="No Albums" />;
-  return (
-    <div className="relative h-full overflow-hidden" style={{ background: 'linear-gradient(#fff, #e9e9e9)', perspective: u(500) }}>
-      {albs.map((x, j) => {
-        const o = j - i, d = Math.sign(o);
-        if (Math.abs(o) > 6) return null;
-        return (
-          <div key={x.uri} className="absolute bg-cover bg-center" onClick={() => (o ? setAt(j) : nav.push(collection(x.uri, x.name)))}
-               style={{ left: '50%', top: u(50), width: u(COVER), height: u(COVER), marginLeft: u(-COVER / 2), zIndex: 10 - Math.abs(o),
-                        backgroundColor: '#c8c8c8', backgroundImage: x.image ? `url("${x.image}")` : undefined, transition: 'transform .2s',
-                        transform: o ? `translateX(${u(d * (COVER / 2 + 30 + PITCH * (Math.abs(o) - 1)))}) translateZ(${u(-60)}) rotateY(${-d * 65}deg)` : undefined,
-                        WebkitBoxReflect: 'below 0 linear-gradient(transparent 70%, rgb(255 255 255 / .35))' }} />
-        );
-      })}
-      <div className="absolute inset-x-0 text-center" style={{ top: u(222), padding: `0 ${u(10)}`, color: TEXT }}>
-        <div className="truncate font-bold" style={{ fontSize: u(14), lineHeight: u(18) }}>{cur.name}</div>
-        <div className="truncate" style={{ fontSize: u(12), lineHeight: u(18), color: DIM }}>{cur.artist}</div>
-      </div>
-    </div>
-  );
-}
-
 // ---- the factories (src/skins/ipod/screens/contract.ts Screens) -----------------------------------
 
-/** a category Spotify's library has nothing for: the nano's empty page */
-const none = (key: string, title: string): ScreenEntry => ({ key, title, render: () => <MenuScreen items={[]} empty={'No ' + title} /> });
-
-export const playlists = () => screen('playlists', 'Playlists', 0, (k) => <Playlists keep={k} />);
-export const onTheGo = () => screen('onTheGo', 'Queue', 0, (k) => <OnTheGo keep={k} />);
-export const artists = () => screen('artists', 'Artists', '', (k) => <Artists keep={k} />);
-export const albums = () => screen('albums', 'Albums', 0, (k) => <Albums keep={k} />);
-export const songs = () => screen('songs', 'Liked Songs', 0, (k) => <Collection uri={LIKED} title="Liked Songs" keep={k} />);
-/** libraryV3 is asked for episodes, but the adapter's list keeps playlists and albums only */
-export const podcasts = () => none('podcasts', 'Podcasts & Shows');
+export function library(): ScreenEntry {
+  const keeps = Object.fromEntries(LIBRARY_FILTERS.map(([id]) => [id, box('')]));
+  return { key: 'library', title: 'Library', render: () => <Library keeps={keeps} /> };
+}
 export const search = () => screen<Strip>('search', 'Search', STRIP0, (k) => <Search keep={k} />);
-export const coverFlow = () => screen('coverFlow', 'Cover Flow', 0, (k) => <CoverFlow keep={k} />);

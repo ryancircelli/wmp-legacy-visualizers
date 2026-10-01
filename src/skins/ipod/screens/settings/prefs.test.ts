@@ -1,4 +1,4 @@
-// Settings > General > Main Menu / Library Menu: what shows out of the box, and that only the user's own
+// Settings > General > Main Menu / Library Filters: what shows out of the box, and that only the user's own
 // choices are stored (so a later change of the defaults reaches everyone who never touched a row);
 // Library View's default.
 import { act, renderHook } from '@testing-library/react';
@@ -7,15 +7,15 @@ import { resetMenu, setMenuItem, useLibraryView, useMenuVisibility } from './pre
 
 afterEach(() => localStorage.clear());
 
-it('shows every row but Extras, Podcasts & Shows and Cover Flow until they are turned on', () => {
+it('shows every row and chip but Extras and Podcasts until they are turned on', () => {
   const { result } = renderHook(() => useMenuVisibility());
   expect(result.current.main).toEqual({ home: true, search: true, library: true, radio: true, extras: false, previewpanel: true });
-  expect(result.current.music).toEqual({ playlists: true, likedsongs: true, albums: true, artists: true, 'podcasts&shows': false, queue: true, coverflow: false });
-  act(() => setMenuItem('music', 'coverflow', true));
-  expect(result.current.music.coverflow).toBe(true);
-  expect(JSON.parse(localStorage.getItem('ipod.menus')!)).toEqual({ main: {}, music: { coverflow: true } });
+  expect(result.current.music).toEqual({ playlists: true, albums: true, artists: true, podcasts: false });
+  act(() => setMenuItem('music', 'podcasts', true));
+  expect(result.current.music.podcasts).toBe(true);
+  expect(JSON.parse(localStorage.getItem('ipod.menus')!)).toEqual({ main: {}, music: { podcasts: true } });
   act(() => resetMenu('music'));
-  expect(result.current.music.coverflow).toBe(false);
+  expect(result.current.music.podcasts).toBe(false);
 });
 
 it('Library View is Grid until List is chosen', () => {

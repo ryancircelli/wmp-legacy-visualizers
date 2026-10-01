@@ -51,22 +51,22 @@ export function resetPrefs(): void {
   notify();
 }
 
-// ---- Main Menu / Library Menu --------------------------------------------------------------------
-/** The rows Settings > General > Main Menu and Library Menu turn on and off, in the chrome's order, by
- *  its row id (src/skins/ipod/menus.tsx: the label in lower case without spaces). */
+// ---- Main Menu / Library Filters -----------------------------------------------------------------
+/** The rows Settings > General > Main Menu turns on and off, in the chrome's order, by its row id
+ *  (src/skins/ipod/menus.tsx: the label in lower case without spaces), and Library Filters' chips. */
 const rows = (labels: string[]) => labels.map((l) => [l.toLowerCase().replace(/\s+/g, ''), l] as const);
 export const MAIN_MENU = rows(['Home', 'Search', 'Library', 'Radio', 'Extras']);
-/** the Library menu's (stored under `music`, its old name) */
-export const MUSIC_MENU = rows(['Playlists', 'Liked Songs', 'Albums', 'Artists', 'Podcasts & Shows', 'Queue', 'Cover Flow']);
-/** Off until turned on: Extras, Podcasts & Shows (the adapter lists none yet) and Cover Flow. */
-const OFF = new Set(['extras', 'podcasts&shows', 'coverflow']);
-/** 'ipod.menus': which main- and library-menu rows show, by row id (MAIN_MENU, MUSIC_MENU), and
+/** the Library's filter chips (stored under `music`, the Library menu's old name) */
+export const LIBRARY_FILTERS = rows(['Playlists', 'Albums', 'Artists', 'Podcasts']);
+/** Off until turned on: Extras, Podcasts (the adapter lists no shows yet). */
+const OFF = new Set(['extras', 'podcasts']);
+/** 'ipod.menus': which main-menu rows and Library chips show, by id (MAIN_MENU, LIBRARY_FILTERS), and
  *  main.previewpanel (General > Main Menu > Preview Panel). Every listed id is present; an id not
  *  listed (Settings, Now Playing) is undefined: show it. Only the user's own choices are stored; a
  *  stored id no menu lists any more is ignored. */
 export interface MenuVisibility { main: Record<string, boolean>; music: Record<string, boolean> }
 const shown = (l: typeof MAIN_MENU) => Object.fromEntries(l.map(([id]) => [id, !OFF.has(id)]));
-const MENUS0: MenuVisibility = { main: { ...shown(MAIN_MENU), previewpanel: true }, music: shown(MUSIC_MENU) };
+const MENUS0: MenuVisibility = { main: { ...shown(MAIN_MENU), previewpanel: true }, music: shown(LIBRARY_FILTERS) };
 const CHOSEN0: MenuVisibility = { main: {}, music: {} };
 
 export function useMenuVisibility(): MenuVisibility {
@@ -77,7 +77,7 @@ export function setMenuItem(menu: keyof MenuVisibility, id: string, on: boolean)
   const v = readPref('ipod.menus', CHOSEN0);
   writePref('ipod.menus', { ...v, [menu]: { ...v[menu], [id]: on } });
 }
-/** Library Menu > Reset Menu: the Library menu as it ships */
+/** Library Filters > Reset Filters: the chips as they ship */
 export const resetMenu = (menu: keyof MenuVisibility) => writePref('ipod.menus', { ...readPref('ipod.menus', CHOSEN0), [menu]: {} });
 
 // ---- General, Playback -------------------------------------------------------------------------------
@@ -92,6 +92,8 @@ export const useDisplayPrefs = (): DisplayPrefs => useDisplay()[0];
  *  Artists, Search's artists, albums and playlists) as a grid of covers, or as rows; songs are always rows */
 export type LibraryView = 'grid' | 'list';
 export const useLibraryView = () => usePref<LibraryView>('ipod.view', 'grid');
+/** 'ipod.libraryFilter': the Library's chosen chip (a LIBRARY_FILTERS id) */
+export const useLibraryFilter = () => usePref('ipod.libraryFilter', 'playlists');
 /** 'ipod.shake': Playback > Shake (iPhone): a shake skips to the next song */
 export const useShake = () => usePref('ipod.shake', true);
 

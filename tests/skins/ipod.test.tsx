@@ -19,21 +19,23 @@ import { fakeData, mountSkinNow, settle } from './harness';
 afterEach(() => { cleanup(); delete window.alchemyHaptic; vi.useRealTimers(); vi.unstubAllGlobals(); localStorage.clear(); });
 const key = (k: string) => act(() => { window.dispatchEvent(new KeyboardEvent('keydown', { key: k, cancelable: true })); });
 
-function mount() {
-  const store = createAppStore({ persist: false });
-  const { container } = render(<ShellContext.Provider value={makeShell(store, {} as Ticker)}><Root /></ShellContext.Provider>);
-  // the screen on top (the ones under it are mounted, hidden)
-  const shown = (q: string) => [...container.querySelectorAll(q)].filter((x) => !x.closest('[hidden]'));
+/** the iPod skin mounted over the fake catalogue; `shown` reads the screen on top (the ones under it
+ *  are mounted, hidden) */
+function mountIpod(data = fakeData()) {
+  const m = mountSkinNow('spotify', data, <div data-testid="ipod"><Root /></div>);
+  const ipod = m.getByTestId('ipod'), shown = (q: string) => [...ipod.querySelectorAll(q)].filter((x) => !x.closest('[hidden]'));
   return {
-    store,
-    sel: () => shown('[aria-selected=true]').map((x) => x.textContent),
+    ...m, shown,
+    // a button says what it is by its label, a row, tile or chip by its text
+    sel: () => shown('[aria-selected=true]').map((x) => x.getAttribute('aria-label') ?? x.textContent),
     rows: () => shown('[role=option]').map((x) => x.textContent),
     row: (label: string) => shown('[role=option]').find((x) => x.textContent === label)!,
     chevrons: () => shown('[role=option] svg').map((x) => x.closest('[role=option]')!.textContent),
   };
 }
+const mount = mountIpod;
 
-it('arrows move the selection, Enter opens Library, Escape comes back; a tick that moves is a haptic, one at the end is not', () => {
+it('arrows move the selection, Enter opens Library, Escape comes back; a tick that moves is a haptic, one at the end is not', async () => {
   const haptic = vi.fn();
   window.alchemyHaptic = haptic;
   const m = mount();
@@ -46,18 +48,20 @@ it('arrows move the selection, Enter opens Library, Escape comes back; a tick th
   expect(haptic).toHaveBeenCalledWith('selection');
   key('ArrowDown');
   key('Enter');
-  expect(m.sel()).toEqual(['Playlists']);
+  await settle();
+  expect(m.sel()).toEqual(['QueueUp next']);           // the Library's first tile
   key('Escape');
   expect(m.sel()).toEqual(['Library']);
 });
 
-it('Spotify\'s menus in the nano\'s look: Extras hidden, Now Playing only with a track; the Library without Podcasts & Shows or Cover Flow', () => {
+it('Spotify\'s menus in the nano\'s look: Extras hidden, Now Playing only with a track; the Library\'s chips without Podcasts', async () => {
   const m = mount();
   expect(m.rows()).toEqual(['Home', 'Search', 'Library', 'Radio', 'Settings']);
   act(() => { m.store.setState((s) => ({ playback: { ...s.playback, track: { uri: 'spotify:track:a', title: 'T', artist: 'A', duration: 1 } } })); });
   expect(m.rows()).toEqual(['Home', 'Search', 'Library', 'Radio', 'Now Playing', 'Settings']);
   act(() => { fireEvent.click(m.row('Library')); });
-  expect(m.rows()).toEqual(['Playlists', 'Liked Songs', 'Albums', 'Artists', 'Queue']);
+  await settle();
+  expect(m.rows()).toEqual(['Playlists', 'Albums', 'Artists', 'QueueUp next', 'Liked SongsPlaylist · 0 songs']);
 });
 
 it('a chevron shows on the selected row only', () => {
@@ -67,10 +71,11 @@ it('a chevron shows on the selected row only', () => {
   expect(m.chevrons()).toEqual(m.sel());
 });
 
-it('a tap selects a row and does what the centre would', () => {
+it('a tap selects a row and does what the centre would', async () => {
   const m = mount();
   act(() => { fireEvent.click(m.row('Library')); });
-  expect(m.sel()).toEqual(['Playlists']);
+  await settle();
+  expect(m.sel()).toEqual(['QueueUp next']);
   const a = vi.fn(), b = vi.fn(), off = vi.fn();
   const { getByText } = render(<ShellContext.Provider value={makeShell(m.store, {} as Ticker)}>
     <MenuScreen items={[{ id: 'a', label: 'A', onSelect: a }, { id: 'b', label: 'B', onSelect: b }, { id: 'c', label: 'C', onSelect: off, disabled: true }]} />
@@ -94,21 +99,29 @@ it('a loading list says why it waits: signing in, signed out, or loading', () =>
   expect(say(true)).toBe('Loading…');
 });
 
-it('the library is a grid: the wheel steps a tile at a time, row by row, a tile says what it is, Enter opens; List view is rows again', async () => {
+it('the Library is chips over a grid: it opens on the first tile, the wheel steps a tile at a time, up into the chips, Enter on one switches (kept); List view is rows again', async () => {
   const album = (i: number, name: string, artist: string) => ({ uri: 'spotify:album:' + i, name, artist, image: 'https://i.scdn.co/' + i });
   const data = fakeData({
     list: [album(2, 'Kid A', 'Radiohead'), album(0, 'Abbey Road', 'The Beatles'), album(1, 'Hot Space', 'Queen')],
     collections: { 'spotify:album:1': { tracks: [{ uri: 'spotify:track:s', title: 'Staying Power', artist: 'Queen', duration: 1 }] } },
   });
-  const m = mountSkinNow('spotify', data, <div data-testid="ipod"><Root /></div>);
-  const ipod = m.getByTestId('ipod'), shown = (q: string) => [...ipod.querySelectorAll(q)].filter((x) => !x.closest('[hidden]'));
-  const sel = () => shown('[aria-selected=true]').map((x) => x.textContent), rows = () => shown('[role=option]').map((x) => x.textContent);
-  key('ArrowDown'); key('ArrowDown'); key('Enter');          // Library
-  key('ArrowDown'); key('ArrowDown'); key('Enter');          // Albums
+  const { shown, sel, rows } = mountIpod(data);
+  const on = () => shown('[data-on]').map((x) => x.textContent);
+  key('ArrowDown'); key('ArrowDown'); key('Enter');          // Library: Playlists, on its first tile
   await settle();
-  expect(rows()).toEqual(['Abbey RoadAlbum · The Beatles', 'Hot SpaceAlbum · Queen', 'Kid AAlbum · Radiohead']);
+  expect(rows()).toEqual(['Playlists', 'Albums', 'Artists', 'QueueUp next', 'Liked SongsPlaylist · 0 songs']);
+  expect([on(), sel()]).toEqual([['Playlists'], ['QueueUp next']]);
+  key('ArrowUp');                                            // up past the first tile: the chips, from the end
+  expect(sel()).toEqual(['Artists']);
+  key('ArrowUp');
+  expect(sel()).toEqual(['Albums']);
+  key('ArrowDown'); key('ArrowDown');                        // down from the chips: the first tile
+  expect(sel()).toEqual(['QueueUp next']);
+  key('ArrowUp'); key('ArrowUp'); key('Enter');              // Albums, on its first tile
+  await settle();
+  expect(rows()).toEqual(['Playlists', 'Albums', 'Artists', 'Abbey RoadAlbum · The Beatles', 'Hot SpaceAlbum · Queen', 'Kid AAlbum · Radiohead']);
   expect(shown('[role=option] img').map((x) => x.getAttribute('src'))).toEqual(['https://i.scdn.co/0', 'https://i.scdn.co/1', 'https://i.scdn.co/2']);
-  expect(sel()).toEqual(['Abbey RoadAlbum · The Beatles']);
+  expect([on(), sel(), localStorage.getItem('ipod.libraryFilter')]).toEqual([['Albums'], ['Abbey RoadAlbum · The Beatles'], '"albums"']);
   key('ArrowDown');                                          // the next tile, beside it
   expect(sel()).toEqual(['Hot SpaceAlbum · Queen']);
   key('ArrowDown'); key('ArrowDown');                        // the next row's first, then the end holds
@@ -118,8 +131,11 @@ it('the library is a grid: the wheel steps a tile at a time, row by row, a tile 
   expect(rows()).toEqual(['', '', '', 'Staying PowerQueen']);
   key('Escape');
   act(() => { localStorage.setItem('ipod.view', '"list"'); window.dispatchEvent(new StorageEvent('storage')); });
-  expect(rows()).toEqual(['Abbey Road', 'Hot Space', 'Kid A']);
+  expect(rows()).toEqual(['Playlists', 'Albums', 'Artists', 'Abbey Road', 'Hot Space', 'Kid A']);
   expect(sel()).toEqual(['Hot Space']);
+  act(() => { fireEvent.click(shown('[role=option]')[0]!); });   // a tap on a chip switches
+  await settle();
+  expect([on(), sel()]).toEqual([['Playlists'], ['Queue']]);
 });
 
 it('a grid waits and empties as a list does, a tap opens a tile, a long press is its hold (and not also a tap)', () => {
@@ -144,15 +160,6 @@ it('a grid waits and empties as a list does, a tap opens a tile, a long press is
   act(() => { fireEvent.pointerUp(a); fireEvent.click(a); });
   expect(a.getAttribute('aria-selected')).toBe('true');
 });
-
-/** the iPod skin mounted over the fake catalogue; `shown` reads the screen on top */
-function mountIpod(data: ReturnType<typeof fakeData>) {
-  const m = mountSkinNow('spotify', data, <div data-testid="ipod"><Root /></div>);
-  const ipod = m.getByTestId('ipod'), shown = (q: string) => [...ipod.querySelectorAll(q)].filter((x) => !x.closest('[hidden]'));
-  // a button says what it is by its label, a row or tile by its text
-  const sel = () => shown('[aria-selected=true]').map((x) => x.getAttribute('aria-label') ?? x.textContent);
-  return { ...m, shown, sel, rows: () => shown('[role=option]').map((x) => x.textContent) };
-}
 
 it('Home is Spotify\'s shelves: the wheel runs along a strip, past its end (See all) into the next shelf and back; Enter plays or opens', async () => {
   const shelf = (title: string, p: string) => ({ title, items: [1, 2, 3].map((i) => ({ uri: 'spotify:track:' + p + i, name: p + i, sub: 'Queen', img: null })) });
@@ -205,7 +212,7 @@ it('a playlist opens under Spotify\'s header: its cover, title, owner and count;
     collections: { 'spotify:playlist:p': { meta: { kind: 'playlist', name: 'Road Trip', owner: { name: 'ryan', uri: 'spotify:user:ryan' }, image: 'https://i.scdn.co/p', total: 2 },
                                            tracks: [t(1), { ...t(2), image: undefined }] } },
   }));
-  key('ArrowDown'); key('ArrowDown'); key('Enter'); key('Enter');   // Library > Playlists
+  key('ArrowDown'); key('ArrowDown'); key('Enter');                 // Library: Playlists
   await settle();
   key('ArrowDown'); key('ArrowDown'); key('Enter');                 // past the Queue and Liked Songs
   await settle();
@@ -227,10 +234,11 @@ it('a playlist opens under Spotify\'s header: its cover, title, owner and count;
   expect(m.cmd.playAll).toHaveBeenCalledExactlyOnceWith('spotify:playlist:p');
 });
 
-it('a swipe right on the screen is MENU, and not also a tap on the row it ended on', () => {
+it('a swipe right on the screen is MENU, and not also a tap on the row it ended on', async () => {
   const m = mount();
   act(() => { fireEvent.click(m.row('Library')); });
-  const row = m.row('Playlists');
+  await settle();
+  const row = m.row('QueueUp next');
   act(() => { fireEvent.pointerDown(row, { pointerId: 1, clientX: 10, clientY: 100 }); });
   act(() => { fireEvent.pointerUp(row, { pointerId: 1, clientX: 90, clientY: 110 }); });
   act(() => { fireEvent.click(row); });
@@ -239,7 +247,8 @@ it('a swipe right on the screen is MENU, and not also a tap on the row it ended 
   act(() => { fireEvent.pointerDown(library, { pointerId: 2, clientX: 10, clientY: 100 }); });
   act(() => { fireEvent.pointerUp(library, { pointerId: 2, clientX: 30, clientY: 100 }); });
   act(() => { fireEvent.click(library); });
-  expect(m.sel()).toEqual(['Playlists']);
+  await settle();
+  expect(m.sel()).toEqual(['QueueUp next']);
 });
 
 it('a seekable Bar follows a drag and seeks once, on release', () => {

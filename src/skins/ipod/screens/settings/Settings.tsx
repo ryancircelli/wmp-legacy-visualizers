@@ -14,7 +14,7 @@ import type { IpodSettings, MenuItem, ScreenEntry } from '../contract';
 import { cityOf, fmtClock, stepHue, zoneTime } from './logic';
 import { BarPage, check, confirm, DIM, menu, onOff, page, Row, Sun, TEXT, TextPage, u, useNow } from './parts';
 import {
-  CLOCK0, MAIN_MENU, MUSIC_MENU, resetMenu, resetPrefs, setMenuItem, useAppearance, useDisplay, useLibraryView, useMenuVisibility, usePref, useShake,
+  CLOCK0, LIBRARY_FILTERS, MAIN_MENU, resetMenu, resetPrefs, setMenuItem, useAppearance, useDisplay, useLibraryView, useMenuVisibility, usePref, useShake,
   useVolumeLimitPref,
 } from './prefs';
 
@@ -110,7 +110,7 @@ function General() {
   const nav = useNav(), [ip, patch] = useIpodSettings(), [d] = useDisplay(), [view, setView] = useLibraryView();
   return <MenuScreen items={[
     { id: 'main', label: 'Main Menu', chevron: true, onSelect: to(nav, page('settings/main', 'Main Menu', MainMenu)) },
-    { id: 'music', label: 'Library Menu', chevron: true, onSelect: to(nav, page('settings/music', 'Library Menu', LibraryMenu)) },
+    { id: 'music', label: 'Library Filters', chevron: true, onSelect: to(nav, page('settings/music', 'Library Filters', LibraryFilters)) },
     { id: 'view', label: 'Library View', right: view === 'list' ? 'List' : 'Grid', onSelect: () => setView(view === 'list' ? 'grid' : 'list') },
     { id: 'backlight', label: 'Backlight', right: seconds(d.backlight), chevron: true, onSelect: to(nav, page('settings/backlight', 'Backlight', Backlight)) },
     { id: 'brightness', label: 'Brightness', chevron: true, onSelect: to(nav, page('settings/brightness', 'Brightness', Brightness)) },
@@ -118,7 +118,7 @@ function General() {
   ]} />;
 }
 
-/** Main Menu and Library Menu: a checklist of the rows (✓ shows it), then Preview Panel / Reset Menu. */
+/** Main Menu and Library Filters: a checklist of the rows or chips (✓ shows it), then Preview Panel / Reset Filters. */
 function MainMenu() {
   const vis = useMenuVisibility().main;
   return <MenuScreen items={[
@@ -126,11 +126,11 @@ function MainMenu() {
     { id: 'previewpanel', label: 'Preview Panel', right: onOff(vis.previewpanel !== false), onSelect: () => setMenuItem('main', 'previewpanel', vis.previewpanel === false) },
   ]} />;
 }
-function LibraryMenu() {
+function LibraryFilters() {
   const vis = useMenuVisibility().music;
   return <MenuScreen items={[
-    ...MUSIC_MENU.map(([id, label]) => ({ id, label, right: check(vis[id] !== false), onSelect: () => setMenuItem('music', id, vis[id] === false) })),
-    { id: 'reset', label: 'Reset Menu', onSelect: () => resetMenu('music') },
+    ...LIBRARY_FILTERS.map(([id, label]) => ({ id, label, right: check(vis[id] !== false), onSelect: () => setMenuItem('music', id, vis[id] === false) })),
+    { id: 'reset', label: 'Reset Filters', onSelect: () => resetMenu('music') },
   ]} />;
 }
 

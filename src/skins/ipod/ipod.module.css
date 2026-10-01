@@ -398,7 +398,7 @@
 .row[data-sel] .sub { color: inherit; opacity: .85; }
 /* a collection's header (CollectionHeader), Spotify's: the cover 120 centred, the title bold 18 and
    the dim line 10 in, then the round buttons: Play a green disc, the selected one ringed in blue */
-.head { padding: calc(var(--unit) * 12) calc(var(--unit) * 10) calc(var(--unit) * 8); }
+.head { grid-column: 1 / -1; padding: calc(var(--unit) * 12) calc(var(--unit) * 10) calc(var(--unit) * 8); }
 .cover {
   width: calc(var(--unit) * 120);
   margin: 0 auto;
@@ -430,6 +430,34 @@
 .act[data-kind=play] svg { width: 34%; margin-left: 8%; }
 .act[data-kind=more] { margin-left: auto; }
 .act[data-sel] { outline: calc(var(--unit) * 2.5) solid #3F7FCD; outline-offset: calc(var(--unit) * 1.5); }
+/* the Library's filter chips (FilterChips), Spotify's: pills in a row over the grid, scrolling
+   sideways when they overflow; the chosen filter filled dark, the others outlined */
+.chips {
+  position: relative;
+  grid-column: 1 / -1;
+  display: flex;
+  gap: calc(var(--unit) * 6);
+  overflow: auto hidden;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+  padding: calc(var(--unit) * 8) calc(var(--unit) * 7) calc(var(--unit) * 4);
+  /* its height set: a scroll container in the grid gets none of its own once the tiles overflow */
+  height: calc(var(--unit) * 38);
+}
+.chips::-webkit-scrollbar { display: none; }
+.chip {
+  flex: none;
+  height: calc(var(--unit) * 26);
+  padding: 0 calc(var(--unit) * 12);
+  border: var(--unit) solid #B9B9BE;
+  border-radius: calc(var(--unit) * 13);
+  font-size: calc(var(--unit) * 13);
+  line-height: calc(var(--unit) * 24);
+  white-space: nowrap;
+  cursor: default;
+}
+.chip[data-on] { background: #2A2A2E; border-color: #2A2A2E; color: #FFFFFF; }
+.chip[data-sel] { outline: calc(var(--unit) * 2.5) solid #3F7FCD; outline-offset: calc(var(--unit) * 1); }
 /* Home as Spotify's (ShelvesScreen): the shelves down one page, each its title (bold 14, 10 in)
    over one strip of tiles 100 wide (3 + 2 at the ends, 4 between: the art is 90, 10 in like the
    title), 2.3 of them across; a strip scrolls across on its own */

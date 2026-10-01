@@ -1,7 +1,8 @@
 // The Settings and Extras screens (screens/contract.ts Screens.settings / extras / alarms), and what
 // the chrome reads of their preferences:
-// - useMenuVisibility(): General > Main Menu / Library Menu, {main, music} each Record<row id, boolean>
-//   ('ipod.menus'; main.previewpanel is the Preview Panel); MAIN_MENU / MUSIC_MENU list the ids.
+// - useMenuVisibility(): General > Main Menu / Library Filters, {main, music} each Record<id, boolean>
+//   ('ipod.menus'; main.previewpanel is the Preview Panel); MAIN_MENU / LIBRARY_FILTERS list the ids.
+// - useLibraryFilter(): the Library's chosen chip, [id, set] ('ipod.libraryFilter'; Playlists first).
 // - useClockPrefs(): Date & Time, {twentyFourHour, timeInTitle} ('ipod.clock').
 // - useDisplayPrefs(): General > Backlight (s, 0 = Always On) and Brightness (off the iPhone, for the
 //   LCD), Playback > Energy Saver ('ipod.display'); the chrome does the dimming.
@@ -13,6 +14,7 @@
 export { settings } from './Settings';
 export { alarms, extras } from './Extras';
 export {
-  MAIN_MENU, MUSIC_MENU, useClockPrefs, useDisplayPrefs, useLibraryView, useMenuVisibility, useSettingsEffects, useSleepTimer, useVolumeLimit,
+  LIBRARY_FILTERS, MAIN_MENU, useClockPrefs, useDisplayPrefs, useLibraryFilter, useLibraryView, useMenuVisibility, useSettingsEffects, useSleepTimer,
+  useVolumeLimit,
   type ClockPrefs, type DisplayPrefs, type LibraryView, type MenuVisibility, type SleepTimer,
 } from './prefs';

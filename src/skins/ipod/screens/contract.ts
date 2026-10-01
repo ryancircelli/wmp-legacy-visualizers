@@ -80,9 +80,13 @@ export interface Chrome {
   /** Spotify's playlist / album header, a MenuScreen's `head`: the cover, the title, a dim line
    *  ("<owner or artist> · <n> songs"), the round `actions` and a "…" (`onMore`) */
   CollectionHeader: FC<{ art?: string | null; title: string; line: string; actions: HeadAction[]; onMore?: () => void }>;
+  /** Spotify's filter chips, a MenuScreen's or GridScreen's `head`: pills in a row that scrolls
+   *  sideways, the one whose id is `active` filled dark; `chips` are the list's first `lead` items */
+  FilterChips: FC<{ chips: MenuItem[]; active: string }>;
   /** MenuScreen's list as 2 columns of tiles (Settings > General > Library View: Grid): the wheel
-   *  moves the selection a tile at a time, row by row; the rest as MenuScreen. */
-  GridScreen: FC<{ items: GridItem[]; selected?: number; onSelectedChange?: (i: number) => void; loading?: boolean; empty?: string }>;
+   *  moves the selection a tile at a time, row by row; the rest (`head`, `lead` too) as MenuScreen. */
+  GridScreen: FC<{ items: GridItem[]; selected?: number; onSelectedChange?: (i: number) => void; loading?: boolean; empty?: string;
+                   head?: ReactNode; lead?: number }>;
   /** Spotify Home's look: the shelves down one page, each its title over one strip of tiles (a
    *  'See all' tile ends it with `onMore`). The wheel moves along a strip and on into the next
    *  shelf; a drag scrolls a strip across or the page down; the rest as GridScreen. */
@@ -115,17 +119,17 @@ export interface IpodSettings {
   wheel: 'white' | 'black';
 }
 
-/** Each group exports screen factories by these names; the chrome's Main and Library menus call
- *  them (a factory returns the entry to push). A group that has no screen for an item exports a
+/** Each group exports screen factories by these names; the chrome's main menu calls them (a
+ *  factory returns the entry to push). A group that has no screen for an item exports a
  *  factory all the same, showing the iPod's "No <things>" page or the mapping the spec chose. */
 export interface Screens {
   // group nowplaying/
   nowPlaying(): ScreenEntry;
-  // group lists/ (Library > Playlists, Liked Songs (songs), Albums, Artists, Podcasts & Shows, Cover Flow; Search)
-  playlists(): ScreenEntry; artists(): ScreenEntry; albums(): ScreenEntry; songs(): ScreenEntry; podcasts(): ScreenEntry;
-  search(): ScreenEntry; coverFlow(): ScreenEntry;
-  /** Library > Queue, also Playlists' first row: Spotify's queue (commands.addToQueue adds to it) */
-  onTheGo(): ScreenEntry;
+  // group lists/
+  /** Library: Spotify's Your Library, one screen: the filter chips (Playlists, Albums, Artists,
+   *  Podcasts; Settings > General > Library Filters) over the chosen filter's grid */
+  library(): ScreenEntry;
+  search(): ScreenEntry;
   // group home/
   /** Radio: Spotify's stations on the FM dial (docs/ipod-skin.md §4.2) */
   fmRadio(): ScreenEntry;

@@ -108,7 +108,8 @@ function useList({ items, selected, onSelectedChange, loading, empty, lead = 0 }
   return { sel, pick, tap, note, list, thumb, onScroll: () => placeThumb(list.current, thumb.current) };
 }
 
-/** the list a CollectionHeader heads: its selection and tap (the header's buttons are its first items) */
+/** the list a head (CollectionHeader, FilterChips) leads: its selection (none while it loads) and tap;
+ *  the head's buttons are its first items */
 const HeadContext = createContext<{ sel: number; tap: (i: number) => void }>({ sel: -1, tap: () => {} });
 
 /** The list the wheel scrolls (§2.2): useList's rows. A row with `chevron: true` shows it on the
@@ -134,7 +135,7 @@ export const MenuScreen: Chrome['MenuScreen'] = ({ items, selected, onSelectedCh
     <div className="flex flex-col h-full min-h-0">
       <div className={cx(preview != null ? s.split : 'flex-auto min-h-0', s.list)} data-tall={tall || undefined}>
         <div ref={list} className={s.scroll} role="listbox" aria-busy={loading || undefined} onScroll={onScroll}>
-          {head && <HeadContext.Provider value={{ sel, tap }}>{head}</HeadContext.Provider>}
+          {head && <HeadContext.Provider value={{ sel: loading ? -1 : sel, tap }}>{head}</HeadContext.Provider>}
           {note ?? items.slice(lead).map((it, k) => { const i = k + lead; return (
             <div key={it.id} className={s.row} role="option" aria-selected={i === sel} aria-disabled={it.disabled || undefined}
                  data-sel={i === sel || undefined} data-disabled={it.disabled || undefined} onClick={() => tap(i)}>
@@ -178,15 +179,17 @@ function usePress(items: MenuItem[], loading: boolean | undefined, pick: (i: num
 }
 
 /** MenuScreen's list as 2 columns of tiles, Spotify's library look (Tile). The wheel moves the
- *  selection a tile at a time, row by row; a drag scrolls; a tap opens; a long press is hold-centre. */
-export const GridScreen: Chrome['GridScreen'] = ({ items, selected, onSelectedChange, loading, empty }) => {
-  const { sel, pick, tap, note, list, thumb, onScroll } = useList({ items, selected, onSelectedChange, loading, empty });
+ *  selection a tile at a time, row by row; a drag scrolls; a tap opens; a long press is hold-centre.
+ *  `head` and `lead` as MenuScreen's. */
+export const GridScreen: Chrome['GridScreen'] = ({ items, selected, onSelectedChange, loading, empty, head, lead = 0 }) => {
+  const { sel, pick, tap, note, list, thumb, onScroll } = useList({ items, selected, onSelectedChange, loading, empty, lead });
   const { on, release } = usePress(items, loading, pick, tap);
   return (
     <div className={cx('h-full', s.list)}>
       <div ref={list} className={cx(s.scroll, !note && s.grid)} role="listbox" aria-busy={loading || undefined}
            onScroll={() => { release(); onScroll(); }}>
-        {note ?? items.map((it, i) => <Tile key={it.id} item={it} selected={i === sel} {...on(i)} />)}
+        {head && <HeadContext.Provider value={{ sel: loading ? -1 : sel, tap }}>{head}</HeadContext.Provider>}
+        {note ?? items.slice(lead).map((it, k) => <Tile key={it.id} item={it} selected={k + lead === sel} {...on(k + lead)} />)}
       </div>
       <div ref={thumb} className={s.thumb} hidden />
     </div>
@@ -292,6 +295,25 @@ export const CollectionHeader: Chrome['CollectionHeader'] = ({ art, title, line,
         {onMore && <div className={s.act} data-kind="more" role="button" aria-label="More"
                         onClick={() => { window.alchemyHaptic?.('light'); onMore(); }}>{FACE.more(false)}</div>}
       </div>
+    </div>
+  );
+};
+
+/** Spotify's filter chips, a MenuScreen's or GridScreen's `head`: rounded pills in a row that scrolls
+ *  sideways, the `active` one filled dark; the pills are the list's first items (the wheel reaches
+ *  them up past the first tile), the selected one kept in view. */
+export const FilterChips: Chrome['FilterChips'] = ({ chips, active }) => {
+  const { sel, tap } = useContext(HeadContext), row = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const r = row.current, el = r?.querySelector<HTMLElement>('[aria-selected=true]') ?? r?.querySelector<HTMLElement>('[data-on]');
+    if (r && el) reveal(r, el, true, (r.firstElementChild as HTMLElement).offsetLeft);
+  }, [sel, active]);
+  return (
+    <div ref={row} className={s.chips} data-head="">
+      {chips.map((c, i) => (
+        <div key={c.id} className={s.chip} role="option" aria-selected={i === sel} data-sel={i === sel || undefined}
+             data-on={c.id === active || undefined} onClick={() => tap(i)}>{c.label}</div>
+      ))}
     </div>
   );
 };
