@@ -37,11 +37,14 @@ jobs:
           chmod 600 "$key"
           echo "SIGN=-allowProvisioningUpdates -authenticationKeyPath $key -authenticationKeyID $ASC_KEY_ID -authenticationKeyIssuerID $ASC_ISSUER_ID" >> "$GITHUB_ENV"
       # TestFlight takes a build number only once per version: the run number rises with every run.
+      # Signed as Apple Distribution from the start: left to itself the archive signs for development,
+      # and on a fresh runner that minted a new development certificate every run until the account
+      # hit its cap (ten in a day, 2026-09-30). The cloud-managed distribution certificate is reused.
       - name: Archive
         run: >-
           xcodebuild archive -project ios/WmpSpotify.xcodeproj -scheme WmpSpotify -configuration Release
           -destination 'generic/platform=iOS' -archivePath build/WmpSpotify.xcarchive
-          CURRENT_PROJECT_VERSION=${{ github.run_number }} $SIGN -quiet
+          CURRENT_PROJECT_VERSION=${{ github.run_number }} CODE_SIGN_IDENTITY="Apple Distribution" $SIGN -quiet
       # ExportOptions.plist has destination upload: exporting is the upload to App Store Connect.
       - name: Upload to TestFlight
         run: >-

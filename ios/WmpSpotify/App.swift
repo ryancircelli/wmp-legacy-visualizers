@@ -11,7 +11,6 @@ import WebKit
 @main
 struct WmpSpotifyApp: App {
     // For the app's lifetime: the broadcast extension connects to it whenever a broadcast starts.
-    private let server = AudioServer()
 
     init() {
         // .playback: the music keeps going with the screen locked, in the background
@@ -19,7 +18,7 @@ struct WmpSpotifyApp: App {
         try? AVAudioSession.sharedInstance().setCategory(.playback)
         try? AVAudioSession.sharedInstance().setActive(true)
         HostLog.shared.log("host: build \(Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "?")")
-        server.start()
+        AudioServer.shared.start()
     }
 
     var body: some Scene {
@@ -204,6 +203,9 @@ struct Player: View {
             // sent to the picker's own button, the widely used way to open it from code (ReplayKit
             // has no call for it). The user still taps Start Broadcast; iOS requires that tap.
             try? await Task.sleep(for: .seconds(2))
+            // A broadcast from before the app closed reconnects within that time (the extension
+            // tries every second): the sheet would only offer to stop it.
+            if AudioServer.shared.connected { HostLog.shared.log("broadcast: already running, no picker"); return }
             guard let picker = WebHolder.shared.picker else { return }
             HostLog.shared.log("broadcast: picker shown")
             for case let b as UIButton in picker.subviews { b.sendActions(for: .touchUpInside) }
@@ -315,9 +317,11 @@ struct WebView: UIViewRepresentable {
 // {"rate":n} as UTF-8 JSON, type 1 interleaved stereo int16 LE; all handed to Forwarder. The latest
 // connection wins. All state is on `queue`.
 final class AudioServer {
+    static let shared = AudioServer()
     private let queue = DispatchQueue(label: "audio-server")
     private var listener: NWListener?
     private var source: NWConnection?  // the extension's latest socket
+    private(set) var connected = false // an extension is on the socket (read from any thread, roughly)
 
     func start() {
         guard let path = groupPath("audio.sock") else {
@@ -354,6 +358,7 @@ final class AudioServer {
             switch state {
             case .ready:
                 HostLog.shared.log("audio: extension connected")
+                self.connected = true
                 self.receive(c)
             case .failed, .cancelled:
                 self.drop(c)
@@ -402,6 +407,7 @@ final class AudioServer {
 
     // Once per socket: the broadcast ended (or the extension died), so the page goes silent.
     private func drop(_ c: NWConnection) {
+        connected = false
         guard c === source else { return }
         source = nil
         c.cancel()
