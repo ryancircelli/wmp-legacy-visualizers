@@ -163,6 +163,9 @@ try { performance.setResourceTimingBufferSize(100000); } catch (e) {}
 var hobs = null; // our device id's first 35 hex digits, until the full 40 are known
 var names = {}; // device id -> the last real name a cluster gave it
 function emit(n, d) { window.dispatchEvent(new CustomEvent(n, { detail: d })); }
+// The web player's token to the app, for a librespot session on this account (the librespot branch's
+// "lstoken" message; an app without the handler throws here, swallowed). Never logged.
+function lsToken() { try { if (W.token) webkit.messageHandlers.lstoken.postMessage(W.token); } catch (e) {} }
 var API = /^https:\/\/(api|api-partner|[a-z0-9-]*spclient[a-z0-9.-]*)\.spotify\.com\//;
 function hdr(h, name) {
   if (!h) return null;
@@ -178,6 +181,7 @@ function seenHeader(url, name, v) {
     if (!m || m[1] === W.token) return; // the page's own calls repeat the same token: once each
     W.token = m[1]; W.at = Date.now();
     emit('wmp-spotify-token', { token: W.token });
+    lsToken();
   } else if (name === 'client-token' && v !== W.clientToken) {
     W.clientToken = v;
   }
@@ -267,7 +271,7 @@ function seenResponse(url, res) {
     res.clone().json().then(function (j) {
       W.clientId = j.clientId || null;
       W.expiresAt = j.accessTokenExpirationTimestampMs || 0;
-      if (j.accessToken && j.accessToken !== W.token) { W.token = j.accessToken; W.at = Date.now(); emit('wmp-spotify-token', { token: W.token }); }
+      if (j.accessToken && j.accessToken !== W.token) { W.token = j.accessToken; W.at = Date.now(); emit('wmp-spotify-token', { token: W.token }); lsToken(); }
       var li = j.isAnonymous === false;
       if (li !== W.loggedIn) { W.loggedIn = li; emit('wmp-spotify-auth', { loggedIn: li }); }
       if (j.isAnonymous === true) toLogin();
