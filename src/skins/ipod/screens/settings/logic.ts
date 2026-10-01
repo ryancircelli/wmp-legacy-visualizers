@@ -1,5 +1,6 @@
 // The pure logic of the Settings and Extras screens (logic.test.ts): the Custom colour's hue step,
-// the stopwatch's clock and laps, the world clock's time in a zone, the calendar's month grid.
+// the stopwatch's clock, laps and logs, the world clock's time in a zone, the calendar's month grid,
+// the alarm's next ring.
 
 /** The Custom colour page: one wheel detent turns the hue 5 degrees, wrapping round 0..355. */
 export const HUE_STEP = 5;
@@ -13,12 +14,14 @@ export interface Stopwatch {
   acc: number;
   /** the total at each lap mark, oldest first */
   laps: number[];
+  /** Date.now() when it first started (its log's name); null = never run */
+  began: number | null;
 }
-export const STOPWATCH0: Stopwatch = { start: null, acc: 0, laps: [] };
+export const STOPWATCH0: Stopwatch = { start: null, acc: 0, laps: [], began: null };
 
 export const elapsed = (w: Stopwatch, now: number): number => w.acc + (w.start == null ? 0 : now - w.start);
 export const startStop = (w: Stopwatch, now: number): Stopwatch =>
-  w.start == null ? { ...w, start: now } : { ...w, start: null, acc: elapsed(w, now) };
+  w.start == null ? { ...w, start: now, began: w.began ?? now } : { ...w, start: null, acc: elapsed(w, now) };
 export const markLap = (w: Stopwatch, now: number): Stopwatch => ({ ...w, laps: [...w.laps, elapsed(w, now)] });
 /** Each lap's own length, newest first, the lap still running first of all. */
 export function lapTimes(w: Stopwatch, now: number): number[] {
@@ -26,7 +29,26 @@ export function lapTimes(w: Stopwatch, now: number): number[] {
   return marks.map((m, i) => m - (i ? marks[i - 1]! : 0)).reverse();
 }
 
+/** A finished timer as Stopwatch's log keeps it: each lap's length, oldest first, the last one the
+ *  run after the last mark. */
+export interface StopwatchLog { began: number; total: number; laps: number[] }
+export const logOf = (w: Stopwatch, now: number): StopwatchLog | null =>
+  w.began == null ? null : { began: w.began, total: elapsed(w, now), laps: lapTimes(w, now).reverse() };
+/** a log's shortest, longest and average lap */
+export const lapStats = (laps: readonly number[]) =>
+  ({ shortest: Math.min(...laps), longest: Math.max(...laps), average: laps.reduce((a, b) => a + b, 0) / laps.length });
+
 const p2 = (n: number) => String(n).padStart(2, '0');
+/** what is left of the sleep timer: 14:05 */
+export const fmtLeft = (ms: number): string => { const s = Math.max(0, Math.ceil(ms / 1000)); return Math.floor(s / 60) + ':' + p2(s % 60); };
+
+/** ms from `now` to the next h:mm on this device's clock (tomorrow's once today's has passed) */
+export function msUntil(h: number, m: number, now: number): number {
+  const d = new Date(now);
+  d.setHours(h, m, 0, 0);
+  if (d.getTime() <= now) d.setDate(d.getDate() + 1);
+  return d.getTime() - now;
+}
 /** 1:02:03.45 past the hour, else 02:03.45 (the nano's hundredths) */
 export function fmtStopwatch(ms: number): string {
   const cs = Math.floor(ms / 10), s = Math.floor(cs / 100), m = Math.floor(s / 60), h = Math.floor(m / 60);

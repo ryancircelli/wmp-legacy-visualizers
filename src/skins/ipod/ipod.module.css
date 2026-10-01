@@ -1,60 +1,100 @@
-/* The iPod nano (5th generation) in CSS. Every look is a custom property on .body so the spec can
-   retune it without touching markup. Screen metrics are in nano pixels: the screen is 240 x 376 of
-   them and --unit is one, scaled to fit the phone (.device is the size container). */
+/* The iPod nano (5th generation) in CSS (docs/ipod-skin.md §1, §2). Every look is a custom property
+   on .body so it can be retuned without touching markup. Screen metrics are in nano pixels: the
+   screen is 240 x 376 of them and --unit is one, scaled to fit (.device is the size container). */
 
-.body {
-  /* the body colour (settings.ts bodyVars sets these three) */
-  --ipod-hue: 0;
-  --ipod-sat: 0%;
-  --ipod-light: 78%;
-  --ipod-metal: hsl(var(--ipod-hue) var(--ipod-sat) var(--ipod-light));
-  --ipod-grain: .16;                 /* the brushed noise's strength */
-  --ipod-font: "Myriad Set Pro", "Helvetica Neue", Helvetica, Arial, sans-serif;
-  /* the screen */
-  --ipod-screen-bg: #FFFFFF;
-  --ipod-ink: #000000;
-  --ipod-dim: #7A7A7A;
-  --ipod-title-bg: linear-gradient(#FDFDFD, #D9DCE0);
-  --ipod-title-edge: #9EA3A9;
-  --ipod-sel-bg: linear-gradient(#64AEF0, #2C76D4);
-  --ipod-sel-ink: #FFFFFF;
-  --ipod-bar-bg: linear-gradient(#D6D6D6, #F2F2F2);
-  --ipod-bar-fill: linear-gradient(#8CC3F6, #2F7AD8);
-  --ipod-battery: #3B3B3B;
-  --ipod-battery-charging: #42B649;
-  /* the wheel (data-wheel) */
-  --ipod-wheel-bg: #F4F4F4;
-  --ipod-wheel-ink: #B3B3B3;
-
+/* the page round the device: on a phone the aluminium fills it edge to edge (behind the notch and
+   the home indicator); on a wide window it is a phone-shaped body centred on a dark backdrop (§1.6) */
+.backdrop {
   position: absolute;
   inset: 0;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  background: #111111;
+}
+
+.body {
+  /* the aluminium: one hue knob (settings.ts bodyVars sets --h --s --l), everything else derives (§1.3) */
+  --h: 0;
+  --s: 0%;
+  --l: 66%;
+  --grain-alpha: .08;                /* the vertical brushing: 0 = polished */
+  --base: hsl(var(--h) var(--s) var(--l));
+  --spec: color-mix(in srgb, hsl(var(--h) var(--s) calc(var(--l) + 14%)), white 30%);
+  --hi: hsl(var(--h) var(--s) calc(var(--l) + 8%));
+  --mid: color-mix(in srgb, var(--base), black 12%);
+  --lo: color-mix(in srgb, var(--base), black 32%);
+  --edge: color-mix(in srgb, var(--base), black 55%);
+  --rim: color-mix(in srgb, var(--base), white 70%);
+  /* across the width the slab is a flattened cylinder lit from the left (the owner's orange nano):
+     a crisp bright rim, a dark inner edge, the highlight band near the left, then a soft falloff
+     through the mid tone to a darker right side, its inner edge and a dimmer rim */
+  --metal: linear-gradient(90deg,
+    var(--rim) 0, var(--rim) 1px, var(--edge) 3px, var(--lo) 2.5%, var(--base) 7%, var(--hi) 13%, var(--spec) 18%,
+    var(--hi) 24%, var(--base) 38%, var(--mid) 62%, var(--lo) 86%, var(--edge) calc(100% - 4px),
+    var(--hi) calc(100% - 1.5px), var(--hi) 100%);
+  --ipod-font: Helvetica, "Helvetica Neue", Arial, sans-serif;
+  /* the screen (screens read these names too) */
+  --ipod-screen-bg: #FFFFFF;
+  --ipod-ink: #000000;
+  --ipod-dim: #8E8E93;
+  --ipod-sel-bg: linear-gradient(180deg, #4EA0DC 0%, #4690D4 40%, #3F7FCD 70%, #336AC7 100%);
+  --ipod-sel-ink: #FFFFFF;
+  --ipod-value: #3E94E1;
+  --ipod-bar-bg: linear-gradient(#FFFFFF, #E8E8E8 55%, #C6C6C6);
+  --ipod-bar-fill: linear-gradient(#CEE4FF, #7A98CE 45%, #5181D6 55%, #6CA9E8);
+  /* the wheel (data-wheel): white ring, grey glyphs; black ring, light glyphs (§1.2, §1.5) */
+  --ipod-wheel-bg: radial-gradient(circle at 50% 38%, #FDFDFD, #EEEEEE 62%, #E1E1E1);
+  --ipod-wheel-ink: #8E8E93;
+
+  /* its width, which the margins are a fraction of */
+  --bw: 100vw;
+  position: relative;
+  width: var(--bw);
+  height: 100%;
+  /* the glass and the wheel keep clear of the safe area (Root sets --safe-*) plus 3 % of the width
+     at the sides and 8 px above and below */
+  padding: calc(var(--safe-top, 0px) + 8px) calc(var(--safe-right, 0px) + var(--bw) * .03)
+           calc(var(--safe-bottom, 0px) + 8px) calc(var(--safe-left, 0px) + var(--bw) * .03);
   overflow: hidden;
   user-select: none;
   -webkit-user-select: none;
   -webkit-touch-callout: none;
   -webkit-tap-highlight-color: transparent;
   font-family: var(--ipod-font);
-  background-color: var(--ipod-metal);
-  background-image:
-    linear-gradient(90deg, rgb(255 255 255 / .18), rgb(255 255 255 / 0) 24%, rgb(0 0 0 / 0) 76%, rgb(0 0 0 / .14)),
-    linear-gradient(180deg, rgb(255 255 255 / .12), rgb(255 255 255 / 0) 38%);
+  /* the cylinder, a soft reflection low on the right, and a tone change from top to bottom */
+  background:
+    radial-gradient(55% 30% at 85% 72%, rgb(255 255 255 / .12), transparent 70%),
+    linear-gradient(180deg, rgb(255 255 255 / .12), transparent 28%, transparent 62%, rgb(0 0 0 / .18)),
+    var(--metal);
+}
+@media (min-aspect-ratio: 3/4) {
+  .body {
+    --bw: min(100vw, 96vh * .46);
+    height: 96vh;
+    border-radius: 12% / 5.5%;
+  }
 }
 .body[data-wheel="black"] {
-  --ipod-wheel-bg: #1D1D1F;
-  --ipod-wheel-ink: #8E8E93;
+  --ipod-wheel-bg: radial-gradient(#2A2A2A, #121212);
+  --ipod-wheel-ink: #E6E6E6;
 }
-/* the brushed grain: horizontal streaks of fractal noise, over the colour */
+/* the fine grain, brushed vertically as the nano's (noise fast across, slow down the body), its
+   strength the one knob --grain-alpha. Grey noise under overlay, so the hue stays the knob's */
 .body::before {
   content: "";
   position: absolute;
   inset: 0;
   pointer-events: none;
-  opacity: var(--ipod-grain);
+  opacity: var(--grain-alpha);
   mix-blend-mode: overlay;
-  background-size: 320px 320px;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='320' height='320'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.004 0.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-size: 180px 180px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9 .012' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
 }
 
+/* the screen leads: its glass (12 units round the 240 x 376 LCD) spans the whole width inside the
+   margins. The wheel, cosmetic, is 55 % of that width, centred in the height left over with at least
+   10 px above and below; on a short phone it shrinks first, to 30 %, and only then the screen */
 .device {
   container-type: size;
   position: relative;
@@ -62,19 +102,25 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
-  /* resolved where used, against this container: the screen as wide as fits both ways */
-  --screen-w: min(80cqw, 36cqh);
-  --unit: calc(var(--screen-w) / 240);
+  /* resolved where used, against this container */
+  --unit: min(100cqw / 264, (100cqh - 30cqw - 20px) / 400);
+  --wheel-d: min(55cqw, 100cqh - var(--unit) * 400 - 20px);
 }
 
-/* the black glass round the screen, with its gloss */
+/* the glossy black glass round the LCD (§1.4), a little proud of the metal: a dark seam, a lip lit
+   from above and catching light below, the glare strong on the glass, a streak faint over the LCD */
 .bezel {
   position: relative;
-  padding: calc(var(--unit) * 10) calc(var(--unit) * 8);
-  border-radius: calc(var(--unit) * 8);
-  background: linear-gradient(160deg, #2A2A2C, #060606 42%);
-  box-shadow: 0 0 0 1px rgb(0 0 0 / .45), inset 0 1px 0 rgb(255 255 255 / .12);
+  flex: none;
+  padding: calc(var(--unit) * 12);
+  border-radius: calc(var(--unit) * 7);
+  background: linear-gradient(155deg, rgb(255 255 255 / .14) 0%, rgb(255 255 255 / .03) 36%, transparent 36.5%), #050505;
+  box-shadow:
+    0 0 0 1px rgb(0 0 0 / .55),
+    0 1.5px 0 1px rgb(255 255 255 / .3),
+    0 -1px 0 1px rgb(0 0 0 / .2),
+    inset 0 1px 0 rgb(255 255 255 / .22),
+    inset 0 0 0 1px rgb(255 255 255 / .06);
 }
 .bezel::after {
   content: "";
@@ -82,7 +128,9 @@
   inset: 0;
   border-radius: inherit;
   pointer-events: none;
-  background: linear-gradient(115deg, rgb(255 255 255 / .16), rgb(255 255 255 / 0) 46%);
+  background:
+    linear-gradient(112deg, transparent 16%, rgb(255 255 255 / .06) 21%, rgb(255 255 255 / .015) 29%, transparent 32%),
+    linear-gradient(155deg, rgb(255 255 255 / .05) 0%, transparent 36.5%);
 }
 
 .screen {
@@ -92,50 +140,103 @@
   overflow: hidden;
   display: flex;
   flex-direction: column;
-  --ipod-row-h: calc(var(--unit) * 26);
-  --ipod-split-rows: 6;              /* the main menu's rows above its preview pane */
+  /* a plain list shows 12 rows in its 356 (§2.2) */
+  --ipod-row-h: calc(var(--unit) * 356 / 12);
   /* the names some screens use for the same colours */
   --ipod-text: var(--ipod-ink);
-  --ipod-blue: #2C76D4;
+  --ipod-blue: var(--ipod-value);
   background: var(--ipod-screen-bg);
   color: var(--ipod-ink);
-  font-size: calc(var(--unit) * 15);
+  font-size: calc(var(--unit) * 18);
+  font-weight: 700;
   line-height: 1.2;
+  /* vertical pans scroll the lists; a horizontal swipe reaches Root (right = MENU) */
+  touch-action: pan-y;
+}
+/* asleep (hold Play): the LCD off */
+.screen[data-asleep]::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  background: #000000;
 }
 
+/* the status bar, 20 tall: light over menus, dark over Now Playing and the media pages (§2.2) */
 .status {
   flex: none;
   display: grid;
-  grid-template-columns: calc(var(--unit) * 44) minmax(0, 1fr) calc(var(--unit) * 44);
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   height: calc(var(--unit) * 20);
-  padding: 0 calc(var(--unit) * 5);
-  background: var(--ipod-title-bg);
-  border-bottom: 1px solid var(--ipod-title-edge);
-  font-size: calc(var(--unit) * 13);
-  font-weight: 600;
+  padding: 0 calc(var(--unit) * 4) 0 calc(var(--unit) * 10);
+  background: linear-gradient(#FBFBFB, #B2B2B2);
+  border-bottom: var(--unit) solid #7A7E81;
+  color: #000000;
+  font-size: calc(var(--unit) * 12);
+  font-weight: 700;
 }
+.status[data-dark] {
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  padding-left: calc(var(--unit) * 4);
+  background: linear-gradient(#4F4F4F, #474747);
+  border-bottom-color: #2E2E2E;
+  color: #FFFFFF;
+}
+.title { animation: fade .22s ease-out; }
+@keyframes fade { from { opacity: 0; } }
+.modes, .icons {
+  display: flex;
+  align-items: center;
+  gap: calc(var(--unit) * 4);
+}
+.icons { justify-content: flex-end; }
 .glyph {
-  width: calc(var(--unit) * 10);
+  flex: none;
+  width: calc(var(--unit) * 12);
   height: calc(var(--unit) * 9);
   fill: currentColor;
 }
+.playing, .paused {
+  flex: none;
+  width: calc(var(--unit) * 8);
+  height: calc(var(--unit) * 9);
+}
+.playing {
+  clip-path: polygon(0 0, 100% 50%, 0 100%);
+  background: linear-gradient(#67CAFF, #3A9BE0);
+}
+.paused { background: linear-gradient(90deg, #6D6D6D 35%, transparent 35% 65%, #6D6D6D 65%); }
+.status[data-dark] .playing { background: #FFFFFF; }
+.status[data-dark] .paused { background: linear-gradient(90deg, #FFFFFF 35%, transparent 35% 65%, #FFFFFF 65%); }
 .battery {
   position: relative;
   flex: none;
-  width: calc(var(--unit) * 20);
-  height: calc(var(--unit) * 10);
-  border: 1px solid currentColor;
+  width: calc(var(--unit) * 22);
+  height: calc(var(--unit) * 11);
+  margin-right: calc(var(--unit) * 2);
+  color: #3B3B3B;
+  border: var(--unit) solid currentColor;
   border-radius: calc(var(--unit) * 2);
+}
+.status[data-dark] .battery { color: #FFFFFF; }
+/* the terminal nub: 24 wide in all */
+.battery::before {
+  content: "";
+  position: absolute;
+  left: 100%;
+  top: 25%;
+  bottom: 25%;
+  width: calc(var(--unit) * 2);
+  background: currentColor;
 }
 .battery::after {
   content: "";
   position: absolute;
-  inset: 1px auto 1px 1px;
-  width: calc((100% - 2px) * var(--v, 1));
-  background: var(--ipod-battery);
+  inset: var(--unit) auto var(--unit) var(--unit);
+  width: calc((100% - var(--unit) * 2) * var(--v, 1));
+  background: #A2C871;
 }
-.battery[data-charging]::after { background: var(--ipod-battery-charging); }
 
 /* the stack: each screen fills it; the top one slides in (from the right pushed, the left popped) */
 .frames {
@@ -147,63 +248,109 @@
 .frame {
   position: absolute;
   inset: 0;
-  animation: slide .22s ease-out;
+  animation: slide .22s cubic-bezier(.2, .8, .2, 1);
 }
 @keyframes slide {
   from { transform: translateX(calc(var(--dir, 0) * 100%)); }
 }
 
+/* lists: Helvetica Bold 18, text at x 10, the chevron's right edge at x 233, values 9 from the right */
+.list {
+  position: relative;
+  overflow: hidden;
+}
+/* a list scrolls by touch too, with momentum; the indicator is ours (.thumb), not the browser's */
+.scroll {
+  height: 100%;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+}
+.scroll::-webkit-scrollbar { display: none; }
 .row {
   display: flex;
   align-items: center;
   gap: calc(var(--unit) * 6);
   height: var(--ipod-row-h);
-  padding: 0 calc(var(--unit) * 8);
+  padding: 0 calc(var(--unit) * 7) 0 calc(var(--unit) * 10);
   white-space: nowrap;
+  cursor: default;
 }
+.label {
+  flex: auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* the selected row's label marquees (ui.tsx), so it clips instead and its text can move */
+.row[data-sel] .label { text-overflow: clip; }
+.row[data-sel] .label > span { display: inline-block; }
 .row[data-sel] {
   background: var(--ipod-sel-bg);
   color: var(--ipod-sel-ink);
+  box-shadow: inset 0 var(--unit) #97C4E3, inset 0 calc(var(--unit) * -1) #1855A6;
 }
-.row[data-disabled] { color: var(--ipod-dim); }
+.row[data-disabled], .row[data-loading] { color: var(--ipod-dim); }
+.value {
+  flex: none;
+  margin-right: calc(var(--unit) * 2);
+  color: var(--ipod-value);
+  font-size: calc(var(--unit) * 14);
+}
+.row[data-sel] .value { color: var(--ipod-sel-ink); }
 .chevron {
   flex: none;
-  width: calc(var(--unit) * 6);
-  height: calc(var(--unit) * 10);
+  width: calc(var(--unit) * 7);
+  height: calc(var(--unit) * 11);
   fill: none;
   stroke: currentColor;
-  stroke-width: 2;
+  stroke-width: 2.4;
 }
-.empty {
-  color: var(--ipod-dim);
-  padding: calc(var(--unit) * 12);
+/* the scroll indicator when a list overflows (reconstructed, as the classic's) */
+.thumb {
+  position: absolute;
+  right: 0;
+  width: calc(var(--unit) * 4);
+  background: rgb(154 154 154 / .6);
+  pointer-events: none;
 }
-/* the split menu: whole rows above, the pane below */
+/* the main menu: 9 rows (276) over the 80-tall preview panel */
 .split {
   flex: none;
-  height: calc(var(--ipod-row-h) * var(--ipod-split-rows));
+  height: calc(var(--unit) * 276);
+  --ipod-row-h: calc(var(--unit) * 276 / 9);
 }
 .preview {
-  flex: auto;
-  min-height: 0;
+  flex: none;
+  display: flex;
+  height: calc(var(--unit) * 80);
   overflow: hidden;
-  border-top: 1px solid var(--ipod-title-edge);
   background: #000000;
 }
+.tile {
+  flex: none;
+  width: calc(var(--unit) * 80);
+  height: calc(var(--unit) * 80);
+  object-fit: cover;
+}
 .clock {
-  height: 100%;
-  display: grid;
-  place-items: center;
+  flex: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
   color: #FFFFFF;
-  font-size: calc(var(--unit) * 34);
-  font-weight: 300;
+  font-size: calc(var(--unit) * 32);
+  line-height: 1.1;
+}
+.clock > small {
+  font-size: calc(var(--unit) * 12);
 }
 
 .bar {
   position: relative;
-  height: calc(var(--unit) * 8);
-  overflow: hidden;
-  border-radius: calc(var(--unit) * 1);
+  height: calc(var(--unit) * 9);
+  border-radius: var(--unit);
   background: var(--ipod-bar-bg);
 }
 .bar::after {
@@ -211,73 +358,89 @@
   position: absolute;
   inset: 0 auto 0 0;
   width: calc(var(--v, 0) * 100%);
+  border-radius: inherit;
   background: var(--ipod-bar-fill);
 }
+/* seekable (onSeek): a finger-sized target round the thin bar */
+.bar[data-seek] { touch-action: none; cursor: pointer; }
+.bar[data-seek]::before {
+  content: "";
+  position: absolute;
+  inset: calc(var(--unit) * -12) 0;
+}
 
+/* hold-centre popup: 30-tall rows from the top over the screen dimmed to half (§2.2) */
 .popup {
   position: absolute;
   inset: 0;
   z-index: 1;
-  display: grid;
-  place-items: center;
-  background: rgb(0 0 0 / .35);
+  background: rgb(0 0 0 / .5);
 }
 .sheet {
-  width: 86%;
-  height: 60%;
+  display: flex;
+  flex-direction: column;
+  max-height: 100%;
   overflow: hidden;
-  border-radius: calc(var(--unit) * 6);
-  background: var(--ipod-screen-bg);
-  box-shadow: 0 calc(var(--unit) * 4) calc(var(--unit) * 14) rgb(0 0 0 / .5);
+  --ipod-row-h: calc(var(--unit) * 30);
 }
+.sheet .row {
+  justify-content: center;
+  background: rgb(80 80 80 / .94);
+  color: #FFFFFF;
+  font-size: calc(var(--unit) * 16);
+  border-top: var(--unit) solid #6A6A6A;
+  border-bottom: var(--unit) solid #3A3A3A;
+}
+.sheet .label { flex: 0 1 auto; }
+.sheet .row[data-sel] { background: linear-gradient(#4A9FE2, #3367CA); box-shadow: none; }
 
+/* the 12-spoke activity wheel, 16 tall */
 .spinner {
-  width: calc(var(--unit) * 24);
-  height: calc(var(--unit) * 24);
-  border-radius: 50%;
-  border: calc(var(--unit) * 3) solid rgb(0 0 0 / .15);
-  border-top-color: var(--ipod-ink);
-  animation: spin .8s linear infinite;
+  width: calc(var(--unit) * 16);
+  height: calc(var(--unit) * 16);
+  fill: currentColor;
+  animation: spin 1s steps(12) infinite;
 }
 @keyframes spin { to { transform: rotate(360deg); } }
 
-/* the click wheel; its zones are found by angle (ClickWheel.tsx zoneAt), the glyphs only show them */
+/* the click wheel (§1.5); its zones are found by angle (ClickWheel.tsx zoneAt), the glyphs only show them */
 .wheel {
   position: relative;
   flex: none;
-  width: calc(var(--screen-w) * .86);
+  width: var(--wheel-d);
   aspect-ratio: 1;
-  margin-top: calc(var(--unit) * 28);
+  margin: auto 0;
   border-radius: 50%;
   background: var(--ipod-wheel-bg);
   color: var(--ipod-wheel-ink);
-  box-shadow: inset 0 calc(var(--unit) * 1) calc(var(--unit) * 2) rgb(0 0 0 / .12);
+  box-shadow: inset 0 1px 1px #FFFFFF, inset 0 -1px 2px rgb(0 0 0 / .12), 0 0 0 1px rgb(0 0 0 / .08);
   touch-action: none;
   cursor: pointer;
 }
-.menu {
+.body[data-wheel="black"] .wheel { box-shadow: inset 0 1px 1px rgb(255 255 255 / .12), 0 0 0 1px rgb(0 0 0 / .3); }
+/* glyph centres 0.39 D from the wheel's centre: 11 % / 89 % of its box */
+.menu, .prev, .next, .play {
   position: absolute;
-  top: 9%;
-  left: 50%;
-  translate: -50% 0;
-  font-size: calc(var(--unit) * 15);
-  font-weight: 800;
-  letter-spacing: .04em;
-  line-height: 1;
-}
-.prev, .next, .play {
-  position: absolute;
-  width: 11%;
+  translate: -50% -50%;
   fill: currentColor;
 }
-.prev { left: 7%; top: 50%; translate: 0 -50%; }
-.next { right: 7%; top: 50%; translate: 0 -50%; }
-.play { bottom: 9%; left: 50%; translate: -50% 0; }
-/* the centre button: the body's own metal (HUB = .36 of the radius: inset 32%) */
+.menu {
+  left: 50%;
+  top: 11%;
+  font-size: calc(var(--wheel-d) * .072);
+  font-weight: 700;
+  letter-spacing: .02em;
+  line-height: 1;
+}
+.prev, .next { top: 50%; width: 10.7%; height: 4.7%; }
+.prev { left: 11%; }
+.next { left: 89%; }
+.play { left: 50%; top: 89%; width: 10%; height: 4.7%; }
+/* the centre button, 0.49 D: the body's own aluminium, lit from the upper left, sitting in the ring */
 .hub {
   position: absolute;
-  inset: 32%;
+  inset: 25.5%;
   border-radius: 50%;
-  background: var(--ipod-metal) linear-gradient(180deg, rgb(255 255 255 / .2), rgb(0 0 0 / .1));
-  box-shadow: 0 0 0 1px rgb(0 0 0 / .08), inset 0 1px 1px rgb(255 255 255 / .4);
+  background: radial-gradient(120% 95% at 32% 22%, var(--hi), var(--base) 45%, var(--mid) 70%, var(--lo) 100%);
+  box-shadow: inset 0 1px 2px rgb(0 0 0 / .35), 0 1px 0 rgb(255 255 255 / .5);
 }

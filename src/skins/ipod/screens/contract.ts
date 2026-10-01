@@ -99,8 +99,16 @@ export interface Screens {
   search(): ScreenEntry; coverFlow(): ScreenEntry;
   /** play all songs shuffled, then Now Playing */
   shuffleSongs(nav: Nav): void;
-  // group home/ (Media Guide shelves, radio; the nano's Videos / Photos / FM Radio / Voice Memos slots)
+  // group home/ (the nano's Videos / Photos / Radio / Voice Memos slots; docs/ipod-skin.md §4.2)
   videos(): ScreenEntry; photos(): ScreenEntry; fmRadio(): ScreenEntry; voiceMemos(): ScreenEntry;
-  // group settings/ (Settings and Extras)
+  /** Music > Genius Mixes: Spotify Home's shelves (the same screen videos() showed; §4.2) */
+  geniusMixes(): ScreenEntry;
+  // group lists/: Playlists' first row on the nano
+  /** On-The-Go: the queue, read-only until an add-to-queue command exists (§6 item 7) */
+  onTheGo(): ScreenEntry;
+  // group settings/ (Settings and Extras; the 5G's Extras: Alarms, Calendars, Clocks, Contacts,
+  // Fitness, Games, Notes, Screen Lock, Stopwatch, Voice Memos (§2.3))
   settings(): ScreenEntry; extras(): ScreenEntry;
+  /** Extras > Alarms: a sleep timer and an alarm that plays (§6 item 12) */
+  alarms(): ScreenEntry;
 }

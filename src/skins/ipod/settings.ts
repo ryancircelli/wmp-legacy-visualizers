@@ -1,6 +1,6 @@
 // The iPod skin's own options (screens/contract.ts IpodSettings), apart from the app's settings and
-// persisted in localStorage under 'ipod.settings'. The body colours are the nano 5G's nine, as HSL;
-// the spec retunes them here.
+// persisted in localStorage under 'ipod.settings'. The body colours are the nano 5G's nine, as HSL
+// (docs/ipod-skin.md §1.2: sampled from Apple's render, saturated to match photos).
 import type { CSSProperties } from 'react';
 import { useStore } from 'zustand';
 import { persist } from 'zustand/middleware';
@@ -11,8 +11,8 @@ export type { IpodSettings } from './screens/contract';
 type Preset = Exclude<IpodSettings['color'], 'custom'>;
 /** hue, saturation %, lightness % of each body colour */
 export const COLORS: Record<Preset, readonly [number, number, number]> = {
-  silver: [0, 0, 78], black: [0, 0, 16], purple: [275, 40, 45], blue: [212, 60, 48], green: [95, 45, 45],
-  yellow: [50, 85, 56], orange: [28, 85, 52], red: [355, 70, 44], pink: [330, 65, 62],
+  silver: [0, 0, 66], black: [0, 0, 19], purple: [268, 42, 44], blue: [196, 89, 44], green: [140, 70, 34],
+  yellow: [52, 89, 49], orange: [30, 85, 50], red: [357, 62, 47], pink: [331, 70, 62],
 };
 export const DEFAULTS: IpodSettings = { color: 'silver', hue: 0, sat: 0, clicker: true, wheel: 'white' };
 
@@ -40,8 +40,10 @@ export function useIpodSettings(): [IpodSettings, (patch: Partial<IpodSettings>)
 /** For what runs outside render (the wheel's clicker). */
 export const ipodSettings = () => store.getState();
 
-/** The body colour as the CSS variables the module's .body reads. 'custom' keeps a mid lightness. */
+/** The body colour as the one hue knob the module's .body reads (§1.3: --h --s --l; the highlight,
+ *  shadow and centre button derive from it). 'custom' is a hue at the spec's saturation and lightness
+ *  unless a saturation was set. */
 export function bodyVars(s: IpodSettings): CSSProperties {
-  const [h, sat, l] = s.color === 'custom' ? [s.hue, s.sat, 55] : COLORS[s.color];
-  return { '--ipod-hue': h, '--ipod-sat': sat + '%', '--ipod-light': l + '%' } as CSSProperties;
+  const [h, sat, l] = s.color === 'custom' ? [s.hue, s.sat || 85, 50] : COLORS[s.color];
+  return { '--h': h, '--s': sat + '%', '--l': l + '%' } as CSSProperties;
 }

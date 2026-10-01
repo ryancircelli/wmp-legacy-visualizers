@@ -99,7 +99,17 @@ export function createSpotifyAdapter(store: AppStore): { start(): void; stop(): 
       const h = host;
       sp.fallback = (cmd, pos) => h.mediaCmd(cmd, pos);
       actions.setCommands(spotifyCommands(sp, h));
+      // The phone's volume buttons (the iOS app reports them, CONTRACT v9): the slider follows,
+      // as a device's own volume does, without sending the level back out.
+      const buttons = () => {
+        const v = window.__wmpVolume;
+        if (typeof v !== 'number' || v < 0 || v > 100 || v === store.getState().settings.volume) return;
+        sp.fromDevice = true;
+        try { actions.setSettings({ volume: Math.round(v), muted: false }); } finally { sp.fromDevice = false; }
+      };
+      window.addEventListener('wmp-volume', buttons);
       offs = [
+        () => window.removeEventListener('wmp-volume', buttons),
         store.subscribe((s) => (s.settings.muted ? 0 : s.settings.volume), (v) => { if (!sp.fromDevice) C.volume(sp, v); }),
         transport().start(),   // first: the Tauri bridge sets up what observe reads
         observe(sp),

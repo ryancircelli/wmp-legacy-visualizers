@@ -1,18 +1,21 @@
 // The click wheel: a ring (MENU, ⏮, ⏭, ⏯) round a centre button, driven by pointer events, touch and
-// mouse alike. A press on the ring that turns more than half a detent is a scroll, not a press: it
-// ticks once per whole detent and fires no button. A press held HOLD_MS is the button's hold (Prev /
-// Next repeat every REPEAT_MS while held); a hold nothing takes stays a press. On a desktop the
-// keyboard stands in: arrows tick, Enter is the centre, Escape / Backspace MENU. Space is not here:
-// the page's own keyboard (App onKey) already plays / pauses with it.
+// mouse alike (docs/ipod-skin.md §3.2). A press on the ring that turns more than half a detent is a
+// scroll, not a press: it ticks once per whole detent and fires no button. A press held HOLD_MS
+// (SLEEP_MS for ⏯) is the button's hold, and its release is onHoldEnd; a hold nothing takes stays a
+// press. A right-click is a hold of that zone at once (§3.4). Feedback (§3.3): 'prepare' on touch, a
+// 'light' haptic per press, 'medium' when a hold fires. On a desktop the keyboard stands in: arrows
+// tick, Enter is the centre, Escape / Backspace MENU. Space is not here: the page's own keyboard (App
+// onKey) already plays / pauses with it.
 import { useEffect, useLayoutEffect, useRef, type PointerEvent as RPointerEvent } from 'react';
 import { cx } from '../../ui';
 import s from './ipod.module.css';
 
-/** degrees per tick (the spec will refine) */
+/** degrees per tick: 24 a turn as on the real wheel (Rockbox: 96 positions, 4 per item). A tuning
+ *  knob, 12 to 18; try 12 on a phone, where the wheel is about 1.5 times the real 27 mm */
 export const DETENT = 360 / 24;
-export const HOLD_MS = 600, REPEAT_MS = 200;
-/** the centre button's radius as a fraction of the wheel's */
-export const HUB = 0.36;
+export const HOLD_MS = 600, SLEEP_MS = 1500;
+/** the centre button's diameter as a fraction of the wheel's (measured: 13.3 of 27 mm) */
+export const HUB = 0.49;
 
 export type Zone = 'center' | 'menu' | 'next' | 'play' | 'prev';
 
@@ -34,6 +37,8 @@ export interface WheelProps {
   /** holds: returning false says nothing took it, and the press stays a press */
   onHoldCenter?(): boolean | void; onHoldMenu?(): boolean | void; onHoldPrev?(): boolean | void;
   onHoldNext?(): boolean | void; onHoldPlay?(): boolean | void;
+  /** a taken hold let go (the scan's release) */
+  onHoldEnd?(zone: Zone): void;
   detent?: number;
   className?: string;
 }
@@ -53,21 +58,23 @@ export function ClickWheel(props: WheelProps) {
   const p = useRef(props), press = useRef<Press | null>(null);
   useLayoutEffect(() => { p.current = props; });
 
+  const hold = (g: Press) => {
+    g.held = p.current[HOLD[g.zone]]?.() !== false;
+    if (g.held) window.alchemyHaptic?.('medium');
+  };
+
   const down = (e: RPointerEvent<HTMLDivElement>) => {
-    if (press.current || (e.pointerType === 'mouse' && e.button !== 0)) return;
+    const right = e.pointerType === 'mouse' && e.button === 2;
+    if (press.current || (e.pointerType === 'mouse' && e.button !== 0 && !right)) return;
     const b = e.currentTarget.getBoundingClientRect(), r = b.width / 2, cx = b.left + r, cy = b.top + b.height / 2;
     const x = e.clientX - cx, y = e.clientY - cy, a = (Math.atan2(y, x) * 180) / Math.PI, zone = zoneAt(x, y, r);
     e.currentTarget.setPointerCapture?.(e.pointerId);
     const g: Press = { id: e.pointerId, zone, cx, cy, r, start: a, anchor: a, turned: false, held: false, timer: 0 };
     press.current = g;
     window.alchemyHaptic?.('prepare');
-    if (p.current[HOLD[zone]]) {
-      g.timer = window.setTimeout(() => {
-        g.held = p.current[HOLD[zone]]?.() !== false;
-        // clearTimeout clears an interval too (one timer list)
-        if (g.held && (zone === 'prev' || zone === 'next')) g.timer = window.setInterval(() => p.current[HOLD[zone]]?.(), REPEAT_MS);
-      }, HOLD_MS);
-    }
+    // a right-click is the hold, now; taken or not it is never a tap
+    if (right) { g.turned = true; hold(g); return; }
+    if (p.current[HOLD[zone]]) g.timer = window.setTimeout(() => hold(g), zone === 'play' ? SLEEP_MS : HOLD_MS);
   };
 
   const move = (e: RPointerEvent<HTMLDivElement>) => {
@@ -89,7 +96,8 @@ export function ClickWheel(props: WheelProps) {
     if (!g || e.pointerId !== g.id) return;
     press.current = null;
     clearTimeout(g.timer);
-    if (e.type === 'pointerup' && !g.turned && !g.held) p.current[TAP[g.zone]]();
+    if (g.held) p.current.onHoldEnd?.(g.zone);
+    else if (e.type === 'pointerup' && !g.turned) { window.alchemyHaptic?.('light'); p.current[TAP[g.zone]](); }
   };
 
   useEffect(() => {
@@ -101,8 +109,13 @@ export function ClickWheel(props: WheelProps) {
     };
     // capture on window: under Spotify the page stops keys before they bubble back up (App wirePage)
     window.addEventListener('keydown', key, true);
-    const held = press;
-    return () => { window.removeEventListener('keydown', key, true); clearTimeout(held.current?.timer); };
+    const held = press, cur = p;
+    return () => {
+      window.removeEventListener('keydown', key, true);
+      const g = held.current;
+      clearTimeout(g?.timer);
+      if (g?.held) cur.current.onHoldEnd?.(g.zone);
+    };
   }, []);
 
   return (
@@ -110,9 +123,9 @@ export function ClickWheel(props: WheelProps) {
          onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up} onLostPointerCapture={up}
          onContextMenu={(e) => e.preventDefault()}>
       <span className={s.menu}>MENU</span>
-      <svg className={s.prev} viewBox="0 0 20 10" aria-hidden="true"><path d="M1 0h2v10H1zM11 0v10L3 5zM19 0v10l-8-5z" /></svg>
-      <svg className={s.next} viewBox="0 0 20 10" aria-hidden="true"><path d="M17 0h2v10h-2zM9 0v10l8-5zM1 0v10l8-5z" /></svg>
-      <svg className={s.play} viewBox="0 0 20 10" aria-hidden="true"><path d="M0 0v10l8-5zM11 0h3v10h-3zM16 0h3v10h-3z" /></svg>
+      <svg className={s.prev} viewBox="0 0 23 10" preserveAspectRatio="none" aria-hidden="true"><path d="M0 0h2v10H0zM12.5 0v10L2 5zM23 0v10L12.5 5z" /></svg>
+      <svg className={s.next} viewBox="0 0 23 10" preserveAspectRatio="none" aria-hidden="true"><path d="M21 0h2v10h-2zM10.5 0v10L21 5zM0 0v10l10.5-5z" /></svg>
+      <svg className={s.play} viewBox="0 0 21 10" preserveAspectRatio="none" aria-hidden="true"><path d="M0 0v10l8-5zM12 0h3v10h-3zM17 0h3v10h-3z" /></svg>
       <div className={s.hub} />
     </div>
   );

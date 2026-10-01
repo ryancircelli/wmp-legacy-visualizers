@@ -1,136 +1,189 @@
-// Settings: the nano 5G's menu, each value at the right of its row as the real one draws it (a row
-// that cycles in place, as Shuffle does, changes on centre without leaving), with this player's own
-// rows after Language: Color, Wheel, Skin, Output, Appearance, Updates, Support, Log Out. Legal and
-// Reset Settings close it, as on the nano. The nano's Audiobooks speed and Sound Check have nothing
-// to drive here, so they are left out; EQ stays, Off, saying why.
+// Settings: the nano 5G's tree in its order and words (docs/ipod-skin.md §2.3: About, Shuffle,
+// Repeat, General, Playback, Date & Time, Legal, Reset Settings), less what has no meaning on Spotify
+// (§4.4: Radio Regions, Language, Font Size, Rotate, Sort Contacts, Spoken Menus, Sound Check, EQ,
+// Audio Crossfade, Audiobooks, Mono Audio), then this player's own rows (§4.4): Play On, Lyrics,
+// Karaoke, Color, Click Wheel, Skin, Appearance, Check for Updates, Support, Log Out. A value shows
+// at its row's right; a value list checks the current choice; a toggle flips in place (§2.4).
 import { useEffect, useState, type CSSProperties } from 'react';
 import { LIKED, type RepeatMode, type UpdateCheck } from '../../../../model';
-import { appDownload, LINKS, openLink, restartApp, useApp, useCollection, useDevices, useShell } from '../../../../ui';
+import { appDownload, isAlbum, LINKS, openLink, restartApp, useApp, useCollection, useDevices, useLibraryList, useShell } from '../../../../ui';
 import { useHostGlobal } from '../../host';
 import { COLORS } from '../../settings';
 import { MenuScreen, Spinner, useIpodSettings, useNav, useWheel } from '../../ui';
 import type { IpodSettings, MenuItem, ScreenEntry } from '../contract';
 import { cityOf, fmtClock, stepHue, zoneTime } from './logic';
-import { BarPage, check, confirm, DIM, menu, onOff, page, Row, TEXT, TextPage, u, useNow } from './parts';
-import { CLOCK0, MAIN_MENU, MUSIC_MENU, resetPrefs, setMenuItem, useAppearance, useMenuVisibility, usePref, useVolumeLimit, useVolumeLimitPref } from './prefs';
+import { BarPage, check, confirm, DIM, menu, onOff, page, Row, Sun, TEXT, TextPage, u, useNow } from './parts';
+import {
+  CLOCK0, MAIN_MENU, MUSIC_MENU, resetMenu, resetPrefs, setMenuItem, useAppearance, useDisplay, useMenuVisibility, usePref, useShake, useVolumeLimitPref,
+} from './prefs';
 
 declare const __PAGE_BUILD__: string | undefined;
 const BUILD = typeof __PAGE_BUILD__ === 'string' ? __PAGE_BUILD__ : 'dev';
 /** the chrome's defaults (src/skins/ipod/settings.ts), for Reset Settings */
 const IPOD0: IpodSettings = { color: 'silver', hue: 0, sat: 0, clicker: true, wheel: 'white' };
 
-const REPEAT: Record<RepeatMode, string> = { off: 'Off', track: 'One', context: 'All' };
-const NEXT_REPEAT: Record<RepeatMode, RepeatMode> = { off: 'track', track: 'context', context: 'off' };
+const REPEAT: [RepeatMode, string][] = [['off', 'Off'], ['track', 'One'], ['context', 'All']];
 const FILL: CSSProperties = { display: 'flex', flexDirection: 'column', height: '100%', color: TEXT };
 const GROW: CSSProperties = { flex: 1, minHeight: 0 };
+const to = (nav: ReturnType<typeof useNav>, e: ScreenEntry) => () => nav.push(e);
 
 function SettingsMenu() {
   const nav = useNav(), sh = useShell(), [ip, patch] = useIpodSettings();
-  const st = useApp((s) => ({ shuffle: s.playback.shuffle, repeat: s.playback.repeat, canLogout: s.auth.canLogout }));
-  const c = () => sh.store.getState().commands, w = window;
-  const go = (e: ScreenEntry) => () => nav.push(e);
+  const st = useApp((s) => ({ shuffle: s.playback.shuffle, repeat: s.playback.repeat, canLogout: s.auth.canLogout,
+                              lyrics: s.settings.lyrics, karaoke: s.settings.karaoke }));
+  const a = () => sh.store.getState().actions, c = () => sh.store.getState().commands;
   const items: (MenuItem | false)[] = [
-    { id: 'about', label: 'About', chevron: true, onSelect: go(page('settings/about', 'About', About)) },
-    { id: 'shuffle', label: 'Shuffle', right: st.shuffle ? 'Songs' : 'Off', onSelect: () => c().toggleShuffle() },
-    { id: 'repeat', label: 'Repeat', right: REPEAT[st.repeat], onSelect: () => c().setRepeat(NEXT_REPEAT[st.repeat]) },
-    { id: 'main', label: 'Main Menu', chevron: true, onSelect: go(page('settings/main', 'Main Menu', MainMenu)) },
-    { id: 'music', label: 'Music Menu', chevron: true, onSelect: go(page('settings/music', 'Music Menu', MusicMenu)) },
-    { id: 'volume', label: 'Volume Limit', chevron: true, onSelect: go(page('settings/volume', 'Volume Limit', VolumeLimit)) },
-    !!w.alchemyBrightness && { id: 'brightness', label: 'Brightness', chevron: true, onSelect: go(page('settings/brightness', 'Brightness', Brightness)) },
-    { id: 'eq', label: 'EQ', right: 'Off', chevron: true, onSelect: go(page('settings/eq', 'EQ', Eq)) },
-    { id: 'clicker', label: 'Clicker', right: onOff(ip.clicker), onSelect: () => patch({ clicker: !ip.clicker }) },
-    { id: 'clock', label: 'Date & Time', chevron: true, onSelect: go(page('settings/clock', 'Date & Time', DateTime)) },
-    { id: 'language', label: 'Language', chevron: true, onSelect: go(menu('settings/language', 'Language', () => LANGS.map((l, i) => ({ id: l, label: l, right: check(!i), disabled: !!i })))) },
-    { id: 'color', label: 'Color', right: <Swatch bg={swatch(ip)} />, chevron: true, onSelect: go(page('settings/color', 'Color', Color)) },
-    { id: 'wheel', label: 'Wheel', right: ip.wheel === 'black' ? 'Black' : 'White', onSelect: () => patch({ wheel: ip.wheel === 'black' ? 'white' : 'black' }) },
-    { id: 'skin', label: 'Skin', chevron: true, onSelect: go(menu('settings/skin', 'Skin', () => [
-      { id: 'wmp9', label: 'Windows Media Player 9', onSelect: () => sh.store.getState().actions.setSettings({ skin: 'wmp9' }) },
-      { id: 'ipod', label: 'iPod nano', right: '✓' }])) },
-    { id: 'output', label: 'Output', chevron: true, onSelect: go(page('settings/output', 'Output', Output)) },
-    !!w.alchemyAppearance && { id: 'appearance', label: 'Appearance', chevron: true, onSelect: go(page('settings/appearance', 'Appearance', Appearance)) },
-    { id: 'updates', label: 'Updates', chevron: true, onSelect: go(page('settings/updates', 'Updates', Updates)) },
-    { id: 'support', label: 'Support', chevron: true, onSelect: go(menu('settings/support', 'Support', () => [
+    { id: 'about', label: 'About', chevron: true, onSelect: to(nav, page('settings/about', 'About', About)) },
+    { id: 'shuffle', label: 'Shuffle', right: st.shuffle ? 'Songs' : 'Off', chevron: true, onSelect: to(nav, page('settings/shuffle', 'Shuffle', Shuffle)) },
+    { id: 'repeat', label: 'Repeat', right: REPEAT.find(([m]) => m === st.repeat)?.[1], chevron: true, onSelect: to(nav, page('settings/repeat', 'Repeat', Repeat)) },
+    { id: 'general', label: 'General', chevron: true, onSelect: to(nav, page('settings/general', 'General', General)) },
+    { id: 'playback', label: 'Playback', chevron: true, onSelect: to(nav, page('settings/playback', 'Playback', Playback)) },
+    { id: 'clock', label: 'Date & Time', chevron: true, onSelect: to(nav, page('settings/clock', 'Date & Time', DateTime)) },
+    { id: 'legal', label: 'Legal', chevron: true, onSelect: to(nav, page('settings/legal', 'Legal', Legal)) },
+    { id: 'reset', label: 'Reset Settings', chevron: true,
+      onSelect: to(nav, confirm('settings/reset', 'Reset Settings', 'Reset', (n) => { resetPrefs(); patch(IPOD0); n.pop(); })) },
+    // this player's
+    { id: 'playon', label: 'Play On', chevron: true, onSelect: to(nav, page('settings/playon', 'Play On', PlayOn)) },
+    { id: 'lyrics', label: 'Lyrics', right: onOff(st.lyrics), onSelect: () => a().setLyricsEnabled(!st.lyrics) },
+    { id: 'karaoke', label: 'Karaoke', right: onOff(st.karaoke), onSelect: () => a().setKaraoke(!st.karaoke) },
+    { id: 'color', label: 'Color', right: <Swatch bg={swatch(ip)} />, chevron: true, onSelect: to(nav, page('settings/color', 'Color', Color)) },
+    { id: 'wheel', label: 'Click Wheel', right: ip.wheel === 'black' ? 'Black' : 'White', onSelect: () => patch({ wheel: ip.wheel === 'black' ? 'white' : 'black' }) },
+    { id: 'skin', label: 'Skin', right: 'iPod', chevron: true, onSelect: to(nav, menu('settings/skin', 'Skin', () => [
+      { id: 'ipod', label: 'iPod', right: '✓' },
+      { id: 'wmp9', label: 'Windows Media Player 9', onSelect: () => a().setSettings({ skin: 'wmp9' }) }])) },
+    !!window.alchemyAppearance && { id: 'appearance', label: 'Appearance', chevron: true, onSelect: to(nav, page('settings/appearance', 'Appearance', Appearance)) },
+    { id: 'updates', label: 'Check for Updates', chevron: true, onSelect: to(nav, page('settings/updates', 'Check for Updates', Updates)) },
+    { id: 'support', label: 'Support', chevron: true, onSelect: to(nav, menu('settings/support', 'Support', () => [
       { id: 'repo', label: 'Source Code', onSelect: () => openLink(LINKS.repo) },
       { id: 'issues', label: 'Report a Problem', onSelect: () => openLink(LINKS.repo + '/issues') }])) },
     st.canLogout && { id: 'logout', label: 'Log Out', chevron: true,
-                      onSelect: go(confirm('settings/logout', 'Log Out', 'Log Out', (n) => { n.home(); c().logout(); })) },
-    { id: 'legal', label: 'Legal', chevron: true, onSelect: go(page('settings/legal', 'Legal', Legal)) },
-    { id: 'reset', label: 'Reset Settings', chevron: true,
-      onSelect: go(confirm('settings/reset', 'Reset Settings', 'Reset', (n) => { resetPrefs(); patch(IPOD0); n.pop(); })) },
+                      onSelect: to(nav, confirm('settings/logout', 'Log Out', 'Log Out', (n) => { n.home(); c().logout(); })) },
   ];
   return <MenuScreen items={items.filter((x): x is MenuItem => !!x)} />;
 }
 
-/** The nano's About: the player's name, then its numbers (the iOS app's, when it reports them). */
+/** The nano's About [UG p.12]: center cycles its screens: the player and its counts, the versions,
+ *  the device it plays on. */
 function About() {
   const spotify = useApp((s) => s.auth.engine === 'spotify'), host = useHostGlobal('__wmpHost', 'wmp-host');
-  const liked = useCollection(spotify ? LIKED : null);
+  const liked = useCollection(spotify ? LIKED : null), lib = useLibraryList(), [at, setAt] = useState(0);
+  const device = useApp((s) => s.devices.list.find((d) => d.active)?.name ?? '');
   useEffect(() => { window.alchemyHost?.(); }, []);
+  useWheel({ onCenter: () => setAt((at + 1) % 3) });
+  const albums = lib.items.filter((x) => isAlbum(x.uri)).length;
   return (
     <TextPage>
-      <div style={{ fontWeight: 'bold', fontSize: u(17), textAlign: 'center', marginBottom: u(8) }}>{spotify ? 'WMP Spotify' : 'WMP Legacy Visualizers'}</div>
-      {liked.loaded && <Row label="Songs" value={liked.total.toLocaleString()} />}
-      <Row label="Version" value={host?.version ?? BUILD} />
-      {host && <><Row label="Build" value={host.build} /><Row label="Page" value={BUILD} />
-                 <Row label="iOS" value={host.ios} /><Row label="Model" value={host.model} /></>}
+      {at === 0 && <>
+        <div style={{ fontWeight: 'bold', fontSize: u(28), textAlign: 'center' }}>iPod</div>
+        <div style={{ color: DIM, fontSize: u(12), textAlign: 'center', marginBottom: u(10) }}>{spotify ? 'WMP Spotify' : 'WMP Legacy Visualizers'}</div>
+        {liked.loaded && <Row label="Songs" value={liked.total.toLocaleString()} />}
+        {!lib.loading && <><Row label="Playlists" value={(lib.items.length - albums).toLocaleString()} /><Row label="Albums" value={albums.toLocaleString()} /></>}
+      </>}
+      {at === 1 && <>
+        <Row label="Version" value={host?.version ?? BUILD} />
+        {host && <><Row label="Build" value={host.build} /><Row label="Page" value={BUILD} />
+                   <Row label="iOS" value={host.ios} /><Row label="Model" value={host.model} /></>}
+      </>}
+      {at === 2 && <Row label="Playing On" value={device || '—'} />}
     </TextPage>
   );
 }
 
-function Toggles({ which }: { which: 'main' | 'music' }) {
-  const vis = useMenuVisibility()[which];
-  return <MenuScreen items={(which === 'main' ? MAIN_MENU : MUSIC_MENU).map(([id, label]) => ({
-    id, label, right: onOff(vis[id] !== false), onSelect: () => setMenuItem(which, id, vis[id] === false) }))} />;
-}
-const MainMenu = () => <Toggles which="main" />;
-const MusicMenu = () => <Toggles which="music" />;
-
-function VolumeLimit() {
-  const [limit, set] = useVolumeLimitPref();
-  useVolumeLimit();
-  return <BarPage value={limit / 100} caption={limit < 100 ? 'Limit ' + limit + '%' : 'No Limit'}
-                  onTick={(d) => set(Math.max(0, Math.min(100, limit + d * 2)))} />;
+/** Shuffle: Off / Songs (Spotify has no album shuffle; §4.4). */
+function Shuffle() {
+  const sh = useShell(), on = useApp((s) => s.playback.shuffle);
+  return <MenuScreen items={([['off', 'Off', false], ['songs', 'Songs', true]] as const).map(([id, label, v]) => ({
+    id, label, right: check(on === v), onSelect: () => { if (on !== v) sh.store.getState().commands.toggleShuffle(); } }))} />;
 }
 
+function Repeat() {
+  const sh = useShell(), mode = useApp((s) => s.playback.repeat);
+  return <MenuScreen items={REPEAT.map(([m, label]) => ({ id: m, label, right: check(mode === m), onSelect: () => sh.store.getState().commands.setRepeat(m) }))} />;
+}
+
+// ---- General -----------------------------------------------------------------------------------------
+const BACKLIGHT = [2, 5, 10, 15, 20, 30, 0];
+const seconds = (n: number) => (n ? n + ' Seconds' : 'Always On');
+
+function General() {
+  const nav = useNav(), [ip, patch] = useIpodSettings(), [d] = useDisplay();
+  return <MenuScreen items={[
+    { id: 'main', label: 'Main Menu', chevron: true, onSelect: to(nav, page('settings/main', 'Main Menu', MainMenu)) },
+    { id: 'music', label: 'Music Menu', chevron: true, onSelect: to(nav, page('settings/music', 'Music Menu', MusicMenu)) },
+    { id: 'backlight', label: 'Backlight', right: seconds(d.backlight), chevron: true, onSelect: to(nav, page('settings/backlight', 'Backlight', Backlight)) },
+    { id: 'brightness', label: 'Brightness', chevron: true, onSelect: to(nav, page('settings/brightness', 'Brightness', Brightness)) },
+    { id: 'clicker', label: 'Clicker', right: onOff(ip.clicker), onSelect: () => patch({ clicker: !ip.clicker }) },
+  ]} />;
+}
+
+/** Main Menu and Music Menu: a checklist of the rows (✓ shows it), then Preview Panel / Reset Menu. */
+function MainMenu() {
+  const vis = useMenuVisibility().main;
+  return <MenuScreen items={[
+    ...MAIN_MENU.map(([id, label]) => ({ id, label, right: check(vis[id] !== false), onSelect: () => setMenuItem('main', id, vis[id] === false) })),
+    { id: 'previewpanel', label: 'Preview Panel', right: onOff(vis.previewpanel !== false), onSelect: () => setMenuItem('main', 'previewpanel', vis.previewpanel === false) },
+  ]} />;
+}
+function MusicMenu() {
+  const vis = useMenuVisibility().music;
+  return <MenuScreen items={[
+    ...MUSIC_MENU.map(([id, label]) => ({ id, label, right: check(vis[id] !== false), onSelect: () => setMenuItem('music', id, vis[id] === false) })),
+    { id: 'reset', label: 'Reset Menu', onSelect: () => resetMenu('music') },
+  ]} />;
+}
+
+function Backlight() {
+  const [d, set] = useDisplay();
+  return <MenuScreen items={BACKLIGHT.map((n) => ({ id: String(n), label: seconds(n), right: check(d.backlight === n), onSelect: () => set({ ...d, backlight: n }) }))} />;
+}
+
+/** The phone's own brightness on the iPhone; elsewhere the LCD's (0.2 at the least, so it stays readable). */
 function Brightness() {
-  const host = useHostGlobal('__wmpBrightness', 'wmp-brightness'), [mine, setMine] = useState<number | null>(null);
+  const host = useHostGlobal('__wmpBrightness', 'wmp-brightness'), [mine, setMine] = useState<number | null>(null), [d, set] = useDisplay();
+  const phone = !!window.alchemyBrightness;
   useEffect(() => { window.alchemyBrightness?.(); }, []);
-  const v = mine ?? host ?? 0.5;
-  return <BarPage value={v} caption="Brightness" onTick={(d) => {
-    const x = Math.max(0, Math.min(1, Math.round(v * 20 + d) / 20));
-    setMine(x);
-    window.alchemyBrightness?.(x);
+  const v = phone ? mine ?? host ?? 0.5 : d.brightness;
+  return <BarPage value={v} caption="Brightness" lo={<Sun n={9} />} hi={<Sun n={14} />} onTick={(dir) => {
+    const x = Math.max(phone ? 0 : 0.2, Math.min(1, Math.round(v * 20 + dir) / 20));
+    if (x === v) return false;
+    if (phone) { setMine(x); window.alchemyBrightness?.(x); } else set({ ...d, brightness: x });
   }} />;
 }
 
-const EQ = ['Off', 'Acoustic', 'Bass Booster', 'Bass Reducer', 'Classical', 'Dance', 'Deep', 'Electronic', 'Flat', 'Hip Hop', 'Jazz',
-  'Latin', 'Loudness', 'Lounge', 'Piano', 'Pop', 'R&B', 'Rock', 'Small Speakers', 'Spoken Word', 'Treble Booster', 'Treble Reducer', 'Vocal Booster'];
-const Eq = () => (
-  <div style={FILL}>
-    <div style={GROW}><MenuScreen items={EQ.map((l, i) => ({ id: l, label: l, right: check(!i), disabled: !!i }))} /></div>
-    <p style={{ margin: 0, padding: u(6), fontSize: u(11), color: DIM, textAlign: 'center' }}>Spotify's web player has no equalizer.</p>
-  </div>
-);
-
-function DateTime() {
-  const [p, set] = usePref('ipod.clock', CLOCK0), now = useNow(1000), t = zoneTime(new Date(now), '');
-  return (
-    <div style={FILL}>
-      <div style={{ textAlign: 'center', padding: u(8) }}>
-        <div style={{ fontSize: u(26), fontWeight: 'bold' }}>{fmtClock(t.h, t.m, p.twentyFourHour)}</div>
-        <div style={{ fontSize: u(12), color: DIM }}>{new Date(now).toLocaleDateString([], { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</div>
-      </div>
-      <div style={GROW}><MenuScreen items={[
-        { id: 'h24', label: '24 Hour Clock', right: onOff(p.twentyFourHour), onSelect: () => set({ ...p, twentyFourHour: !p.twentyFourHour }) },
-        { id: 'title', label: 'Time in Title', right: onOff(p.timeInTitle), onSelect: () => set({ ...p, timeInTitle: !p.timeInTitle }) },
-        { id: 'zone', label: 'Time Zone', right: cityOf(''), disabled: true },
-      ]} /></div>
-    </div>
-  );
+// ---- Playback ----------------------------------------------------------------------------------------
+function Playback() {
+  const nav = useNav(), [shake, setShake] = useShake(), [d, set] = useDisplay(), [limit] = useVolumeLimitPref();
+  const items: (MenuItem | false)[] = [
+    // the iPhone's shake; nothing else reports one
+    !!window.alchemyHaptic && { id: 'shake', label: 'Shake', right: shake ? 'Shuffle' : 'Off', onSelect: () => setShake(!shake) },
+    { id: 'volume', label: 'Volume Limit', right: limit < 100 ? limit + '%' : 'Off', chevron: true, onSelect: to(nav, page('settings/volume', 'Volume Limit', VolumeLimit)) },
+    { id: 'energy', label: 'Energy Saver', right: onOff(d.energySaver), onSelect: () => set({ ...d, energySaver: !d.energySaver }) },
+  ];
+  return <MenuScreen items={items.filter((x): x is MenuItem => !!x)} />;
 }
 
-const LANGS = ['English', 'Dansk', 'Deutsch', 'Español', 'Français', 'Italiano', 'Nederlands', 'Norsk', 'Polski', 'Português', 'Suomi',
-  'Svenska', 'Русский', '日本語', '简体中文', '繁體中文', '한국어'];
+/** Root's useSettingsEffects holds the volume under it everywhere. */
+function VolumeLimit() {
+  const [limit, set] = useVolumeLimitPref();
+  return <BarPage value={limit / 100} caption={limit < 100 ? 'Limit ' + limit + '%' : 'No Limit'} onTick={(d) => {
+    const x = Math.max(0, Math.min(100, limit + d * 2));
+    if (x === limit) return false;
+    set(x);
+  }} />;
+}
+
+// ---- Date & Time ---------------------------------------------------------------------------------------
+/** Date, Time and Time Zone are this device's; the two toggles are the iPod's. */
+function DateTime() {
+  const [p, set] = usePref('ipod.clock', CLOCK0), now = new Date(useNow(1000)), t = zoneTime(now, '');
+  return <MenuScreen items={[
+    { id: 'date', label: 'Date', right: now.toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' }) },
+    { id: 'time', label: 'Time', right: fmtClock(t.h, t.m, p.twentyFourHour) },
+    { id: 'zone', label: 'Time Zone', right: cityOf('') },
+    { id: 'h24', label: '24 Hour Clock', right: onOff(p.twentyFourHour), onSelect: () => set({ ...p, twentyFourHour: !p.twentyFourHour }) },
+    { id: 'title', label: 'Time in Title', right: onOff(p.timeInTitle), onSelect: () => set({ ...p, timeInTitle: !p.timeInTitle }) },
+  ]} />;
+}
 
 const Legal = () => (
   <TextPage>
@@ -141,11 +194,12 @@ const Legal = () => (
 );
 
 // ---- Color --------------------------------------------------------------------------------------
+/** the nine 5G colours in Apple's order (§1.2), then Custom */
 const COLOR_ROWS: readonly (readonly [IpodSettings['color'], string])[] = [['silver', 'Silver'], ['black', 'Black'], ['purple', 'Purple'],
-  ['blue', 'Blue'], ['green', 'Green'], ['yellow', 'Yellow'], ['orange', 'Orange'], ['red', 'Red'], ['pink', 'Pink'], ['custom', 'Custom']];
-/** a body colour as CSS; Custom with no saturation yet previews at 60% */
+  ['blue', 'Blue'], ['green', 'Green'], ['yellow', 'Yellow'], ['orange', 'Orange'], ['pink', 'Pink'], ['red', '(PRODUCT) RED'], ['custom', 'Custom']];
+/** a body colour as CSS, as the chrome's bodyVars draws it (Custom with no saturation set: 85%) */
 function swatch(s: IpodSettings, color = s.color): string {
-  const [h, sat, l] = color === 'custom' ? [s.hue, s.sat || 60, 55] : COLORS[color];
+  const [h, sat, l] = color === 'custom' ? [s.hue, s.sat || 85, 50] : COLORS[color];
   return `hsl(${h} ${sat}% ${l}%)`;
 }
 const Swatch = ({ bg }: { bg: string }) => (
@@ -160,13 +214,13 @@ function Color() {
     right: <>{id === ip.color && '✓ '}<Swatch bg={swatch(ip, id)} /></>,
     onSelect: id !== 'custom' ? () => patch({ color: id }) : () => {
       const prev = { color: ip.color, hue: ip.hue, sat: ip.sat };
-      patch({ color: 'custom', sat: ip.sat || 60 });
+      patch({ color: 'custom' });
       nav.push({ key: 'settings/color/custom', title: 'Custom', render: () => <CustomColor prev={prev} /> });
     },
   }))} />;
 }
 
-/** The wheel turns the hue live; centre keeps it, MENU puts the old colour back. */
+/** The wheel turns the hue live, 5° a detent (§4.4); centre keeps it, MENU puts the old colour back. */
 function CustomColor({ prev }: { prev: Partial<IpodSettings> }) {
   const nav = useNav(), [ip, patch] = useIpodSettings();
   useWheel({ onTick: (d) => patch({ hue: stepHue(ip.hue, d) }), onCenter: () => nav.pop(), onMenu: () => { patch(prev); } });
@@ -184,14 +238,14 @@ function CustomColor({ prev }: { prev: Partial<IpodSettings> }) {
   );
 }
 
-// ---- Output, Appearance, Updates -------------------------------------------------------------------
-/** Play on Device: the Connect devices, the playing one checked; AirPlay is the iOS app's picker. */
-function Output() {
+// ---- Play On, Appearance, Check for Updates -----------------------------------------------------------
+/** The Connect devices (§4.4), the playing one checked, offline ones greyed; AirPlay is the iOS app's picker. */
+function PlayOn() {
   const d = useDevices(() => '');
   const items: MenuItem[] = d.items().flatMap((e, i) => ('label' in e
     ? [{ id: 'd' + i, label: e.label, right: check(!!e.check), disabled: e.disabled, onSelect: e.act }] : []));
   if (window.alchemyRoutePicker) items.push({ id: 'airplay', label: 'AirPlay…', onSelect: () => window.alchemyRoutePicker?.() });
-  return <MenuScreen items={items} />;
+  return <MenuScreen items={items} empty="No Devices" />;
 }
 
 const MODES = [['light', 'Light'], ['dark', 'Dark'], ['auto', 'Automatic']] as const;

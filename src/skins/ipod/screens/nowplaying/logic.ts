@@ -1,8 +1,15 @@
 // Now Playing's pure logic: the clock text, the wheel's scrub and volume steps, the center-press
-// mode cycle and the "N of M" line.
+// mode cycle and the "N of M" line (docs/ipod-skin.md §2.4, §3.1).
 
-/** default: ticks change the volume; scrub: ticks seek; lyrics: the synced lines in the art's place */
-export type Mode = 'default' | 'scrub' | 'lyrics';
+/** The mode row, in the order the center cycles it (§2.4): the progress bar (ticks: volume), the
+ *  scrubber (ticks: seek), the nano's Genius slider as Spotify radio, shuffle Off | Songs, the rating
+ *  slot as Like (§6 item 4), the lyrics over the cover. */
+export type Mode = 'default' | 'scrub' | 'radio' | 'shuffle' | 'like' | 'lyrics';
+export const MODES: readonly Mode[] = ['default', 'scrub', 'radio', 'shuffle', 'like', 'lyrics'];
+
+/** ms: a scrub seeks this long after its last detent (§3.1); a mode falls back to the progress bar
+ *  after IDLE without input (§2.4, 5 s reconstructed); the volume bar goes VOLUME after its last tick */
+export const SCRUB_COMMIT_MS = 400, IDLE_MS = 5000, VOLUME_MS = 2000;
 
 /** m:ss (h:mm:ss past an hour), whole seconds as the iPod counts them */
 export function clock(sec: number): string {
@@ -16,19 +23,20 @@ export function times(ms: number, d: number): [string, string] {
   return [clock(e), '-' + clock(Math.max(0, Math.round(d / 1000) - e))];
 }
 
-/** one scrub detent: 2 % of the length, clamped to the track */
-export const scrubStep = (ms: number, dir: 1 | -1, d: number): number => Math.min(d, Math.max(0, ms + dir * 0.02 * d));
+/** one scrub detent: 1 % of the length (at least 1 s) times the acceleration, clamped to the track */
+export const scrubStep = (ms: number, dir: 1 | -1, d: number, accel = 1): number =>
+  Math.min(d, Math.max(0, ms + dir * accel * Math.max(1000, d / 100)));
+
+/** the scrub's acceleration from the gap since the last detent: x2 from 6 detents/s, x4 from 10 (§3.2's rates) */
+export const scrubAccel = (gapMs: number): 1 | 2 | 4 => (gapMs < 100 ? 4 : gapMs < 1000 / 6 ? 2 : 1);
 
 /** one volume detent: 2 % of the range (Spotify 0..100, the capture's sensitivity 0..200) */
 export const volumeStep = (vol: number, dir: 1 | -1, max: number): number =>
   Math.min(max, Math.max(0, Math.round(vol + (dir * max) / 50)));
 
-/** center: default -> scrub (when the track can seek) -> lyrics (when it has them) -> default */
-export function nextMode(m: Mode, canScrub: boolean, hasLyrics: boolean): Mode {
-  if (m === 'default' && canScrub) return 'scrub';
-  if (m !== 'lyrics' && hasLyrics) return 'lyrics';
-  return 'default';
-}
+/** center: the next mode this track has, in the nano's order; past the last, the progress bar */
+export const nextMode = (m: Mode, has: Partial<Record<Mode, boolean>>): Mode =>
+  MODES.slice(MODES.indexOf(m) + 1).find((x) => has[x]) ?? 'default';
 
 /** "3 of 12": the track's place among the loaded rows of what it plays from, '' when not among them */
 export function ofText(rows: readonly { uri: string }[], uri: string, total: number): string {

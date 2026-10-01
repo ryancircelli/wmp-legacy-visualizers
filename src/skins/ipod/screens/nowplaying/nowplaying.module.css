@@ -1,64 +1,112 @@
-/* iPod nano 5G Now Playing. Every metric is in nano pixels, calc(var(--unit) * N) (the chrome sets
-   --unit to a 240th of the screen's width), measured from the top of this area, which starts under
-   the 20 px status row (screen y = 20 + N). Colours are the chrome's, with the nano's as fallbacks. */
+/* iPod nano 5G Now Playing (docs/ipod-skin.md §2.2, §2.4). Every metric is in nano pixels,
+   calc(var(--unit) * N) (the chrome sets --unit to a 240th of the screen's width), measured from the
+   top of this area, which starts under the 20-unit status row: screen y = 20 + N. Bands: info 0–59,
+   cover 60–299, controls 300–355. */
 .root {
   position: relative; height: 100%; overflow: hidden;
-  color: var(--ipod-text, #000);
+  background: #000; color: #fff;
   font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
 }
+
+/* artist / title / album, centred, pitch 17, the first centred at screen y 32.5 */
+.info { position: absolute; top: 0; left: 0; right: 0; height: calc(var(--unit) * 60); background: linear-gradient(#424242, #010101); }
 .line {
   position: absolute; left: calc(var(--unit) * 8); right: calc(var(--unit) * 8);
-  text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-  height: calc(var(--unit) * 14); line-height: calc(var(--unit) * 14); font-size: calc(var(--unit) * 11);
-  color: var(--ipod-dim, #666);
+  height: calc(var(--unit) * 17); line-height: calc(var(--unit) * 17);
+  text-align: center; white-space: nowrap; overflow: hidden;
+  font-size: calc(var(--unit) * 12); font-weight: normal;
 }
+.line > span { display: inline-block; }
 .artist { top: calc(var(--unit) * 4); }
-.title {
-  top: calc(var(--unit) * 18); height: calc(var(--unit) * 16); line-height: calc(var(--unit) * 16);
-  font-size: calc(var(--unit) * 13); font-weight: bold; color: var(--ipod-text, #000);
-}
-.album { top: calc(var(--unit) * 34); }
+.title { top: calc(var(--unit) * 21); font-size: calc(var(--unit) * 14); font-weight: bold; }
+.album { top: calc(var(--unit) * 38); }
+
+/* the 240×240 cover; none: a grey tile with a note */
 .art {
-  position: absolute; top: calc(var(--unit) * 72); left: calc(var(--unit) * 40);
-  width: calc(var(--unit) * 160); height: calc(var(--unit) * 160); object-fit: cover;
+  position: absolute; top: calc(var(--unit) * 60); left: 0;
+  width: calc(var(--unit) * 240); height: calc(var(--unit) * 240); object-fit: cover;
 }
-/* the nano's grey "no artwork" square with its note */
 .noart {
   display: grid; place-items: center; background: linear-gradient(#ececec, #c9c9c9);
-  color: #fff; font-size: calc(var(--unit) * 72);
+  color: #fff; font-size: calc(var(--unit) * 120);
 }
-.of {
-  position: absolute; top: calc(var(--unit) * 262); left: calc(var(--unit) * 12);
-  font-size: calc(var(--unit) * 10); line-height: 1; color: var(--ipod-dim, #666);
+
+/* the controls band: the dark gradient, the cover's mirror image at .25, the mode row centred at
+   screen y 345, "N of M" centred at y 361 */
+.controls {
+  position: absolute; top: calc(var(--unit) * 300); left: 0; right: 0; height: calc(var(--unit) * 56);
+  overflow: hidden; background: linear-gradient(#656565, #262626);
 }
-/* the progress bar (screen y ~300) and the times under its ends */
-.bar {
-  position: absolute; top: calc(var(--unit) * 278); left: calc(var(--unit) * 12); right: calc(var(--unit) * 12);
-  height: calc(var(--unit) * 8);
+.reflection {
+  position: absolute; top: 0; left: 0; width: calc(var(--unit) * 240); height: calc(var(--unit) * 240);
+  object-fit: cover; transform: scaleY(-1); opacity: .25;
 }
-.fill { display: block; width: 100%; height: 100%; }
-/* scrub mode: the diamond the nano puts on the bar */
+.row {
+  position: absolute; top: calc(var(--unit) * 16); left: 0; right: 0; height: calc(var(--unit) * 18);
+  line-height: calc(var(--unit) * 18); font-size: calc(var(--unit) * 11); font-weight: bold;
+}
+/* elapsed right-aligned at x 40, -remaining from x 200 */
+.left { position: absolute; left: 0; width: calc(var(--unit) * 40); text-align: right; }
+.right { position: absolute; left: calc(var(--unit) * 200); }
+/* the bar: x 46–194, screen y 341–349 */
+.track {
+  position: absolute; left: calc(var(--unit) * 46); width: calc(var(--unit) * 148);
+  top: calc(var(--unit) * 5); height: calc(var(--unit) * 9);
+}
+.track .fill {
+  display: block; width: 100%; height: 100%; border-radius: calc(var(--unit) * 1);
+  --ipod-bar-bg: linear-gradient(#ffffff, #e8e8e8 55%, #c6c6c6);
+  --ipod-bar-fill: linear-gradient(#cee4ff, #7a98ce 45%, #5181d6 55%, #6ca9e8);
+}
+/* the scrubber's playhead: a 9×9 blue diamond, white rim */
 .diamond {
-  position: absolute; top: 50%; width: calc(var(--unit) * 9); height: calc(var(--unit) * 9);
-  background: var(--ipod-text, #000); border: calc(var(--unit) * 1) solid #fff;
+  position: absolute; top: 50%; box-sizing: border-box;
+  width: calc(var(--unit) * 6.4); height: calc(var(--unit) * 6.4);
+  background: #4785fc; border: calc(var(--unit) * 1) solid #fff;
   transform: translate(-50%, -50%) rotate(45deg);
 }
-.times {
-  position: absolute; top: calc(var(--unit) * 290); left: calc(var(--unit) * 12); right: calc(var(--unit) * 12);
-  display: flex; justify-content: space-between; font-size: calc(var(--unit) * 10); font-weight: bold;
+/* the volume bar's speakers, the shuffle glyph */
+.spk, .loud { position: absolute; top: calc(var(--unit) * 3); width: calc(var(--unit) * 12); height: calc(var(--unit) * 12); }
+.spk { left: calc(var(--unit) * 28); }
+.loud { left: calc(var(--unit) * 200); }
+/* shuffle Off | Songs, Like ♡ | ♥: the active segment light grey with dark text */
+.seg {
+  top: calc(var(--unit) * 1); height: calc(var(--unit) * 16); display: flex; overflow: hidden;
+  border-radius: calc(var(--unit) * 3); border: 1px solid #1a1a1a; background: #3a3a3a;
+  line-height: calc(var(--unit) * 14);
 }
-/* the volume bar in the progress bar's place, a speaker either side */
-.vol {
-  position: absolute; top: calc(var(--unit) * 274); left: calc(var(--unit) * 8); right: calc(var(--unit) * 8);
-  height: calc(var(--unit) * 16); display: flex; align-items: center; gap: calc(var(--unit) * 6);
+.seg > span { flex: 1; text-align: center; }
+.seg > span + span { border-left: 1px solid #1a1a1a; }
+.seg > [data-on] { background: #d8d8d8; color: #222; }
+/* the Radio slider (the nano's Genius slider): its knob at the left until it starts */
+.slider {
+  top: calc(var(--unit) * 1); height: calc(var(--unit) * 16); border-radius: calc(var(--unit) * 8);
+  background: linear-gradient(#262626, #4a4a4a); box-shadow: inset 0 1px 2px #000;
 }
-.vol .fill { flex: 1; height: calc(var(--unit) * 8); }
-.spk { flex: none; width: calc(var(--unit) * 12); height: calc(var(--unit) * 12); }
-/* lyrics mode: the lines in the art's and the names' place, the sung one dark and bold */
+.knob {
+  position: absolute; left: 0; top: 0; width: calc(var(--unit) * 28); height: 100%; border-radius: inherit;
+  background: linear-gradient(#ffffff, #c6c6c6); color: #333; text-align: center;
+  line-height: calc(var(--unit) * 16); font-size: calc(var(--unit) * 12);
+}
+.of {
+  position: absolute; top: calc(var(--unit) * 34); left: 0; right: 0; height: calc(var(--unit) * 14);
+  line-height: calc(var(--unit) * 14); text-align: center; font-size: calc(var(--unit) * 12); color: #d0d0d0;
+}
+
+/* lyrics over the cover: white 14 on black at 70 % */
 .lyrics {
-  position: absolute; top: calc(var(--unit) * 4); bottom: calc(var(--unit) * 92);
-  left: calc(var(--unit) * 10); right: calc(var(--unit) * 10); overflow: hidden; scroll-behavior: smooth;
-  text-align: center; white-space: pre-line; font-size: calc(var(--unit) * 12); line-height: calc(var(--unit) * 17);
-  color: var(--ipod-dim, #666);
+  position: absolute; top: calc(var(--unit) * 60); left: 0; right: 0; height: calc(var(--unit) * 240);
+  display: flex; flex-direction: column; justify-content: center; padding: 0 calc(var(--unit) * 10);
+  background: rgb(0 0 0 / .7); text-align: center;
+  font-size: calc(var(--unit) * 14); line-height: calc(var(--unit) * 18);
 }
-.cur { color: var(--ipod-text, #000); font-weight: bold; }
+.plain { height: 100%; overflow: hidden; white-space: pre-line; }
+.cur { font-weight: bold; }
+.next { margin-top: calc(var(--unit) * 8); color: rgb(255 255 255 / .5); }
+/* karaoke: the line's words dim until sung, the current one filling */
+.synced[data-karaoke] .cur { color: rgb(255 255 255 / .5); }
+.sung { color: #fff; }
+.now {
+  color: transparent; -webkit-background-clip: text; background-clip: text;
+  background-image: linear-gradient(90deg, #fff var(--f, 0%), rgb(255 255 255 / .5) var(--f, 0%));
+}

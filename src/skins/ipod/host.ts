@@ -40,8 +40,8 @@ const ASKED = 'ipod.viewport';
 /** The iPod is drawn for a phone-wide viewport, so it asks WebKit for the mobile content mode. That
  *  is kept across launches and a change reloads the page, so it is asked once per session at most
  *  (a host that reloads and still says 'desktop' is never asked again), and the flag clears once
- *  the host says 'mobile'. The WMP 9 skin wants 'desktop' back: not done here; it should ask for it
- *  the same way on its own mount under the iOS app. */
+ *  the host says 'mobile'. The WMP 9 skin asks for 'desktop' back the same way on its own mount
+ *  (src/skins/wmp9/Root.tsx useDesktopViewport). */
 export function useMobileViewport(): void {
   useEffect(() => {
     if (!window.alchemyViewport) return;

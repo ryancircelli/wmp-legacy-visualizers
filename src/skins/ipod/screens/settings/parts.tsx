@@ -1,12 +1,16 @@
 // What the Settings and Extras pages share: nano-pixel metrics and colours, the screen-entry
-// helpers, a text page the wheel scrolls, a bar page the wheel sets, and the clock tick.
+// helpers, the red confirm list, a text page the wheel scrolls, a bar page the wheel sets, and the
+// clock tick.
 import { useEffect, useRef, useState, type FC, type ReactNode } from 'react';
 import { Bar, MenuScreen, useNav, useWheel } from '../../ui';
 import type { MenuItem, Nav, ScreenEntry } from '../contract';
 
 /** n nano pixels */
 export const u = (n: number) => `calc(var(--unit) * ${n})`;
-export const TEXT = 'var(--ipod-text, #000)', DIM = 'var(--ipod-dim, #6e6e73)', BLUE = 'var(--ipod-blue, #2a7ae2)';
+// the chrome's colours (ipod.module.css), the spec's values behind them (docs/ipod-skin.md §2.2)
+export const TEXT = 'var(--ipod-text, #000)', DIM = 'var(--ipod-dim, #8e8e93)', BLUE = 'var(--ipod-blue, #3e94e1)';
+export const SEL_BG = 'var(--ipod-sel-bg, linear-gradient(180deg, #4ea0dc 0%, #4690d4 40%, #3f7fcd 70%, #336ac7 100%))';
+const ROW = `var(--ipod-row-h, ${u(29.67)})`;
 export const check = (on: boolean) => (on ? '✓' : undefined);
 export const onOff = (on: boolean) => (on ? 'On' : 'Off');
 
@@ -18,9 +22,25 @@ export const menu = (key: string, title: string, items: (nav: Nav) => MenuItem[]
 /** The iPod's "No Contacts" page. */
 export const nothing = (key: string, title: string, text: string): ScreenEntry =>
   ({ key, title, render: () => <MenuScreen items={[]} empty={text} /> });
-/** Cancel first (selected), then the act. */
+
+/** Reset Settings / Log Out (§2.4 Settings pages): the act, then Cancel, the act's selection bar red
+ *  (reconstructed). It opens on Cancel, so a double press never acts. */
+function Confirm({ label, act }: { label: string; act: (nav: Nav) => void }) {
+  const nav = useNav(), [i, setI] = useState(1);
+  const choose = (k: number) => (k ? nav.pop() : act(nav));
+  useWheel({ onTick: (d) => { const k = d > 0 ? 1 : 0; if (k === i) return false; setI(k); }, onCenter: () => choose(i) });
+  return (
+    <div style={{ color: TEXT, fontSize: u(18), fontWeight: 'bold' }}>
+      {[label, 'Cancel'].map((l, k) => (
+        <div key={l} onClick={() => { setI(k); choose(k); }}
+             style={{ display: 'flex', alignItems: 'center', height: ROW, padding: `0 ${u(9)} 0 ${u(10)}`,
+                      ...(k === i ? { background: k ? SEL_BG : 'linear-gradient(#e35d5b, #b8211f)', color: '#fff' } : {}) }}>{l}</div>
+      ))}
+    </div>
+  );
+}
 export const confirm = (key: string, title: string, label: string, act: (nav: Nav) => void): ScreenEntry =>
-  menu(key, title, (nav) => [{ id: 'cancel', label: 'Cancel', onSelect: () => nav.pop() }, { id: 'ok', label, onSelect: () => act(nav) }]);
+  ({ key, title, render: () => <Confirm label={label} act={act} /> });
 
 /** A page of text; the wheel scrolls it. */
 export function TextPage({ children }: { children: ReactNode }) {
@@ -36,18 +56,29 @@ export const Row = ({ label, value }: { label: string; value: ReactNode }) => (
   </div>
 );
 
-/** A setting the wheel turns (Volume Limit, Brightness): centre keeps it and goes back. */
-export function BarPage({ value, onTick, caption }: { value: number; onTick: (d: 1 | -1) => void; caption: ReactNode }) {
+/** A setting the wheel turns (Volume Limit, Brightness): the volume's bar between two glyphs; centre
+ *  keeps it and goes back. `onTick` returns false when the value stays (no click at the ends). */
+export function BarPage({ value, onTick, caption, lo, hi }: {
+  value: number; onTick: (d: 1 | -1) => boolean | void; caption: ReactNode; lo?: ReactNode; hi?: ReactNode;
+}) {
   const nav = useNav();
   useWheel({ onTick, onCenter: () => nav.pop() });
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', height: '100%', padding: `0 ${u(18)}`, gap: u(12),
+    <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', height: '100%', padding: `0 ${u(12)}`, gap: u(12),
                   color: TEXT, fontSize: u(14), textAlign: 'center' }}>
       <div>{caption}</div>
-      <Bar value={value} />
+      <div style={{ display: 'flex', alignItems: 'center', gap: u(6) }}>{lo}<div style={{ flex: 1 }}><Bar value={value} /></div>{hi}</div>
     </div>
   );
 }
+
+/** Brightness's glyph, `n` nano pixels across */
+export const Sun = ({ n }: { n: number }) => (
+  <svg viewBox="0 0 12 12" fill="currentColor" stroke="currentColor" strokeWidth="1.2" style={{ flex: 'none', width: u(n), height: u(n) }} aria-hidden="true">
+    <circle cx="6" cy="6" r="2.5" stroke="none" />
+    <path d="M6 .3v1.9M6 9.8v1.9M.3 6h1.9M9.8 6h1.9M2 2l1.3 1.3M8.7 8.7 10 10M2 10l1.3-1.3M8.7 3.3 10 2" />
+  </svg>
+);
 
 /** Date.now(), re-read every `ms` while `on`. */
 export function useNow(ms: number, on = true): number {

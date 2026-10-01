@@ -17,6 +17,7 @@ export function Root() {
   const st = useApp((x) => ({ bare: isBare(x), spotify: isSpotify(x), nativeTitle: x.auth.nativeTitle === true,
                               taskPane: x.settings.taskPane !== false, playlistPane: x.settings.playlistPane !== false }));
   useBroadcastPrompt();
+  useDesktopViewport();
   return (
     <div className="font-xp text-11 leading-[1.4] text-ink" data-ui-root="">
       {/* Luna: the title bar across the top with rounded top corners, and a 4px blue border of the
@@ -63,4 +64,27 @@ function useBroadcastPrompt() {
     const t = setTimeout(() => { if (!window.__wmpBroadcast?.running) window.alchemyBroadcast?.('picker'); }, 2000);
     return () => clearTimeout(t);
   }, [store]);
+}
+
+const ASKED = 'wmp9.viewport';
+/** WMP 9 is drawn for a desktop-wide viewport. The iPod skin asks WebKit for the mobile content mode
+ *  (src/skins/ipod/host.ts useMobileViewport), which the iOS app keeps across launches, so coming
+ *  back to WMP 9 asks for 'desktop' again. A change reloads the page, so it is asked once per session
+ *  at most (a host that reloads and still says 'mobile' is never asked again), and the flag clears
+ *  once the host says anything but 'mobile'. */
+function useDesktopViewport() {
+  useEffect(() => {
+    if (!window.alchemyViewport) return;
+    const check = () => {
+      try {
+        if (window.__wmpHost?.viewport !== 'mobile') { sessionStorage.removeItem(ASKED); return; }
+        if (sessionStorage.getItem(ASKED)) return;
+        sessionStorage.setItem(ASKED, '1');
+      } catch { return; }                  // no storage, no guard: never risk a reload loop
+      window.alchemyViewport?.('desktop');
+    };
+    window.addEventListener('wmp-host', check);
+    window.alchemyHost?.();
+    return () => window.removeEventListener('wmp-host', check);
+  }, []);
 }
