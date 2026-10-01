@@ -67,13 +67,26 @@ it('a tap selects a row and does what the centre would', () => {
   act(() => { fireEvent.click(m.row('Music')); });
   expect(m.sel()).toEqual(['Cover Flow']);
   const a = vi.fn(), b = vi.fn(), off = vi.fn();
-  const { getByText } = render(<MenuScreen items={[{ id: 'a', label: 'A', onSelect: a }, { id: 'b', label: 'B', onSelect: b },
-                                                   { id: 'c', label: 'C', onSelect: off, disabled: true }]} />);
+  const { getByText } = render(<ShellContext.Provider value={makeShell(m.store, {} as Ticker)}>
+    <MenuScreen items={[{ id: 'a', label: 'A', onSelect: a }, { id: 'b', label: 'B', onSelect: b }, { id: 'c', label: 'C', onSelect: off, disabled: true }]} />
+  </ShellContext.Provider>);
   act(() => { fireEvent.click(getByText('B')); });
   expect([a.mock.calls.length, b.mock.calls.length]).toEqual([0, 1]);
   expect(getByText('B').closest('[role=option]')!.getAttribute('aria-selected')).toBe('true');
   act(() => { fireEvent.click(getByText('C')); });
   expect(off).not.toHaveBeenCalled();
+});
+
+it('a loading list says why it waits: signing in, signed out, or loading', () => {
+  const store = createAppStore({ persist: false });
+  const { container } = render(<ShellContext.Provider value={makeShell(store, {} as Ticker)}><MenuScreen items={[]} loading /></ShellContext.Provider>);
+  const say = (loggedIn: boolean | null) => {
+    act(() => { store.setState((s) => ({ auth: { ...s.auth, engine: 'spotify', loggedIn } })); });
+    return container.textContent;
+  };
+  expect(say(null)).toBe('Signing in…');
+  expect(say(false)).toBe('Not signed in');
+  expect(say(true)).toBe('Loading…');
 });
 
 it('a swipe right on the screen is MENU, and not also a tap on the row it ended on', () => {

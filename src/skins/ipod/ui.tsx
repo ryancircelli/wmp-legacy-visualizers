@@ -52,6 +52,9 @@ export const useBusy = (frame: number): boolean => useStore(busy, (b) => b.ids.i
 export const MenuScreen: Chrome['MenuScreen'] = ({ items, selected, onSelectedChange, preview, loading, empty }) => {
   const [own, setOwn] = useState(0), list = useRef<HTMLDivElement>(null), thumb = useRef<HTMLDivElement>(null);
   const frame = useContext(FrameContext), speed = useRef({ v: 0, at: 0 });
+  // a list waiting on Spotify says why: still signing in, signed out, or really loading
+  const signedIn = useApp((x) => x.auth.loggedIn);
+  const wait = signedIn === null ? 'Signing in…' : signedIn === false ? 'Not signed in' : 'Loading…';
   const sel = Math.max(0, Math.min(selected ?? own, items.length - 1));
   // several ticks can land in one pointer event, before a re-render: they count from here
   const at = useRef(sel);
@@ -77,12 +80,13 @@ export const MenuScreen: Chrome['MenuScreen'] = ({ items, selected, onSelectedCh
     window.alchemyHaptic?.('light');
     it.onSelect?.();
   };
+  // the status bar's spinner: only while data is really on its way
   useEffect(() => {
-    if (!loading || !frame) return;
+    if (!loading || signedIn !== true || !frame) return;
     const id = frame.id;
     busy.setState((b) => ({ ids: [...b.ids, id] }));
     return () => busy.setState((b) => { const ids = [...b.ids]; ids.splice(ids.indexOf(id), 1); return { ids }; });
-  }, [loading, frame]);
+  }, [loading, signedIn, frame]);
   // the selected row in view (scrolling the list only, never the page), the scroll indicator, the marquee
   const label = item?.label;
   useLayoutEffect(() => {
@@ -105,7 +109,7 @@ export const MenuScreen: Chrome['MenuScreen'] = ({ items, selected, onSelectedCh
       <div className={cx(preview != null ? s.split : 'flex-auto min-h-0', s.list)}>
         <div ref={list} className={s.scroll} role="listbox" aria-busy={loading || undefined}
              onScroll={() => placeThumb(list.current, thumb.current)}>
-          {loading ? <div className={s.row} data-loading=""><span className={s.label}>Loading…</span></div>
+          {loading ? <div className={s.row} data-loading=""><span className={s.label}>{wait}</span></div>
             : !items.length ? (empty ? <div className={s.row}><span className={s.label}>{empty}</span></div> : null)
             : items.map((it, i) => (
               <div key={it.id} className={s.row} role="option" aria-selected={i === sel} aria-disabled={it.disabled || undefined}

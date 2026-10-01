@@ -8,7 +8,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperti
 import { useStore } from 'zustand';
 import { useApp, useShell, useWindowControls } from '../../ui';
 import { ClickWheel } from './ClickWheel';
-import { useHostChrome, useHostGlobal, useMobileViewport } from './host';
+import { useHostChrome, useHostGlobal, useDesktopViewport } from './host';
 import { mainMenu } from './menus';
 import { coverFlow, fmRadio, geniusMixes, nowPlaying, useVolumeLimit } from './screens';
 import { createNav, top, type NavStore, type Slot } from './nav';
@@ -37,7 +37,7 @@ export function Root() {
   const win = useWindowControls(), caption = useApp((x) => x.auth.hostWindow && !x.auth.nativeTitle);
   const [asleep, setAsleep] = useState(false);
   useHostChrome();
-  useMobileViewport();
+  useDesktopViewport();
   useVolumeLimit();                 // Settings > Volume Limit holds everywhere, not only on its page
 
   const c = () => sh.store.getState().commands;

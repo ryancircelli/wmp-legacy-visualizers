@@ -42,7 +42,7 @@ const ASKED = 'ipod.viewport';
  *  so the iPod draws itself in the desktop-wide one and the phone scales it, which costs nothing:
  *  every size is relative to the viewport. A host still in 'mobile' from an earlier build is asked
  *  for 'desktop' once per session (a change reloads the page). */
-export function useMobileViewport(): void {
+export function useDesktopViewport(): void {
   useEffect(() => {
     if (!window.alchemyViewport) return;
     const check = () => {

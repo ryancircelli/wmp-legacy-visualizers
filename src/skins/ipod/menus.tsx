@@ -1,12 +1,13 @@
 // The nano 5G's Main and Music menus (docs/ipod-skin.md §2.3). Every other screen is a group's
 // (screens/*), reached through the factories contract.ts names; Extras is the settings group's.
 // Settings > Main Menu / Music Menu hide rows by id: the label in lower case without spaces ('Cover
-// Flow' is 'coverflow'); 'previewpanel' off drops the main menu's preview panel. Not listed: Video
+// Flow' is 'coverflow'); 'previewpanel' off drops the main menu's preview panel, which otherwise shows
+// while there are covers to show (with nothing playing the list has all 12 rows). Not listed: Video
 // Camera (no camera; §4.2 hides it) and Compilations (opt-in on the real one, no data here).
 import { artOk, useApp, useShell } from '../../ui';
 import * as groups from './screens';
 import type { MenuItem, Nav, ScreenEntry, Screens } from './screens/contract';
-import { MenuScreen, useNav, useTime } from './ui';
+import { MenuScreen, useNav } from './ui';
 import s from './ipod.module.css';
 
 const screens: Screens = groups;
@@ -24,13 +25,19 @@ const musicMenu = (): ScreenEntry => ({ key: 'music', title: 'Music', render: ()
 /** Now Playing is listed only while there is a track, as on the nano. */
 function MainMenu() {
   const nav = useNav(), store = useShell().store, shown = groups.useMenuVisibility().main, track = useApp((x) => !!x.playback.track);
+  // the preview panel's covers: the playing one, then the queue's next ones (distinct, up to three)
+  const arts = useApp((x) => {
+    const t = x.playback.track;
+    return t ? [...new Set([t, ...x.queue.next].map((n) => artOk(n.art || n.image)).filter(Boolean))].slice(0, 3).join('\n') : '';
+  });
   const items: MenuItem[] = [
     to(nav, 'Music', musicMenu), to(nav, 'Videos', 'videos'), to(nav, 'Photos', 'photos'), to(nav, 'Podcasts', 'podcasts'),
     to(nav, 'Radio', 'fmRadio'), to(nav, 'Extras', 'extras'), to(nav, 'Settings', 'settings'),
     { id: 'shufflesongs', label: 'Shuffle Songs', onSelect: () => { groups.shuffleSongs(nav, store); nav.toNowPlaying(); } },
     ...(track ? [{ id: 'nowplaying', label: 'Now Playing', chevron: true, onSelect: () => nav.toNowPlaying() }] : []),
   ];
-  return <MenuScreen items={visible(items, shown)} preview={shown.previewpanel === false ? undefined : <Preview />} />;
+  const preview = arts && shown.previewpanel !== false ? arts.split('\n').map((a) => <img key={a} className={s.tile} src={a} alt="" />) : undefined;
+  return <MenuScreen items={visible(items, shown)} preview={preview} />;
 }
 
 /** The nano's Music menu, with the classic's Cover Flow first (the owner's choice). On-The-Go is
@@ -42,15 +49,4 @@ function MusicMenu() {
                   ['Search', 'search']] as const)
     .map(([label, f]) => to(nav, label, f));
   return <MenuScreen items={visible(items, shown)} />;
-}
-
-/** The preview panel's three 80×80 tiles: the playing cover then the queue's next ones, else a clock. */
-function Preview() {
-  const arts = useApp((x) => {
-    const t = x.playback.track;
-    return t ? [...new Set([t, ...x.queue.next].map((n) => artOk(n.art || n.image)).filter(Boolean))].slice(0, 3).join('\n') : '';
-  });
-  const time = useTime(groups.useClockPrefs().twentyFourHour);
-  if (arts) return <>{arts.split('\n').map((a) => <img key={a} className={s.tile} src={a} alt="" />)}</>;
-  return <div className={s.clock}>{time}<small>{new Date().toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' })}</small></div>;
 }
