@@ -150,8 +150,9 @@ what this uses: a signed-in Spotify app on the same network finds the device, an
 picked it hands over a credentials blob encrypted for it
 ([docs/authentication.md](https://github.com/librespot-org/librespot/blob/v0.8.0/docs/authentication.md)).
 librespot then caches reusable credentials (`credentials.json`) and connects with them at every later
-start, upstream's advice for avoiding repeated logins. After the first pick, the device shows up in
-every Spotify app on any network for as long as the app is running.
+start; upstream advises caching ("Credential caching is unavailable, but advisable", src/main.rs).
+After the first pick the device should show up in every Spotify app, on any network, for as long as
+the app is running.
 
 **License.** librespot is MIT, as is this crate. Most of the dependencies are permissive (MIT,
 Apache-2.0, ISC, BSD, Zlib, Unicode-3.0; webpki-roots' certificates are CDLA-Permissive-2.0). Two are
@@ -169,22 +170,24 @@ in 10 minutes (librespot's own limit) before it waits to be picked again.
 **Pairing, once.** The phone and the Spotify app have to be on the same Wi-Fi.
 
 1. Open WMP Spotify and allow the local network when iOS asks. The log says `librespot: discovery up`.
-2. Pick **WMP Spotify** in a Spotify app's device list. The easiest is Spotify on a computer on the same
-   Wi-Fi, with WMP Spotify open on the phone. From the Spotify app on the same phone, start something
-   playing in WMP Spotify first: iOS suspends an app in the background that plays nothing, and a
-   suspended app cannot answer the pick.
+2. Pick **WMP Spotify** in a Spotify app's device list: the Spotify app on the same phone, or Spotify
+   on a computer on the same Wi-Fi with WMP Spotify open on the phone. WMP Spotify should stay awake
+   in the background, since its audio engine runs from launch. If a pick from the same phone fails,
+   start something playing in WMP Spotify first, or pick from a computer: a suspended app cannot
+   answer the pick.
 3. The log says `librespot: credentials from discovery`, then `librespot: session up`, and
    `librespot: playing` once the music starts. Later launches say `librespot: cached credentials` and
    connect without a pick.
 
 Log lines to look for (the band, or the long-press list): `librespot: discovery up` or
-`librespot: discovery failed: ...` (a refused local network shows as a dns_sd error, policy denied
--65570); `librespot: session up` or `librespot: connect failed: ...`; `librespot: playing`,
+`librespot: discovery failed: ...` (a refused local network should show as a dns_sd error,
+kDNSServiceErr_PolicyDenied, -65570); `librespot: session up` or `librespot: connect failed: ...`; `librespot: playing`,
 `paused`, `stopped`, `unavailable: ...`; `librespot: session ended` and the reconnects;
 `librespot: output failed: ...` (the audio engine); and librespot's own info, warnings and errors,
 all prefixed `librespot:`.
 
-**Not yet verified** (it builds in CI, but nothing below has been seen on a phone):
+**Not yet verified.** CI builds, links, archives and uploads it (builds 19 and 20, 2026-10-01; 20
+is the current one), but none of the following has been seen on a phone:
 
 - Whether Spotify's access points take the Linux-presenting session from an iPhone, and whether the
   iOS Spotify app offers a zeroconf device on its own phone and hands it credentials.
@@ -194,9 +197,10 @@ all prefixed `librespot:`.
   its session alive in the background as intended, and what it costs in battery.
 - How the visualizers keep time with librespot's audio. The page gets each buffer as it is played;
   the broadcast's latency was never measured either.
-- Prior art: [lufinkey/librespot-swift](https://github.com/lufinkey/librespot-swift) (2025, OAuth and
-  rodio, built for aarch64-apple-ios) is the only iOS build of librespot found. The same author opened
-  #1477. No iOS Connect receiver built on librespot was found, nor any other open-source one.
+
+**Prior art.** [lufinkey/librespot-swift](https://github.com/lufinkey/librespot-swift) (2025, OAuth
+and rodio, built for aarch64-apple-ios) is the only iOS build of librespot found. Its author opened
+#1477. No iOS Connect receiver built on librespot was found, nor any other open-source one.
 
 ## Building
 
