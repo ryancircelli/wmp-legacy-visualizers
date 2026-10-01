@@ -155,6 +155,23 @@ describe('3. transport: connect-state commands', () => {
     expect(env.calls.pop()!.body.command.endpoint).toBe('skip_prev');
     expect(env.sent().filter((m) => m.type === 'mediaCmd')).toEqual([]);
   });
+  it('a pending seek outlives a state that still shows the old position', async () => {
+    const env = setup();
+    await settle();
+    env.route(/player\/command/, { status: 200, json: { ack_id: 's' } });
+    void env.C.seek(60_000); await settle();
+    expect(env.S.playback.position).toBe(60_000);
+    // the cluster Spotify pushes on receipt, the device not yet sought: the slider must not snap back
+    env.fire('wmp-spotify-state', clone(FX.playerState));
+    expect(env.S.playback.position).toBe(60_000);
+    expect(env.S.playback.pending).not.toBeNull();
+    // the state after the seek: the player's word
+    const ps = clone(FX.playerState);
+    ps.position_as_of_timestamp = '60500'; ps.timestamp = String(Date.now());
+    env.fire('wmp-spotify-state', ps);
+    expect(env.S.playback.position).toBe(60_500);
+    expect(env.S.playback.pending).toBeNull();
+  });
   it('fallback to the host mediaCmd is per command: network error, then non-2xx', async () => {
     const env = setup();
     env.route(/player\/command/, () => new Error('offline'));

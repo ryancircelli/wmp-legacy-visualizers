@@ -78,7 +78,16 @@ export function onState(sp: Sp, ps: PlayerState | null | undefined, replay = fal
   if (!ps) return;
   sp.hasState = true;
   sp.last = ps;
-  const st = sp.store.getState(), p = toPlayback(sp, ps), pending = replay ? st.playback.pending : null;
+  const st = sp.store.getState(), p = toPlayback(sp, ps);
+  let pending = replay ? st.playback.pending : null;
+  // A seek still pending against a state that does not show it: Spotify pushes a cluster on the
+  // command's receipt, before the device has sought, and that one would snap the slider back for a
+  // moment. The seek's position stays until a state within 1.5 s of it, or optimistic()'s 2 s.
+  const pend = st.playback.pending;
+  if (!pending && pend?.fields.includes('position') && Date.now() - pend.since < 2000) {
+    const shown = st.playback.position + (st.playback.paused ? 0 : Date.now() - st.playback.at);
+    if (Math.abs((p.position ?? 0) - shown) > 1500) { p.position = shown; p.at = Date.now(); pending = pend; }
+  }
   const keep: Record<string, unknown> = {};
   if (pending) for (const f of pending.fields) if (f in st.playback) keep[f] = st.playback[f as keyof typeof st.playback];
   setSession(sp.store, p);
