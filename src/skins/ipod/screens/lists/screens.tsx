@@ -172,7 +172,7 @@ function Albums({ keep }: { keep: Box<number> }) {
 function useFollowedArtists(): { items: LibraryItem[]; loading: boolean } {
   const q = useShell().queries, on = useApp((s) => s.auth.loggedIn === true);
   const r = useQuery({ queryKey: q.keys.followedArtists(), queryFn: q.fetchFollowedArtists, enabled: on, staleTime: STALE.list });
-  return { items: (r.data ?? []) as LibraryItem[], loading: on && r.isPending };
+  return { items: r.data ?? [], loading: on && r.isPending };
 }
 
 /** The followed artists, A–Z; with none, the liked songs' and saved albums' artists (§6 item 1). The
