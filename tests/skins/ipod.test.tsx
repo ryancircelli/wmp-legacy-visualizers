@@ -1,15 +1,20 @@
 // The iPod skin mounted: the wheel (its keyboard stand-in) reaches the top screen only, MENU goes back,
 // the nano 5G's menus, the chevron on the selected row only, taps, and the hold-⏮/⏭ scan.
-import { act, cleanup, fireEvent, render, renderHook } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, renderHook, within } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
 import { makeShell } from '../../src/app/App';
 import type { Ticker } from '../../src/app/ticker';
 import { createAppStore } from '../../src/model';
+import { mainMenu } from '../../src/skins/ipod/menus';
+import { createNav } from '../../src/skins/ipod/nav';
 import { Root } from '../../src/skins/ipod/Root';
-import { Bar, MenuScreen, scan, useScan } from '../../src/skins/ipod/ui';
+import { nowPlaying } from '../../src/skins/ipod/screens';
+import { Bar, MenuScreen, scan, StatusRow, useScan } from '../../src/skins/ipod/ui';
+import { NavContext } from '../../src/skins/ipod/wheel';
 import { ShellContext } from '../../src/ui';
+import { fakeData, mountSkinNow, settle } from './harness';
 
-afterEach(() => { cleanup(); delete window.alchemyHaptic; vi.useRealTimers(); });
+afterEach(() => { cleanup(); delete window.alchemyHaptic; vi.useRealTimers(); vi.unstubAllGlobals(); });
 const key = (k: string) => act(() => { window.dispatchEvent(new KeyboardEvent('keydown', { key: k, cancelable: true })); });
 
 function mount() {
@@ -139,4 +144,54 @@ it('holding ⏭ scans locally (4× real time), seeks once on release, and shows 
   expect(shown.result.current).toEqual({ scanning: 0, offsetMs: 0 });
   store.setState((s) => ({ playback: { ...s.playback, canSeek: false } }));
   expect(scan(store, -1)).toBe(false);
+});
+
+it('the dark status row: shuffle and repeat are toggles (dimmed when off), a tap is theirs alone, a light haptic each', () => {
+  const haptic = vi.fn(), outer = vi.fn();
+  window.alchemyHaptic = haptic;
+  const m = mountSkinNow('spotify', fakeData(), <div data-testid="row" onClick={outer}><StatusRow title="" dark /></div>);
+  const row = within(m.getByTestId('row'));
+  const shuffle = row.getByRole('button', { name: 'Shuffle' }), repeat = row.getByRole('button', { name: 'Repeat' });
+  expect([shuffle.getAttribute('aria-pressed'), repeat.getAttribute('aria-pressed')]).toEqual(['false', 'false']);
+  act(() => { fireEvent.click(shuffle); });
+  expect(m.cmd.toggleShuffle).toHaveBeenCalledTimes(1);
+  expect(haptic).toHaveBeenCalledWith('light');
+  act(() => { fireEvent.click(repeat); });
+  expect(m.cmd.cycleRepeat).toHaveBeenCalledTimes(1);
+  expect(outer).not.toHaveBeenCalled();
+  act(() => { m.store.setState((s) => ({ playback: { ...s.playback, shuffle: true, repeat: 'track' } })); });
+  expect(shuffle.getAttribute('aria-pressed')).toBe('true');
+  const one = row.getByRole('button', { name: 'Repeat one' });
+  expect([one.getAttribute('aria-pressed'), one.textContent]).toEqual(['true', '1']);
+});
+
+it('a tap on the cover area swaps the Canvas for the cover and back, remembered; none is fetched while the cover is chosen', async () => {
+  vi.stubGlobal('IntersectionObserver', class { observe() {} disconnect() {} });
+  const haptic = vi.fn();
+  window.alchemyHaptic = haptic;
+  const nav = createNav(mainMenu(), () => nowPlaying());
+  const m = mountSkinNow('spotify', fakeData(),
+    <NavContext.Provider value={nav}><div data-testid="np">{nowPlaying().render(nav)}</div></NavContext.Provider>);
+  m.queries.fetchCanvas.mockImplementation((uri) => Promise.resolve(uri.endsWith('none') ? null : { url: uri + '.mp4', type: 'video' }));
+  const play = async (uri: string) => {
+    act(() => { m.store.setState((s) => ({ playback: { ...s.playback, status: 'playing', track: { uri, title: 'T', artist: 'A', duration: 100_000 } } })); });
+    await settle();
+  };
+  const np = m.getByTestId('np'), tap = () => act(() => { fireEvent.click(np.querySelector('[class*=tap]')!); });
+  await play('spotify:track:a');
+  expect(np.querySelector('video')?.getAttribute('src')).toBe('spotify:track:a.mp4');
+  tap();
+  expect(np.querySelector('video')).toBeNull();
+  expect(haptic).toHaveBeenCalledWith('light');
+  expect(localStorage.getItem('ipod.canvas')).toContain('"on":false');
+  await play('spotify:track:b');                     // the cover stays chosen: nothing fetched
+  expect(m.queries.fetchCanvas).not.toHaveBeenCalledWith('spotify:track:b');
+  tap();
+  await settle();
+  expect(np.querySelector('video')?.getAttribute('src')).toBe('spotify:track:b.mp4');
+  await play('spotify:track:none');                  // no Canvas: the cover, and a tap does nothing
+  haptic.mockClear();
+  tap();
+  expect(haptic).not.toHaveBeenCalled();
+  expect(localStorage.getItem('ipod.canvas')).toContain('"on":true');
 });

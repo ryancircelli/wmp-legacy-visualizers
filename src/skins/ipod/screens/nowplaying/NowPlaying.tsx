@@ -6,8 +6,12 @@
 // -> Like ♡ | ♥ (the rating slot) -> lyrics over the cover -> back; each but lyrics falls back after
 // 5 s idle. Hold center: the nano's popup, Spotify's way (§4.3). Play / next / prev and their holds
 // (fast-forward, rewind: useScan) are the chrome's. A track with a Spotify Canvas shows it behind the
-// whole screen instead of the cover, the two bands made translucent over it.
+// whole screen instead of the cover, the two bands made translucent over it; a tap on the cover's area
+// swaps the Canvas for the cover and back, remembered (while the cover is chosen no Canvas is fetched).
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useStore } from 'zustand';
+import { persist } from 'zustand/middleware';
+import { createStore } from 'zustand/vanilla';
 import { lyricsShown, positionNow, type Track } from '../../../../model';
 import {
   artOk, cx, isSpotify, Karaoke, playingTrack, useAddTo, useApp, useArtist, useCanvas, useCollection, useDevices, useLyricScroll,
@@ -21,6 +25,9 @@ import css from './nowplaying.module.css';
 export function nowPlaying(): ScreenEntry {
   return { key: 'nowplaying', title: 'Now Playing', render: () => <NowPlaying /> };
 }
+
+/** the Canvas (true) or the cover, across tracks and launches; localStorage 'ipod.canvas' */
+const canvasPref = createStore<{ on: boolean }>()(persist((): { on: boolean } => ({ on: true }), { name: 'ipod.canvas' }));
 
 type Pop = 'main' | 'playlists' | 'devices';
 /** a wheel scrub: the position shown, then (sent) held until the player reports the seek */
@@ -158,10 +165,17 @@ function NowPlaying() {
   const pos = usePosition((ms) => Math.floor(ms / 250) * 250);
   const shown = held ?? (scan.scanning ? Math.min(d, Math.max(0, pos + scan.offsetMs)) : pos);
   const f = d > 0 ? Math.min(1, shown / d) : 0, [elapsed, remaining] = times(shown, d), art = artOk(t?.art);
-  // the Canvas, unless its file failed to load (then the cover, as without one)
+  // the Canvas, unless the cover is chosen or its file failed to load (then the cover, as without one)
   const [failed, setFailed] = useState('');
-  const fetched = useCanvas(uri), canvas = fetched && fetched.url !== failed ? fetched : null;
+  const wantCanvas = useStore(canvasPref, (x) => x.on);
+  const fetched = useCanvas(wantCanvas ? uri : null), canvas = fetched && fetched.url !== failed ? fetched : null;
   const fail = () => setFailed(canvas?.url ?? '');
+  /** a tap on the cover's area: Canvas <-> cover; nothing while the Canvas is chosen and the track has none */
+  const swap = () => {
+    if (wantCanvas && !canvas) return;
+    window.alchemyHaptic?.('light');
+    canvasPref.setState({ on: !wantCanvas });
+  };
   return (
     <div className={css.root} data-canvas={canvas ? '' : undefined}>
       {canvas?.type === 'video' ? <CanvasVideo src={canvas.url} poster={art || undefined} onError={fail} />
@@ -172,6 +186,8 @@ function NowPlaying() {
         <Line className={css.album} text={t?.album} />
       </div>
       {canvas ? null : art ? <img className={css.art} src={art} alt="" /> : <div className={cx(css.art, css.noart)}>♪</div>}
+      {/* a swipe from here is still MENU (Root suppresses the click that ends one); a tap is the swap's alone */}
+      <div className={css.tap} onClick={(e) => { e.stopPropagation(); swap(); }} />
       {m === 'lyrics' && <Lyrics />}
       <div className={css.controls}>
         {art && !canvas && <img className={css.reflection} src={art} alt="" />}

@@ -1,11 +1,11 @@
 // What the chrome gives the screens (screens/contract.ts ChromeModule): the wheel-driven list, the
 // status row, the progress bar, the hold-centre popup, the spinner, the hooks, and the scan (hold
 // ⏮ / ⏭) Now Playing shows. Looks and metrics: docs/ipod-skin.md §2.1-2.2.
-import { useContext, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type PointerEvent } from 'react';
+import { useContext, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type MouseEvent, type PointerEvent } from 'react';
 import { useStore } from 'zustand';
 import { createStore } from 'zustand/vanilla';
 import { hasMedia, positionNow } from '../../model';
-import { cx, duration, isPlaying, useApp, type Shell } from '../../ui';
+import { cx, duration, isPlaying, isSpotify, useApp, useShell, type Shell } from '../../ui';
 import { useHostGlobal } from './host';
 import type { Chrome } from './screens/contract';
 import { useClockPrefs } from './screens';
@@ -139,24 +139,34 @@ export function useTime(h24: boolean): string {
 
 /** The status bar (§2.2, §2.4). Over menus (light): the title at the left, or the time with Settings >
  *  Date & Time > Time in Title. Over Now Playing and the media pages (`dark`): shuffle and repeat at
- *  the left, the time centred. At the right always: ▶ playing / ❚❚ paused (the spinner while the
- *  screen loads), then the battery (the phone's, when the iOS app reports it). */
+ *  the left (Spotify only), the time centred. At the right always: ▶ playing / ❚❚ paused (the spinner
+ *  while the screen loads), then the battery (the phone's, when the iOS app reports it). Shuffle and
+ *  repeat are toggles, dimmed when off: a tap flips shuffle, or steps repeat Off -> All -> One. */
 export const StatusRow = ({ title, dark, busy: loading }: { title: string; dark?: boolean; busy?: boolean }) => {
+  const sh = useShell();
   const st = useApp((x) => ({ media: hasMedia(x), playing: isPlaying(x), paused: x.playback.status === 'paused',
-                               shuffle: x.playback.shuffle, repeat: x.playback.repeat }));
+                               shuffle: x.playback.shuffle, repeat: x.playback.repeat, spotify: isSpotify(x) }));
+  // a swipe that starts here is still MENU (Root); a tap is the toggle's alone
+  const tap = (e: MouseEvent, act: () => void) => { e.stopPropagation(); window.alchemyHaptic?.('light'); act(); };
   const prefs = useClockPrefs(), time = useTime(prefs.twentyFourHour);
   const bat = useHostGlobal('__wmpBattery', 'wmp-battery');
   const level = bat && bat.level >= 0 ? bat.level / 100 : 1;
   const text = dark || prefs.timeInTitle ? time : title;
   return (
     <div className={s.status} data-dark={dark || undefined}>
-      {dark && <span className={s.modes}>
-        {st.shuffle && <svg className={s.glyph} viewBox="0 0 12 9" aria-label="Shuffle">
-          <path d="M0 2h3l5 5h2M0 7h3l5-5h2" fill="none" stroke="currentColor" strokeWidth="1.4" /><path d="M10 0v4l2-2zM10 5v4l2-2z" /></svg>}
-        {st.repeat !== 'off' && <svg className={s.glyph} viewBox="0 0 12 9" aria-label={st.repeat === 'track' ? 'Repeat one' : 'Repeat'}>
-          <path d="M1 5V3h8M11 4v2H3" fill="none" stroke="currentColor" strokeWidth="1.4" /><path d="M8.5 1l2.5 2-2.5 2zM3.5 4L1 6l2.5 2z" />
-          {st.repeat === 'track' && <text x="6" y="7.5" fontSize="5" textAnchor="middle">1</text>}</svg>}
-      </span>}
+      {dark && <span className={s.modes}>{st.spotify && <>
+        <span className={s.mode} role="button" aria-label="Shuffle" aria-pressed={st.shuffle}
+              onClick={(e) => tap(e, () => sh.store.getState().commands.toggleShuffle())}>
+          <svg className={s.glyph} viewBox="0 0 12 9" aria-hidden="true">
+            <path d="M0 2h3l5 5h2M0 7h3l5-5h2" fill="none" stroke="currentColor" strokeWidth="1.4" /><path d="M10 0v4l2-2zM10 5v4l2-2z" /></svg>
+        </span>
+        <span className={s.mode} role="button" aria-label={st.repeat === 'track' ? 'Repeat one' : 'Repeat'} aria-pressed={st.repeat !== 'off'}
+              onClick={(e) => tap(e, () => sh.store.getState().commands.cycleRepeat())}>
+          <svg className={s.glyph} viewBox="0 0 12 9" aria-hidden="true">
+            <path d="M1 5V3h8M11 4v2H3" fill="none" stroke="currentColor" strokeWidth="1.4" /><path d="M8.5 1l2.5 2-2.5 2zM3.5 4L1 6l2.5 2z" />
+            {st.repeat === 'track' && <text x="6" y="7.5" fontSize="5" textAnchor="middle">1</text>}</svg>
+        </span>
+      </>}</span>}
       <span key={text} className={cx(s.title, 'min-w-0 truncate', dark && 'text-center')}>{text}</span>
       <span className={s.icons}>
         {loading ? <Spinner />

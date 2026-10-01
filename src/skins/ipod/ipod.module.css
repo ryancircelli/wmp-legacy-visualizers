@@ -198,6 +198,18 @@
   gap: calc(var(--unit) * 4);
 }
 .icons { justify-content: flex-end; }
+/* shuffle and repeat are toggles, dimmed when off: each a fingertip, 28 units square (44 px on a
+   phone), reaching 9 under the bar; above the screen there */
+.modes { position: relative; z-index: 1; gap: 0; }
+.mode {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: calc(var(--unit) * 28);
+  height: calc(var(--unit) * 19);
+}
+.mode::after { content: ""; position: absolute; inset: 0 0 calc(var(--unit) * -9); }
+.mode[aria-pressed=false] { opacity: .4; }
 .glyph {
   flex: none;
   width: calc(var(--unit) * 12);

@@ -26,6 +26,8 @@
   position: absolute; top: calc(var(--unit) * 60); left: 0;
   width: calc(var(--unit) * 240); height: calc(var(--unit) * 240); object-fit: cover;
 }
+/* the cover's area as the Canvas / cover swap's tap target (over the Canvas too, under the lyrics) */
+.tap { position: absolute; top: calc(var(--unit) * 60); left: 0; right: 0; height: calc(var(--unit) * 240); }
 .noart {
   display: grid; place-items: center; background: linear-gradient(#ececec, #c9c9c9);
   color: #fff; font-size: calc(var(--unit) * 120);
