@@ -172,6 +172,17 @@ describe('3. transport: connect-state commands', () => {
     expect(env.S.playback.position).toBe(60_500);
     expect(env.S.playback.pending).toBeNull();
   });
+  it('410 from a device that went away: forgotten, the command sent to this device instead', async () => {
+    const env = setup();
+    await settle();
+    env.route(/player\/command/, (url) => /\/to\/[0-9a-f]+$/.test(url) && !url.endsWith('/to/' + ME)
+      ? { status: 410, json: { error: { message: 'Device not found' } } } : { status: 200, json: { ack_id: 'a' } });
+    await env.C.play(); await settle();
+    const urls = env.calls.filter((x) => /player\/command/.test(x.url)).map((x) => x.url.replace(/.*\/from\//, ''));
+    expect(urls.slice(-2)).toEqual([ME + '/to/' + FX.activeDeviceId, ME + '/to/' + ME]);
+    expect(window.__wmpSpotify!.activeDeviceId).toBe('');
+    expect(env.S.ui.status).not.toMatch(/refused|Device not found/);
+  });
   it('fallback to the host mediaCmd is per command: network error, then non-2xx', async () => {
     const env = setup();
     env.route(/player\/command/, () => new Error('offline'));

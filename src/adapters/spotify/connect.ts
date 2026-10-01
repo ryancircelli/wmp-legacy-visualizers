@@ -24,7 +24,7 @@ export function spclient(): string {
 export type Cmd = { endpoint: string; value?: unknown } & Record<string, unknown>;
 
 /** true when the player took it (2xx); false after the fallback ran (refused, offline, no device). */
-export async function command(sp: Sp, cmd: Cmd, orElse?: (() => void) | null): Promise<boolean> {
+export async function command(sp: Sp, cmd: Cmd, orElse?: (() => void) | null, retried = false): Promise<boolean> {
   const w = W(), to = w.activeDeviceId || w.deviceId;
   // The host's log (a no-op on the website): what a command was sent as, and how it went.
   const log = (how: string) => window.alchemyLog?.('spotify: ' + cmd.endpoint + ' from ' + (w.deviceId || '-').slice(0, 8)
@@ -36,6 +36,12 @@ export async function command(sp: Sp, cmd: Cmd, orElse?: (() => void) | null): P
     if (r.status >= 200 && r.status < 300) { log(String(r.status)); return true; }
     const msg = (r.json as { error?: { message?: string } } | null)?.error?.message;
     log(r.status + ' ' + (msg || ''));
+    // 410 Gone: the active device went away while this page was in the background (the phone,
+    // measured) and the cluster that said so was missed. Forget it and play here, once.
+    if (r.status === 410 && to !== w.deviceId && !retried) {
+      if (window.__wmpSpotify) window.__wmpSpotify.activeDeviceId = '';
+      return command(sp, cmd, orElse, true);
+    }
     status(sp, 'Spotify: ' + (msg || 'command refused (' + r.status + ')'));
   } catch { log('offline'); status(sp, 'Spotify: command failed (offline)'); }
   orElse?.();
