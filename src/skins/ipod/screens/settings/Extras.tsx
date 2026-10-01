@@ -291,9 +291,9 @@ const ReadMe = () => (
     <p style={{ margin: `0 0 ${u(8)}` }}><b>The Click Wheel.</b> Turn it to move; press the center to choose; hold the center for a song's
       menu; MENU goes back, held it goes to the main menu. Play/Pause plays the row you are on (a playlist or album whole); held, it
       sleeps. ⏮ and ⏭ change songs; held, they scan.</p>
-    <p style={{ margin: `0 0 ${u(8)}` }}><b>On Spotify.</b> Music is your library: Playlists starts with On-The-Go (what plays next),
-      Songs are your Liked Songs, Artists come from your liked songs and saved albums, and Genius Mixes are Spotify Home. Photos is
-      your cover art, Radio is Spotify's stations on the FM dial, and Search types a letter at a time (⏭ a space, ⏮ deletes).</p>
+    <p style={{ margin: `0 0 ${u(8)}` }}><b>On Spotify.</b> Home is Spotify Home's shelves. Library is your library: Playlists
+      starts with the Queue (what plays next), and Artists come from your follows, else your liked songs and saved albums. Radio is
+      Spotify's stations on the FM dial, and Search types a letter at a time (⏭ a space, ⏮ deletes).</p>
     <p style={{ margin: 0 }}><b>Settings.</b> Play On picks the device Spotify plays on; Lyrics and Karaoke are Now Playing's; Color
       and Click Wheel dress the iPod; Skin goes back to Windows Media Player 9.</p>
   </TextPage>

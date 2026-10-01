@@ -87,25 +87,22 @@ export interface IpodSettings {
   wheel: 'white' | 'black';
 }
 
-/** Each group exports screen factories by these names; the chrome's Main and Music menus call
+/** Each group exports screen factories by these names; the chrome's Main and Library menus call
  *  them (a factory returns the entry to push). A group that has no screen for an item exports a
  *  factory all the same, showing the iPod's "No <things>" page or the mapping the spec chose. */
 export interface Screens {
   // group nowplaying/
   nowPlaying(): ScreenEntry;
-  // group lists/
-  playlists(): ScreenEntry; artists(): ScreenEntry; albums(): ScreenEntry; songs(): ScreenEntry;
-  genres(): ScreenEntry; composers(): ScreenEntry; audiobooks(): ScreenEntry; podcasts(): ScreenEntry;
+  // group lists/ (Library > Playlists, Liked Songs (songs), Albums, Artists, Podcasts & Shows, Cover Flow; Search)
+  playlists(): ScreenEntry; artists(): ScreenEntry; albums(): ScreenEntry; songs(): ScreenEntry; podcasts(): ScreenEntry;
   search(): ScreenEntry; coverFlow(): ScreenEntry;
-  /** play all songs shuffled, then Now Playing */
-  shuffleSongs(nav: Nav): void;
-  // group home/ (the nano's Videos / Photos / Radio / Voice Memos slots; docs/ipod-skin.md §4.2)
-  videos(): ScreenEntry; photos(): ScreenEntry; fmRadio(): ScreenEntry; voiceMemos(): ScreenEntry;
-  /** Music > Genius Mixes: Spotify Home's shelves (the same screen videos() showed; §4.2) */
-  geniusMixes(): ScreenEntry;
-  // group lists/: Playlists' first row on the nano
-  /** On-The-Go: the queue (commands.addToQueue adds to it) */
+  /** Library > Queue, also Playlists' first row: Spotify's queue (commands.addToQueue adds to it) */
   onTheGo(): ScreenEntry;
+  // group home/
+  /** Radio: Spotify's stations on the FM dial (docs/ipod-skin.md §4.2) */
+  fmRadio(): ScreenEntry;
+  /** Home: Spotify Home's shelves, each opening its items */
+  home(): ScreenEntry;
   // group settings/ (Settings and Extras; the 5G's Extras: Alarms, Calendars, Clocks, Contacts,
   // Fitness, Games, Notes, Screen Lock, Stopwatch, Voice Memos (§2.3))
   settings(): ScreenEntry; extras(): ScreenEntry;

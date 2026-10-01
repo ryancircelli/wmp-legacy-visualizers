@@ -109,14 +109,14 @@ function General() {
   const nav = useNav(), [ip, patch] = useIpodSettings(), [d] = useDisplay();
   return <MenuScreen items={[
     { id: 'main', label: 'Main Menu', chevron: true, onSelect: to(nav, page('settings/main', 'Main Menu', MainMenu)) },
-    { id: 'music', label: 'Music Menu', chevron: true, onSelect: to(nav, page('settings/music', 'Music Menu', MusicMenu)) },
+    { id: 'music', label: 'Library Menu', chevron: true, onSelect: to(nav, page('settings/music', 'Library Menu', LibraryMenu)) },
     { id: 'backlight', label: 'Backlight', right: seconds(d.backlight), chevron: true, onSelect: to(nav, page('settings/backlight', 'Backlight', Backlight)) },
     { id: 'brightness', label: 'Brightness', chevron: true, onSelect: to(nav, page('settings/brightness', 'Brightness', Brightness)) },
     { id: 'clicker', label: 'Clicker', right: onOff(ip.clicker), onSelect: () => patch({ clicker: !ip.clicker }) },
   ]} />;
 }
 
-/** Main Menu and Music Menu: a checklist of the rows (✓ shows it), then Preview Panel / Reset Menu. */
+/** Main Menu and Library Menu: a checklist of the rows (✓ shows it), then Preview Panel / Reset Menu. */
 function MainMenu() {
   const vis = useMenuVisibility().main;
   return <MenuScreen items={[
@@ -124,7 +124,7 @@ function MainMenu() {
     { id: 'previewpanel', label: 'Preview Panel', right: onOff(vis.previewpanel !== false), onSelect: () => setMenuItem('main', 'previewpanel', vis.previewpanel === false) },
   ]} />;
 }
-function MusicMenu() {
+function LibraryMenu() {
   const vis = useMenuVisibility().music;
   return <MenuScreen items={[
     ...MUSIC_MENU.map(([id, label]) => ({ id, label, right: check(vis[id] !== false), onSelect: () => setMenuItem('music', id, vis[id] === false) })),

@@ -1,6 +1,6 @@
 // The Settings and Extras screens (screens/contract.ts Screens.settings / extras / alarms), and what
 // the chrome reads of their preferences:
-// - useMenuVisibility(): General > Main Menu / Music Menu, {main, music} each Record<row id, boolean>
+// - useMenuVisibility(): General > Main Menu / Library Menu, {main, music} each Record<row id, boolean>
 //   ('ipod.menus'; main.previewpanel is the Preview Panel); MAIN_MENU / MUSIC_MENU list the ids.
 // - useClockPrefs(): Date & Time, {twentyFourHour, timeInTitle} ('ipod.clock').
 // - useDisplayPrefs(): General > Backlight (s, 0 = Always On) and Brightness (off the iPhone, for the

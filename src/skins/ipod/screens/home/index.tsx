@@ -1,13 +1,11 @@
-// The home group: the nano's Genius Mixes, Videos, Photos, Radio and Voice Memos slots over Spotify
-// (docs/ipod-skin.md §2.4, §4.2). Genius Mixes are Spotify Home's playlists and albums, one mix a
-// page; Videos (hidden by default) lists Home's shelves; Photos is the library's cover art; Radio is
-// Spotify's stations on the FM dial; Voice Memos is the iPod's empty page. Hold-center on a thing
-// that can be saved opens Like / Add to Playlist / Start Radio.
-import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
-import { LIKED, type HomeItem, type HomeSection, type LibraryItem, type Station } from '../../../../model';
+// The home group: the main menu's Home and Radio over Spotify (docs/ipod-skin.md §2.4, §4.2). Home
+// lists Spotify Home's shelves, each opening its items; Radio is Spotify's stations on the FM dial.
+// Hold-center on a thing that can be saved opens Like / Add to Playlist / Start Radio.
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import type { HomeItem, HomeSection, Station } from '../../../../model';
 import {
-  canSave, isCollectionUri, toggleSaved, useAddTo, useApp, useArtist, useCollection, useHome, useLibraryList, usePosition, useRadio,
-  useRadioSeeds, useShell, type Shell,
+  canSave, isCollectionUri, toggleSaved, useAddTo, useApp, useArtist, useCollection, useHome, usePosition, useRadio, useRadioSeeds,
+  useShell, type Shell,
 } from '../../../../ui';
 import { Bar, MenuScreen, Popup, useNav, useWheel } from '../../ui';
 import type { MenuItem, Nav, ScreenEntry } from '../contract';
@@ -17,7 +15,7 @@ import { step } from './step';
 const u = (n: number) => `calc(var(--unit) * ${n})`;
 
 /** State held by the screen entry, not its component: the chrome may unmount a covered screen, and
- *  the full-screen photo moves the grid's selection. */
+ *  the Radio menu reads the dial's. */
 function kept<T>(v: T) {
   const subs = new Set<() => void>();
   return {
@@ -28,15 +26,6 @@ function kept<T>(v: T) {
 }
 type Kept<T = number> = ReturnType<typeof kept<T>>;
 const useKept = <T,>(k: Kept<T>) => [useSyncExternalStore(k.sub, k.get), k.set] as const;
-/** move a selection kept in `set` from i to k; false when it stays (the chrome then does not click) */
-const moveTo = (set: (n: number) => void, i: number, k: number) => { if (k === i) return false; set(k); };
-
-/** Play a collection or a station from its top, then Now Playing. */
-function play(sh: Shell, nav: Nav, uri: string) {
-  const c = sh.store.getState().commands;
-  if (/^spotify:(playlist|album):/.test(uri) || uri === LIKED) c.playAll(uri); else c.playItem({ uri });
-  nav.toNowPlaying();
-}
 
 /** Start Radio: the station Spotify makes from this uri (its "inspired by" mix), played, then Now Playing. */
 async function startRadio(sh: Shell, nav: Nav, uri: string, name: string): Promise<void> {
@@ -72,73 +61,11 @@ function Hold({ set, ...h }: Held & { set: (h: Held | null) => void }) {
   return <Popup key={String(!!h.lists)} items={items} onClose={() => set(null)} />;
 }
 
-// ---- Genius Mixes: Spotify Home's playlists and albums ------------------------------------------
+// ---- Home: Spotify Home's shelves, each opening its items ---------------------------------------
 
-export function geniusMixes(): ScreenEntry {
+export function home(): ScreenEntry {
   const at = kept(0);
-  return { key: 'geniusMixes', title: 'Genius Mixes', render: () => <Mixes at={at} /> };
-}
-
-/** every playlist and album on Home, once, in feed order (§4.2) */
-function mixesOf(sections: HomeSection[] | null): HomeItem[] {
-  const seen = new Set<string>();
-  return (sections ?? []).flatMap((s) => s.items).filter((x) => /^spotify:(playlist|album):/.test(x.uri) && !seen.has(x.uri) && !!seen.add(x.uri));
-}
-
-/** at most this many page dots, the current one kept inside them */
-const DOTS = 15;
-
-/** One mix a page (§2.4 Genius Mixes): "◀ name ▶" and its artists over a 2×2 mosaic of its covers,
- *  page dots under it. Wheel and ⏮⏭ change mixes; center or Play/Pause plays it. The mosaic is the
- *  mix's first songs' covers (one page fetched per mix shown), else its own cover. */
-function Mixes({ at }: { at: Kept }) {
-  const sh = useShell(), nav = useNav(), { sections } = useHome(), [sel, setI] = useKept(at), [hold, openHold] = useHold();
-  const mixes = mixesOf(sections), n = mixes.length, i = Math.min(sel, Math.max(0, n - 1)), m = mixes[i];
-  const songs = useCollection(m?.uri), playing = useApp((s) => !!m && s.playback.context?.uri === m.uri);
-  const go = (d: number) => moveTo(setI, i, step(i, d, n));
-  useWheel({
-    onTick: go, onPrev: () => go(-1), onNext: () => go(1),
-    onCenter: m ? () => play(sh, nav, m.uri) : undefined, onPlay: m ? () => play(sh, nav, m.uri) : undefined,
-    onHoldCenter: m ? () => openHold({ uri: m.uri, name: m.name }) : undefined,
-  });
-  if (!m) return <MenuScreen items={[]} loading={!sections} empty="No Genius Mixes" />;
-  const covers = [...new Set(songs.rows.map((t) => t.art || t.image).filter((x): x is string => !!x))].slice(0, 4);
-  const artists = [...new Set(songs.rows.map((t) => t.artist))].slice(0, 6).join(', ') || m.sub;
-  const lo = Math.max(0, Math.min(i - (DOTS >> 1), n - DOTS));
-  const arrow = (on: boolean, ch: string) => <span style={{ fontSize: u(11), opacity: on ? 1 : 0.3 }}>{ch}</span>;
-  return (
-    <div className="relative h-full overflow-hidden text-white" style={{ background: '#000' }}>
-      <div className="text-center" style={{ height: u(56), padding: `${u(5)} ${u(8)} 0`, background: 'linear-gradient(#424242, #010101)' }}>
-        <div className="flex items-center justify-center font-bold" style={{ gap: u(6), fontSize: u(16), lineHeight: u(20) }}>
-          {arrow(i > 0, '◀')}
-          <span className="truncate">{m.name}</span>
-          {playing && <svg viewBox="0 0 10 10" fill="currentColor" style={{ flex: 'none', width: u(10), height: u(10) }} aria-label="Playing">
-            <path d="M0 3.5h2.5L5.5 1v8L2.5 6.5H0z" /><path d="M7 2.5a3.5 3.5 0 0 1 0 5" fill="none" stroke="currentColor" strokeWidth="1.2" /></svg>}
-          {arrow(i < n - 1, '▶')}
-        </div>
-        <div style={{ fontSize: u(12), lineHeight: u(14), color: '#cfcfcf', overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>
-          {artists}
-        </div>
-      </div>
-      <div className="absolute grid grid-cols-2 grid-rows-2" style={{ top: u(62), left: u(10), width: u(220), height: u(220), background: '#222' }}>
-        {covers.length === 4 ? covers.map((c) => <img key={c} src={c} alt="" className="block w-full h-full object-cover" />)
-          : m.img && <img src={m.img} alt="" className="block object-cover col-span-2 row-span-2 w-full h-full" />}
-      </div>
-      <div className="absolute inset-x-0 flex justify-center" style={{ top: u(300), gap: u(5) }}>
-        {mixes.slice(lo, lo + DOTS).map((x, k) => (
-          <span key={x.uri} style={{ width: u(6), height: u(6), borderRadius: '50%', background: lo + k === i ? '#fff' : '#6a6a6a' }} />
-        ))}
-      </div>
-      {hold}
-    </div>
-  );
-}
-
-// ---- Videos: Spotify Home's shelves (hidden by default; §6 item 5) -------------------------------
-
-export function videos(): ScreenEntry {
-  const at = kept(0);
-  return { key: 'videos', title: 'Spotify Home', render: () => <Shelves at={at} /> };
+  return { key: 'home', title: 'Home', render: () => <Shelves at={at} /> };
 }
 
 function Shelves({ at }: { at: Kept }) {
@@ -149,7 +76,7 @@ function Shelves({ at }: { at: Kept }) {
 
 function shelf(sec: HomeSection, k: number): ScreenEntry {
   const at = kept(0);
-  return { key: 'videos/' + k, title: sec.title, render: () => <Shelf items={sec.items} at={at} /> };
+  return { key: 'home/' + k, title: sec.title, render: () => <Shelf items={sec.items} at={at} /> };
 }
 
 /** a playlist, album, Liked Songs or artist opens to its songs; anything else plays */
@@ -172,7 +99,7 @@ function Shelf({ items, at }: { items: HomeItem[]; at: Kept }) {
 
 function songs(uri: string, name: string): ScreenEntry {
   const at = kept(0);
-  return { key: 'videos:' + uri, title: name, render: () => <Songs uri={uri} at={at} /> };
+  return { key: 'home:' + uri, title: name, render: () => <Songs uri={uri} at={at} /> };
 }
 
 /** a collection's songs (paged as the selection nears the end), or an artist's top songs */
@@ -190,87 +117,6 @@ function Songs({ uri, at }: { uri: string; at: Kept }) {
       <MenuScreen items={items} selected={i} onSelectedChange={move} loading={coll.loading || artist.loading} empty="No Songs" />
       {hold}
     </>
-  );
-}
-
-// ---- Photos: the library's cover art (§2.4 Photos, ours) ------------------------------------------
-
-export function photos(): ScreenEntry {
-  const at = kept(0);
-  return { key: 'photos', title: 'Photos', render: () => <Photos at={at} /> };
-}
-
-const LIKED_ITEM: LibraryItem = { uri: LIKED, name: 'Liked Songs' };
-/** a cover; Liked Songs (which has none) as Spotify draws it */
-const Art = ({ x }: { x: LibraryItem }): ReactNode =>
-  x.uri === LIKED ? <div className="grid place-items-center w-full h-full" style={{ background: 'linear-gradient(135deg, #450af5, #c4efd9)' }}>
-    <svg viewBox="0 0 24 22" fill="#fff" style={{ width: '45%' }} aria-hidden="true"><path d="M12 21.6 10.3 20C4.2 14.5 0 10.7 0 6.1 0 2.7 2.7 0 6.1 0 8 0 9.9.9 12 3.1 14.1.9 16 0 17.9 0 21.3 0 24 2.7 24 6.1c0 4.6-4.2 8.4-10.3 13.9z" /></svg>
-  </div>
-  : x.image ? <img src={x.image} alt="" loading="lazy" className="block w-full h-full object-cover" />
-  : <div className="w-full h-full" style={{ background: '#8e8e93' }} />;
-
-/** cells a ⏮ / ⏭ page moves: the 5 whole rows on screen */
-const PAGE = 20;
-
-/** The thumbnail grid: 4 columns of 56 with a 4 gap, the selection ringed blue and raised. Wheel
- *  moves it, ⏮⏭ a page (held: to the first / last), center shows it full screen, Play/Pause plays it. */
-function Photos({ at }: { at: Kept }) {
-  const sh = useShell(), nav = useNav(), lib = useLibraryList(), all = [LIKED_ITEM, ...lib.items];
-  const [sel, setI] = useKept(at), [hold, openHold] = useHold(), grid = useRef<HTMLDivElement>(null);
-  // an album removed from the library (hold-center: Remove) shortens the grid under the selection
-  const n = all.length, i = Math.min(sel, n - 1), a = all[i]!;
-  // keep the selected cell in view, scrolling the grid only (never the page around it)
-  useLayoutEffect(() => {
-    const g = grid.current, c = g?.children[i] as HTMLElement | undefined;
-    if (!g || !c) return;
-    if (c.offsetTop < g.scrollTop) g.scrollTop = c.offsetTop;
-    else if (c.offsetTop + c.offsetHeight > g.scrollTop + g.clientHeight) g.scrollTop = c.offsetTop + c.offsetHeight - g.clientHeight;
-  }, [i, n]);
-  useWheel({
-    onTick: (d) => moveTo(setI, i, step(i, d, n)), onPrev: () => setI(step(i, -PAGE, n)), onNext: () => setI(step(i, PAGE, n)),
-    onHoldPrev: () => setI(0), onHoldNext: () => setI(n - 1),
-    onCenter: () => nav.push(photo(all, at)),
-    onPlay: () => play(sh, nav, a.uri),
-    onHoldCenter: canSave(a.uri) ? () => openHold({ uri: a.uri, name: a.name }) : undefined,
-  });
-  return (
-    <>
-      <div ref={grid} className="relative grid content-start h-full overflow-hidden"
-           style={{ gridTemplateColumns: `repeat(4, ${u(56)})`, gap: u(4), padding: u(2) }}>
-        {all.map((x, k) => (
-          <div key={x.uri} className="relative" onClick={() => (k === i ? nav.push(photo(all, at)) : setI(k))} style={{ width: u(56), height: u(56), ...(k === i
-            ? { zIndex: 1, transform: 'scale(1.08)', boxShadow: `0 0 0 ${u(2)} #3f7fcd` } : {}) }}>
-            <Art x={x} />
-          </div>
-        ))}
-      </div>
-      {hold}
-    </>
-  );
-}
-
-function photo(all: LibraryItem[], at: Kept): ScreenEntry {
-  return { key: 'photos/full', title: 'Photos', render: () => <Photo all={all} at={at} /> };
-}
-
-/** One cover full screen on black with its name and owner or artist under it: the wheel and ⏮⏭
- *  move through them (and the grid's selection with it), center or Play/Pause plays it. */
-function Photo({ all, at }: { all: LibraryItem[]; at: Kept }) {
-  const sh = useShell(), nav = useNav(), [i, setI] = useKept(at), [hold, openHold] = useHold(), a = all[i];
-  const go = (d: number) => moveTo(setI, i, step(i, d, all.length));
-  useWheel({
-    onTick: go, onPrev: () => go(-1), onNext: () => go(1),
-    onCenter: a ? () => play(sh, nav, a.uri) : undefined, onPlay: a ? () => play(sh, nav, a.uri) : undefined,
-    onHoldCenter: a && canSave(a.uri) ? () => openHold({ uri: a.uri, name: a.name }) : undefined,
-  });
-  if (!a) return null;
-  return (
-    <div className="flex flex-col justify-center h-full text-white text-center" style={{ background: '#000' }}>
-      <div style={{ width: u(240), height: u(240) }}><Art x={a} /></div>
-      <div className="truncate font-bold" style={{ fontSize: u(14), padding: `${u(6)} ${u(8)} 0` }}>{a.name}</div>
-      <div className="truncate" style={{ fontSize: u(12), padding: `0 ${u(8)}`, color: '#bdbdbd' }}>{a.artist ?? a.owner}</div>
-      {hold}
-    </div>
   );
 }
 
@@ -421,10 +267,4 @@ function Stations({ which, title }: { which: keyof RadioLog; title: string }) {
   const sh = useShell(), nav = useNav(), [log] = useKept(radioLog);
   const items = log[which].map((x): MenuItem => ({ id: x.uri, label: x.name, onSelect: () => { tuneIn(sh, x); nav.toNowPlaying(); } }));
   return <MenuScreen items={items} empty={'No ' + title} />;
-}
-
-// ---- Voice Memos: nothing records here -----------------------------------------------------------
-
-export function voiceMemos(): ScreenEntry {
-  return { key: 'voiceMemos', title: 'Voice Memos', render: () => <MenuScreen items={[]} empty="No Voice Memos" /> };
 }

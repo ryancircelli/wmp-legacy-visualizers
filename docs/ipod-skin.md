@@ -28,6 +28,13 @@ the end.
 > Songs, Artists and On-The-Go are real. The skin keeps the desktop viewport (a phone-wide one
 > left Spotify's web player without state) and the chrome's §1.6 sizing gave way to the owner's:
 > the screen spans the width inside a 3% margin, the wheel below it.
+>
+> **The tree is Spotify's now (owner, 2026-10-01), the look still the nano's.** Main menu: Home
+> (Spotify's shelves), Search, Library, Radio, Now Playing while a track is loaded, Settings, Extras
+> (off by default). Library: Playlists (Queue first), Liked Songs, Albums, Artists, Podcasts & Shows
+> (off by default), Queue, Cover Flow (off by default). Gone: Shuffle Songs (the status bar's shuffle,
+> repeat and heart are tap toggles), Videos, Photos, Voice Memos, Genres, Composers, Audiobooks,
+> Genius Mixes. §2.3 below is the nano's own tree, kept as the reference it was.
 
 ## 0. At a glance
 

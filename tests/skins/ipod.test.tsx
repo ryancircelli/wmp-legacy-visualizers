@@ -31,46 +31,44 @@ function mount() {
   };
 }
 
-it('arrows move the selection, Enter opens Music, Escape comes back; a tick that moves is a haptic, one at the end is not', () => {
+it('arrows move the selection, Enter opens Library, Escape comes back; a tick that moves is a haptic, one at the end is not', () => {
   const haptic = vi.fn();
   window.alchemyHaptic = haptic;
   const m = mount();
-  expect(m.sel()).toEqual(['Music']);
+  expect(m.sel()).toEqual(['Home']);
   key('ArrowUp');                                    // the top: nothing moves, no click
-  expect(m.sel()).toEqual(['Music']);
+  expect(m.sel()).toEqual(['Home']);
   expect(haptic).not.toHaveBeenCalledWith('selection');
   key('ArrowDown');
-  expect(m.sel()).toEqual([m.rows()[1]]);
+  expect(m.sel()).toEqual(['Search']);
   expect(haptic).toHaveBeenCalledWith('selection');
-  key('ArrowUp');
+  key('ArrowDown');
   key('Enter');
-  expect(m.sel()).toEqual(['Cover Flow']);
+  expect(m.sel()).toEqual(['Playlists']);
   key('Escape');
-  expect(m.sel()).toEqual(['Music']);
+  expect(m.sel()).toEqual(['Library']);
 });
 
-it('the nano 5G menus: Radio not FM Radio, Voice Memos in Extras, Genius Mixes in Music, no On-The-Go there', () => {
+it('Spotify\'s menus in the nano\'s look: Extras hidden, Now Playing only with a track; the Library without Podcasts & Shows or Cover Flow', () => {
   const m = mount();
-  expect(m.rows()).toContain('Radio');
-  expect(m.rows()).toContain('Extras');
-  expect(m.rows()).not.toContain('FM Radio');
-  expect(m.rows()).not.toContain('Voice Memos');
-  key('Enter');
-  expect(m.rows().slice(0, 3)).toEqual(['Cover Flow', 'Genius Mixes', 'Playlists']);
-  expect(m.rows()).not.toContain('On-The-Go');
+  expect(m.rows()).toEqual(['Home', 'Search', 'Library', 'Radio', 'Settings']);
+  act(() => { m.store.setState((s) => ({ playback: { ...s.playback, track: { uri: 'spotify:track:a', title: 'T', artist: 'A', duration: 1 } } })); });
+  expect(m.rows()).toEqual(['Home', 'Search', 'Library', 'Radio', 'Now Playing', 'Settings']);
+  act(() => { fireEvent.click(m.row('Library')); });
+  expect(m.rows()).toEqual(['Playlists', 'Liked Songs', 'Albums', 'Artists', 'Queue']);
 });
 
 it('a chevron shows on the selected row only', () => {
   const m = mount();
-  expect(m.chevrons()).toEqual(['Music']);
+  expect(m.chevrons()).toEqual(['Home']);
   key('ArrowDown');
   expect(m.chevrons()).toEqual(m.sel());
 });
 
 it('a tap selects a row and does what the centre would', () => {
   const m = mount();
-  act(() => { fireEvent.click(m.row('Music')); });
-  expect(m.sel()).toEqual(['Cover Flow']);
+  act(() => { fireEvent.click(m.row('Library')); });
+  expect(m.sel()).toEqual(['Playlists']);
   const a = vi.fn(), b = vi.fn(), off = vi.fn();
   const { getByText } = render(<ShellContext.Provider value={makeShell(m.store, {} as Ticker)}>
     <MenuScreen items={[{ id: 'a', label: 'A', onSelect: a }, { id: 'b', label: 'B', onSelect: b }, { id: 'c', label: 'C', onSelect: off, disabled: true }]} />
@@ -96,17 +94,17 @@ it('a loading list says why it waits: signing in, signed out, or loading', () =>
 
 it('a swipe right on the screen is MENU, and not also a tap on the row it ended on', () => {
   const m = mount();
-  key('Enter');
-  const row = m.row('Cover Flow');
+  act(() => { fireEvent.click(m.row('Library')); });
+  const row = m.row('Playlists');
   act(() => { fireEvent.pointerDown(row, { pointerId: 1, clientX: 10, clientY: 100 }); });
   act(() => { fireEvent.pointerUp(row, { pointerId: 1, clientX: 90, clientY: 110 }); });
   act(() => { fireEvent.click(row); });
-  expect(m.sel()).toEqual(['Music']);
-  const music = m.row('Music');                       // a short drag is no swipe
-  act(() => { fireEvent.pointerDown(music, { pointerId: 2, clientX: 10, clientY: 100 }); });
-  act(() => { fireEvent.pointerUp(music, { pointerId: 2, clientX: 30, clientY: 100 }); });
-  act(() => { fireEvent.click(music); });
-  expect(m.sel()).toEqual(['Cover Flow']);
+  expect(m.sel()).toEqual(['Library']);
+  const library = m.row('Library');                   // a short drag is no swipe
+  act(() => { fireEvent.pointerDown(library, { pointerId: 2, clientX: 10, clientY: 100 }); });
+  act(() => { fireEvent.pointerUp(library, { pointerId: 2, clientX: 30, clientY: 100 }); });
+  act(() => { fireEvent.click(library); });
+  expect(m.sel()).toEqual(['Playlists']);
 });
 
 it('a seekable Bar follows a drag and seeks once, on release', () => {

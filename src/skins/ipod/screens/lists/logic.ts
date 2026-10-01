@@ -1,4 +1,4 @@
-// The Music screens' pure parts: Search's letter picker, the iPod's A–Z order and the Artists list.
+// The Library screens' pure parts: Search's letter picker, the iPod's A–Z order and the Artists list.
 // No React, no DOM.
 import type { LibraryItem, Track } from '../../../../model';
 
@@ -54,7 +54,7 @@ export function artistsOf(rows: readonly Track[]): Map<string, string> {
 
 export interface Artist { key: string; name: string; uri?: string }
 
-/** Music > Artists: the liked songs' artists (with their uri) and the saved albums' (names only, the
+/** Library > Artists: the liked songs' artists (with their uri) and the saved albums' (names only, the
  *  adapter lists no followed artists), one per name, A–Z. */
 export function artistList(liked: Map<string, string>, albums: readonly LibraryItem[]): Artist[] {
   const by = new Map<string, Artist>();

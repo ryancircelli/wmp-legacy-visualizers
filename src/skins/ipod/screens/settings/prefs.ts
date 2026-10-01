@@ -51,21 +51,22 @@ export function resetPrefs(): void {
   notify();
 }
 
-// ---- Main Menu / Music Menu ----------------------------------------------------------------------
-/** The rows Settings > General > Main Menu and Music Menu turn on and off, in the chrome's order, by
+// ---- Main Menu / Library Menu --------------------------------------------------------------------
+/** The rows Settings > General > Main Menu and Library Menu turn on and off, in the chrome's order, by
  *  its row id (src/skins/ipod/menus.tsx: the label in lower case without spaces). */
 const rows = (labels: string[]) => labels.map((l) => [l.toLowerCase().replace(/\s+/g, ''), l] as const);
-export const MAIN_MENU = rows(['Music', 'Videos', 'Photos', 'Podcasts', 'Radio', 'Extras', 'Shuffle Songs']);
-export const MUSIC_MENU = rows(['Cover Flow', 'Genius Mixes', 'Playlists', 'Artists', 'Albums', 'Songs', 'Genres', 'Composers', 'Audiobooks', 'Search']);
-/** Off until turned on: what Spotify has nothing behind (docs/ipod-skin.md §4.2, the owner's §6 calls).
- *  Voice Memos is Extras' own row; its main-menu id is off should the chrome list it. */
-const OFF = new Set(['videos', 'podcasts', 'voicememos', 'genres', 'composers', 'audiobooks']);
-/** 'ipod.menus': which main- and music-menu rows show, by row id (MAIN_MENU, MUSIC_MENU), and
+export const MAIN_MENU = rows(['Home', 'Search', 'Library', 'Radio', 'Extras']);
+/** the Library menu's (stored under `music`, its old name) */
+export const MUSIC_MENU = rows(['Playlists', 'Liked Songs', 'Albums', 'Artists', 'Podcasts & Shows', 'Queue', 'Cover Flow']);
+/** Off until turned on: Extras, Podcasts & Shows (the adapter lists none yet) and Cover Flow. */
+const OFF = new Set(['extras', 'podcasts&shows', 'coverflow']);
+/** 'ipod.menus': which main- and library-menu rows show, by row id (MAIN_MENU, MUSIC_MENU), and
  *  main.previewpanel (General > Main Menu > Preview Panel). Every listed id is present; an id not
- *  listed (Settings, Now Playing) is undefined: show it. Only the user's own choices are stored. */
+ *  listed (Settings, Now Playing) is undefined: show it. Only the user's own choices are stored; a
+ *  stored id no menu lists any more is ignored. */
 export interface MenuVisibility { main: Record<string, boolean>; music: Record<string, boolean> }
 const shown = (l: typeof MAIN_MENU) => Object.fromEntries(l.map(([id]) => [id, !OFF.has(id)]));
-const MENUS0: MenuVisibility = { main: { ...shown(MAIN_MENU), voicememos: false, previewpanel: true }, music: shown(MUSIC_MENU) };
+const MENUS0: MenuVisibility = { main: { ...shown(MAIN_MENU), previewpanel: true }, music: shown(MUSIC_MENU) };
 const CHOSEN0: MenuVisibility = { main: {}, music: {} };
 
 export function useMenuVisibility(): MenuVisibility {
@@ -76,7 +77,7 @@ export function setMenuItem(menu: keyof MenuVisibility, id: string, on: boolean)
   const v = readPref('ipod.menus', CHOSEN0);
   writePref('ipod.menus', { ...v, [menu]: { ...v[menu], [id]: on } });
 }
-/** Music Menu > Reset Menu: the Music menu as it ships */
+/** Library Menu > Reset Menu: the Library menu as it ships */
 export const resetMenu = (menu: keyof MenuVisibility) => writePref('ipod.menus', { ...readPref('ipod.menus', CHOSEN0), [menu]: {} });
 
 // ---- General, Playback -------------------------------------------------------------------------------
