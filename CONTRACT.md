@@ -339,8 +339,9 @@ an event of the same name: `__wmpVolume` (the buttons too), `__wmpBattery`, `__w
 `alchemyReset()` (the web view's data cleared, a reload); and the rest of the phone mapped whether
 used or not: `alchemyViewport`, `alchemyHapticPattern`, `alchemySound`, `alchemyRoutePicker`,
 `alchemyAudioSession`, `alchemyNotify`, `alchemyAppearance`, `alchemyClipboard`, with the reports
-`__wmpProximity`, `__wmpLowPower`, `__wmpThermal`, `__wmpScene`, `__wmpKeyboard` and `wmp-memory`
-(ios/README.md lists each). The app fetches
+`__wmpProximity`, `__wmpLowPower`, `__wmpThermal`, `__wmpScene`, `__wmpKeyboard` and `wmp-memory`,
+and the last fixed choices made the page's: `alchemyBand(hidden)`, `alchemyBackground(hex)`,
+`alchemyKeyboard(avoid)`, `alchemyScroll(on)` (ios/README.md lists each). The app fetches
 observer.js itself from the site too, as dist/ios-observer.js (tools/postbuild.js), with its bundled
 copy as the fallback: a change to the page or to the observer reaches the phone at its next launch. No audio
 socket, no lyrics from a host (LRCLIB is fetched by the page), no window bindings, no page-update

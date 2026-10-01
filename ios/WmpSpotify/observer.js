@@ -118,6 +118,10 @@ window.alchemyNotify = function (n) { post('notify', typeof n === 'string' ? n :
 window.alchemyAppearance = function (mode) { post('appearance', mode || 'auto'); };                           // light|dark|auto
 window.alchemyClipboard = function (text) { post('clipboard', text); };
 window.alchemyProximity = function (on) { post('proximity', on ? 'on' : 'off'); };                            // on: the screen blanks when covered
+window.alchemyBand = function (hidden) { post('band', hidden ? 'hidden' : 'shown'); };                         // the host's log band, in the safe-area layout
+window.alchemyBackground = function (hex) { post('background', hex || '#000000'); };                          // behind the web view (the safe-area bars)
+window.alchemyKeyboard = function (avoid) { post('keyboard', avoid ? 'avoid' : 'ignore'); };                  // the layout shrinks for the keyboard, or not
+window.alchemyScroll = function (on) { post('scroll', on ? 'on' : 'off'); };                                  // native scrolling of the whole page
 // Reports with an event of the same name: __wmpProximity 'wmp-proximity', __wmpLowPower 'wmp-lowpower',
 // __wmpThermal 'wmp-thermal', __wmpScene 'wmp-scene', __wmpKeyboard (pt) 'wmp-keyboard', and 'wmp-memory'.
 window.__wmpProximity = false; window.__wmpLowPower = false; window.__wmpThermal = 'nominal'; window.__wmpScene = 'active'; window.__wmpKeyboard = 0;
@@ -177,6 +181,10 @@ window.alchemyNotify = function (n) { post('notify', typeof n === 'string' ? n :
 window.alchemyAppearance = function (mode) { post('appearance', mode || 'auto'); };                           // light|dark|auto
 window.alchemyClipboard = function (text) { post('clipboard', text); };
 window.alchemyProximity = function (on) { post('proximity', on ? 'on' : 'off'); };                            // on: the screen blanks when covered
+window.alchemyBand = function (hidden) { post('band', hidden ? 'hidden' : 'shown'); };                         // the host's log band, in the safe-area layout
+window.alchemyBackground = function (hex) { post('background', hex || '#000000'); };                          // behind the web view (the safe-area bars)
+window.alchemyKeyboard = function (avoid) { post('keyboard', avoid ? 'avoid' : 'ignore'); };                  // the layout shrinks for the keyboard, or not
+window.alchemyScroll = function (on) { post('scroll', on ? 'on' : 'off'); };                                  // native scrolling of the whole page
 // Reports with an event of the same name: __wmpProximity 'wmp-proximity', __wmpLowPower 'wmp-lowpower',
 // __wmpThermal 'wmp-thermal', __wmpScene 'wmp-scene', __wmpKeyboard (pt) 'wmp-keyboard', and 'wmp-memory'.
 window.__wmpProximity = false; window.__wmpLowPower = false; window.__wmpThermal = 'nominal'; window.__wmpScene = 'active'; window.__wmpKeyboard = 0;

@@ -183,10 +183,14 @@ func groupPath(_ name: String) -> String? {
 }
 
 // What the page sets of the host's window, by script message, on the main thread ("layout",
-// "showlog", "statusbar", "homeindicator", "orientation"). Not SwiftUI's Layout, hence the name.
+// "showlog", "statusbar", "homeindicator", "orientation", "band", "background", "keyboard"). Not
+// SwiftUI's Layout, hence the name.
 final class PageLayout: ObservableObject {
     static let shared = PageLayout()
     @Published var edge = false     // the web view over the whole screen, no band
+    @Published var bandHidden = false  // no band in the safe layout either
+    @Published var background = Color.black  // behind the web view and in it, the bars included
+    @Published var keyboardAvoid = false  // the layout shrinks above the keyboard, not under it
     @Published var showLog = false  // the whole log in a sheet, as the band's long press opens it
     @Published var statusBarHidden = false
     @Published var homeIndicatorHidden = false
@@ -194,6 +198,15 @@ final class PageLayout: ObservableObject {
     // "viewport": "mobile" or "desktop" (the default), the content mode WebView asks for at each
     // navigation; kept across launches.
     static var viewport: String { UserDefaults.standard.string(forKey: "viewport") ?? "desktop" }
+}
+
+// A CSS hex color, "#rrggbb" or "#rgb", as a Color; nil for anything else.
+func hexColor(_ s: String) -> Color? {
+    guard s.hasPrefix("#") else { return nil }
+    var hex = String(s.dropFirst())
+    if hex.count == 3 { hex = hex.map { "\($0)\($0)" }.joined() }
+    guard hex.count == 6, hex.allSatisfy(\.isHexDigit), let n = UInt32(hex, radix: 16) else { return nil }
+    return Color(red: Double(n >> 16 & 0xff) / 255, green: Double(n >> 8 & 0xff) / 255, blue: Double(n & 0xff) / 255)
 }
 
 // The page's taps on the Taptic Engine ("haptic" message), on the main thread: one generator per kind,
@@ -386,22 +399,29 @@ struct Player: View {
     @ObservedObject private var layout = PageLayout.shared
     @Environment(\.scenePhase) private var scenePhase
 
+    // The log band under the web view: in the safe layout, unless the page's "band" message hid it.
+    private var band: Bool { !layout.edge && !layout.bandHidden }
+
     var body: some View {
         ZStack(alignment: .topLeading) {
-            Color.black.ignoresSafeArea()
-            // By default the web view keeps to the safe area (black bars at the notch), the host's
-            // last log line under it with the broadcast picker at its right end. Edge to edge (the
-            // page's "layout" message) the web view fills the screen and the band is gone; the picker
-            // stays, 1x1 and all but invisible in the corner, for the tap at launch. The web view is
-            // the same one in both, never rebuilt. The keyboard is left to WebKit, which scrolls the
-            // focused field into view itself.
+            layout.background.ignoresSafeArea()
+            // By default the web view keeps to the safe area (bars at the notch, in the page's
+            // "background" color, black by default), the host's last log line under it with the
+            // broadcast picker at its right end. Edge to edge (the page's "layout" message) the web
+            // view fills the screen and the band is gone; the picker stays, 1x1 and all but invisible
+            // in the corner, for the tap at launch, as it does when the page's "band" message hides the
+            // band. The web view is the same one in all of these, never rebuilt. The keyboard is left
+            // to WebKit, which scrolls the focused field into view itself, unless the page's
+            // "keyboard" message has set "avoid": the layout then shrinks to above the keyboard (the
+            // web view ignores only the container's safe area edge to edge, never the keyboard's).
             VStack(spacing: 0) {
                 if ready {
-                    WebView(script: script, edge: layout.edge).ignoresSafeArea(edges: layout.edge ? .all : [])
+                    WebView(script: script, edge: layout.edge, background: layout.background)
+                        .ignoresSafeArea(.container, edges: layout.edge ? .all : [])
                 } else {
                     Color.clear
                 }
-                if !layout.edge {
+                if band {
                     HStack(spacing: 0) {
                         Text(log.last)
                             .font(.system(size: 10, design: .monospaced))
@@ -418,8 +438,8 @@ struct Player: View {
                     }
                 }
             }
-            .ignoresSafeArea(.keyboard)
-            if layout.edge { BroadcastButton().frame(width: 1, height: 1).opacity(0.01) }
+            .ignoresSafeArea(layout.keyboardAvoid ? [] : .keyboard)
+            if !band { BroadcastButton().frame(width: 1, height: 1).opacity(0.01) }
             RoutePicker().frame(width: 1, height: 1).opacity(0.01)
         }
         .statusBarHidden(layout.statusBarHidden)
@@ -560,6 +580,7 @@ func userScript() async -> String? {
 struct WebView: UIViewRepresentable {
     let script: String?
     let edge: Bool
+    let background: Color
 
     func makeCoordinator() -> Coordinator { Coordinator() }
 
@@ -570,7 +591,8 @@ struct WebView: UIViewRepresentable {
         config.defaultWebpagePreferences.preferredContentMode = .desktop
         for name in ["log", "volume", "open", "layout", "showlog", "haptic", "awake", "statusbar", "orientation",
                      "broadcast", "brightness", "share", "homeindicator", "host", "reset", "viewport", "proximity",
-                     "hapticpattern", "sound", "routepicker", "audiosession", "notify", "appearance", "clipboard"] {
+                     "hapticpattern", "sound", "routepicker", "audiosession", "notify", "appearance", "clipboard",
+                     "band", "background", "keyboard", "scroll"] {
             config.userContentController.add(context.coordinator, name: name)
         }
         if let script {
@@ -581,10 +603,10 @@ struct WebView: UIViewRepresentable {
         // Spotify serves the web player to desktop browsers only; the overlay covers the desktop
         // layout anyway.
         web.customUserAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Safari/605.1.15"
-        web.isOpaque = false
-        web.backgroundColor = .black
-        web.scrollView.backgroundColor = .black
-        // The overlay is position:fixed and its panes scroll themselves.
+        web.isOpaque = false  // the background color, PageLayout's, set in updateUIView
+        web.allowsLinkPreview = false  // a long press is the page's, not a link preview
+        // The overlay is position:fixed and its panes scroll themselves (the page's "scroll" message
+        // turns it on).
         web.scrollView.isScrollEnabled = false
         web.scrollView.bounces = false
         web.navigationDelegate = context.coordinator  // the viewport, before the first load
@@ -595,9 +617,13 @@ struct WebView: UIViewRepresentable {
 
     // Edge to edge, WebKit would otherwise still inset the page from the notch and the home indicator
     // (Spotify's viewport is not viewport-fit=cover); the page pads itself by window.__wmpSafeArea.
-    // Left as it is by default, and once set kept: inside the safe area the insets are 0.
+    // Left as it is by default, and once set kept: inside the safe area the insets are 0. The page's
+    // background color, behind its content and in the bars.
     func updateUIView(_ web: WKWebView, context: Context) {
         if edge { web.scrollView.contentInsetAdjustmentBehavior = .never }
+        let color = UIColor(background)
+        web.backgroundColor = color
+        web.scrollView.backgroundColor = color
     }
 
     // The page's messages (webkit.messageHandlers.<name>.postMessage), on the main thread:
@@ -614,7 +640,8 @@ struct WebView: UIViewRepresentable {
     // viewport, "mobile" or "desktop", kept and the page reloaded when it changes; hapticpattern, JSON for
     // HapticPatterns; sound, a system sound id; routepicker, AirPlay's picker; audiosession, "solo", "mix"
     // or "duck"; notify, JSON for notify(_:) or "cancel:<id>"; appearance, "light", "dark" or "auto";
-    // clipboard, a text copied.
+    // clipboard, a text copied; band, "hidden" or "shown"; background, "#rrggbb" or "#rgb"; keyboard,
+    // "ignore" or "avoid"; scroll, "on" or "off", the web view's own scrolling and bounce.
     final class Coordinator: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
         // Each navigation in the stored viewport's content mode; the desktop user agent stays either way.
         func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction,
@@ -759,6 +786,24 @@ struct WebView: UIViewRepresentable {
                 guard let s = message.body as? String else { return }
                 HostLog.shared.log("clipboard: \(s.count) characters", quiet: true)
                 UIPasteboard.general.string = s
+            case "band":
+                guard let s = message.body as? String, s == "hidden" || s == "shown" else { return }
+                HostLog.shared.log("band: \(s)", quiet: true)
+                PageLayout.shared.bandHidden = s == "hidden"
+            case "background":
+                guard let s = message.body as? String, let color = hexColor(s) else { return }
+                HostLog.shared.log("background: \(s)", quiet: true)
+                PageLayout.shared.background = color
+            case "keyboard":
+                guard let s = message.body as? String, s == "ignore" || s == "avoid" else { return }
+                HostLog.shared.log("keyboard: \(s)", quiet: true)
+                PageLayout.shared.keyboardAvoid = s == "avoid"
+            case "scroll":
+                guard let s = message.body as? String, s == "on" || s == "off",
+                      let scroll = WebHolder.shared.web?.scrollView else { return }
+                HostLog.shared.log("scroll: \(s)", quiet: true)
+                scroll.isScrollEnabled = s == "on"
+                scroll.bounces = s == "on"
             default:
                 HostLog.shared.log("page: \(message.body)")
             }

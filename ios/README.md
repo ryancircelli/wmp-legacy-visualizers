@@ -21,6 +21,7 @@ the web view's safe-area insets in points as `window.__wmpSafeArea = {top, right
 fires `wmp-safe-area` on `window`, whenever they change and again after each `layout` message (so a
 reloaded page that sends its layout gets them); inside the safe area they are all 0.
 Playback is meant to carry on with the phone locked (the audio background mode).
+Link previews are off in the web view: a long press on a link is the page's, not a preview.
 The skin's volume slider and mute set the phone's system volume: a page cannot change its own playback
 volume on iOS, so the app sets it through an off-screen MPVolumeView (`SystemVolume` in App.swift; iOS
 shows its volume HUD); every change, the hardware buttons' included, comes back as `__wmpVolume` (below).
@@ -38,6 +39,13 @@ noted), posted with `webkit.messageHandlers.<name>.postMessage(<string>)` and wr
 - `sound`: a system sound id (`1104` is the keyboard tick); each id is logged once.
 - `awake`: `"on"` keeps the screen from sleeping, `"off"` lets it.
 - `statusbar`, `homeindicator`: `"hidden"` or `"shown"`.
+- `band`: `"hidden"` or `"shown"` (the default), the log band under the web view in the safe layout;
+  hidden, the web view takes its place and the log opens by `showlog`.
+- `background`: a CSS hex color, `"#rrggbb"` or `"#rgb"`, behind the web view and in the safe layout's
+  bars (black by default); anything else is ignored.
+- `keyboard`: `"ignore"` (the default: the keyboard covers the page, WebKit scrolling the focused field
+  into view) or `"avoid"` (the layout shrinks to above the keyboard).
+- `scroll`: `"on"` or `"off"` (the default), the web view's own scrolling and bounce.
 - `orientation`: `"portrait"`, `"landscape"` or `"any"`; the window turns to it and stays.
 - `appearance`: `"light"`, `"dark"` or `"auto"`, the window's (and so the page's `prefers-color-scheme`).
 - `brightness`: a level 0 to 1, or `"state"` for `__wmpBrightness`.
@@ -91,7 +99,7 @@ the status bar stays for as long as it runs. Stop it from that indicator or from
 the app closes, the extension keeps the broadcast and tries its socket again every second, so the
 app opened again resumes the visualizers on the same broadcast; 5 min without the app ends it with
 "WMP Spotify is not running (<the connection's last state>)". Between broadcasts the visualizers go
-dark. The band under the web view
+dark. The band under the web view (unless the page hides it with `band`)
 shows the host's last log line (scene changes go only to the list): tap it to reload the page,
 long-press it for the whole log, scrolled to its end, with Copy (all of it to the clipboard) and Clear.
 The log persists across launches in `host.log` in the App Group container (the last 3000 lines, each
@@ -149,8 +157,8 @@ Nothing had to be routed through another Spotify Connect device.
 
 ## Known gaps
 
-- By default the web view keeps to the safe area: black bars at the notch and the home indicator (a
-  page can lift that with `layout`).
+- By default the web view keeps to the safe area: bars at the notch and the home indicator, black
+  unless the page sets `background` (a page can lift that with `layout`).
 - The skin is WMP 9's desktop window at phone size; nothing is laid out for a phone.
 - The broadcast has to be started by hand at every launch (iOS requires the Start Broadcast tap), and
   it ends when the app is killed.

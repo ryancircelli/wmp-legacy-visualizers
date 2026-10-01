@@ -94,6 +94,12 @@ declare global {
     alchemyClipboard?: (text: string) => void;
     /** the iOS app: the proximity sensor's report on (the screen blanks while it is covered) */
     alchemyProximity?: (on: boolean) => void;
+    /** the iOS app: the host's log band (safe-area layout), the backdrop color, keyboard avoidance,
+     *  native scrolling of the page */
+    alchemyBand?: (hidden: boolean) => void;
+    alchemyBackground?: (hex: string) => void;
+    alchemyKeyboard?: (avoid: boolean) => void;
+    alchemyScroll?: (on: boolean) => void;
     __wmpProximity?: boolean;
     __wmpLowPower?: boolean;
     __wmpThermal?: 'nominal' | 'fair' | 'serious' | 'critical';
