@@ -225,12 +225,18 @@ caches reusable credentials from it that log in the same way. login5 then refuse
 with Keymaster's client id (`INVALID_CREDENTIALS`) and with the web player's (`BAD_REQUEST`); build
 24 bypasses login5 with the web player's own tokens.
 
-**Not yet verified.** CI builds, links, archives and uploads it (builds 19, 20, 22, 23 and 24,
-2026-10-01; 24, serving the web player's tokens, is the current one), but none of the following has
-been seen on a phone:
+**Works (build 24, 2026-10-01).** With the web player's token and client token served in place of
+login5's (the client id is `d8a5ed958d274c2e8ee717e6a4b0971d`), the cached credentials logged in,
+`session up (cached)` followed, spclient resolved, the device showed in the Spotify app's picker on the
+same phone, and picking it loaded and played a track through the app (`Loading <...>`, `playing`),
+with the next one preloaded. No pairing, no prompt.
 
-- Whether spclient and the dealer take the web player's token and client token from librespot, and
-  then whether Spirc comes up and the device shows in the Spotify app's picker.
+**Not yet verified.** CI builds, links, archives and uploads it (builds 19, 20, 22, 23 and 24,
+2026-10-01; 24 is the current one), but none of the following has been seen on a phone:
+
+- A launch with no cached credentials at all on build 24 (the token login itself, then the cache).
+- What happens when the web player's token expires (an hour) while the page is in the background:
+  the page refreshes and reposts it while it runs; if it does not, spclient calls fail until it does.
 - Why the iOS Spotify app did not list the zeroconf device on its own phone (build 20).
 - Whether the audio engine, which runs from launch and renders silence between songs, keeps the app and
   its session alive in the background as intended, and what it costs in battery.
