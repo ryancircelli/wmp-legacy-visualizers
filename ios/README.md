@@ -151,9 +151,13 @@ What remains is an access token or zeroconf, and the app tries both.
 - **Token (first).** The web view is already signed in, and observer.js already reads the web player's
   access token from its own traffic (the `Authorization` header and open.spotify.com/api/token) and
   fires `wmp-spotify-token`, and posts each new token, and once at mount, as the `lstoken` message,
-  `"<clientId> <token>"` (the client id from open.spotify.com/api/token's `clientId`). master's
-  observer, which the site serves, is the one that does it. The app hands both to librespot
-  (`wmp_ls_token`). With no session up, librespot logs in at once with
+  `"<clientId> <clientToken> <token>"` (the client id from open.spotify.com/api/token's `clientId`, the
+  client token from the web player's `client-token` header). master's observer, which the site serves,
+  is the one that does it. The app hands all three to librespot (`wmp_ls_token`). librespot serves
+  the token and the client token to Spotify's services in place of its own (`core.patch` adds
+  `Login5Manager::set_auth_token` and `SpClient::set_client_token`; `src/lib.rs` sets them before
+  each connect and on each token), so login5 and clienttoken are never asked while they are held.
+  With no session up, librespot logs in at once with
   `Credentials::with_access_token(token)` (librespot-core 0.8.0, `AUTHENTICATION_SPOTIFY_TOKEN`) and
   starts the Connect device on that session, as a pick would. With a session up, it keeps the newest
   token for its next reconnect, used while under 50 min old. The token is never logged. Upstream logs
@@ -161,13 +165,14 @@ What remains is an access token or zeroconf, and the app tries both.
   ([librespot#1377](https://github.com/librespot-org/librespot/issues/1377)). A web player token
   (open.spotify.com's) logged librespot in where a developer-app token got "Bad credentials"
   ([librespot#1436](https://github.com/librespot-org/librespot/issues/1436), January 2025).
-  The session's client id is the token's, not librespot's default (Keymaster's, the desktop one):
-  build 22, with the default, got past the access point (`Authenticated as ...`) and then
+  Why not login5: build 22 got past the access point (`Authenticated as ...`) and then
   `connect failed (token): Invalid state { Login request was denied: INVALID_CREDENTIALS }` from
-  login5, which Spirc needs for spclient and which takes the stored credentials a login gives only
-  with the client id the login was for (librespot-core's login5.rs says as much). The id is kept in
-  `client_id` next to the cached credentials, which go with it. A rejected token is dropped, not
-  retried; the next one the page gets tries again.
+  login5, which Spirc asks for its spclient token with the stored credentials the login gave and
+  Keymaster's client id; build 23, asking with the web player's client id, got `BAD_REQUEST` instead
+  (its client token was still Keymaster's). The web player never goes through login5: its token is
+  already what spclient and the dealer take, with its client token. The session's client id is still
+  set to the token's, kept in `client_id` next to the cached credentials. A rejected token is dropped,
+  not retried; the next one the page gets tries again.
 - **Zeroconf (the fallback).** A signed-in Spotify app on the same network finds the device, and when
   the device is picked it hands over a credentials blob encrypted for it
   ([docs/authentication.md](https://github.com/librespot-org/librespot/blob/v0.8.0/docs/authentication.md)).
@@ -214,16 +219,18 @@ the AP took it); `librespot: playing`,
 `librespot: output failed: ...` (the audio engine); and librespot's own info, warnings and errors,
 all prefixed `librespot:`.
 
-**Seen on a phone (build 22, 2026-10-01).** Spotify's access point takes the web player's token
-from librespot presenting as Linux (`Authenticated as '<username>' !`, `Country: "US"`). login5 then
-refused the credentials that login gave with Keymaster's client id (above); build 23 sends the web
-player's.
+**Seen on a phone (builds 22 and 23, 2026-10-01).** Spotify's access point takes the web player's
+token from librespot presenting as Linux (`Authenticated as '<username>' !`, `Country: "US"`), and
+caches reusable credentials from it that log in the same way. login5 then refused those credentials
+with Keymaster's client id (`INVALID_CREDENTIALS`) and with the web player's (`BAD_REQUEST`); build
+24 bypasses login5 with the web player's own tokens.
 
-**Not yet verified.** CI builds, links, archives and uploads it (builds 19, 20, 22 and 23, 2026-10-01;
-23, with the token's client id, is the current one), but none of the following has been seen on a phone:
+**Not yet verified.** CI builds, links, archives and uploads it (builds 19, 20, 22, 23 and 24,
+2026-10-01; 24, serving the web player's tokens, is the current one), but none of the following has
+been seen on a phone:
 
-- Whether login5 takes the stored credentials with the web player's client id, and then whether
-  Spirc comes up and the device shows in the Spotify app's picker.
+- Whether spclient and the dealer take the web player's token and client token from librespot, and
+  then whether Spirc comes up and the device shows in the Spotify app's picker.
 - Why the iOS Spotify app did not list the zeroconf device on its own phone (build 20).
 - Whether the audio engine, which runs from launch and renders silence between songs, keeps the app and
   its session alive in the background as intended, and what it costs in battery.

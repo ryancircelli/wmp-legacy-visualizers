@@ -1,0 +1,60 @@
+# librespot-core 0.8.0 as the app builds it (build.sh applies this to the crate from crates.io): the OS
+# constant "linux" on iOS (Cargo.toml says why), and setters that hand login5 and spclient the web
+# player's own tokens (src/lib.rs says why). diff -ruN against the crate, paths a/ b/.
+--- a/src/config.rs
++++ b/src/config.rs
+@@ -11,7 +11,7 @@
+ // android or ios needs to be mocked, the `os_version` has to be set to a valid version.
+ // Otherwise, client-token or login5 requests will fail with a generic invalid-credential error.
+ /// See [std::env::consts::OS]
+-pub const OS: &str = std::env::consts::OS;
++pub const OS: &str = if cfg!(target_os = "ios") { "linux" } else { std::env::consts::OS };
+ 
+ // valid versions for some os:
+ // 'android': 30
+--- a/src/login5.rs
++++ b/src/login5.rs
+@@ -58,6 +58,20 @@
+ }
+ 
+ impl Login5Manager {
++    /// (wmp) A token from elsewhere, the web player's, served in place of login5's until it expires:
++    /// login5 is never asked while one is held, so the client id need not match.
++    pub fn set_auth_token(&self, access_token: String, expires_in: Duration) {
++        self.lock(|inner| {
++            inner.auth_token = Some(Token {
++                access_token,
++                expires_in,
++                token_type: "Bearer".to_string(),
++                scopes: vec![],
++                timestamp: SystemTime::now(),
++            })
++        });
++    }
++
+     async fn request(&self, message: &LoginRequest) -> Result<Bytes, Error> {
+         let client_token = self.session().spclient().client_token().await?;
+         let body = message.write_to_bytes()?;
+--- a/src/spclient.rs
++++ b/src/spclient.rs
+@@ -155,6 +155,20 @@
+         self.session().http_client().request_body(request).await
+     }
+ 
++    /// (wmp) A client token from elsewhere, the web player's, served until it expires: no client-token
++    /// request of our own while one is held.
++    pub fn set_client_token(&self, access_token: String, expires_in: Duration) {
++        self.lock(|inner| {
++            inner.client_token = Some(Token {
++                access_token,
++                expires_in,
++                token_type: "client-token".to_string(),
++                scopes: vec![],
++                timestamp: SystemTime::now(),
++            })
++        });
++    }
++
+     pub async fn client_token(&self) -> Result<String, Error> {
+         let client_token = self.lock(|inner| {
+             if let Some(token) = &inner.client_token {

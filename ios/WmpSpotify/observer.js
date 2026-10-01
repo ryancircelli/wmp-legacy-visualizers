@@ -164,9 +164,10 @@ var hobs = null; // our device id's first 35 hex digits, until the full 40 are k
 var names = {}; // device id -> the last real name a cluster gave it
 function emit(n, d) { window.dispatchEvent(new CustomEvent(n, { detail: d })); }
 // The web player's token to the app, for a librespot session on this account (the librespot branch's
-// "lstoken" message, "<clientId> <token>": librespot's login5 needs the client id the token was issued
-// to; an app without the handler throws here, swallowed). Never logged.
-function lsToken() { try { if (W.token) webkit.messageHandlers.lstoken.postMessage((W.clientId || '') + ' ' + W.token); } catch (e) {} }
+// "lstoken" message, "<clientId> <clientToken> <token>": librespot serves the web player's own token
+// and client token to spclient and the dealer in place of its own, which Spotify refuses a web login;
+// an app without the handler throws here, swallowed). Never logged.
+function lsToken() { try { if (W.token) webkit.messageHandlers.lstoken.postMessage((W.clientId || '') + ' ' + (W.clientToken || '') + ' ' + W.token); } catch (e) {} }
 var API = /^https:\/\/(api|api-partner|[a-z0-9-]*spclient[a-z0-9.-]*)\.spotify\.com\//;
 function hdr(h, name) {
   if (!h) return null;
@@ -185,6 +186,7 @@ function seenHeader(url, name, v) {
     lsToken();
   } else if (name === 'client-token' && v !== W.clientToken) {
     W.clientToken = v;
+    lsToken();
   }
 }
 function seenHash(op, sha) {

@@ -43,7 +43,7 @@ struct Host {
 // ponytail: one receiver per process, its callbacks global; the app starts one at launch.
 static HOST: Mutex<Option<Host>> = Mutex::new(None);
 static STOP: Mutex<Option<oneshot::Sender<()>>> = Mutex::new(None);
-static TOKENS: Mutex<Option<mpsc::UnboundedSender<(String, String)>>> = Mutex::new(None);
+static TOKENS: Mutex<Option<mpsc::UnboundedSender<(String, String, String)>>> = Mutex::new(None);
 
 fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
     m.lock().unwrap_or_else(|e| e.into_inner())
@@ -154,18 +154,19 @@ pub unsafe extern "C" fn wmp_ls_start(
 /// # Safety
 /// `token` is NUL-terminated UTF-8.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn wmp_ls_token(token: *const c_char, client_id: *const c_char) {
+pub unsafe extern "C" fn wmp_ls_token(token: *const c_char, client_id: *const c_char, client_token: *const c_char) {
     if token.is_null() {
         return;
     }
-    let t = unsafe { CStr::from_ptr(token) }.to_string_lossy().into_owned();
-    let c = if client_id.is_null() {
-        String::new()
-    } else {
-        unsafe { CStr::from_ptr(client_id) }.to_string_lossy().into_owned()
+    let s = |p: *const c_char| {
+        if p.is_null() {
+            String::new()
+        } else {
+            unsafe { CStr::from_ptr(p) }.to_string_lossy().into_owned()
+        }
     };
     if let Some(tx) = lock(&TOKENS).as_ref() {
-        let _ = tx.send((t, c));
+        let _ = tx.send((s(token), s(client_id), s(client_token)));
     }
 }
 
@@ -185,7 +186,7 @@ async fn run(
     name: String,
     dir: String,
     mut stop: oneshot::Receiver<()>,
-    mut tokens: mpsc::UnboundedReceiver<(String, String)>,
+    mut tokens: mpsc::UnboundedReceiver<(String, String, String)>,
 ) {
     const WINDOW: Duration = Duration::from_secs(600);
     const RECONNECTS: usize = 5; // per WINDOW, as librespot's binary allows
@@ -223,6 +224,22 @@ async fn run(
         say("librespot: cached credentials");
     }
     let mut token: Option<(String, Instant)> = None; // the web player's latest
+    let mut client_token: Option<String> = None; // the web player's, with it
+    // The web player's tokens into the session, in place of login5's and clienttoken's (core.patch):
+    // login5 refused the credentials a web login gives (INVALID_CREDENTIALS with Keymaster's client
+    // id, BAD_REQUEST with the web player's: builds 22 and 23), and the web player's own pair is what
+    // spclient and the dealer take from the web player anyway. Before each connect, and on each token.
+    let inject = |session: &Session, token: &Option<(String, Instant)>, ct: &Option<String>| {
+        if let Some((t, at)) = token {
+            let left = TOKEN_LIFE.saturating_sub(at.elapsed());
+            if !left.is_zero() {
+                session.login5().set_auth_token(t.clone(), left);
+            }
+        }
+        if let Some(c) = ct {
+            session.spclient().set_client_token(c.clone(), Duration::from_secs(24 * 3600));
+        }
+    };
 
     let mut discovery = match Discovery::builder(device_id, session_config.client_id.clone())
         .name(name.clone())
@@ -264,7 +281,9 @@ async fn run(
 
     let mut spirc: Option<Spirc> = None;
     let mut task: Option<SpircTask> = None;
-    let mut connecting = next.is_some();
+    // The first connect waits for the page's token (at mount, within seconds), which every connect
+    // needs (inject); the cached credentials, when there are some, are then the first to log in with.
+    let mut connecting = false;
     let mut retry = false; // the next connect follows a failure: it waits 5 s first
     let mut reconnects: Vec<Instant> = vec![];
 
@@ -307,6 +326,7 @@ async fn run(
                     session = Session::new(session_config.clone(), cache.clone());
                     player.set_session(session.clone());
                 }
+                inject(&session, &token, &client_token);
                 // A pick or a token that has just come, else the web player's token while fresh,
                 // else what the cache holds.
                 let fresh = token.as_ref().filter(|(_, at)| at.elapsed() < TOKEN_LIFE)
@@ -346,7 +366,7 @@ async fn run(
                 connecting = again(&mut reconnects, WINDOW, RECONNECTS);
                 retry = true;
             },
-            Some((t, c)) = tokens.recv() => {
+            Some((t, c, ct)) = tokens.recv() => {
                 if !c.is_empty() && c != session_config.client_id {
                     session_config.client_id = c;
                     let _ = std::fs::write(&client_id_file, &session_config.client_id);
@@ -354,14 +374,24 @@ async fn run(
                         session.set_client_id(&session_config.client_id);
                     }
                 }
+                token = Some((t, Instant::now())); // kept for the next reconnect either way
+                if !ct.is_empty() {
+                    client_token = Some(ct);
+                }
+                if !session.is_invalid() {
+                    inject(&session, &token, &client_token);
+                }
                 let idle = task.is_none() && !connecting;
                 if idle {
-                    say("librespot: logging in with the token");
-                    next = Some((Credentials::with_access_token(t.as_str()), "token"));
+                    if next.is_none() {
+                        say("librespot: logging in with the token");
+                        next = token.as_ref().map(|(t, _)| (Credentials::with_access_token(t.as_str()), "token"));
+                    } else {
+                        say("librespot: logging in with the cached credentials");
+                    }
                     connecting = true;
                     retry = false;
                 }
-                token = Some((t, Instant::now())); // kept for the next reconnect either way
             },
             Some(e) = events.recv() => match e {
                 PlayerEvent::Playing { .. } => say("librespot: playing"),

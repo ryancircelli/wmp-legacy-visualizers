@@ -1118,16 +1118,17 @@ final class Librespot {
 
     private var lastToken = ""  // on the main thread
 
-    /// On the main thread: the web player's access token (the "lstoken" message, "<clientId> <token>"),
-    /// which librespot logs in with when it has no session, and keeps for its next reconnect when it
-    /// has one. The client id is the one the token was issued to, which login5 checks. Never logged.
+    /// On the main thread: the web player's access token (the "lstoken" message,
+    /// "<clientId> <clientToken> <token>"), which librespot serves to Spotify's services in place of
+    /// its own, logs in with when it has no session, and keeps for its next reconnect when it has one
+    /// (wmp_librespot.h). Never logged.
     func token(_ body: String) {
         guard body != lastToken else { return }  // the page repeats the same token
         lastToken = body
-        let parts = body.split(separator: " ", maxSplits: 1).map(String.init)
-        let (client, t) = parts.count == 2 ? (parts[0], parts[1]) : ("", body)
-        HostLog.shared.log("librespot: token received" + (client.isEmpty ? " (no client id)" : ""))
-        wmp_ls_token(t, client)
+        let parts = body.split(separator: " ", maxSplits: 2, omittingEmptySubsequences: false).map(String.init)
+        let (client, clientToken, t) = parts.count == 3 ? (parts[0], parts[1], parts[2]) : ("", "", parts.last ?? body)
+        HostLog.shared.log("librespot: token received (client id \(client.isEmpty ? "none" : client), client token \(clientToken.isEmpty ? "none" : "\(clientToken.count) chars"))")
+        wmp_ls_token(t, client, clientToken)
     }
 
     /// On the main thread, once, with the audio session active.
