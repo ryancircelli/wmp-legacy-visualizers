@@ -323,7 +323,13 @@ answers that one URL with a stand-in that App.swift feeds by evaluateJavaScript,
 and `__wmpAudio.pcm(<base64 stereo int16 LE>, n)` per 100 ms batch, from the broadcast upload
 extension `WmpSpotifyBroadcast`, which hears the system's app audio mix and sends it to the app on a
 real ws://127.0.0.1:47831; no microphone; ReplayKit's in-app capture hears zeros from the web view),
-`alchemyLog` (a WKScriptMessageHandler), `alchemySpotifyLogout` (accounts.spotify.com/logout). No audio
+`alchemyLog` (a WKScriptMessageHandler), `alchemySpotifyLogout` (accounts.spotify.com/logout),
+`alchemySetVolume` (the phone's system volume: a page cannot set its own on iOS), `alchemyOpenUrl`
+(Safari), `alchemyRestart` (a reload), `alchemyCheckUpdate` (answered in words), `alchemyLayout('edge'|'safe')`
+(the web view edge to edge for a skin made for the phone, with the insets in `window.__wmpSafeArea`
+and a `wmp-safe-area` event), `alchemyShowLog` (the host's log sheet). The app fetches
+observer.js itself from the site too, as dist/ios-observer.js (tools/postbuild.js), with its bundled
+copy as the fallback: a change to the page or to the observer reaches the phone at its next launch. No audio
 socket, no lyrics from a host (LRCLIB is fetched by the page), no window bindings, no page-update
 signature (the site is trusted as the bundle's source). Built on GitHub's macOS runners, signed with
 Xcode's cloud-managed certificates through an App Store Connect API key, uploaded to TestFlight.

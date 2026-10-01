@@ -1,6 +1,7 @@
 // npm run build, last step (replaces build.py + site/make_dist.py):
 //   dist/spotify-inject.js  JSON {html, css, js} (CONTRACT.md v6) from dist/inject/ (vite.inject.config.ts)
 //   alchemy.html            copy of dist/index.html; dist/alchemy.html too (stable download name)
+//   dist/ios-observer.js    ios/WmpSpotify/observer.js as the iOS app fetches it (CONTRACT.md v9)
 //   dist/_headers, dist/_redirects  as site/make_dist.py wrote them
 //   dist/version.json       {"version": <git sha>} ($GITHUB_SHA / $GIT_SHA / git rev-parse / "dev")
 //   dist/update.json        the page update manifest (CONTRACT.md v7, tauri/src/update.rs); CI signs it (tools/sign-update.js)
@@ -16,6 +17,9 @@ const inject = { html: body, css: read(path.join(INJ, 'page.css')), js: read(pat
 fs.writeFileSync(path.join(DIST, 'spotify-inject.js'), JSON.stringify(inject));
 fs.rmSync(INJ, { recursive: true, force: true });
 
+// The iOS app's user script, fetched by the app at every launch (ios/README.md), so a change to it
+// needs no build of the app; not in update.json's files (the phone trusts the site as it is).
+fs.copyFileSync(path.join(ROOT, 'ios', 'WmpSpotify', 'observer.js'), path.join(DIST, 'ios-observer.js'));
 fs.copyFileSync(path.join(DIST, 'index.html'), path.join(ROOT, 'alchemy.html'));
 fs.copyFileSync(path.join(DIST, 'index.html'), path.join(DIST, 'alchemy.html'));
 fs.writeFileSync(path.join(DIST, '_headers'), `/*

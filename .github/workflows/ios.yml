@@ -15,7 +15,7 @@ name: ios
 on:
   push:
     branches: [master]
-    paths: ['ios/**', '.github/workflows/ios.yml']
+    paths: ['ios/**', '!ios/WmpSpotify/observer.js', '!ios/README.md', '.github/workflows/ios.yml'] # the observer reaches the phone from the site (deploy.yml)
   workflow_dispatch:
 concurrency: { group: ios, cancel-in-progress: true }
 jobs:

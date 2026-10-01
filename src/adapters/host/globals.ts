@@ -45,6 +45,12 @@ declare global {
     /** the iOS app: the skin's volume (0..100, 0 = muted) as the phone's system volume, since a
      *  page cannot change its own playback volume there */
     alchemySetVolume?: (pct: number) => void;
+    /** the iOS app: the web view edge to edge ('edge') or inside the safe area ('safe'); the insets
+     *  come as window.__wmpSafeArea with a 'wmp-safe-area' event */
+    alchemyLayout?: (mode: 'edge' | 'safe') => void;
+    /** the iOS app: its log sheet */
+    alchemyShowLog?: () => void;
+    __wmpSafeArea?: { top: number; right: number; bottom: number; left: number };
     /** a newer exe is out (tauri/src/update.rs): offer the download */
     alchemyHostUpdate?: boolean;
     /** open one of the project's own URLs in the user's browser */

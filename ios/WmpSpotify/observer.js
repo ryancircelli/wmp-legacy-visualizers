@@ -65,9 +65,37 @@ function fakeAudioSocket() {
 }
 window.alchemyMarks = [];
 window.alchemySpotifyLogout = function () { log('log out'); location.replace(SPOTIFY_LOGOUT); };
+// The skin's volume and mute as the phone's system volume (App.swift SystemVolume): a page cannot
+// change its own playback volume on iOS, so Spotify's volume command to this device does nothing.
+window.alchemySetVolume = function (pct) { try { webkit.messageHandlers.volume.postMessage(pct); } catch (e) {} };
+// Help's links in Safari (App.swift: the "open" message), Help > Restart as a reload of this page,
+// and the update check answered in words: the page and this script come from the site at every launch.
+window.alchemyOpenUrl = function (url) { try { webkit.messageHandlers.open.postMessage(String(url)); } catch (e) {} };
+window.alchemyRestart = function () { log('restart: reloading'); location.reload(); };
+window.alchemyCheckUpdate = function () { return Promise.resolve({ error: 'The newest player loads at every launch: close and reopen the app.' }); };
+// For a skin made for the phone: the web view edge to edge ('edge') or inside the safe area
+// ('safe', the default); the insets in points arrive as window.__wmpSafeArea with a 'wmp-safe-area'
+// event on window; alchemyShowLog opens the host's log sheet, which edge to edge has no band for.
+window.__wmpSafeArea = { top: 0, right: 0, bottom: 0, left: 0 };
+window.alchemyLayout = function (mode) { try { webkit.messageHandlers.layout.postMessage(mode === 'edge' ? 'edge' : 'safe'); } catch (e) {} };
+window.alchemyShowLog = function () { try { webkit.messageHandlers.showlog.postMessage(''); } catch (e) {} };
 
 window.alchemyMarks = [];
 window.alchemySpotifyLogout = function () { log('log out'); location.replace(SPOTIFY_LOGOUT); };
+// The skin's volume and mute as the phone's system volume (App.swift SystemVolume): a page cannot
+// change its own playback volume on iOS, so Spotify's volume command to this device does nothing.
+window.alchemySetVolume = function (pct) { try { webkit.messageHandlers.volume.postMessage(pct); } catch (e) {} };
+// Help's links in Safari (App.swift: the "open" message), Help > Restart as a reload of this page,
+// and the update check answered in words: the page and this script come from the site at every launch.
+window.alchemyOpenUrl = function (url) { try { webkit.messageHandlers.open.postMessage(String(url)); } catch (e) {} };
+window.alchemyRestart = function () { log('restart: reloading'); location.reload(); };
+window.alchemyCheckUpdate = function () { return Promise.resolve({ error: 'The newest player loads at every launch: close and reopen the app.' }); };
+// For a skin made for the phone: the web view edge to edge ('edge') or inside the safe area
+// ('safe', the default); the insets in points arrive as window.__wmpSafeArea with a 'wmp-safe-area'
+// event on window; alchemyShowLog opens the host's log sheet, which edge to edge has no band for.
+window.__wmpSafeArea = { top: 0, right: 0, bottom: 0, left: 0 };
+window.alchemyLayout = function (mode) { try { webkit.messageHandlers.layout.postMessage(mode === 'edge' ? 'edge' : 'safe'); } catch (e) {} };
+window.alchemyShowLog = function () { try { webkit.messageHandlers.showlog.postMessage(''); } catch (e) {} };
 
 // ---- 1. observers on the web player's own channels (never its DOM). Everything lands in
 // window.__wmpSpotify; each change is also a CustomEvent on window:

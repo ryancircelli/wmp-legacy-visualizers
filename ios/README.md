@@ -8,7 +8,22 @@ top. Spotify's page is never driven through its DOM.
 
 The page is not built into the app. Each launch fetches `spotify-inject.js` from wmp.ryancircelli.com
 (what deploy.yml publishes) and caches it, so a fix to the player reaches the phone without a new build.
+`observer.js` is fetched the same way, as `ios-observer.js` (taken only when it is our script, not an
+error page), with the copy built into the app used only when neither the site nor the cache has it, so a
+change to the observer needs no build either. The log says where each came from (`page: bundle from
+site|cache|none`, `page: observer from site|cache|bundled`).
+The page talks to the app through `webkit.messageHandlers.<name>.postMessage`: `log` (a line for the host
+log), `volume` (below), `open` (an http or https URL, opened outside the app, in Safari or the app that
+claims it), `layout` (`"edge"` puts the web view over the whole screen, under the notch and the home
+indicator, with the band hidden; `"safe"`, the default, is the layout described below) and `showlog`
+(the whole log in its sheet, for an edge-to-edge page with no band to long-press). The app tells the page
+the web view's safe-area insets in points as `window.__wmpSafeArea = {top, right, bottom, left}`, then
+fires `wmp-safe-area` on `window`, whenever they change and again after each `layout` message (so a
+reloaded page that sends its layout gets them); inside the safe area they are all 0.
 Playback is meant to carry on with the phone locked (the audio background mode).
+The skin's volume slider and mute set the phone's system volume: a page cannot change its own playback
+volume on iOS, so the app sets it through an off-screen MPVolumeView (`SystemVolume` in App.swift; iOS
+shows its volume HUD), and a change from the hardware buttons is not read back into the slider.
 
 The visualizers hear a broadcast upload extension (`WmpSpotifyBroadcast/`), the system-level capture a
 screen recording uses. It receives the system's mix of every app's audio, so it has Spotify wherever it
@@ -88,7 +103,8 @@ Nothing had to be routed through another Spotify Connect device.
 
 ## Known gaps
 
-- The web view keeps to the safe area: black bars at the notch and the home indicator.
+- By default the web view keeps to the safe area: black bars at the notch and the home indicator (a
+  page can lift that with `layout`).
 - The skin is WMP 9's desktop window at phone size; nothing is laid out for a phone.
 - The broadcast has to be started by hand at every launch (iOS requires the Start Broadcast tap), and
   it ends when the app is killed.

@@ -15,6 +15,7 @@ on:
       - 'package-lock.json'
       - 'vite.*'
       - 'tools/postbuild.js'
+      - 'ios/WmpSpotify/observer.js'
       - 'tsconfig*.json'
       - 'eslint.config.*'
       - 'public/**'
