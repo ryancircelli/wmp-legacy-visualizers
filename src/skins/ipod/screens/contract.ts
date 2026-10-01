@@ -62,15 +62,31 @@ export interface GridItem extends MenuItem {
   art?: string | null;
 }
 
+/** A CollectionHeader button: a MenuScreen item the header draws as a round `kind` button (`on`: the heart filled). */
+export interface HeadAction extends MenuItem {
+  kind: 'play' | 'shuffle' | 'like';
+  on?: boolean;
+}
+
 /** The screen contents a group may ask the chrome for (implemented in src/skins/ipod/ui.tsx). */
 export interface Chrome {
   /** A list that the wheel scrolls: the selected row follows ticks, center fires onSelect. `preview`
-   *  is the split-menu pane under the list (the main menu's album art / clock), when given. */
-  MenuScreen: FC<{ items: MenuItem[]; selected?: number; onSelectedChange?: (i: number) => void;
-                   preview?: ReactNode; loading?: boolean; empty?: string }>;
+   *  is the split-menu pane under the list (the main menu's album art / clock), when given. `head`
+   *  (a CollectionHeader) leads the rows and scrolls away with them; its buttons are `items`' first
+   *  `lead`, which the wheel walks before the rows. `tall`: two-line rows 44 high, the item's `art`
+   *  at the left (the ♪ tile when none), its `sub` dim under the label. */
+  MenuScreen: FC<{ items: GridItem[]; selected?: number; onSelectedChange?: (i: number) => void;
+                   preview?: ReactNode; loading?: boolean; empty?: string; head?: ReactNode; lead?: number; tall?: boolean }>;
+  /** Spotify's playlist / album header, a MenuScreen's `head`: the cover, the title, a dim line
+   *  ("<owner or artist> · <n> songs"), the round `actions` and a "…" (`onMore`) */
+  CollectionHeader: FC<{ art?: string | null; title: string; line: string; actions: HeadAction[]; onMore?: () => void }>;
   /** MenuScreen's list as 2 columns of tiles (Settings > General > Library View: Grid): the wheel
    *  moves the selection a tile at a time, row by row; the rest as MenuScreen. */
   GridScreen: FC<{ items: GridItem[]; selected?: number; onSelectedChange?: (i: number) => void; loading?: boolean; empty?: string }>;
+  /** Spotify Home's look: the shelves down one page, each its title over one strip of tiles (a
+   *  'See all' tile ends it with `onMore`). The wheel moves along a strip and on into the next
+   *  shelf; a drag scrolls a strip across or the page down; the rest as GridScreen. */
+  ShelvesScreen: FC<{ shelves: { id: string; title: string; items: GridItem[]; onMore?: () => void }[]; loading?: boolean; empty?: string }>;
   /** one of GridScreen's tiles, for a screen that lays tiles out itself (Search's results) */
   Tile: FC<{ item: GridItem; selected: boolean; onClick?: () => void }>;
   /** the status row: time, play/pause/shuffle glyphs, battery; drawn by every screen's frame */
@@ -113,7 +129,7 @@ export interface Screens {
   // group home/
   /** Radio: Spotify's stations on the FM dial (docs/ipod-skin.md §4.2) */
   fmRadio(): ScreenEntry;
-  /** Home: Spotify Home's shelves, each opening its items */
+  /** Home: Spotify Home's shelves of tiles on one page, each with See all (its items as a screen) */
   home(): ScreenEntry;
   // group settings/ (Settings and Extras; the 5G's Extras: Alarms, Calendars, Clocks, Contacts,
   // Fitness, Games, Notes, Screen Lock, Stopwatch, Voice Memos (§2.3))

@@ -1,16 +1,16 @@
 // The home group: the main menu's Home and Radio over Spotify (docs/ipod-skin.md §2.4, §4.2). Home
-// lists Spotify Home's shelves, each opening its items (a grid of covers, in Settings > General >
-// Library View: Grid); Radio is Spotify's stations on the FM dial.
+// is Spotify Home's shelves of tiles down one page, each with See all (its items as a screen: a grid
+// of covers in Settings > General > Library View: Grid); Radio is Spotify's stations on the FM dial.
 // Hold-center on a thing that can be saved opens Like / Add to Playlist / Start Radio.
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import type { HomeItem, HomeSection, Station } from '../../../../model';
 import {
-  canSave, isCollectionUri, toggleSaved, useAddTo, useApp, useArtist, useCollection, useHome, usePosition, useRadio, useRadioSeeds,
-  useShell, type Shell,
+  canSave, isCollectionUri, toggleSaved, useAddTo, useApp, useArtist, useHome, usePosition, useRadio, useRadioSeeds, useShell, type Shell,
 } from '../../../../ui';
-import { Bar, GridScreen, MenuScreen, Popup, useNav, useWheel } from '../../ui';
+import { Bar, GridScreen, MenuScreen, Popup, ShelvesScreen, useNav, useWheel } from '../../ui';
 import type { GridItem, MenuItem, Nav, ScreenEntry } from '../contract';
 import { subline } from '../lists/logic';
+import { collection } from '../lists/screens';
 import { useLibraryView } from '../settings';
 import { step } from './step';
 
@@ -64,19 +64,25 @@ function Hold({ set, ...h }: Held & { set: (h: Held | null) => void }) {
   return <Popup key={String(!!h.lists)} items={items} onClose={() => set(null)} />;
 }
 
-// ---- Home: Spotify Home's shelves, each opening its items ---------------------------------------
+// ---- Home: Spotify Home's shelves of tiles, each with See all -----------------------------------
 
 export function home(): ScreenEntry {
-  const at = kept(0);
-  return { key: 'home', title: 'Home', render: () => <Shelves at={at} /> };
+  return { key: 'home', title: 'Home', render: () => <Shelves /> };
 }
 
-function Shelves({ at }: { at: Kept }) {
-  const { sections } = useHome(), nav = useNav(), [i, setI] = useKept(at);
-  const items = (sections ?? []).map((sec, k): MenuItem => ({ id: String(k), label: sec.title, chevron: true, onSelect: () => nav.push(shelf(sec, k)) }));
-  return <MenuScreen items={items} selected={i} onSelectedChange={setI} loading={!sections} empty="Nothing on Home" />;
+function Shelves() {
+  const { sections } = useHome(), sh = useShell(), nav = useNav(), [hold, openHold] = useHold();
+  const shelves = (sections ?? []).map((sec, k) => ({
+    id: String(k), title: sec.title, items: tiles(sec.items, sh, nav, openHold), onMore: () => nav.push(shelf(sec, k)) }));
+  return (
+    <>
+      <ShelvesScreen shelves={shelves} loading={!sections} empty="Nothing on Home" />
+      {hold}
+    </>
+  );
 }
 
+/** See all: a shelf's items as a screen */
 function shelf(sec: HomeSection, k: number): ScreenEntry {
   const at = kept(0);
   return { key: 'home/' + k, title: sec.title, render: () => <Shelf items={sec.items} at={at} /> };
@@ -85,18 +91,28 @@ function shelf(sec: HomeSection, k: number): ScreenEntry {
 /** a playlist, album, Liked Songs or artist opens to its songs; anything else plays */
 const opens = (uri: string) => uri.startsWith('spotify:artist:') || isCollectionUri(uri);
 
-/** a shelf's items: rows, or covers with what each is ("Album · Queen", "Playlist · <Spotify's line>") */
+/** a shelf's items as covers with what each is ("Album · Queen", "Playlist · <Spotify's line>"):
+ *  the centre opens one (a collection: the Library's page, under Spotify's header; an artist: their
+ *  songs) or plays it, hold-centre its Like / Add to Playlist / Start Radio */
+function tiles(items: HomeItem[], sh: Shell, nav: Nav, openHold: (h: Held) => void): GridItem[] {
+  return items.map((it, k) => ({
+    id: String(k), label: it.name, chevron: opens(it.uri), art: it.img, sub: subline(it.uri, it.sub),
+    onSelect: () => {
+      if (isCollectionUri(it.uri)) nav.push(collection(it.uri, it.name));
+      else if (opens(it.uri)) nav.push(songs(it.uri, it.name));
+      else { sh.store.getState().commands.playItem(it); nav.toNowPlaying(); }
+    },
+    onHold: canSave(it.uri) ? () => openHold({ uri: it.uri, name: it.name }) : undefined,
+  }));
+}
+
+/** a shelf's items: rows, or covers */
 function Shelf({ items, at }: { items: HomeItem[]; at: Kept }) {
   const sh = useShell(), nav = useNav(), [i, setI] = useKept(at), [hold, openHold] = useHold();
   const Screen = useLibraryView()[0] === 'grid' ? GridScreen : MenuScreen;
-  const menu = items.map((it, k): GridItem => ({
-    id: String(k), label: it.name, chevron: opens(it.uri), art: it.img, sub: subline(it.uri, it.sub),
-    onSelect: () => { if (opens(it.uri)) nav.push(songs(it.uri, it.name)); else { sh.store.getState().commands.playItem(it); nav.toNowPlaying(); } },
-    onHold: canSave(it.uri) ? () => openHold({ uri: it.uri, name: it.name }) : undefined,
-  }));
   return (
     <>
-      <Screen items={menu} selected={i} onSelectedChange={setI} empty="Nothing here" />
+      <Screen items={tiles(items, sh, nav, openHold)} selected={i} onSelectedChange={setI} empty="Nothing here" />
       {hold}
     </>
   );
@@ -107,19 +123,18 @@ function songs(uri: string, name: string): ScreenEntry {
   return { key: 'home:' + uri, title: name, render: () => <Songs uri={uri} at={at} /> };
 }
 
-/** a collection's songs (paged as the selection nears the end), or an artist's top songs */
+/** an artist's top songs */
 function Songs({ uri, at }: { uri: string; at: Kept }) {
-  const sh = useShell(), nav = useNav(), coll = useCollection(uri), artist = useArtist(uri), [i, setI] = useKept(at), [hold, openHold] = useHold();
-  const rows = isCollectionUri(uri) ? coll.rows : artist.page?.tracks ?? [];
+  const sh = useShell(), nav = useNav(), artist = useArtist(uri), [i, setI] = useKept(at), [hold, openHold] = useHold();
+  const rows = artist.page?.tracks ?? [];
   const items = rows.map((t, k): MenuItem => ({
     id: String(k), label: t.title, chevron: false,
     onSelect: () => { sh.store.getState().commands.playContext(t.ctx ?? uri, t.uri); nav.toNowPlaying(); },
     onHold: canSave(t.uri) ? () => openHold({ uri: t.uri, name: t.title }) : undefined,
   }));
-  const move = (n: number) => { setI(n); if (n >= rows.length - 10) coll.loadMore(); };
   return (
     <>
-      <MenuScreen items={items} selected={i} onSelectedChange={move} loading={coll.loading || artist.loading} empty="No Songs" />
+      <MenuScreen items={items} selected={i} onSelectedChange={setI} loading={artist.loading} empty="No Songs" />
       {hold}
     </>
   );

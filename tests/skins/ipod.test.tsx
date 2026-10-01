@@ -1,5 +1,6 @@
 // The iPod skin mounted: the wheel (its keyboard stand-in) reaches the top screen only, MENU goes back,
-// the nano 5G's menus, the chevron on the selected row only, taps, the library's grid, and the hold-⏮/⏭ scan.
+// the nano 5G's menus, the chevron on the selected row only, taps, the library's grid, Home's shelves, a
+// collection's header, and the hold-⏮/⏭ scan.
 import { act, cleanup, fireEvent, render, renderHook, within } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
 import type { ReactNode } from 'react';
@@ -10,7 +11,7 @@ import { mainMenu } from '../../src/skins/ipod/menus';
 import { createNav } from '../../src/skins/ipod/nav';
 import { Root } from '../../src/skins/ipod/Root';
 import { nowPlaying } from '../../src/skins/ipod/screens';
-import { Bar, GridScreen, MenuScreen, scan, StatusRow, useScan } from '../../src/skins/ipod/ui';
+import { Bar, GridScreen, MenuScreen, scan, ShelvesScreen, StatusRow, useScan } from '../../src/skins/ipod/ui';
 import { NavContext } from '../../src/skins/ipod/wheel';
 import { ShellContext } from '../../src/ui';
 import { fakeData, mountSkinNow, settle } from './harness';
@@ -112,9 +113,9 @@ it('the library is a grid: the wheel steps a tile at a time, row by row, a tile 
   expect(sel()).toEqual(['Hot SpaceAlbum · Queen']);
   key('ArrowDown'); key('ArrowDown');                        // the next row's first, then the end holds
   expect(sel()).toEqual(['Kid AAlbum · Radiohead']);
-  key('ArrowUp'); key('Enter');                              // songs are rows
+  key('ArrowUp'); key('Enter');                              // songs are rows, under the header's three buttons
   await settle();
-  expect(rows()).toEqual(['Shuffle', 'Staying Power']);
+  expect(rows()).toEqual(['', '', '', 'Staying PowerQueen']);
   key('Escape');
   act(() => { localStorage.setItem('ipod.view', '"list"'); window.dispatchEvent(new StorageEvent('storage')); });
   expect(rows()).toEqual(['Abbey Road', 'Hot Space', 'Kid A']);
@@ -142,6 +143,88 @@ it('a grid waits and empties as a list does, a tap opens a tile, a long press is
   act(() => { fireEvent.pointerDown(a); vi.advanceTimersByTime(500); });      // A has no hold: its press stays a press
   act(() => { fireEvent.pointerUp(a); fireEvent.click(a); });
   expect(a.getAttribute('aria-selected')).toBe('true');
+});
+
+/** the iPod skin mounted over the fake catalogue; `shown` reads the screen on top */
+function mountIpod(data: ReturnType<typeof fakeData>) {
+  const m = mountSkinNow('spotify', data, <div data-testid="ipod"><Root /></div>);
+  const ipod = m.getByTestId('ipod'), shown = (q: string) => [...ipod.querySelectorAll(q)].filter((x) => !x.closest('[hidden]'));
+  // a button says what it is by its label, a row or tile by its text
+  const sel = () => shown('[aria-selected=true]').map((x) => x.getAttribute('aria-label') ?? x.textContent);
+  return { ...m, shown, sel, rows: () => shown('[role=option]').map((x) => x.textContent) };
+}
+
+it('Home is Spotify\'s shelves: the wheel runs along a strip, past its end (See all) into the next shelf and back; Enter plays or opens', async () => {
+  const shelf = (title: string, p: string) => ({ title, items: [1, 2, 3].map((i) => ({ uri: 'spotify:track:' + p + i, name: p + i, sub: 'Queen', img: null })) });
+  const m = mountIpod(fakeData({ home: { greeting: '', sections: [shelf('Made for you', 'A'), shelf('Jump back in', 'B')] } }));
+  key('Enter');                                               // Home
+  await settle();
+  expect(m.shown('[role=listbox] [role=group]').map((x) => x.getAttribute('aria-label'))).toEqual(['Made for you', 'Jump back in']);
+  expect(m.rows()).toEqual(['A1Song · Queen', 'A2Song · Queen', 'A3Song · Queen', 'See all', 'B1Song · Queen', 'B2Song · Queen', 'B3Song · Queen', 'See all']);
+  expect(m.sel()).toEqual(['A1Song · Queen']);
+  key('ArrowDown'); key('ArrowDown');
+  expect(m.sel()).toEqual(['A3Song · Queen']);
+  key('ArrowDown');                                           // the strip's end
+  expect(m.sel()).toEqual(['See all']);
+  key('ArrowDown');                                           // on into the next shelf
+  expect(m.sel()).toEqual(['B1Song · Queen']);
+  key('ArrowUp');                                             // back: the previous shelf's last
+  expect(m.sel()).toEqual(['See all']);
+  key('ArrowDown'); key('ArrowDown'); key('Enter');           // a song plays
+  expect(m.cmd.playItem).toHaveBeenCalledWith(expect.objectContaining({ uri: 'spotify:track:B2' }));
+  key('Escape');                                              // back from Now Playing, where it was
+  expect(m.sel()).toEqual(['B2Song · Queen']);
+  key('ArrowUp'); key('ArrowUp'); key('Enter');               // See all: the shelf's items as a screen
+  await settle();
+  expect(m.rows()).toEqual(['A1Song · Queen', 'A2Song · Queen', 'A3Song · Queen']);
+  key('Escape');
+  expect(m.sel()).toEqual(['See all']);
+});
+
+it('the shelves wait and empty as a list does, and a tap opens a tile', () => {
+  const store = createAppStore({ persist: false });
+  store.setState((s) => ({ auth: { ...s.auth, engine: 'spotify', loggedIn: true } }));
+  const wrap = (el: ReactNode) => <ShellContext.Provider value={makeShell(store, {} as Ticker)}>{el}</ShellContext.Provider>;
+  const { container, rerender, getByText } = render(wrap(<ShelvesScreen shelves={[]} loading />));
+  expect(container.textContent).toBe('Loading…');
+  rerender(wrap(<ShelvesScreen shelves={[]} empty="Nothing on Home" />));
+  expect(container.textContent).toBe('Nothing on Home');
+  const open = vi.fn(), more = vi.fn();
+  rerender(wrap(<ShelvesScreen shelves={[{ id: 'a', title: 'A', items: [{ id: '1', label: 'One' }] },
+                                         { id: 'b', title: 'B', items: [{ id: '1', label: 'Two', onSelect: open }], onMore: more }]} />));
+  act(() => { fireEvent.click(getByText('Two')); });
+  expect([open.mock.calls.length, getByText('Two').closest('[role=option]')!.getAttribute('aria-selected')]).toEqual([1, 'true']);
+  act(() => { fireEvent.click(getByText('See all')); });
+  expect(more).toHaveBeenCalledTimes(1);
+});
+
+it('a playlist opens under Spotify\'s header: its cover, title, owner and count; the wheel walks Play, Shuffle, the heart, then the songs; Enter on Play plays it all', async () => {
+  const t = (i: number) => ({ uri: 'spotify:track:' + i, title: 'Song ' + i, artist: 'Queen', duration: 1, image: 'https://i.scdn.co/t' + i });
+  const m = mountIpod(fakeData({
+    list: [{ uri: 'spotify:playlist:p', name: 'Road Trip', owner: 'ryan', image: 'https://i.scdn.co/p' }],
+    collections: { 'spotify:playlist:p': { meta: { kind: 'playlist', name: 'Road Trip', owner: { name: 'ryan', uri: 'spotify:user:ryan' }, image: 'https://i.scdn.co/p', total: 2 },
+                                           tracks: [t(1), { ...t(2), image: undefined }] } },
+  }));
+  key('ArrowDown'); key('ArrowDown'); key('Enter'); key('Enter');   // Library > Playlists
+  await settle();
+  key('ArrowDown'); key('ArrowDown'); key('Enter');                 // past the Queue and Liked Songs
+  await settle();
+  const head = m.shown('[data-head]')[0]!;
+  expect([head.textContent, head.querySelector('img')?.getAttribute('src')]).toEqual(['Road Tripryan · 2 songs', 'https://i.scdn.co/p']);
+  // two-line rows, each with its cover (the playlist's when the song has none); the playing one marked
+  act(() => { m.store.setState((s) => ({ playback: { ...s.playback, track: { uri: 'spotify:track:2', title: 'Song 2', artist: 'Queen', duration: 1 } } })); });
+  expect(m.rows()).toEqual(['', '', '', 'Song 1Queen', 'Song 2Queen']);
+  expect(m.shown('[role=option] img').map((x) => x.getAttribute('src'))).toEqual(['https://i.scdn.co/t1', 'https://i.scdn.co/p']);
+  expect(m.shown('[role=option] [aria-label=Playing]').map((x) => x.closest('[role=option]')!.textContent)).toEqual(['Song 2Queen']);
+  expect(m.sel()).toEqual(['Play']);
+  key('ArrowDown');
+  expect(m.sel()).toEqual(['Shuffle']);
+  key('ArrowDown');
+  expect(m.sel()).toEqual(['Like']);
+  key('ArrowDown');
+  expect(m.sel()).toEqual(['Song 1Queen']);
+  key('ArrowUp'); key('ArrowUp'); key('ArrowUp'); key('Enter');
+  expect(m.cmd.playAll).toHaveBeenCalledExactlyOnceWith('spotify:playlist:p');
 });
 
 it('a swipe right on the screen is MENU, and not also a tap on the row it ended on', () => {

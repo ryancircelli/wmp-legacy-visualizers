@@ -3,7 +3,7 @@
 // Artists, Podcasts & Shows (empty: the adapter lists none), Queue, Cover Flow; and Search. Lists are the
 // chrome's MenuScreen (center fires the row, hold-center its menu, Play/Pause plays the row), or, for
 // the lists with covers in Settings > General > Library View: Grid, its GridScreen; songs are always
-// rows. Search and Cover Flow draw themselves. What a screen comes back to (the selected row, the typed query) is
+// rows (a playlist's, album's or Liked Songs' under Spotify's header). Search and Cover Flow draw themselves. What a screen comes back to (the selected row, the typed query) is
 // kept on its entry, so it outlives the screen's unmount.
 import { useQuery } from '@tanstack/react-query';
 import { useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
@@ -11,8 +11,8 @@ import { LIKED, type LibraryItem, type SearchResults, type Track } from '../../.
 import {
   canSave, isAlbum, STALE, useAddTo, useApp, useArtist, useCollection, useLibraryList, useSearch, useSearchAll, useShell, type Bucket, type Shell,
 } from '../../../../ui';
-import { GridScreen, MenuScreen, Popup, Tile, useNav, useWheel } from '../../ui';
-import type { GridItem, MenuItem, Nav, ScreenEntry } from '../contract';
+import { CollectionHeader, GridScreen, MenuScreen, Popup, Tile, useNav, useWheel } from '../../ui';
+import type { GridItem, HeadAction, MenuItem, Nav, ScreenEntry } from '../contract';
 import { useLibraryView } from '../settings';
 import { albumsBy, artistList, artistsOf, az, SLOTS, strip, STRIP0, subline, type Strip, type StripAct } from './logic';
 
@@ -45,14 +45,15 @@ const useGrid = () => useLibraryView()[0] === 'grid';
 
 /** MenuScreen (with `tiles` in the grid view: GridScreen) with the selection kept on the entry; `near`
  *  runs as the selection nears the loaded end; `play` is Play/Pause on a row (the iPod plays it, a
- *  collection whole [UG p.6]). */
-function List({ keep, items, near, loading, empty, play, tiles }: {
+ *  collection whole [UG p.6]); `head`, `lead` and `tall` go to MenuScreen. */
+function List({ keep, items, near, loading, empty, play, tiles, head, lead, tall }: {
   keep: Box<number>; items: GridItem[]; near?: () => void; loading?: boolean; empty?: string; play?: (i: number) => void; tiles?: boolean;
+  head?: ReactNode; lead?: number; tall?: boolean;
 }) {
-  const [sel, setSel] = useKept(keep), i = Math.min(sel, items.length - 1), Screen = useGrid() && tiles ? GridScreen : MenuScreen;
+  const [sel, setSel] = useKept(keep), i = Math.min(sel, items.length - 1), grid = useGrid() && tiles;
   useWheel({ onPlay: play && i >= 0 ? () => play(i) : undefined });
-  return <Screen items={items} selected={sel} loading={loading} empty={empty}
-                 onSelectedChange={(n) => { setSel(n); if (near && n >= items.length - NEAR) near(); }} />;
+  const p = { items, selected: sel, loading, empty, onSelectedChange: (n: number) => { setSel(n); if (near && n >= items.length - NEAR) near(); } };
+  return grid ? <GridScreen {...p} /> : <MenuScreen {...p} head={head} lead={lead} tall={tall} />;
 }
 
 // ---- playing -------------------------------------------------------------------------------------
@@ -66,7 +67,7 @@ function playUri(sh: Shell, nav: Nav, uri: string) {
   if (uri.startsWith('spotify:artist:')) c.playContext(uri, null); else c.playAll(uri);
   nav.toNowPlaying();
 }
-/** A page's Shuffle row: shuffle on, then a random song of it, in its playlist / album / Liked Songs. */
+/** A page's Shuffle: shuffle on, then a random song of it, in its playlist / album / Liked Songs. */
 function shufflePlay(sh: Shell, nav: Nav, rows: readonly Track[]) {
   const s = sh.store.getState(), t = rows[Math.floor(Math.random() * rows.length)];
   if (!t) return;
@@ -77,7 +78,7 @@ function shufflePlay(sh: Shell, nav: Nav, rows: readonly Track[]) {
 /** a playlist or album: a row that opens its songs, or a tile with its cover and what it is */
 const opens = (nav: Nav, x: LibraryItem): GridItem => ({
   id: x.uri, label: x.name, chevron: true, art: x.image, sub: subline(x.uri, x.artist ?? x.owner),
-  onSelect: () => nav.push(collection(x.uri, x.name, true)),
+  onSelect: () => nav.push(collection(x.uri, x.name)),
 });
 /** Liked Songs has no cover: Spotify's own, its gradient and heart */
 const LIKED_ART = 'data:image/svg+xml,' + encodeURIComponent(
@@ -87,41 +88,69 @@ const LIKED_ART = 'data:image/svg+xml,' + encodeURIComponent(
 
 // ---- tracks --------------------------------------------------------------------------------------
 
-/** Songs: center plays from that row; hold-center: the song's menu. An album or playlist page leads
- *  with Shuffle (§2.4 List pages). */
-function TrackList({ keep, rows, loading, more, shuffle }: {
-  keep: Box<number>; rows: readonly Track[]; loading: boolean; more?: () => void; shuffle?: boolean;
+/** a collection page's header: its uri, cover, title and "<owner or artist> · <n> songs" */
+interface Head { uri: string; art?: string | null; title: string; line: string }
+
+/** the playing song's row: a small ▶ at its right */
+const PLAYING = <svg viewBox="0 0 8 10" fill="currentColor" style={{ width: u(7), height: u(9) }} role="img" aria-label="Playing"><path d="M0 0l8 5-8 5z" /></svg>;
+
+/** Songs: center plays from that row; hold-center: the song's menu. A playlist's, album's or Liked
+ *  Songs' page (`head`) leads with Spotify's header: the cover, Play, Shuffle, the heart and "…"
+ *  (Save to Library, Start Radio; hold-centre on a button too), and its songs are two-line rows with
+ *  their covers (the collection's when a song has none). */
+function TrackList({ keep, rows, loading, more, head }: {
+  keep: Box<number>; rows: readonly Track[]; loading: boolean; more?: () => void; head?: Head;
 }) {
-  const sh = useShell(), nav = useNav(), [held, setHeld] = useState<Held>(null), lead = shuffle && rows.length ? 1 : 0;
-  const items: MenuItem[] = [
-    ...(lead ? [{ id: 'shuffle', label: 'Shuffle', onSelect: () => shufflePlay(sh, nav, rows) }] : []),
+  const sh = useShell(), nav = useNav(), [held, setHeld] = useState<Held>(null), [menu, setMenu] = useState(false);
+  const like = useAddTo(head && canSave(head.uri) ? head.uri : null), playing = useApp((s) => s.playback.track?.uri);
+  const open = like.uri ? () => setMenu(true) : undefined;
+  const acts: HeadAction[] = head && rows.length ? [
+    { id: 'play', kind: 'play', label: 'Play', onSelect: () => playUri(sh, nav, head.uri), onHold: open },
+    { id: 'shuffle', kind: 'shuffle', label: 'Shuffle', onSelect: () => shufflePlay(sh, nav, rows), onHold: open },
+    ...(like.uri ? [{ id: 'like', kind: 'like' as const, label: like.saved ? 'Unlike' : 'Like', on: !!like.saved, onSelect: like.toggle, onHold: open }] : []),
+  ] : [];
+  const lead = acts.length;
+  const items: GridItem[] = [
+    ...acts,
     // index in the id: a playlist can hold the same track twice
-    ...rows.map((t, i): MenuItem => ({ id: i + ':' + t.uri, label: t.title, onSelect: () => playSong(sh, nav, t), onHold: () => setHeld({ t }) })),
+    ...rows.map((t, i): GridItem => ({
+      id: i + ':' + t.uri, label: t.title, sub: t.artist, art: t.image || t.art || head?.art, right: head && t.uri === playing ? PLAYING : undefined,
+      onSelect: () => playSong(sh, nav, t), onHold: () => setHeld({ t }) })),
   ];
-  const play = (i: number) => (i < lead ? shufflePlay(sh, nav, rows) : playSong(sh, nav, rows[i - lead]!));
+  // Play/Pause on the header: Shuffle shuffles, the other buttons play from the top
+  const play = (i: number) => (i >= lead ? playSong(sh, nav, rows[i - lead]!) : i === 1 ? shufflePlay(sh, nav, rows) : playUri(sh, nav, head!.uri));
   return (
     <>
-      <List keep={keep} items={items} loading={loading} empty="No Songs" near={more} play={held ? undefined : play} />
+      <List keep={keep} items={items} loading={loading} empty="No Songs" near={more} play={held || menu ? undefined : play} lead={lead} tall={!!head}
+            head={head && <CollectionHeader art={head.art} title={head.title} line={head.line} actions={acts} onMore={open} />} />
       {held && <TrackPopup held={held} set={setHeld} />}
+      {menu && head && <Popup onClose={() => setMenu(false)} items={[
+        { id: 'like', label: like.saved ? 'Remove from Library' : 'Save to Library', onSelect: like.toggle },
+        { id: 'radio', label: 'Start Radio', onSelect: () => void startRadio(sh, nav, head.uri, head.title) },
+        { id: 'cancel', label: 'Cancel' },
+      ]} />}
     </>
   );
 }
 
-/** A playlist, album or Liked Songs, paged. */
-function Collection({ uri, keep, shuffle }: { uri: string; keep: Box<number>; shuffle: boolean }) {
-  const c = useCollection(uri);
-  return <TrackList keep={keep} rows={c.rows} loading={c.loading} more={c.loadMore} shuffle={shuffle} />;
+/** A playlist, album or Liked Songs (its gradient heart for a cover), paged, under its header. */
+function Collection({ uri, title, keep }: { uri: string; title: string; keep: Box<number> }) {
+  const c = useCollection(uri), m = c.meta, n = c.total || c.rows.length;
+  const by = m?.owner?.name || m?.artists?.map((a) => a.name).join(', ');
+  const line = [by, c.loaded ? n.toLocaleString() + (n === 1 ? ' song' : ' songs') : ''].filter(Boolean).join(' · ');
+  return <TrackList keep={keep} rows={c.rows} loading={c.loading} more={c.loadMore}
+                    head={{ uri, title: m?.name || title, art: uri === LIKED ? LIKED_ART : m?.image, line }} />;
 }
-const collection = (uri: string, title: string, shuffle: boolean) =>
-  screen('tracks:' + uri, title, 0, (k) => <Collection uri={uri} keep={k} shuffle={shuffle} />);
+export const collection = (uri: string, title: string) =>
+  screen('tracks:' + uri, title, 0, (k) => <Collection uri={uri} title={title} keep={k} />);
 
-/** Song radio: the station seeded from the song, played, then Now Playing; the status line says
- *  when there is none. */
-async function startRadio(sh: Shell, nav: Nav, t: Track): Promise<void> {
-  const name = t.title + ' Radio';
-  const st = (await sh.queries.fetchRadio([{ seed: t.uri, name, sub: 'Song radio' }]).catch(() => [])).find((x) => x.name === name);
+/** Radio from a song or collection: the station seeded from it, played, then Now Playing; the status
+ *  line says when there is none. */
+async function startRadio(sh: Shell, nav: Nav, uri: string, title: string, sub = ''): Promise<void> {
+  const name = title + ' Radio';
+  const st = (await sh.queries.fetchRadio([{ seed: uri, name, sub }]).catch(() => [])).find((x) => x.name === name);
   const s = sh.store.getState();
-  if (!st) { s.actions.setStatus('No radio for ' + t.title); return; }
+  if (!st) { s.actions.setStatus('No radio for ' + title); return; }
   s.commands.playContext(st.uri, null);
   nav.toNowPlaying();
 }
@@ -143,8 +172,8 @@ function TrackPopup({ held: { t, lists }, set }: { held: NonNullable<Held>; set:
       { id: 'queue', label: 'Add to Queue', disabled: !queues, onSelect: () => sh.store.getState().commands.addToQueue?.(t.uri) },
       { id: 'like', label: a.saved ? 'Unlike' : 'Like', disabled: !a.uri, onSelect: a.toggle },
       { id: 'add', label: 'Add to Playlist', chevron: true, disabled: !a.uri, onSelect: () => { a.playlistMenu().onOpen?.(); set({ t, lists: true }); } },
-      { id: 'radio', label: 'Start Radio', onSelect: () => void startRadio(sh, nav, t) },
-      { id: 'album', label: 'Browse Album', disabled: !album, onSelect: album ? () => nav.push(collection(album, t.album ?? 'Album', true)) : undefined },
+      { id: 'radio', label: 'Start Radio', onSelect: () => void startRadio(sh, nav, t.uri, t.title, 'Song radio') },
+      { id: 'album', label: 'Browse Album', disabled: !album, onSelect: album ? () => nav.push(collection(album, t.album ?? 'Album')) : undefined },
       { id: 'artist', label: 'Browse Artist', disabled: !artist,
         onSelect: artist ? () => nav.push(artistPage(artist, artistsOf([t]).get(artist) ?? t.artist)) : undefined },
       { id: 'cancel', label: 'Cancel' },
@@ -256,7 +285,7 @@ function hit(kind: Kind, x: Track | LibraryItem, nav: Nav, sh: Shell): Omit<Hit,
     return { kind, label: t.title, sub: t.artist, track: t, open: () => playSong(sh, nav, t), play: () => playSong(sh, nav, t) };
   }
   const c = x as LibraryItem;
-  const open = kind === 'artist' ? () => nav.push(artistPage(c.uri, c.name)) : () => nav.push(collection(c.uri, c.name, true));
+  const open = kind === 'artist' ? () => nav.push(artistPage(c.uri, c.name)) : () => nav.push(collection(c.uri, c.name));
   return { kind, label: c.name, sub: kind === 'artist' ? undefined : c.artist ?? c.owner, art: c.image, line: subline(c.uri, c.artist ?? c.owner),
            open, play: () => playUri(sh, nav, c.uri) };
 }
@@ -374,7 +403,7 @@ function CoverFlow({ keep }: { keep: Box<number> }) {
   const flip = (d: number) => { const k = Math.max(0, Math.min(albs.length - 1, i + d)); if (k === i) return false; setAt(k); };
   useWheel({
     onTick: flip, onPrev: () => flip(-1), onNext: () => flip(1),
-    onCenter: () => { if (cur) nav.push(collection(cur.uri, cur.name, true)); },
+    onCenter: () => { if (cur) nav.push(collection(cur.uri, cur.name)); },
     onPlay: cur ? () => playUri(sh, nav, cur.uri) : undefined,
   });
   if (!cur) return <MenuScreen items={[]} loading={lib.loading} empty="No Albums" />;
@@ -384,7 +413,7 @@ function CoverFlow({ keep }: { keep: Box<number> }) {
         const o = j - i, d = Math.sign(o);
         if (Math.abs(o) > 6) return null;
         return (
-          <div key={x.uri} className="absolute bg-cover bg-center" onClick={() => (o ? setAt(j) : nav.push(collection(x.uri, x.name, true)))}
+          <div key={x.uri} className="absolute bg-cover bg-center" onClick={() => (o ? setAt(j) : nav.push(collection(x.uri, x.name)))}
                style={{ left: '50%', top: u(50), width: u(COVER), height: u(COVER), marginLeft: u(-COVER / 2), zIndex: 10 - Math.abs(o),
                         backgroundColor: '#c8c8c8', backgroundImage: x.image ? `url("${x.image}")` : undefined, transition: 'transform .2s',
                         transform: o ? `translateX(${u(d * (COVER / 2 + 30 + PITCH * (Math.abs(o) - 1)))}) translateZ(${u(-60)}) rotateY(${-d * 65}deg)` : undefined,
@@ -408,7 +437,7 @@ export const playlists = () => screen('playlists', 'Playlists', 0, (k) => <Playl
 export const onTheGo = () => screen('onTheGo', 'Queue', 0, (k) => <OnTheGo keep={k} />);
 export const artists = () => screen('artists', 'Artists', '', (k) => <Artists keep={k} />);
 export const albums = () => screen('albums', 'Albums', 0, (k) => <Albums keep={k} />);
-export const songs = () => screen('songs', 'Liked Songs', 0, (k) => <Collection uri={LIKED} keep={k} shuffle={false} />);
+export const songs = () => screen('songs', 'Liked Songs', 0, (k) => <Collection uri={LIKED} title="Liked Songs" keep={k} />);
 /** libraryV3 is asked for episodes, but the adapter's list keeps playlists and albums only */
 export const podcasts = () => none('podcasts', 'Podcasts & Shows');
 export const search = () => screen<Strip>('search', 'Search', STRIP0, (k) => <Search keep={k} />);

@@ -381,6 +381,77 @@
   line-height: 1.25;
   color: var(--ipod-dim);
 }
+/* two-line rows (MenuScreen `tall`: a collection's songs, Spotify's): 44 high, the cover 40 at the
+   left, the title bold 15 over the artist, dim */
+.list[data-tall] { --ipod-row-h: calc(var(--unit) * 44); }
+.list[data-tall] .row[role=option] {
+  display: grid;
+  /* the two lines together, centred: the outer rows take the slack */
+  grid-template: 1fr auto auto 1fr / auto minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 0 calc(var(--unit) * 8);
+}
+.pic { grid-row: 1 / -1; width: calc(var(--unit) * 40); border-radius: calc(var(--unit) * 2); }
+.list[data-tall] .label { grid-column: 2; grid-row: 2; font-size: calc(var(--unit) * 15); line-height: 1.2; }
+.list[data-tall] .row > .sub { grid-column: 2; grid-row: 3; }
+.list[data-tall] .row > .value, .list[data-tall] .row > .chevron { grid-row: 1 / -1; }
+.row[data-sel] .sub { color: inherit; opacity: .85; }
+/* a collection's header (CollectionHeader), Spotify's: the cover 120 centred, the title bold 18 and
+   the dim line 10 in, then the round buttons: Play a green disc, the selected one ringed in blue */
+.head { padding: calc(var(--unit) * 12) calc(var(--unit) * 10) calc(var(--unit) * 8); }
+.cover {
+  width: calc(var(--unit) * 120);
+  margin: 0 auto;
+  box-shadow: 0 calc(var(--unit) * 3) calc(var(--unit) * 10) rgb(0 0 0 / .3);
+}
+.headTitle {
+  margin-top: calc(var(--unit) * 10);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.acts {
+  display: flex;
+  align-items: center;
+  gap: calc(var(--unit) * 10);
+  margin-top: calc(var(--unit) * 8);
+}
+.act {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: calc(var(--unit) * 30);
+  height: calc(var(--unit) * 30);
+  border-radius: 50%;
+  cursor: default;
+}
+.act svg { width: 55%; fill: currentColor; }
+.act[data-kind=play] { width: calc(var(--unit) * 36); height: calc(var(--unit) * 36); background: #1ED760; color: #000000; }
+.act[data-kind=play] svg { width: 34%; margin-left: 8%; }
+.act[data-kind=more] { margin-left: auto; }
+.act[data-sel] { outline: calc(var(--unit) * 2.5) solid #3F7FCD; outline-offset: calc(var(--unit) * 1.5); }
+/* Home as Spotify's (ShelvesScreen): the shelves down one page, each its title (bold 14, 10 in)
+   over one strip of tiles 100 wide (3 + 2 at the ends, 4 between: the art is 90, 10 in like the
+   title), 2.3 of them across; a strip scrolls across on its own */
+.shelf { padding-top: calc(var(--unit) * 8); }
+.shelfTitle {
+  padding: 0 calc(var(--unit) * 10);
+  font-size: calc(var(--unit) * 14);
+  line-height: 1.25;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.strip {
+  position: relative;
+  display: flex;
+  overflow: auto hidden;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+  padding: 0 calc(var(--unit) * 3);
+}
+.strip::-webkit-scrollbar { display: none; }
+.strip > .cell { flex: none; width: calc(var(--unit) * 100); }
 /* the main menu: 9 rows (276) over the 80-tall preview panel */
 .split {
   flex: none;

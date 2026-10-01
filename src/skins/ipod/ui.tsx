@@ -1,13 +1,13 @@
-// What the chrome gives the screens (screens/contract.ts ChromeModule): the wheel-driven list and its
-// grid of tiles, the status row, the progress bar, the hold-centre popup, the spinner, the hooks, and the scan (hold
-// ⏮ / ⏭) Now Playing shows. Looks and metrics: docs/ipod-skin.md §2.1-2.2.
-import { useContext, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type HTMLAttributes, type MouseEvent, type PointerEvent } from 'react';
+// What the chrome gives the screens (screens/contract.ts ChromeModule): the wheel-driven list (with a
+// collection's header), its grid of tiles and Home's shelves of them, the status row, the progress bar, the hold-centre popup,
+// the spinner, the hooks, and the scan (hold ⏮ / ⏭) Now Playing shows. Looks and metrics: docs/ipod-skin.md §2.1-2.2.
+import { createContext, useContext, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type HTMLAttributes, type MouseEvent, type PointerEvent, type ReactNode } from 'react';
 import { useStore } from 'zustand';
 import { createStore } from 'zustand/vanilla';
 import { hasMedia, positionNow } from '../../model';
 import { artOk, cx, duration, isPlaying, isSpotify, playingTrack, useAddTo, useApp, useShell, type Shell } from '../../ui';
 import { useHostGlobal } from './host';
-import type { Chrome, GridItem, MenuItem } from './screens/contract';
+import type { Chrome, GridItem, HeadAction, MenuItem } from './screens/contract';
 import { useClockPrefs } from './screens';
 import s from './ipod.module.css';
 import { FrameContext, useWheel } from './wheel';
@@ -39,6 +39,14 @@ function placeThumb(l: HTMLElement | null, t: HTMLElement | null) {
   t.style.height = (l.clientHeight / H) * 100 + '%';
 }
 
+/** scroll `box` the least that shows `el` with `pad` either side (`x`: across): the box only, never the page */
+function reveal(box: HTMLElement, el: HTMLElement, x = false, pad = 0) {
+  const at = x ? box.scrollLeft : box.scrollTop, size = x ? box.clientWidth : box.clientHeight;
+  const a = (x ? el.offsetLeft : el.offsetTop) - pad, b = a + (x ? el.offsetWidth : el.offsetHeight) + 2 * pad;
+  const to = a < at ? a : b > at + size ? b - size : at;
+  if (x) box.scrollLeft = to; else box.scrollTop = to;
+}
+
 /** frames whose list is loading: the status bar shows the spinner in place of the play glyph (§2.2) */
 const busy = createStore<{ ids: number[] }>(() => ({ ids: [] }));
 export const useBusy = (frame: number): boolean => useStore(busy, (b) => b.ids.includes(frame));
@@ -47,8 +55,8 @@ export const useBusy = (frame: number): boolean => useStore(busy, (b) => b.ids.i
  *  else its own. It moves first and the list scrolls only when it would leave the view; lists over
  *  100 rows accelerate. A tap selects and does what the centre would. While it loads, the status bar
  *  shows the spinner and `note` says why it waits; with nothing to list, `note` is `empty`. */
-function useList({ items, selected, onSelectedChange, loading, empty }: {
-  items: MenuItem[]; selected?: number; onSelectedChange?: (i: number) => void; loading?: boolean; empty?: string;
+function useList({ items, selected, onSelectedChange, loading, empty, lead = 0 }: {
+  items: MenuItem[]; selected?: number; onSelectedChange?: (i: number) => void; loading?: boolean; empty?: string; lead?: number;
 }) {
   const [own, setOwn] = useState(0), list = useRef<HTMLDivElement>(null), thumb = useRef<HTMLDivElement>(null);
   const frame = useContext(FrameContext), speed = useRef({ v: 0, at: 0 });
@@ -87,29 +95,34 @@ function useList({ items, selected, onSelectedChange, loading, empty }: {
     busy.setState((b) => ({ ids: [...b.ids, id] }));
     return () => busy.setState((b) => { const ids = [...b.ids]; ids.splice(ids.indexOf(id), 1); return { ids }; });
   }, [loading, signedIn, frame]);
-  // the selected row or tile in view (scrolling the list only, never the page), the scroll indicator
+  // the selected row or tile in view (a head's button: the whole head), scrolling the list only (never
+  // the page); the scroll indicator
   useLayoutEffect(() => {
-    const l = list.current, el = l?.children[sel] as HTMLElement | undefined;
+    const l = list.current, el = l?.querySelector<HTMLElement>('[aria-selected=true]');
     if (!l || !el) return;
-    if (el.offsetTop < l.scrollTop) l.scrollTop = el.offsetTop;
-    else if (el.offsetTop + el.offsetHeight > l.scrollTop + l.clientHeight) l.scrollTop = el.offsetTop + el.offsetHeight - l.clientHeight;
+    reveal(l, el.closest<HTMLElement>('[data-head]') ?? el);
     placeThumb(l, thumb.current);
   }, [sel, items.length]);
   const note = loading ? <div className={s.row} data-loading=""><span className={s.label}>{wait}</span></div>
-    : !items.length && empty ? <div className={s.row}><span className={s.label}>{empty}</span></div> : null;
+    : items.length <= lead && empty ? <div className={s.row}><span className={s.label}>{empty}</span></div> : null;
   return { sel, pick, tap, note, list, thumb, onScroll: () => placeThumb(list.current, thumb.current) };
 }
 
+/** the list a CollectionHeader heads: its selection and tap (the header's buttons are its first items) */
+const HeadContext = createContext<{ sel: number; tap: (i: number) => void }>({ sel: -1, tap: () => {} });
+
 /** The list the wheel scrolls (§2.2): useList's rows. A row with `chevron: true` shows it on the
  *  selected row only (the 5G's rule). The screen is a touch screen too: a drag scrolls the list
- *  (natively, with momentum; the selection stays). The selected row's label marquees when it does not fit. */
-export const MenuScreen: Chrome['MenuScreen'] = ({ items, selected, onSelectedChange, preview, loading, empty }) => {
-  const { sel, tap, note, list, thumb, onScroll } = useList({ items, selected, onSelectedChange, loading, empty });
+ *  (natively, with momentum; the selection stays). The selected row's label marquees when it does not fit.
+ *  `head` leads the rows and scrolls away with them, its buttons the first `lead` items; `tall` rows
+ *  are two lines, the art at the left. */
+export const MenuScreen: Chrome['MenuScreen'] = ({ items, selected, onSelectedChange, preview, loading, empty, head, lead = 0, tall }) => {
+  const { sel, tap, note, list, thumb, onScroll } = useList({ items, selected, onSelectedChange, loading, empty, lead });
   const label = items[sel]?.label;
   // after 1 s, 30 units/s to the end, 1 s there, back to the start, again
   useLayoutEffect(() => {
-    const row = list.current?.children[sel] as HTMLElement | undefined;
-    const box = row?.firstElementChild as HTMLElement | null | undefined, text = box?.firstElementChild as HTMLElement | null | undefined;
+    const row = list.current?.querySelector<HTMLElement>('[aria-selected=true]');
+    const box = row?.querySelector<HTMLElement>('.' + s.label), text = box?.firstElementChild as HTMLElement | null | undefined;
     const over = row && box && text ? text.offsetWidth - box.clientWidth : 0;
     if (!row || over <= 0 || !text?.animate) return;
     const run = (over / ((30 * row.clientWidth) / 240)) * 1000, total = run + 2000, end = `translateX(${-over}px)`;
@@ -119,16 +132,19 @@ export const MenuScreen: Chrome['MenuScreen'] = ({ items, selected, onSelectedCh
   }, [sel, items.length, label, list]);
   return (
     <div className="flex flex-col h-full min-h-0">
-      <div className={cx(preview != null ? s.split : 'flex-auto min-h-0', s.list)}>
+      <div className={cx(preview != null ? s.split : 'flex-auto min-h-0', s.list)} data-tall={tall || undefined}>
         <div ref={list} className={s.scroll} role="listbox" aria-busy={loading || undefined} onScroll={onScroll}>
-          {note ?? items.map((it, i) => (
+          {head && <HeadContext.Provider value={{ sel, tap }}>{head}</HeadContext.Provider>}
+          {note ?? items.slice(lead).map((it, k) => { const i = k + lead; return (
             <div key={it.id} className={s.row} role="option" aria-selected={i === sel} aria-disabled={it.disabled || undefined}
                  data-sel={i === sel || undefined} data-disabled={it.disabled || undefined} onClick={() => tap(i)}>
+              {tall && <Art src={it.art} className={s.pic} />}
               <span className={s.label}><span>{it.label}</span></span>
+              {tall && it.sub && <span className={s.sub}>{it.sub}</span>}
               {it.right != null && <span className={s.value}>{it.right}</span>}
               {it.chevron && i === sel && <svg className={s.chevron} viewBox="0 0 7 11" aria-hidden="true"><path d="M1.5 1.5l4 4-4 4" /></svg>}
             </div>
-          ))}
+          ); })}
         </div>
         <div ref={thumb} className={s.thumb} hidden />
       </div>
@@ -140,30 +156,75 @@ export const MenuScreen: Chrome['MenuScreen'] = ({ items, selected, onSelectedCh
 /** A press this long on a tile is hold-centre (ms) */
 const LONG_PRESS = 500;
 
-/** MenuScreen's list as 2 columns of tiles, Spotify's library look (Tile). The wheel moves the
- *  selection a tile at a time, row by row; a drag scrolls; a tap opens; a long press (a finger held
- *  still: a drag cancels it) is hold-centre. */
-export const GridScreen: Chrome['GridScreen'] = ({ items, selected, onSelectedChange, loading, empty }) => {
-  const { sel, pick, tap, note, list, thumb, onScroll } = useList({ items, selected, onSelectedChange, loading, empty });
+/** A tile's touch (useList's `pick` and `tap`): a tap opens; a long press (a finger held still: a
+ *  drag or a scroll, `release`, cancels it) is hold-centre, and the click that ends it is not also a tap. */
+function usePress(items: MenuItem[], loading: boolean | undefined, pick: (i: number) => void, tap: (i: number) => void) {
   const press = useRef({ timer: 0, held: false });
   useEffect(() => () => clearTimeout(press.current.timer), []);
   const release = () => clearTimeout(press.current.timer);
-  const down = (i: number) => {
-    const it = items[i], p = press.current;
-    release();
-    p.held = false;
-    if (loading || !it?.onHold || it.disabled) return;
-    p.timer = window.setTimeout(() => { p.held = true; pick(i); window.alchemyHaptic?.('medium'); it.onHold?.(); }, LONG_PRESS);
-  };
+  const on = (i: number) => ({
+    onPointerDown: () => {
+      const it = items[i], p = press.current;
+      release();
+      p.held = false;
+      if (loading || !it?.onHold || it.disabled) return;
+      p.timer = window.setTimeout(() => { p.held = true; pick(i); window.alchemyHaptic?.('medium'); it.onHold?.(); }, LONG_PRESS);
+    },
+    onPointerUp: release, onPointerCancel: release, onPointerLeave: release,
+    onContextMenu: (e: MouseEvent) => e.preventDefault(),
+    onClick: () => { if (press.current.held) press.current.held = false; else tap(i); },
+  });
+  return { on, release };
+}
+
+/** MenuScreen's list as 2 columns of tiles, Spotify's library look (Tile). The wheel moves the
+ *  selection a tile at a time, row by row; a drag scrolls; a tap opens; a long press is hold-centre. */
+export const GridScreen: Chrome['GridScreen'] = ({ items, selected, onSelectedChange, loading, empty }) => {
+  const { sel, pick, tap, note, list, thumb, onScroll } = useList({ items, selected, onSelectedChange, loading, empty });
+  const { on, release } = usePress(items, loading, pick, tap);
   return (
     <div className={cx('h-full', s.list)}>
       <div ref={list} className={cx(s.scroll, !note && s.grid)} role="listbox" aria-busy={loading || undefined}
            onScroll={() => { release(); onScroll(); }}>
-        {note ?? items.map((it, i) => (
-          <Tile key={it.id} item={it} selected={i === sel} onPointerDown={() => down(i)} onPointerUp={release} onPointerCancel={release}
-                onPointerLeave={release} onContextMenu={(e) => e.preventDefault()}
-                // the click that ends a long press is not also a tap
-                onClick={() => { if (press.current.held) press.current.held = false; else tap(i); }} />
+        {note ?? items.map((it, i) => <Tile key={it.id} item={it} selected={i === sel} {...on(i)} />)}
+      </div>
+      <div ref={thumb} className={s.thumb} hidden />
+    </div>
+  );
+};
+
+/** the 'See all' tile's art: a chevron */
+const MORE = <svg viewBox="0 0 12 12" aria-hidden="true"><path d="M4.2 1.5 8.7 6l-4.5 4.5-1.2-1.2L6.3 6 3 2.7z" /></svg>;
+
+/** Spotify Home's look: the shelves down one page, each its title over one strip of tiles (100
+ *  wide: 2.3 across, the cut third inviting a scroll), a 'See all' tile ending it with `onMore`. The
+ *  wheel moves along a strip, past its end into the next shelf's first tile, before its start into
+ *  the previous shelf's last; the page scrolls to keep the shelf in view, the strip the tile. A drag
+ *  scrolls a strip across or the page down (natively, with momentum); taps and long presses as GridScreen. */
+export const ShelvesScreen: Chrome['ShelvesScreen'] = ({ shelves, loading, empty }) => {
+  const strips = shelves.map((sh): GridItem[] => (sh.onMore ? [...sh.items, { id: 'see-all', label: 'See all', onSelect: sh.onMore }] : sh.items));
+  const items = strips.flat();
+  // useList's own list ref stays unattached: the page keeps the shelf in view, the strip the tile (below)
+  const { sel, pick, tap, note, thumb } = useList({ items, loading, empty });
+  const { on, release } = usePress(items, loading, pick, tap), page = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const p = page.current, t = p?.querySelector<HTMLElement>('[aria-selected=true]'), strip = t?.parentElement;
+    if (!p) return;
+    if (t && strip) { reveal(p, strip.parentElement!); reveal(strip, t, true, (strip.firstElementChild as HTMLElement).offsetLeft); }
+    placeThumb(p, thumb.current);
+  }, [sel, items.length, thumb]);
+  let n = 0;
+  return (
+    <div className={cx('h-full', s.list)}>
+      <div ref={page} className={s.scroll} role="listbox" aria-busy={loading || undefined}
+           onScroll={() => { release(); placeThumb(page.current, thumb.current); }}>
+        {note ?? shelves.map((sh, k) => (
+          <div key={sh.id} className={s.shelf} role="group" aria-label={sh.title}>
+            <div className={s.shelfTitle}>{sh.title}</div>
+            <div className={s.strip} onScroll={release}>
+              {strips[k]!.map((it, j) => { const i = n++; return <Tile key={it.id} item={it} selected={i === sel} glyph={j === sh.items.length ? MORE : undefined} {...on(i)} />; })}
+            </div>
+          </div>
         ))}
       </div>
       <div ref={thumb} className={s.thumb} hidden />
@@ -171,22 +232,69 @@ export const GridScreen: Chrome['GridScreen'] = ({ items, selected, onSelectedCh
   );
 };
 
-/** One tile: the square art (a grey ♪ tile when none), the name under it in bold, one line, its
- *  description under that, dim; the selected one ringed in the selection's blue. */
-export function Tile({ item, selected, ...on }: { item: GridItem; selected: boolean } & Omit<HTMLAttributes<HTMLDivElement>, 'children'>) {
-  const art = artOk(item.art);
+/** One tile: the square art (a grey ♪ tile when none, or `glyph`), the name under it in bold, one
+ *  line, its description under that, dim; the selected one ringed in the selection's blue. */
+export function Tile({ item, selected, glyph, ...on }: { item: GridItem; selected: boolean; glyph?: ReactNode } & Omit<HTMLAttributes<HTMLDivElement>, 'children'>) {
   return (
     <div className={s.cell} role="option" aria-selected={selected} aria-disabled={item.disabled || undefined}
          data-sel={selected || undefined} data-disabled={item.disabled || undefined} {...on}>
-      <div className={s.art}>
-        {art ? <img src={art} alt="" loading="lazy" draggable={false} />
-          : <svg viewBox="0 0 12 12" aria-hidden="true"><path d="M4.5 2.2 11 .5v7.8a1.9 1.6 0 1 1-1.3-1.5V3.1L5.8 4.2v5.6a1.9 1.6 0 1 1-1.3-1.5z" /></svg>}
-      </div>
+      <Art src={item.art} glyph={glyph} />
       <div className={s.name}>{item.label}</div>
       {item.sub && <div className={s.sub}>{item.sub}</div>}
     </div>
   );
 }
+
+/** square art: the cover, else `glyph`, else a grey ♪ tile */
+function Art({ src, glyph, className }: { src?: string | null; glyph?: ReactNode; className?: string }) {
+  const art = artOk(src);
+  return (
+    <div className={cx(s.art, className)}>
+      {art ? <img src={art} alt="" loading="lazy" draggable={false} />
+        : glyph ?? <svg viewBox="0 0 12 12" aria-hidden="true"><path d="M4.5 2.2 11 .5v7.8a1.9 1.6 0 1 1-1.3-1.5V3.1L5.8 4.2v5.6a1.9 1.6 0 1 1-1.3-1.5z" /></svg>}
+    </div>
+  );
+}
+
+/** the shuffle and heart glyphs (the status row's toggles, a collection header's buttons) */
+const shuffle = (className?: string) => (
+  <svg className={className} viewBox="0 0 12 9" aria-hidden="true">
+    <path d="M0 2h3l5 5h2M0 7h3l5-5h2" fill="none" stroke="currentColor" strokeWidth="1.4" /><path d="M10 0v4l2-2zM10 5v4l2-2z" /></svg>
+);
+const heart = (on: boolean, className?: string) => (
+  <svg className={className} viewBox="0 1 12 11" aria-hidden="true">
+    <path d="M6 10.4C3.3 8.4 1.3 6.8 1.3 4.5 1.3 3 2.5 1.9 3.8 1.9c1 0 1.7.5 2.2 1.3.5-.8 1.2-1.3 2.2-1.3 1.3 0 2.5 1.1 2.5 2.6 0 2.3-2 3.9-4.7 5.9Z"
+          fill={on ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" /></svg>
+);
+const FACE: Record<HeadAction['kind'] | 'more', (on: boolean) => ReactNode> = {
+  play: () => <svg viewBox="0 0 10 12" aria-hidden="true"><path d="M1 0l9 6-9 6z" /></svg>,
+  shuffle: () => shuffle(),
+  like: (on) => heart(on),
+  more: () => <svg viewBox="0 0 12 3" aria-hidden="true"><circle cx="1.5" cy="1.5" r="1.3" /><circle cx="6" cy="1.5" r="1.3" /><circle cx="10.5" cy="1.5" r="1.3" /></svg>,
+};
+
+/** Spotify's playlist / album header, a MenuScreen's `head`: the cover 120 square centred (the ♪ tile
+ *  when none), the title, a dim line, then round buttons: `actions` (the list's first items, so the
+ *  wheel walks them before the songs: a tap or the centre runs one, hold-centre its `onHold`) and
+ *  "…" (`onMore`, a tap). */
+export const CollectionHeader: Chrome['CollectionHeader'] = ({ art, title, line, actions, onMore }) => {
+  const { sel, tap } = useContext(HeadContext);
+  return (
+    <div className={s.head} data-head="">
+      <Art src={art} className={s.cover} />
+      <div className={s.headTitle}>{title}</div>
+      <div className={s.sub}>{line}</div>
+      <div className={s.acts}>
+        {actions.map((a, i) => (
+          <div key={a.id} className={s.act} data-kind={a.kind} role="option" aria-label={a.label} aria-selected={i === sel}
+               data-sel={i === sel || undefined} onClick={() => tap(i)}>{FACE[a.kind](!!a.on)}</div>
+        ))}
+        {onMore && <div className={s.act} data-kind="more" role="button" aria-label="More"
+                        onClick={() => { window.alchemyHaptic?.('light'); onMore(); }}>{FACE.more(false)}</div>}
+      </div>
+    </div>
+  );
+};
 
 /** The time now, as the iPod writes it, re-rendered on the minute. */
 export function useTime(h24: boolean): string {
@@ -218,8 +326,7 @@ export const StatusRow = ({ title, dark, busy: loading }: { title: string; dark?
       {dark && <span className={s.modes}>{st.spotify && <>
         <span className={s.mode} role="button" aria-label="Shuffle" aria-pressed={st.shuffle} data-off={!st.shuffle || undefined}
               onClick={(e) => tap(e, () => sh.store.getState().commands.toggleShuffle())}>
-          <svg className={s.glyph} viewBox="0 0 12 9" aria-hidden="true">
-            <path d="M0 2h3l5 5h2M0 7h3l5-5h2" fill="none" stroke="currentColor" strokeWidth="1.4" /><path d="M10 0v4l2-2zM10 5v4l2-2z" /></svg>
+          {shuffle(s.glyph)}
         </span>
         <span className={s.mode} role="button" aria-label={st.repeat === 'track' ? 'Repeat one' : 'Repeat'} aria-pressed={st.repeat !== 'off'}
               data-off={st.repeat === 'off' || undefined}
@@ -247,9 +354,7 @@ function Like({ tap }: { tap: (e: MouseEvent, act: () => void) => void }) {
   return (
     <span className={s.mode} role="button" aria-label={on ? 'Unlike' : 'Like'} aria-pressed={on} aria-disabled={!like.uri || undefined}
           data-off={!like.uri || undefined} onClick={(e) => { if (like.uri) tap(e, like.toggle); else e.stopPropagation(); }}>
-      <svg className={s.glyph} viewBox="0 1 12 11" aria-hidden="true">
-        <path d="M6 10.4C3.3 8.4 1.3 6.8 1.3 4.5 1.3 3 2.5 1.9 3.8 1.9c1 0 1.7.5 2.2 1.3.5-.8 1.2-1.3 2.2-1.3 1.3 0 2.5 1.1 2.5 2.6 0 2.3-2 3.9-4.7 5.9Z"
-              fill={on ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" /></svg>
+      {heart(on, s.glyph)}
     </span>
   );
 }
