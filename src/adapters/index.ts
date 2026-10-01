@@ -19,7 +19,7 @@ export { mark } from './host';
 /** The active engine's query functions (TanStack Query): Spotify's catalogue, or the local engine's
  *  empty one. Same names and signatures either way. */
 export type Queries = Pick<typeof spotifyQueries, 'keys' | 'fetchLibraryList' | 'fetchCollectionPage' | 'fetchSearch' |
-  'fetchHome' | 'radioSeeds' | 'fetchRadio' | 'fetchArtist' | 'fetchAlbumMeta' | 'fetchLyrics' | 'acceptLyrics' | 'fetchFollowedArtists' | 'fetchSaved' | 'savedKey' | 'setInvalidator' | 'fetchEditablePlaylists' | 'fetchMembership' | 'membershipKey' | 'applyMembership' | 'remember' | 'retryPolicy'>;
+  'fetchHome' | 'radioSeeds' | 'fetchRadio' | 'fetchArtist' | 'fetchAlbumMeta' | 'fetchLyrics' | 'acceptLyrics' | 'fetchCanvas' | 'fetchFollowedArtists' | 'fetchSaved' | 'savedKey' | 'setInvalidator' | 'fetchEditablePlaylists' | 'fetchMembership' | 'membershipKey' | 'applyMembership' | 'remember' | 'retryPolicy'>;
 export function getQueries(): Queries {
   return window.alchemyEngine === 'spotify' ? spotifyQueries : (localQueries as unknown as Queries);
 }

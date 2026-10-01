@@ -228,3 +228,12 @@ export function useLyricsFor(trackUri: string | null | undefined, imageUrl?: str
   const data = r.data;
   useEffect(() => { if (trackUri && data) q.acceptLyrics(trackUri, data); }, [trackUri, data, q]);
 }
+
+/** The track's Canvas (Spotify's looping clip behind Now Playing): { url, type } or null (none, not
+ *  known yet, logged out). A track's canvas rarely changes: kept a day. */
+export function useCanvas(trackUri?: string | null): { url: string; type: 'video' | 'image' } | null {
+  const q = useQ(), on = useApp((s) => s.auth.loggedIn === true) && !!trackUri;
+  const day = 24 * 60 * 60_000;
+  const r = useQuery({ queryKey: q.keys.canvas(trackUri ?? ''), queryFn: () => q.fetchCanvas(trackUri!), enabled: on, staleTime: day, gcTime: day });
+  return (on && r.data) || null;
+}

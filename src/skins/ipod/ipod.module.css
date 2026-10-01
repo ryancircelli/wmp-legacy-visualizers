@@ -3,14 +3,15 @@
    screen is 240 x 376 of them and --unit is one, scaled to fit (.device is the size container). */
 
 /* the page round the device: on a phone the aluminium fills it edge to edge (behind the notch and
-   the home indicator); on a wide window it is a phone-shaped body centred on a dark backdrop (§1.6) */
+   the home indicator); on a wide window it is a phone-shaped body centred on black (§1.6), which the
+   body's edges turn away into */
 .backdrop {
   position: absolute;
   inset: 0;
   display: grid;
   place-items: center;
   overflow: hidden;
-  background: #111111;
+  background: #000000;
 }
 
 .body {
@@ -20,19 +21,28 @@
   --l: 66%;
   --grain-alpha: .08;                /* the vertical brushing: 0 = polished */
   --base: hsl(var(--h) var(--s) var(--l));
-  /* the lights stay the body's own colour, only lighter (no pale band); only the rims mix in white */
-  --hi: hsl(var(--h) var(--s) calc(var(--l) + 9%));
-  --mid: color-mix(in srgb, var(--base), black 12%);
-  --lo: color-mix(in srgb, var(--base), black 30%);
-  --edge: color-mix(in srgb, var(--base), black 42%);
-  --rim: color-mix(in srgb, var(--base), white 45%);
-  /* across the width the slab is a flattened cylinder lit from the left (the owner's orange nano):
-     a thin bright rim (about 2 px on a phone) blending through a darker inner edge into the light
-     near the left, then a soft falloff through the mid tone to a darker right side and a dimmer rim.
-     In percent of the width, so the phone's desktop-wide viewport scales it like everything else */
-  --metal: linear-gradient(90deg,
-    var(--rim) 0, var(--edge) .9%, var(--base) 3.5%, var(--hi) 11%, var(--hi) 17%, var(--base) 36%,
-    var(--mid) 60%, var(--lo) 85%, var(--edge) 99.1%, color-mix(in srgb, var(--base), white 25%) 100%);
+  /* every tone is the body's own hue at a lightness relative to its own (orange, 50 %, gets the
+     owner's 68 / 58 / 42 / 30 / 14 / 6 %), never mixed with white: the lights are the hue brighter
+     and more saturated (silver, unsaturated, alone turns near-white there) */
+  --sh: min(100%, calc(var(--s) * 1.3));
+  /* the lights lean a touch warmer, as the photo's orange goes yellow in its highlight */
+  --line: hsl(calc(var(--h) + 6) var(--sh) min(86%, calc(var(--l) * 1.5)));
+  --hi: hsl(calc(var(--h) + 6) var(--sh) min(80%, calc(var(--l) * 1.36)));
+  --hi2: hsl(calc(var(--h) + 3) var(--sh) min(80%, calc(var(--l) * 1.16)));
+  --mid: hsl(var(--h) var(--s) calc(var(--l) * .84));
+  --lo: hsl(var(--h) var(--s) calc(var(--l) * .6));
+  --deep: hsl(var(--h) var(--s) calc(var(--l) * .28));
+  --edge: hsl(var(--h) var(--s) calc(var(--l) * .12));
+  /* across the width the slab is a glossy cylinder (the owner's orange nano): out of black at the
+     edge, a broad bright band on the left third, a soft fall to the mid tone, a narrower dimmer
+     streak toward the right, and into shadow and black at the right edge; a thin bright line runs
+     in the band. In percent of the width, so any viewport scales it alike */
+  --metal:
+    linear-gradient(90deg, transparent 16.3%, var(--line) 17%, transparent 17.7%),
+    linear-gradient(90deg, transparent 69%, hsl(calc(var(--h) + 3) var(--sh) min(80%, calc(var(--l) * 1.16)) / .75) 77%, transparent 85%),
+    linear-gradient(90deg, #000 0, var(--edge) .7%, var(--lo) 2%, hsl(calc(var(--h) + 4) var(--sh) min(82%, calc(var(--l) * 1.2))) 9%,
+                    var(--hi) 18%, var(--hi2) 26%, var(--mid) 50%, hsl(var(--h) var(--s) calc(var(--l) * .78)) 68%,
+                    var(--lo) 90%, var(--deep) 96.5%, var(--edge) 99.2%, #000 100%);
   --ipod-font: Helvetica, "Helvetica Neue", Arial, sans-serif;
   /* the screen (screens read these names too) */
   --ipod-screen-bg: #FFFFFF;
@@ -63,7 +73,7 @@
   -webkit-tap-highlight-color: transparent;
   font-family: var(--ipod-font);
   /* the cylinder and a tone change from top to bottom */
-  background: linear-gradient(180deg, rgb(255 255 255 / .1), transparent 28%, transparent 62%, rgb(0 0 0 / .16)), var(--metal);
+  background: linear-gradient(180deg, transparent 55%, rgb(0 0 0 / .2)), var(--metal);
 }
 @media (min-aspect-ratio: 3/4) {
   .body {
@@ -115,8 +125,9 @@
   background: linear-gradient(155deg, rgb(255 255 255 / .14) 0%, rgb(255 255 255 / .03) 36%, transparent 36.5%), #050505;
   box-shadow:
     0 0 0 calc(var(--unit) * .5) rgb(0 0 0 / .5),
-    0 calc(var(--unit) * .8) 0 calc(var(--unit) * .3) rgb(255 255 255 / .28),
-    inset 0 calc(var(--unit) * .6) 0 rgb(255 255 255 / .2);
+    0 calc(var(--unit) * .8) 0 calc(var(--unit) * .3) var(--hi2),
+    inset 0 calc(var(--unit) * .6) 0 rgb(255 255 255 / .38),
+    inset 0 0 0 calc(var(--unit) * .5) rgb(255 255 255 / .14);
 }
 .bezel::after {
   content: "";

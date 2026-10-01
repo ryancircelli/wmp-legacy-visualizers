@@ -37,6 +37,10 @@ export const BAKED: Record<string, string> = {
   // one document for add / remove / move (spike 4)
   addToPlaylist: '47b2a1234b17748d332dd0431534f22450e9ecbb3d5ddcdacbd83368636a0990',
   removeFromPlaylist: '47b2a1234b17748d332dd0431534f22450e9ecbb3d5ddcdacbd83368636a0990',
+  // Canvas (queries.ts fetchCanvas): the hash two open-source fetchers ship, as of January 2026
+  // (github.com/squeeeezy/Wolframe-spotify-canvas src/lib.rs; CHEYCKIT/BitChord PR #461,
+  // SpotifyCanvasQuery.kt KNOWN_CANVAS_HASH). Not seen in our own captures.
+  canvas: '575138ab27cd5c1b3e54da54d0a7cc8d85485402de26340c2145f0f6bb5e7a9f',
 };
 export function hashFor(sp: Sp, op: string): string | null {
   for (const h of [W().hashes?.[op], sp.scanned[op], BAKED[op]]) if (h && !sp.bad[h]) return h;

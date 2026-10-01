@@ -93,6 +93,12 @@
   line-height: calc(var(--unit) * 14); text-align: center; font-size: calc(var(--unit) * 12); color: #d0d0d0;
 }
 
+/* the Canvas: the 9:16 clip (or still) cropped to the whole area, the bands translucent over it */
+.bg { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.root[data-canvas] .info { background: linear-gradient(rgb(66 66 66 / .6), rgb(1 1 1 / .6)); }
+.root[data-canvas] .controls { background: linear-gradient(rgb(101 101 101 / .55), rgb(38 38 38 / .7)); }
+.root[data-canvas] .line, .root[data-canvas] .row, .root[data-canvas] .of { text-shadow: 0 1px 2px #000; }
+
 /* lyrics over the cover: white 14 on black at 70 % */
 .lyrics {
   position: absolute; top: calc(var(--unit) * 60); left: 0; right: 0; height: calc(var(--unit) * 240);

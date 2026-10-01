@@ -1567,3 +1567,53 @@ describe('the Tauri host bridge (CONTRACT v8)', () => {
     expect(calls.at(-1)![0]).toBe('sp_logout');
   });
 });
+
+describe('25. Canvas: the web player\'s persisted canvas query (responses synthetic, shaped as BitChord PR #461\'s test)', () => {
+  const V = 'spotify:track:0gEyKnHvgkrkBM6fbeHdwK', I = 'spotify:track:4urcG6Nfubqsuqy3juMjBi', N = 'spotify:track:50v47bZxJ7sIhiOn0iJWbL';
+  const MP4 = 'https://canvaz.scdn.co/upload/artist/x/video/y.cnvs.mp4', JPG = 'https://canvaz.scdn.co/upload/x.jpg';
+  const answers: Record<string, unknown> = {
+    [V]: { __typename: 'Track', canvas: { type: 'VIDEO_LOOPING', uri: 'spotify:canvas:x', url: MP4 } },
+    [I]: { __typename: 'Track', canvas: { type: 'IMAGE', uri: 'spotify:canvas:y', url: JPG } },
+    [N]: { __typename: 'Track', canvas: null },
+  };
+  function setup(scan: Record<string, string>) {
+    const env = boot({ loggedIn: true, hashes: FX.hashes });
+    env.route(/web-player\.abc\.js/, { status: 200, body: bundle(scan) });
+    env.route(/pathfinder/, (_u, init) => {
+      const b = JSON.parse(init.body);
+      return { status: 200, json: { data: { trackUnion: answers[b.variables.trackUri] ?? null } } };
+    });
+    env.start();
+    return env;
+  }
+  it('asks pathfinder v2 the way the web player does; video, image and none decoded', async () => {
+    const env = setup({ canvas: 'c'.repeat(64) });
+    expect(Q.keys.canvas(V)).toEqual(['spotify', 'canvas', V]);
+    expect(await Q.fetchCanvas(V)).toEqual({ url: MP4, type: 'video' });
+    const c = env.pf().pop()!;
+    expect(c.url).toBe('https://api-partner.spotify.com/pathfinder/v2/query');
+    expect(c.method).toBe('POST');
+    expect(c.headers).toMatchObject({ Authorization: 'Bearer TOK', 'client-token': 'CT', 'Content-Type': 'application/json;charset=UTF-8' });
+    expect(c.body).toEqual({ variables: { trackUri: V }, operationName: 'canvas', extensions: { persistedQuery: { version: 1, sha256Hash: 'c'.repeat(64) } } });
+    expect(await Q.fetchCanvas(I)).toEqual({ url: JPG, type: 'image' });
+    expect(await Q.fetchCanvas(N)).toBeNull();
+    expect(await Q.fetchCanvas('spotify:track:unknownXYZ')).toBeNull();          // trackUnion null
+    const n = env.pf().length;
+    expect(await Q.fetchCanvas('spotify:episode:x')).toBeNull();                 // only tracks have one: not asked
+    expect(env.pf().length).toBe(n);
+    expect(env.S.ui.status).not.toMatch(/canvas/);
+  });
+  it('no hash in the scripts: the baked one; a failure throws quietly', async () => {
+    const env = setup({});
+    await Q.fetchCanvas(V);
+    expect(env.pf().pop()!.body.extensions.persistedQuery.sha256Hash).toBe('575138ab27cd5c1b3e54da54d0a7cc8d85485402de26340c2145f0f6bb5e7a9f');
+    env.route(/pathfinder/, { status: 500 });
+    await expect(Q.fetchCanvas(V)).rejects.toMatchObject({ name: 'QueryError', op: 'canvas', status: 500 });
+    expect(env.S.ui.status).not.toMatch(/canvas/);
+  });
+  it('the local engine has none', async () => {
+    const L = await import('../../src/adapters/local/queries');
+    expect(await L.fetchCanvas()).toBeNull();
+    expect(L.keys.canvas(V)).toEqual(['local', 'canvas', V]);
+  });
+});

@@ -58,6 +58,8 @@ export interface FakeQueries {
   acceptLyrics: Mock<(uri: string, l: Lyrics) => void>;
   fetchSaved: Mock<(uris: string[]) => Promise<Record<string, boolean>>>;
   savedKey: (uri: string) => unknown[];
+  fetchFollowedArtists: Mock<() => Promise<LibraryItem[]>>;
+  fetchCanvas: Mock<(uri: string) => Promise<{ url: string; type: 'video' | 'image' } | null>>;
   fetchEditablePlaylists: Mock<() => Promise<LibraryItem[]>>;
   fetchMembership: Mock<(track: string, pls: string[]) => Promise<Record<string, boolean>>>;
   membershipKey: (track: string) => unknown[];
@@ -76,7 +78,10 @@ export function fakeQueries(data: FakeData): FakeQueries {
       search: (s: string, t: SearchType, o = 0) => k('search', s.trim(), t, o), home: () => k('home'),
       radio: (seeds: readonly string[]) => k('radio', ...seeds), artist: (uri: string) => k('artist', uri), album: (uri: string) => k('album', uri),
       lyrics: (id: string) => k('lyrics', id), saved: (uris: readonly string[]) => k('saved', ...uris),
+      followedArtists: () => k('library', 'artists'), canvas: (uri: string) => k('canvas', uri),
     },
+    fetchFollowedArtists: vi.fn(() => Promise.resolve([] as LibraryItem[])),
+    fetchCanvas: vi.fn(() => Promise.resolve(null)),
     // as areEntitiesInLibrary: a flag for tracks, albums and artists, none for a playlist
     fetchSaved: vi.fn((uris: string[]) => Promise.resolve(Object.fromEntries(uris.filter((u) => !u.startsWith('spotify:playlist:'))
       .map((u) => [u, !!data.saved[u]])))),

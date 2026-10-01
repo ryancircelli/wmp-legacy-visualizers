@@ -13,6 +13,7 @@ import { fetchRadio as radio, radioSeeds as seeds } from './radio';
 import { fetchSearch as search } from './search';
 import { acceptLyrics as accept, fetchLyrics as lyrics } from './lyrics';
 import { applyMembership as applyM, fetchEditablePlaylists as editable, fetchMembership as membership, fetchSaved as saved, setInvalidator } from './saved';
+import { query } from './pathfinder';
 import { QueryError, RateLimitError, type Sp } from './sp';
 
 export { QueryError, RateLimitError };
@@ -41,6 +42,7 @@ export const keys = {
   lyrics: (trackId: string) => ['spotify', 'lyrics', trackId] as const,
   /** a batch of saved flags (the UI batches per visible list) */
   saved: (uris: readonly string[]) => ['spotify', 'saved', ...uris] as const,
+  canvas: (trackUri: string) => ['spotify', 'canvas', trackUri] as const,
 };
 /** A track's membership in the given playlists (the UI keys it per open menu). */
 export const membershipKey = (trackUri: string) => ['spotify', 'membership', trackUri] as const;
@@ -69,6 +71,23 @@ export const fetchAlbumMeta = (uri: string): Promise<CollectionMeta> => albumMet
 /** Spotify's lyrics for a track (keys.lyrics(trackId), trackId = the uri's last part); 404 -> status
  *  'none'; 401/403 throw QueryError (keep the host's LRCLIB lyrics). The hook then calls acceptLyrics. */
 export const fetchLyrics = (trackUri: string, imageUrl?: string | null): Promise<Lyrics> => lyrics(bound(), trackUri, imageUrl);
+/** A track's Canvas: the looping clip (or still) Spotify's apps show behind Now Playing. */
+export interface Canvas { url: string; type: 'video' | 'image' }
+/** The track's Canvas, null when it has none. The web player's own route: its persisted `canvas`
+ *  query on pathfinder v2, variables { trackUri }, read at data.trackUnion.canvas { url, type, uri }
+ *  (type 'VIDEO_LOOPING' with a .cnvs.mp4 url, 'IMAGE' with a .jpg). Sources: Wolframe-spotify-canvas
+ *  src/lib.rs (github.com/squeeeezy/Wolframe-spotify-canvas) and BitChord PR #461's
+ *  SpotifyCanvasQuery.kt + its test (github.com/kushagrasinghx/BitChord/pull/461); both note the older
+ *  spclient canvaz-cache protobuf endpoint is no longer what the web player uses. The hash comes
+ *  from the bundle scan ("canvas","query","<sha>"), BAKED as the last resort. Quiet: no canvas is
+ *  normal, a missing hash too. */
+export async function fetchCanvas(trackUri: string): Promise<Canvas | null> {
+  if (!/^spotify:track:[A-Za-z0-9]+$/.test(trackUri)) return null;
+  type D = { trackUnion?: { canvas?: { url?: string | null; type?: string | null } | null } | null };
+  const c = (await query<D>(bound(), 'canvas', { trackUri }, { quiet: true })).trackUnion?.canvas, url = c?.url;
+  if (!url?.startsWith('https://')) return null;
+  return { url, type: /VIDEO/.test(c?.type ?? '') || /\.mp4(?:[?#]|$)/i.test(url) ? 'video' : 'image' };
+}
 /** Put a fetchLyrics result into the lyrics slice if it is still the playing track's and not 'none'. */
 export const acceptLyrics = (trackUri: string, l: Lyrics): void => accept(bound(), trackUri, l);
 /** Saved (Liked) flags by uri: Liked Songs rows and our own changes known without a call, the rest

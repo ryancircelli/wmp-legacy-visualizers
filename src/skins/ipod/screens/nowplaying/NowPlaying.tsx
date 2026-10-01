@@ -5,11 +5,12 @@
 // after the last or on center; MENU cancels) -> Radio slider (the nano's Genius) -> shuffle Off | Songs
 // -> Like ♡ | ♥ (the rating slot) -> lyrics over the cover -> back; each but lyrics falls back after
 // 5 s idle. Hold center: the nano's popup, Spotify's way (§4.3). Play / next / prev and their holds
-// (fast-forward, rewind: useScan) are the chrome's.
+// (fast-forward, rewind: useScan) are the chrome's. A track with a Spotify Canvas shows it behind the
+// whole screen instead of the cover, the two bands made translucent over it.
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { lyricsShown, positionNow, type Track } from '../../../../model';
 import {
-  artOk, cx, isSpotify, Karaoke, playingTrack, useAddTo, useApp, useArtist, useCollection, useDevices, useLyricScroll,
+  artOk, cx, isSpotify, Karaoke, playingTrack, useAddTo, useApp, useArtist, useCanvas, useCollection, useDevices, useLyricScroll,
   usePlainLyrics, usePosition, useRadioSeeds, useShell, type MenuEntry,
 } from '../../../../ui';
 import type { MenuItem, ScreenEntry } from '../contract';
@@ -157,17 +158,23 @@ function NowPlaying() {
   const pos = usePosition((ms) => Math.floor(ms / 250) * 250);
   const shown = held ?? (scan.scanning ? Math.min(d, Math.max(0, pos + scan.offsetMs)) : pos);
   const f = d > 0 ? Math.min(1, shown / d) : 0, [elapsed, remaining] = times(shown, d), art = artOk(t?.art);
+  // the Canvas, unless its file failed to load (then the cover, as without one)
+  const [failed, setFailed] = useState('');
+  const fetched = useCanvas(uri), canvas = fetched && fetched.url !== failed ? fetched : null;
+  const fail = () => setFailed(canvas?.url ?? '');
   return (
-    <div className={css.root}>
+    <div className={css.root} data-canvas={canvas ? '' : undefined}>
+      {canvas?.type === 'video' ? <CanvasVideo src={canvas.url} poster={art || undefined} onError={fail} />
+        : canvas ? <img className={css.bg} src={canvas.url} alt="" onError={fail} /> : null}
       <div className={css.info}>
         <Line className={css.artist} text={t?.artist} />
         <Line className={css.title} text={t?.title} />
         <Line className={css.album} text={t?.album} />
       </div>
-      {art ? <img className={css.art} src={art} alt="" /> : <div className={cx(css.art, css.noart)}>♪</div>}
+      {canvas ? null : art ? <img className={css.art} src={art} alt="" /> : <div className={cx(css.art, css.noart)}>♪</div>}
       {m === 'lyrics' && <Lyrics />}
       <div className={css.controls}>
-        {art && <img className={css.reflection} src={art} alt="" />}
+        {art && !canvas && <img className={css.reflection} src={art} alt="" />}
         {vol ? (
           <div className={css.row}>
             <Speaker />
@@ -207,6 +214,23 @@ function NowPlaying() {
       {popup && <Popup items={items[popup]} onClose={() => setPopup((x) => (x === popup ? null : x))} />}
     </div>
   );
+}
+
+/** The Canvas clip filling the screen, muted and looping as Spotify's apps play it; only while this
+ *  screen is the top one (the stack hides the others: no intersection) and the page is visible. */
+function CanvasVideo({ src, poster, onError }: { src: string; poster?: string; onError: () => void }) {
+  const ref = useRef<HTMLVideoElement>(null);
+  useEffect(() => {
+    const v = ref.current;
+    if (!v) return;
+    let seen = true;
+    const sync = () => { if (seen && !document.hidden) v.play().catch(() => {}); else v.pause(); };
+    const io = new IntersectionObserver(([e]) => { seen = !!e?.isIntersecting; sync(); });
+    io.observe(v);
+    document.addEventListener('visibilitychange', sync);
+    return () => { io.disconnect(); document.removeEventListener('visibilitychange', sync); };
+  }, [src]);
+  return <video ref={ref} className={css.bg} src={src} poster={poster} muted autoPlay loop playsInline onError={onError} />;
 }
 
 /** One info line; a long one marquees as the nano's do (§2.2): after 1 s, at 30 units/s, pausing 1 s at each end. */

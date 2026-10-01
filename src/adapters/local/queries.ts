@@ -18,6 +18,7 @@ export const keys = {
   lyrics: (trackId: string) => ['local', 'lyrics', trackId] as const,
   saved: (uris: readonly string[]) => ['local', 'saved', ...uris] as const,
   followedArtists: () => ['local', 'library', 'artists'] as const,
+  canvas: (trackUri: string) => ['local', 'canvas', trackUri] as const,
 };
 export const savedKey = (uri: string) => ['local', 'saved', uri] as const;
 export const fetchLibraryList = (): Promise<LibraryItem[]> => Promise.resolve([]);
@@ -35,6 +36,7 @@ export const fetchArtist = (uri: string): Promise<ArtistPage> => Promise.resolve
 export const fetchAlbumMeta = (uri: string): Promise<CollectionMeta> => Promise.resolve({ kind: 'album', name: uri, total: 0 });
 export const fetchLyrics = (): Promise<Lyrics> => Promise.resolve({ status: 'none', lines: null, plain: null, track: null, source: null });
 export const acceptLyrics = (): void => {};
+export const fetchCanvas = (): Promise<null> => Promise.resolve(null);
 export const fetchSaved = (): Promise<Record<string, boolean>> => Promise.resolve({});
 export const fetchFollowedArtists = (): Promise<never[]> => Promise.resolve([]);
 export const setInvalidator = (): void => {};
