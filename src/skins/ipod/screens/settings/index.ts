@@ -9,12 +9,14 @@
 // - useLibraryView(): General > Library View, ['grid' | 'list', set] ('ipod.view'; grid first): how
 //   the lists with covers draw (GridScreen or MenuScreen).
 // - useSleepTimer(): Alarms > Sleep Timer, [{at, mins}] ('ipod.sleep'; at null = off), for the moon.
+// - useVisFit(): Playback > Visualizer, ['fit' | 'stretch', set] ('ipod.visFit'; fit first): the
+//   settings.scale Now Playing applies while its visualizer shows ('auto' / 'original').
 // - useSettingsEffects() (also named useVolumeLimit): mount once in Root: Volume Limit, Shake, the
 //   sleep timer and the alarm.
 export { settings } from './Settings';
 export { alarms, extras } from './Extras';
 export {
   LIBRARY_FILTERS, MAIN_MENU, useClockPrefs, useDisplayPrefs, useLibraryFilter, useLibraryView, useMenuVisibility, useSettingsEffects, useSleepTimer,
-  useVolumeLimit,
-  type ClockPrefs, type DisplayPrefs, type LibraryView, type MenuVisibility, type SleepTimer,
+  useVisFit, useVolumeLimit,
+  type ClockPrefs, type DisplayPrefs, type LibraryView, type MenuVisibility, type SleepTimer, type VisFit,
 } from './prefs';

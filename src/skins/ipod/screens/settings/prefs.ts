@@ -96,6 +96,11 @@ export const useLibraryView = () => usePref<LibraryView>('ipod.view', 'grid');
 export const useLibraryFilter = () => usePref('ipod.libraryFilter', 'playlists');
 /** 'ipod.shake': Playback > Shake (iPhone): a shake skips to the next song */
 export const useShake = () => usePref('ipod.shake', true);
+/** 'ipod.visFit': Playback > Visualizer: Fit draws it at the screen's own shape (settings.scale 'auto'),
+ *  Stretch is WMP's native surface stretched to the screen ('original'); Now Playing applies it while
+ *  the visualizer shows. Anything but 'stretch' reads as Fit. */
+export type VisFit = 'fit' | 'stretch';
+export const useVisFit = () => usePref<VisFit>('ipod.visFit', 'fit');
 
 // ---- Date & Time -----------------------------------------------------------------------------------
 /** 'ipod.clock': Settings > Date & Time's 24 Hour Clock and Time in Title (the status row shows the

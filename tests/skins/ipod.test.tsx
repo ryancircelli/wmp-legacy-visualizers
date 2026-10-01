@@ -11,6 +11,7 @@ import { mainMenu } from '../../src/skins/ipod/menus';
 import { createNav } from '../../src/skins/ipod/nav';
 import { Root } from '../../src/skins/ipod/Root';
 import { nowPlaying } from '../../src/skins/ipod/screens';
+import { writePref } from '../../src/skins/ipod/screens/settings/prefs';
 import { Bar, GridScreen, MenuScreen, scan, ShelvesScreen, StatusRow, useScan } from '../../src/skins/ipod/ui';
 import { NavContext } from '../../src/skins/ipod/wheel';
 import { ShellContext } from '../../src/ui';
@@ -399,4 +400,21 @@ it('a tap on the cover area cycles Canvas -> cover -> visualizer -> Canvas, reme
   expect(haptic).toHaveBeenCalledWith('light');
   tap();                                             // back to the default for the tests after
   expect(shows()).toEqual([null, true, false, 'video']);
+});
+
+it('the visualizer takes the screen\'s shape (Playback > Visualizer: Fit) while shown, then the scale WMP had', () => {
+  vi.stubGlobal('IntersectionObserver', class { observe() {} disconnect() {} });
+  const nav = createNav(mainMenu(), () => nowPlaying());
+  const m = mountSkinNow('spotify', fakeData(),
+    <NavContext.Provider value={nav}><div data-testid="np">{nowPlaying().render(nav)}</div></NavContext.Provider>);
+  const tap = () => act(() => { fireEvent.click(m.getByTestId('np').querySelector('[class*=tap]')!); });
+  act(() => m.store.getState().actions.setSettings({ scale: 'original' }));   // WMP's stretched surface
+  tap();                                             // no Canvas: the tap goes on to the visualizer
+  expect(m.S().settings.scale).toBe('auto');         // Fit, the default
+  act(() => writePref('ipod.visFit', 'stretch'));   // changed while shown: at once
+  expect(m.S().settings.scale).toBe('original');
+  act(() => writePref('ipod.visFit', 'fit'));
+  expect(m.S().settings.scale).toBe('auto');
+  tap();                                             // away from the visualizer: WMP's own choice back
+  expect(m.S().settings.scale).toBe('original');
 });

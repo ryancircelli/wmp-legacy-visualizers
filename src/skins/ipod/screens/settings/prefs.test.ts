@@ -1,9 +1,9 @@
 // Settings > General > Main Menu / Library Filters: what shows out of the box, and that only the user's own
 // choices are stored (so a later change of the defaults reaches everyone who never touched a row);
-// Library View's default.
+// Library View's and Playback > Visualizer's defaults.
 import { act, renderHook } from '@testing-library/react';
 import { afterEach, expect, it } from 'vitest';
-import { resetMenu, setMenuItem, useLibraryView, useMenuVisibility } from './prefs';
+import { resetMenu, setMenuItem, useLibraryView, useMenuVisibility, useVisFit } from './prefs';
 
 afterEach(() => localStorage.clear());
 
@@ -24,4 +24,12 @@ it('Library View is Grid until List is chosen', () => {
   act(() => result.current[1]('list'));
   expect(result.current[0]).toBe('list');
   expect(localStorage.getItem('ipod.view')).toBe('"list"');
+});
+
+it('Playback > Visualizer is Fit until Stretch is chosen', () => {
+  const { result } = renderHook(() => useVisFit());
+  expect(result.current[0]).toBe('fit');
+  act(() => result.current[1]('stretch'));
+  expect(result.current[0]).toBe('stretch');
+  expect(localStorage.getItem('ipod.visFit')).toBe('"stretch"');
 });

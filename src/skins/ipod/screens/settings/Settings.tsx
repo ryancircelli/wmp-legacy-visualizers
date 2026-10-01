@@ -15,7 +15,7 @@ import { cityOf, fmtClock, stepHue, zoneTime } from './logic';
 import { BarPage, check, confirm, DIM, menu, onOff, page, Row, Sun, TEXT, TextPage, u, useNow } from './parts';
 import {
   CLOCK0, LIBRARY_FILTERS, MAIN_MENU, resetMenu, resetPrefs, setMenuItem, useAppearance, useDisplay, useLibraryView, useMenuVisibility, usePref, useShake,
-  useVolumeLimitPref,
+  useVisFit, useVolumeLimitPref,
 } from './prefs';
 
 declare const __PAGE_BUILD__: string | undefined;
@@ -155,12 +155,15 @@ function Brightness() {
 
 // ---- Playback ----------------------------------------------------------------------------------------
 function Playback() {
-  const nav = useNav(), [shake, setShake] = useShake(), [d, set] = useDisplay(), [limit] = useVolumeLimitPref();
+  const nav = useNav(), [shake, setShake] = useShake(), [d, set] = useDisplay(), [limit] = useVolumeLimitPref()
+  const [fit, setFit] = useVisFit(), stretch = fit === 'stretch';
   const items: (MenuItem | false)[] = [
     // the iPhone's shake; nothing else reports one
     !!window.alchemyHaptic && { id: 'shake', label: 'Shake', right: shake ? 'Shuffle' : 'Off', onSelect: () => setShake(!shake) },
     { id: 'volume', label: 'Volume Limit', right: limit < 100 ? limit + '%' : 'Off', chevron: true, onSelect: to(nav, page('settings/volume', 'Volume Limit', VolumeLimit)) },
     { id: 'energy', label: 'Energy Saver', right: onOff(d.energySaver), onSelect: () => set({ ...d, energySaver: !d.energySaver }) },
+    // Now Playing's visualizer: the screen's real shape, or WMP's native surface stretched to it
+    { id: 'visfit', label: 'Visualizer', right: stretch ? 'Stretch' : 'Fit', onSelect: () => setFit(stretch ? 'fit' : 'stretch') },
   ];
   return <MenuScreen items={items.filter((x): x is MenuItem => !!x)} />;
 }

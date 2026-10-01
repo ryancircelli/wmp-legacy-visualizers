@@ -20,6 +20,7 @@ import {
   usePlainLyrics, usePosition, useRadioSeeds, useShell, type MenuEntry,
 } from '../../../../ui';
 import type { MenuItem, ScreenEntry } from '../contract';
+import { useVisFit } from '../settings';
 import { Bar, MenuScreen, Popup, useNav, useScan, useWheel } from '../../ui';
 import { IDLE_MS, nextMode, ofText, SCRUB_COMMIT_MS, scrubAccel, scrubStep, times, volumeStep, VOLUME_MS, type Mode } from './logic';
 import css from './nowplaying.module.css';
@@ -276,6 +277,16 @@ function Vis() {
     const off = st.subscribe(lift);
     return () => { off(); hold(st.getState().ui.view !== 'now'); };
   }, [on, sh]);
+  // Playback > Visualizer onto the shared settings.scale while shown (Fit: the screen's own shape,
+  // 'auto'; Stretch: WMP's native surface, 'original'), then the scale there was before, so the WMP
+  // skin's own choice is untouched; a change of the pref meanwhile goes through the same restore and apply.
+  const [fit] = useVisFit();
+  useEffect(() => {
+    if (!on) return;
+    const a = sh.store.getState().actions, prev = sh.store.getState().settings.scale;
+    a.setSettings({ scale: fit === 'stretch' ? 'original' : 'auto' });
+    return () => a.setSettings({ scale: prev });
+  }, [on, fit, sh]);
   return <div ref={ref} className={css.bg}>{on && <Visualizer className={css.vis} />}</div>;
 }
 
