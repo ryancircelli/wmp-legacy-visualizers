@@ -116,6 +116,9 @@ window.alchemyOrientation = function (mode) { post('orientation', mode || 'any')
 // 'wmp-broadcast' event on window, whenever it changes.
 window.__wmpBroadcast = { running: false };
 window.alchemyBroadcast = function (cmd) { post('broadcast', cmd || 'state'); };
+// The web player's access token to the app's librespot (ios/README.md, "Librespot"), whenever it
+// changes (seenHeader, seenResponse) and once at mount. The app also listens for it itself.
+window.addEventListener('wmp-spotify-token', function (e) { post('lstoken', e.detail.token); });
 post('broadcast', 'manual');  // the app never opens the sheet by itself: each skin asks (src/app/mount.tsx does, for the visualizers)
 // What the phone reports, each as a window global with an event of the same name on window when it
 // changes: __wmpVolume (0..100, the buttons too) 'wmp-volume'; __wmpBattery {level 0..100 or -1,
@@ -388,6 +391,7 @@ function mount() {
   window.alchemyEngine = 'spotify';
   window.alchemyRoot = root;
   log('overlay mounted');
+  if (W.token) post('lstoken', W.token);
   RUN();
 }
 function go() { try { mount(); } catch (e) { log('mount failed: ' + (e && e.stack || e)); } }

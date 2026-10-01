@@ -593,13 +593,21 @@ struct WebView: UIViewRepresentable {
         for name in ["log", "volume", "open", "layout", "showlog", "haptic", "awake", "statusbar", "orientation",
                      "broadcast", "brightness", "share", "homeindicator", "host", "reset", "viewport", "proximity",
                      "hapticpattern", "sound", "routepicker", "audiosession", "notify", "appearance", "clipboard",
-                     "band", "background", "keyboard", "scroll"] {
+                     "band", "background", "keyboard", "scroll", "lstoken"] {
             config.userContentController.add(context.coordinator, name: name)
         }
         if let script {
             config.userContentController.addUserScript(
                 WKUserScript(source: script, injectionTime: .atDocumentStart, forMainFrameOnly: true))
         }
+        // The web player's access token to librespot (Librespot.token), from observer.js's
+        // wmp-spotify-token event: here and not only in observer.js, since the observer the app runs
+        // is the site's, master's, which has the event but not the message.
+        config.userContentController.addUserScript(WKUserScript(source: """
+            window.addEventListener('wmp-spotify-token', function (e) {
+              try { webkit.messageHandlers.lstoken.postMessage(String(e.detail.token)); } catch (_) {}
+            });
+            """, injectionTime: .atDocumentStart, forMainFrameOnly: true))
         let web = InsetWebView(frame: .zero, configuration: config)
         // Spotify serves the web player to desktop browsers only; the overlay covers the desktop
         // layout anyway.
@@ -811,6 +819,9 @@ struct WebView: UIViewRepresentable {
                 HostLog.shared.log("scroll: \(s)", quiet: true)
                 scroll.isScrollEnabled = s == "on"
                 scroll.bounces = s == "on"
+            case "lstoken":
+                guard let s = message.body as? String, !s.isEmpty else { return }
+                Librespot.shared.token(s)
             default:
                 HostLog.shared.log("page: \(message.body)")
             }
@@ -1112,6 +1123,17 @@ final class Librespot {
 
     /// Credentials cached by an earlier pick in the Spotify app.
     var paired: Bool { FileManager.default.fileExists(atPath: Self.cache.appending(path: "credentials.json").path) }
+
+    private var lastToken = ""  // on the main thread
+
+    /// On the main thread: the web player's access token (the "lstoken" message), which librespot logs
+    /// in with when it has no session, and keeps for its next reconnect when it has one. Never logged.
+    func token(_ t: String) {
+        guard t != lastToken else { return }  // observer.js and the app's own script may both send it
+        lastToken = t
+        HostLog.shared.log("librespot: token received")
+        wmp_ls_token(t)
+    }
 
     /// On the main thread, once, with the audio session active.
     func start() {

@@ -13,6 +13,7 @@ use std::{
 use futures_util::StreamExt;
 use librespot_connect::{ConnectConfig, Spirc};
 use librespot_core::{
+    authentication::Credentials,
     cache::Cache,
     config::{DeviceType, SessionConfig},
     session::Session,
@@ -27,7 +28,7 @@ use librespot_playback::{
     player::{Player, PlayerEvent},
 };
 use sha1::{Digest, Sha1};
-use tokio::sync::oneshot;
+use tokio::sync::{mpsc, oneshot};
 
 pub type PcmCb = extern "C" fn(*mut c_void, *const f32, usize);
 pub type LogCb = extern "C" fn(*mut c_void, *const c_char);
@@ -42,6 +43,7 @@ struct Host {
 // ponytail: one receiver per process, its callbacks global; the app starts one at launch.
 static HOST: Mutex<Option<Host>> = Mutex::new(None);
 static STOP: Mutex<Option<oneshot::Sender<()>>> = Mutex::new(None);
+static TOKENS: Mutex<Option<mpsc::UnboundedSender<String>>> = Mutex::new(None);
 
 fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
     m.lock().unwrap_or_else(|e| e.into_inner())
@@ -132,11 +134,13 @@ pub unsafe extern "C" fn wmp_ls_start(
         log::set_max_level(log::LevelFilter::Info);
     }
     let (tx, rx) = oneshot::channel();
+    let (token_tx, tokens) = mpsc::unbounded_channel();
+    *lock(&TOKENS) = Some(token_tx);
     let spawned = std::thread::Builder::new()
         .name("librespot".into())
         .spawn(move || {
             match tokio::runtime::Builder::new_multi_thread().enable_all().build() {
-                Ok(rt) => rt.block_on(run(name, dir, rx)),
+                Ok(rt) => rt.block_on(run(name, dir, rx, tokens)),
                 Err(e) => say(&format!("librespot: no runtime: {e}")),
             }
         });
@@ -145,6 +149,19 @@ pub unsafe extern "C" fn wmp_ls_start(
     }
     *stop = Some(tx);
     0
+}
+
+/// # Safety
+/// `token` is NUL-terminated UTF-8.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn wmp_ls_token(token: *const c_char) {
+    if token.is_null() {
+        return;
+    }
+    let t = unsafe { CStr::from_ptr(token) }.to_string_lossy().into_owned();
+    if let Some(tx) = lock(&TOKENS).as_ref() {
+        let _ = tx.send(t);
+    }
 }
 
 #[unsafe(no_mangle)]
@@ -156,9 +173,18 @@ pub extern "C" fn wmp_ls_stop() {
 
 type SpircTask = Pin<Box<dyn Future<Output = ()> + Send>>;
 
-async fn run(name: String, dir: String, mut stop: oneshot::Receiver<()>) {
+// What the next connect logs in with, and where it came from (for the log).
+type Login = (Credentials, &'static str);
+
+async fn run(
+    name: String,
+    dir: String,
+    mut stop: oneshot::Receiver<()>,
+    mut tokens: mpsc::UnboundedReceiver<String>,
+) {
     const WINDOW: Duration = Duration::from_secs(600);
     const RECONNECTS: usize = 5; // per WINDOW, as librespot's binary allows
+    const TOKEN_LIFE: Duration = Duration::from_secs(50 * 60); // the web player's last an hour
 
     // Stable across launches, as librespot's binary derives it: the credentials blob a phone hands
     // over is encrypted for this id, and the Spotify app keeps one entry per id.
@@ -174,10 +200,15 @@ async fn run(name: String, dir: String, mut stop: oneshot::Receiver<()>) {
     let cache = Cache::new(Some(&dir), Some(&dir), None, None)
         .map_err(|e| say(&format!("librespot: no cache: {e}")))
         .ok();
-    let mut credentials = cache.as_ref().and_then(Cache::credentials);
-    if credentials.is_some() {
+    // A session up saves its reusable credentials in the cache, whatever it logged in with.
+    let cached = |cache: &Option<Cache>| -> Option<Login> {
+        cache.as_ref().and_then(Cache::credentials).map(|c| (c, "cached"))
+    };
+    let mut next: Option<Login> = cached(&cache); // the next connect's, ahead of the fallbacks
+    if next.is_some() {
         say("librespot: cached credentials");
     }
+    let mut token: Option<(String, Instant)> = None; // the web player's latest
 
     let mut discovery = match Discovery::builder(device_id, session_config.client_id.clone())
         .name(name.clone())
@@ -219,7 +250,7 @@ async fn run(name: String, dir: String, mut stop: oneshot::Receiver<()>) {
 
     let mut spirc: Option<Spirc> = None;
     let mut task: Option<SpircTask> = None;
-    let mut connecting = credentials.is_some();
+    let mut connecting = next.is_some();
     let mut retry = false; // the next connect follows a failure: it waits 5 s first
     let mut reconnects: Vec<Instant> = vec![];
 
@@ -234,7 +265,7 @@ async fn run(name: String, dir: String, mut stop: oneshot::Receiver<()>) {
             }, if discovery.is_some() => match c {
                 Some(c) => {
                     say("librespot: credentials from discovery");
-                    credentials = Some(c);
+                    next = Some((c, "discovery"));
                     reconnects.clear();
                     retry = false;
                     if let Some(s) = spirc.take() {
@@ -262,17 +293,27 @@ async fn run(name: String, dir: String, mut stop: oneshot::Receiver<()>) {
                     session = Session::new(session_config.clone(), cache.clone());
                     player.set_session(session.clone());
                 }
-                let Some(c) = credentials.clone() else { continue };
+                // A pick or a token that has just come, else the web player's token while fresh,
+                // else what the cache holds.
+                let fresh = token.as_ref().filter(|(_, at)| at.elapsed() < TOKEN_LIFE)
+                    .map(|(t, _)| (Credentials::with_access_token(t.as_str()), "token"));
+                let Some((c, via)) = next.take().or(fresh).or_else(|| cached(&cache)) else { continue };
                 match Spirc::new(config.clone(), session.clone(), c, player.clone(), mixer.clone()).await {
                     Ok((s, t)) => {
-                        say("librespot: session up");
+                        say(&format!("librespot: session up ({via})"));
                         spirc = Some(s);
                         task = Some(Box::pin(t));
                     }
                     Err(e) => {
-                        say(&format!("librespot: connect failed: {e}"));
+                        say(&format!("librespot: connect failed ({via}): {e}"));
                         session.shutdown(); // a fresh session for the next try
-                        connecting = again(&mut reconnects, WINDOW, RECONNECTS);
+                        if via == "token" {
+                            // The same token would fail the same way: the next one tries again.
+                            token = None;
+                            connecting = false;
+                        } else {
+                            connecting = again(&mut reconnects, WINDOW, RECONNECTS);
+                        }
                         retry = true;
                     }
                 }
@@ -290,6 +331,16 @@ async fn run(name: String, dir: String, mut stop: oneshot::Receiver<()>) {
                 }
                 connecting = again(&mut reconnects, WINDOW, RECONNECTS);
                 retry = true;
+            },
+            Some(t) = tokens.recv() => {
+                let idle = task.is_none() && !connecting;
+                if idle {
+                    say("librespot: logging in with the token");
+                    next = Some((Credentials::with_access_token(t.as_str()), "token"));
+                    connecting = true;
+                    retry = false;
+                }
+                token = Some((t, Instant::now())); // kept for the next reconnect either way
             },
             Some(e) = events.recv() => match e {
                 PlayerEvent::Playing { .. } => say("librespot: playing"),
