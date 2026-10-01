@@ -79,6 +79,47 @@ window.alchemyCheckUpdate = function () { return Promise.resolve({ error: 'The n
 window.__wmpSafeArea = { top: 0, right: 0, bottom: 0, left: 0 };
 window.alchemyLayout = function (mode) { try { webkit.messageHandlers.layout.postMessage(mode === 'edge' ? 'edge' : 'safe'); } catch (e) {} };
 window.alchemyShowLog = function () { try { webkit.messageHandlers.showlog.postMessage(''); } catch (e) {} };
+// For a click-wheel skin (App.swift): a haptic ('selection' for a detent, 'light'|'medium'|'heavy'|
+// 'rigid'|'soft', 'success'|'warning'|'error', 'prepare' to warm the tick), the screen kept awake,
+// the status bar, and the orientations allowed ('portrait'|'landscape'|'any').
+var post = function (name, body) { try { webkit.messageHandlers[name].postMessage(String(body)); } catch (e) {} };
+window.alchemyHaptic = function (kind) { post('haptic', kind || 'selection'); };
+window.alchemyAwake = function (on) { post('awake', on ? 'on' : 'off'); };
+window.alchemyStatusBar = function (hidden) { post('statusbar', hidden ? 'hidden' : 'shown'); };
+window.alchemyOrientation = function (mode) { post('orientation', mode || 'any'); };
+// The broadcast (the app's audio, ios/README.md) from the page: 'picker' opens iOS's sheet, which
+// starts a broadcast or, while one runs, offers to stop it; 'auto'|'manual' is whether the app opens
+// that sheet by itself at launch (kept across launches; a skin without visuals wants 'manual');
+// 'state' asks for window.__wmpBroadcast = {running} now, which also arrives, with a
+// 'wmp-broadcast' event on window, whenever it changes.
+window.__wmpBroadcast = { running: false };
+window.alchemyBroadcast = function (cmd) { post('broadcast', cmd || 'state'); };
+// What the phone reports, each as a window global with an event of the same name on window when it
+// changes: __wmpVolume (0..100, the buttons too) 'wmp-volume'; __wmpBattery {level 0..100 or -1,
+// charging} 'wmp-battery'; __wmpRoute {name, type} (AirPods, Speaker) 'wmp-route'; __wmpBrightness
+// (0..1) 'wmp-brightness'; __wmpHost {build, version, ios, model} 'wmp-host'; and 'wmp-shake'.
+// alchemyHost() asks for all of them at once (a skin does so when it mounts).
+window.__wmpVolume = -1; window.__wmpBattery = { level: -1, charging: false }; window.__wmpRoute = { name: '', type: '' };
+window.__wmpBrightness = -1; window.__wmpHost = { build: '', version: '', ios: '', model: '' };
+window.alchemyHost = function () { post('host', ''); };
+window.alchemyBrightness = function (v) { post('brightness', typeof v === 'number' ? Math.max(0, Math.min(1, v)) : 'state'); };
+window.alchemyShare = function (text) { post('share', text); };
+window.alchemyHomeIndicator = function (hidden) { post('homeindicator', hidden ? 'hidden' : 'shown'); };
+window.alchemyOpenSettings = function () { post('open', 'settings'); };
+window.alchemyReset = function () { log('reset asked'); post('reset', ''); };
+// The rest of the phone, mapped whether a skin uses it or not (ios/README.md has each one):
+window.alchemyViewport = function (mode) { post('viewport', mode === 'mobile' ? 'mobile' : 'desktop'); };   // kept; reloads
+window.alchemyHapticPattern = function (events) { post('hapticpattern', JSON.stringify({ events: events || [] })); }; // [{t,i,s,d}]
+window.alchemySound = function (id) { post('sound', (id | 0) || 1104); };                                       // 1104 = the keyboard tick
+window.alchemyRoutePicker = function () { post('routepicker', ''); };                                          // AirPlay
+window.alchemyAudioSession = function (mode) { post('audiosession', mode || 'solo'); };                       // solo|mix|duck
+window.alchemyNotify = function (n) { post('notify', typeof n === 'string' ? n : JSON.stringify(n || {})); };  // {title,body,seconds,id} or 'cancel:<id>'
+window.alchemyAppearance = function (mode) { post('appearance', mode || 'auto'); };                           // light|dark|auto
+window.alchemyClipboard = function (text) { post('clipboard', text); };
+window.alchemyProximity = function (on) { post('proximity', on ? 'on' : 'off'); };                            // on: the screen blanks when covered
+// Reports with an event of the same name: __wmpProximity 'wmp-proximity', __wmpLowPower 'wmp-lowpower',
+// __wmpThermal 'wmp-thermal', __wmpScene 'wmp-scene', __wmpKeyboard (pt) 'wmp-keyboard', and 'wmp-memory'.
+window.__wmpProximity = false; window.__wmpLowPower = false; window.__wmpThermal = 'nominal'; window.__wmpScene = 'active'; window.__wmpKeyboard = 0;
 
 window.alchemyMarks = [];
 window.alchemySpotifyLogout = function () { log('log out'); location.replace(SPOTIFY_LOGOUT); };
@@ -96,6 +137,47 @@ window.alchemyCheckUpdate = function () { return Promise.resolve({ error: 'The n
 window.__wmpSafeArea = { top: 0, right: 0, bottom: 0, left: 0 };
 window.alchemyLayout = function (mode) { try { webkit.messageHandlers.layout.postMessage(mode === 'edge' ? 'edge' : 'safe'); } catch (e) {} };
 window.alchemyShowLog = function () { try { webkit.messageHandlers.showlog.postMessage(''); } catch (e) {} };
+// For a click-wheel skin (App.swift): a haptic ('selection' for a detent, 'light'|'medium'|'heavy'|
+// 'rigid'|'soft', 'success'|'warning'|'error', 'prepare' to warm the tick), the screen kept awake,
+// the status bar, and the orientations allowed ('portrait'|'landscape'|'any').
+var post = function (name, body) { try { webkit.messageHandlers[name].postMessage(String(body)); } catch (e) {} };
+window.alchemyHaptic = function (kind) { post('haptic', kind || 'selection'); };
+window.alchemyAwake = function (on) { post('awake', on ? 'on' : 'off'); };
+window.alchemyStatusBar = function (hidden) { post('statusbar', hidden ? 'hidden' : 'shown'); };
+window.alchemyOrientation = function (mode) { post('orientation', mode || 'any'); };
+// The broadcast (the app's audio, ios/README.md) from the page: 'picker' opens iOS's sheet, which
+// starts a broadcast or, while one runs, offers to stop it; 'auto'|'manual' is whether the app opens
+// that sheet by itself at launch (kept across launches; a skin without visuals wants 'manual');
+// 'state' asks for window.__wmpBroadcast = {running} now, which also arrives, with a
+// 'wmp-broadcast' event on window, whenever it changes.
+window.__wmpBroadcast = { running: false };
+window.alchemyBroadcast = function (cmd) { post('broadcast', cmd || 'state'); };
+// What the phone reports, each as a window global with an event of the same name on window when it
+// changes: __wmpVolume (0..100, the buttons too) 'wmp-volume'; __wmpBattery {level 0..100 or -1,
+// charging} 'wmp-battery'; __wmpRoute {name, type} (AirPods, Speaker) 'wmp-route'; __wmpBrightness
+// (0..1) 'wmp-brightness'; __wmpHost {build, version, ios, model} 'wmp-host'; and 'wmp-shake'.
+// alchemyHost() asks for all of them at once (a skin does so when it mounts).
+window.__wmpVolume = -1; window.__wmpBattery = { level: -1, charging: false }; window.__wmpRoute = { name: '', type: '' };
+window.__wmpBrightness = -1; window.__wmpHost = { build: '', version: '', ios: '', model: '' };
+window.alchemyHost = function () { post('host', ''); };
+window.alchemyBrightness = function (v) { post('brightness', typeof v === 'number' ? Math.max(0, Math.min(1, v)) : 'state'); };
+window.alchemyShare = function (text) { post('share', text); };
+window.alchemyHomeIndicator = function (hidden) { post('homeindicator', hidden ? 'hidden' : 'shown'); };
+window.alchemyOpenSettings = function () { post('open', 'settings'); };
+window.alchemyReset = function () { log('reset asked'); post('reset', ''); };
+// The rest of the phone, mapped whether a skin uses it or not (ios/README.md has each one):
+window.alchemyViewport = function (mode) { post('viewport', mode === 'mobile' ? 'mobile' : 'desktop'); };   // kept; reloads
+window.alchemyHapticPattern = function (events) { post('hapticpattern', JSON.stringify({ events: events || [] })); }; // [{t,i,s,d}]
+window.alchemySound = function (id) { post('sound', (id | 0) || 1104); };                                       // 1104 = the keyboard tick
+window.alchemyRoutePicker = function () { post('routepicker', ''); };                                          // AirPlay
+window.alchemyAudioSession = function (mode) { post('audiosession', mode || 'solo'); };                       // solo|mix|duck
+window.alchemyNotify = function (n) { post('notify', typeof n === 'string' ? n : JSON.stringify(n || {})); };  // {title,body,seconds,id} or 'cancel:<id>'
+window.alchemyAppearance = function (mode) { post('appearance', mode || 'auto'); };                           // light|dark|auto
+window.alchemyClipboard = function (text) { post('clipboard', text); };
+window.alchemyProximity = function (on) { post('proximity', on ? 'on' : 'off'); };                            // on: the screen blanks when covered
+// Reports with an event of the same name: __wmpProximity 'wmp-proximity', __wmpLowPower 'wmp-lowpower',
+// __wmpThermal 'wmp-thermal', __wmpScene 'wmp-scene', __wmpKeyboard (pt) 'wmp-keyboard', and 'wmp-memory'.
+window.__wmpProximity = false; window.__wmpLowPower = false; window.__wmpThermal = 'nominal'; window.__wmpScene = 'active'; window.__wmpKeyboard = 0;
 
 // ---- 1. observers on the web player's own channels (never its DOM). Everything lands in
 // window.__wmpSpotify; each change is also a CustomEvent on window:

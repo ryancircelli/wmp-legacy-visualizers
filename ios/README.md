@@ -23,7 +23,52 @@ reloaded page that sends its layout gets them); inside the safe area they are al
 Playback is meant to carry on with the phone locked (the audio background mode).
 The skin's volume slider and mute set the phone's system volume: a page cannot change its own playback
 volume on iOS, so the app sets it through an off-screen MPVolumeView (`SystemVolume` in App.swift; iOS
-shows its volume HUD), and a change from the hardware buttons is not read back into the slider.
+shows its volume HUD); every change, the hardware buttons' included, comes back as `__wmpVolume` (below).
+
+For a phone skin (an iPod click wheel, say) the page has more messages, each a string (JSON where
+noted), posted with `webkit.messageHandlers.<name>.postMessage(<string>)` and wrapped by `observer.js` as
+`alchemy*` bindings (`alchemyHaptic`, `alchemyAwake`, `alchemyBroadcast` and so on):
+
+- `haptic`: `"selection"` (a wheel detent), `"light"`, `"medium"`, `"heavy"`, `"rigid"`, `"soft"`,
+  `"success"`, `"warning"`, `"error"`, or `"prepare"` (readies the selection generator). One generator
+  per kind is kept and readied again after each use; only each kind's first use is logged.
+- `hapticpattern`: JSON `{"events":[{"t":0,"i":1,"s":0.5,"d":0}]}`, each event's start and duration in
+  seconds (`d` 0 or left out is a tap, else continuous) and its intensity and sharpness 0 to 1, played by
+  Core Haptics. Nothing on a device without haptics.
+- `sound`: a system sound id (`1104` is the keyboard tick); each id is logged once.
+- `awake`: `"on"` keeps the screen from sleeping, `"off"` lets it.
+- `statusbar`, `homeindicator`: `"hidden"` or `"shown"`.
+- `orientation`: `"portrait"`, `"landscape"` or `"any"`; the window turns to it and stays.
+- `appearance`: `"light"`, `"dark"` or `"auto"`, the window's (and so the page's `prefers-color-scheme`).
+- `brightness`: a level 0 to 1, or `"state"` for `__wmpBrightness`.
+- `viewport`: `"mobile"` or `"desktop"` (the default), WebKit's content mode, kept across launches; a
+  change reloads the page. The desktop user agent stays either way, since Spotify needs it.
+- `broadcast`: `"picker"` opens the broadcast sheet (which offers Stop while a broadcast runs); `"auto"`
+  (the default) or `"manual"`, kept across launches, is whether the app opens that sheet by itself at
+  launch; `"state"` asks for `__wmpBroadcast`.
+- `routepicker`: AirPlay's output picker.
+- `audiosession`: `"solo"` (the default: other apps' audio stops), `"mix"` (plays alongside it) or
+  `"duck"` (lowers it).
+- `share`: a text or URL for the share sheet. `clipboard`: a text copied.
+- `notify`: JSON `{"title","body","seconds","id"}`, a local notification that many seconds on (1 at
+  least; the same id replaces it), or `"cancel:<id>"`. iOS asks to allow notifications the first time.
+  None shows while the app is in front.
+- `open` also takes `"settings"`, the app's page in Settings.
+- `reset`: all website data cleared (Spotify signs out), then the page reloaded.
+- `host`: everything below pushed at once, for a page to ask at load.
+
+The app pushes state as a global on `window` and an `Event` of the matching name, each at its change and
+all on `host`: `__wmpHost` `{build, version, ios, model, scale, fps, voiceOver, viewport}` (`wmp-host`,
+on `host` only), `__wmpBroadcast` `{running}` (`wmp-broadcast`, when the extension connects or drops),
+`__wmpVolume` 0 to 100, the hardware buttons included (`wmp-volume`), `__wmpBattery` `{level, charging}`
+with `level` -1 when unknown and `charging` true when plugged in (`wmp-battery`), `__wmpRoute`
+`{name, type}` of the first audio output (`wmp-route`), `__wmpBrightness` 0 to 1 (`wmp-brightness`, on
+asking only), `__wmpProximity` (`wmp-proximity`; only after `proximity` "on", since iOS blanks the screen while the sensor is covered), `__wmpLowPower` (`wmp-lowpower`), `__wmpThermal`
+`"nominal"`, `"fair"`, `"serious"` or `"critical"` (`wmp-thermal`), `__wmpScene` `"active"`,
+`"inactive"` or `"background"` (`wmp-scene`) and `__wmpKeyboard`, the keyboard's height in points, 0
+when hidden (`wmp-keyboard`). Two events carry no global: `wmp-shake` (the phone shaken) and
+`wmp-memory` (a memory warning). Proximity monitoring is on for the report, so the screen goes dark
+while the sensor is covered, as in a call.
 
 The visualizers hear a broadcast upload extension (`WmpSpotifyBroadcast/`), the system-level capture a
 screen recording uses. It receives the system's mix of every app's audio, so it has Spotify wherever it
@@ -39,8 +84,9 @@ page by evaluateJavaScript, batched every 100 ms, and `observer.js` hands that t
 audio socket. There is no microphone
 anywhere: the app's audio session is plain playback, and the picker has no microphone button.
 
-To start it: about 2 s after launch the app opens iOS's broadcast sheet by itself (the button at the
-right end of the band opens it too). Tap Start Broadcast; after a 3 s countdown the red indicator in
+To start it: about 2 s after launch the app opens iOS's broadcast sheet by itself, unless the page has
+set `broadcast` to `"manual"` (the button at the right end of the band, and the page's `"picker"`, open it
+too). Tap Start Broadcast; after a 3 s countdown the red indicator in
 the status bar stays for as long as it runs. Stop it from that indicator or from Control Center. When
 the app closes, the extension keeps the broadcast and tries its socket again every second, so the
 app opened again resumes the visualizers on the same broadcast; 5 min without the app ends it with

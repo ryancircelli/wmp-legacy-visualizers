@@ -327,7 +327,18 @@ real ws://127.0.0.1:47831; no microphone; ReplayKit's in-app capture hears zeros
 `alchemySetVolume` (the phone's system volume: a page cannot set its own on iOS), `alchemyOpenUrl`
 (Safari), `alchemyRestart` (a reload), `alchemyCheckUpdate` (answered in words), `alchemyLayout('edge'|'safe')`
 (the web view edge to edge for a skin made for the phone, with the insets in `window.__wmpSafeArea`
-and a `wmp-safe-area` event), `alchemyShowLog` (the host's log sheet). The app fetches
+and a `wmp-safe-area` event), `alchemyShowLog` (the host's log sheet), and for a click-wheel skin
+`alchemyHaptic(kind)`, `alchemyAwake(on)`, `alchemyStatusBar(hidden)`, `alchemyOrientation(mode)`,
+`alchemyBroadcast('picker'|'auto'|'manual'|'state')` with `window.__wmpBroadcast = {running}` and a
+`wmp-broadcast` event: the page owns the broadcast. The phone's reports, each a window global with
+an event of the same name: `__wmpVolume` (the buttons too), `__wmpBattery`, `__wmpRoute`,
+`__wmpBrightness`, `__wmpHost`, and `wmp-shake`; `alchemyHost()` asks for all at once. Also
+`alchemyBrightness(v?)`, `alchemyShare(text)`, `alchemyHomeIndicator(hidden)`, `alchemyOpenSettings()`,
+`alchemyReset()` (the web view's data cleared, a reload); and the rest of the phone mapped whether
+used or not: `alchemyViewport`, `alchemyHapticPattern`, `alchemySound`, `alchemyRoutePicker`,
+`alchemyAudioSession`, `alchemyNotify`, `alchemyAppearance`, `alchemyClipboard`, with the reports
+`__wmpProximity`, `__wmpLowPower`, `__wmpThermal`, `__wmpScene`, `__wmpKeyboard` and `wmp-memory`
+(ios/README.md lists each). The app fetches
 observer.js itself from the site too, as dist/ios-observer.js (tools/postbuild.js), with its bundled
 copy as the fallback: a change to the page or to the observer reaches the phone at its next launch. No audio
 socket, no lyrics from a host (LRCLIB is fetched by the page), no window bindings, no page-update

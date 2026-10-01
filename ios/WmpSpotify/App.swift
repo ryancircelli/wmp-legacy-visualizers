@@ -2,15 +2,20 @@
 // mounted over it by observer.js. The page's bundle and observer.js are fetched at every launch; the
 // last good copies are kept in Caches for launches without a network.
 import AVFoundation
+import AVKit
+import AudioToolbox
+import CoreHaptics
 import MediaPlayer
 import Network
 import ReplayKit
 import SwiftUI
 import UIKit
+import UserNotifications
 import WebKit
 
 @main
 struct WmpSpotifyApp: App {
+    @UIApplicationDelegateAdaptor(AppDelegate.self) var delegate
     // For the app's lifetime: the broadcast extension connects to it whenever a broadcast starts.
 
     init() {
@@ -20,10 +25,20 @@ struct WmpSpotifyApp: App {
         try? AVAudioSession.sharedInstance().setActive(true)
         HostLog.shared.log("host: build \(Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "?")")
         AudioServer.shared.start()
+        DeviceState.shared.start()
     }
 
     var body: some Scene {
         WindowGroup { Player() }
+    }
+}
+
+// The app's orientations, which iOS asks for at every rotation: the page's "orientation" message
+// (PageLayout.orientations). Implemented, this stands in for the Info.plist's lists.
+final class AppDelegate: NSObject, UIApplicationDelegate {
+    func application(_ application: UIApplication,
+                     supportedInterfaceOrientationsFor window: UIWindow?) -> UIInterfaceOrientationMask {
+        PageLayout.shared.orientations
     }
 }
 
@@ -33,6 +48,7 @@ final class WebHolder {
     static let shared = WebHolder()
     weak var web: WKWebView?
     weak var picker: RPSystemBroadcastPickerView?
+    weak var routePicker: AVRoutePickerView?
     private var failed = false  // an evaluateJavaScript error was logged
 
     /// From any thread: runs `js` in the page on the main thread, in call order, the result dropped.
@@ -46,6 +62,24 @@ final class WebHolder {
                 HostLog.shared.log("audio: evaluateJavaScript failed: \(error.localizedDescription)")
             }
         }
+    }
+
+    /// From any thread: window.<global> = `value` as JSON (a number, a Bool, or a dictionary of them and
+    /// strings), then an `event` Event on window.
+    func push(_ global: String, _ event: String, _ value: Any) {
+        guard let json = try? JSONSerialization.data(withJSONObject: value, options: .fragmentsAllowed) else { return }
+        run("window.\(global)=\(String(decoding: json, as: UTF8.self));window.dispatchEvent(new Event('\(event)'))")
+    }
+
+    /// On the main thread: iOS's broadcast sheet, by a tap sent to the picker's own button, the widely
+    /// used way to open it from code (ReplayKit has no call for it). The user still taps Start
+    /// Broadcast, or Stop while one runs; iOS requires that tap. False without a picker.
+    @discardableResult
+    func showPicker() -> Bool {
+        guard let picker else { return false }
+        HostLog.shared.log("broadcast: picker shown")
+        for case let b as UIButton in picker.subviews { b.sendActions(for: .touchUpInside) }
+        return true
     }
 }
 
@@ -105,6 +139,13 @@ final class HostLog: ObservableObject {
         }
     }
 
+    private var once = Set<String>()  // logOnce's lines, on the main thread
+
+    /// On the main thread: `line`, quiet, the first time only (a haptic or a sound at click-wheel speed).
+    func logOnce(_ line: String) {
+        if once.insert(line).inserted { log(line, quiet: true) }
+    }
+
     /// On the main thread: host.log and the list emptied.
     func clear() {
         queue.async { try? self.file?.truncate(atOffset: 0) }
@@ -130,18 +171,212 @@ final class HostLog: ObservableObject {
     }
 }
 
+// The app's window scene (it has one).
+func windowScene() -> UIWindowScene? {
+    UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first
+}
+
 // A file in the App Group container shared with the broadcast extension; nil without the entitlement.
 func groupPath(_ name: String) -> String? {
     FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: "group.com.rcircelli.wmpspotify")?
         .appendingPathComponent(name).path
 }
 
-// What the page sets of the host's window, by script message, on the main thread ("layout" and
-// "showlog"). Not SwiftUI's Layout, hence the name.
+// What the page sets of the host's window, by script message, on the main thread ("layout",
+// "showlog", "statusbar", "homeindicator", "orientation"). Not SwiftUI's Layout, hence the name.
 final class PageLayout: ObservableObject {
     static let shared = PageLayout()
     @Published var edge = false     // the web view over the whole screen, no band
     @Published var showLog = false  // the whole log in a sheet, as the band's long press opens it
+    @Published var statusBarHidden = false
+    @Published var homeIndicatorHidden = false
+    @Published var orientations: UIInterfaceOrientationMask = .allButUpsideDown  // AppDelegate's answer
+    // "viewport": "mobile" or "desktop" (the default), the content mode WebView asks for at each
+    // navigation; kept across launches.
+    static var viewport: String { UserDefaults.standard.string(forKey: "viewport") ?? "desktop" }
+}
+
+// The page's taps on the Taptic Engine ("haptic" message), on the main thread: one generator per kind,
+// kept for the app's lifetime and prepared again after each use, so the next click-wheel tick comes
+// without the engine's spin-up. Each kind is logged the first time only: a wheel ticks too fast to log.
+final class Haptics {
+    static let shared = Haptics()
+    private static let styles: [String: UIImpactFeedbackGenerator.FeedbackStyle] =
+        ["light": .light, "medium": .medium, "heavy": .heavy, "rigid": .rigid, "soft": .soft]
+    private static let types: [String: UINotificationFeedbackGenerator.FeedbackType] =
+        ["success": .success, "warning": .warning, "error": .error]
+    private let selection = UISelectionFeedbackGenerator()
+    private let notification = UINotificationFeedbackGenerator()
+    private var impacts: [String: UIImpactFeedbackGenerator] = [:]  // by the page's name for the style
+
+    /// `kind` as the page names it: selection, an impact style, a notification type, or "prepare"
+    /// (the selection generator readied, nothing felt). An unknown kind is dropped.
+    func play(_ kind: String) {
+        if kind == "selection" {
+            selection.selectionChanged()
+            selection.prepare()
+        } else if kind == "prepare" {
+            selection.prepare()
+        } else if let style = Self.styles[kind] {
+            let g = impacts[kind] ?? UIImpactFeedbackGenerator(style: style)
+            impacts[kind] = g
+            g.impactOccurred()
+            g.prepare()
+        } else if let type = Self.types[kind] {
+            notification.notificationOccurred(type)
+            notification.prepare()
+        } else {
+            return
+        }
+        HostLog.shared.logOnce("haptic: \(kind)")
+    }
+}
+
+// The page's own haptic patterns ("hapticpattern" message), on the main thread, by Core Haptics: one
+// engine, made at the first pattern. The first error is logged, the rest dropped.
+final class HapticPatterns {
+    static let shared = HapticPatterns()
+    private var engine: CHHapticEngine?
+    private var failed = false
+
+    // {"events":[{"t":0,"i":1,"s":0.5,"d":0}]}: each event's start and duration in seconds (d 0 or left
+    // out, a tap; else continuous), its intensity and sharpness 0...1.
+    private struct Pattern: Decodable {
+        struct Event: Decodable { let t, i, s: Double; let d: Double? }
+        let events: [Event]
+    }
+
+    func play(_ json: String) {
+        guard CHHapticEngine.capabilitiesForHardware().supportsHaptics else { return }
+        do {
+            let events = try JSONDecoder().decode(Pattern.self, from: Data(json.utf8)).events.map { e in
+                CHHapticEvent(eventType: (e.d ?? 0) > 0 ? .hapticContinuous : .hapticTransient,
+                              parameters: [CHHapticEventParameter(parameterID: .hapticIntensity, value: Float(e.i)),
+                                           CHHapticEventParameter(parameterID: .hapticSharpness, value: Float(e.s))],
+                              relativeTime: e.t, duration: e.d ?? 0)
+            }
+            let engine = try self.engine ?? CHHapticEngine()
+            self.engine = engine
+            // At every pattern: the engine stops in the background and after a haptic server reset.
+            try engine.start()
+            try engine.makePlayer(with: CHHapticPattern(events: events, parameters: [])).start(atTime: 0)
+        } catch {
+            guard !failed else { return }
+            failed = true
+            HostLog.shared.log("hapticpattern: \(error)", quiet: true)
+        }
+    }
+}
+
+// The phone, told to the page (WebHolder.push): each report at its change (the brightness only when
+// asked), and all of them with the host's own details on "host". On the main thread but pushVolume.
+final class DeviceState {
+    static let shared = DeviceState()
+    private var volume: NSKeyValueObservation?  // kept: the observation ends when it is released
+    var scene = "active" { didSet { pushScene() } }  // Player's scenePhase
+    private var keyboard = 0.0 { didSet { pushKeyboard() } }
+
+    /// On the main thread, once, with the audio session active. Proximity monitoring also turns the
+    /// screen off while the sensor is covered, as in a call.
+    func start() {
+        volume = AVAudioSession.sharedInstance().observe(\.outputVolume, options: [.new]) { _, _ in self.pushVolume() }
+        UIDevice.current.isBatteryMonitoringEnabled = true
+        // Proximity only when the page asks ("proximity" on): on, iOS blanks the screen while the sensor is covered.
+        let center = NotificationCenter.default
+        let watched: [(Notification.Name, () -> Void)] = [
+            (UIDevice.batteryLevelDidChangeNotification, pushBattery),
+            (UIDevice.batteryStateDidChangeNotification, pushBattery),
+            (AVAudioSession.routeChangeNotification, pushRoute),
+            (UIDevice.proximityStateDidChangeNotification, pushProximity),
+            (.NSProcessInfoPowerStateDidChange, pushLowPower),
+            (ProcessInfo.thermalStateDidChangeNotification, pushThermal),
+            (UIApplication.didReceiveMemoryWarningNotification, { WebHolder.shared.run("window.dispatchEvent(new Event('wmp-memory'))") }),
+        ]
+        for (name, push) in watched {
+            center.addObserver(forName: name, object: nil, queue: .main) { _ in push() }
+        }
+        // The keyboard's height over the screen's bottom edge: 0 hidden.
+        center.addObserver(forName: UIResponder.keyboardWillChangeFrameNotification, object: nil, queue: .main) { note in
+            guard let frame = (note.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? NSValue)?.cgRectValue,
+                  let screen = windowScene()?.screen else { return }
+            self.keyboard = Double(max(0, screen.bounds.maxY - frame.minY))
+        }
+    }
+
+    /// window.__wmpProximity: something is at the sensor.
+    func pushProximity() { WebHolder.shared.push("__wmpProximity", "wmp-proximity", UIDevice.current.proximityState) }
+
+    /// window.__wmpLowPower: Low Power Mode is on.
+    func pushLowPower() { WebHolder.shared.push("__wmpLowPower", "wmp-lowpower", ProcessInfo.processInfo.isLowPowerModeEnabled) }
+
+    /// window.__wmpThermal: "nominal", "fair", "serious" or "critical".
+    func pushThermal() {
+        let names: [ProcessInfo.ThermalState: String] = [.nominal: "nominal", .fair: "fair", .serious: "serious", .critical: "critical"]
+        WebHolder.shared.push("__wmpThermal", "wmp-thermal", names[ProcessInfo.processInfo.thermalState] ?? "nominal")
+    }
+
+    /// window.__wmpScene: "active", "inactive" or "background".
+    func pushScene() { WebHolder.shared.push("__wmpScene", "wmp-scene", scene) }
+
+    /// window.__wmpKeyboard: the keyboard's height in points, 0 hidden.
+    func pushKeyboard() { WebHolder.shared.push("__wmpKeyboard", "wmp-keyboard", keyboard) }
+
+    /// window.__wmpVolume, 0...100: the system volume, the hardware buttons' changes included.
+    func pushVolume() {
+        WebHolder.shared.push("__wmpVolume", "wmp-volume", Int((AVAudioSession.sharedInstance().outputVolume * 100).rounded()))
+    }
+
+    /// window.__wmpBattery = {level: 0...100 or -1 unknown, charging: plugged in (charging or full)}.
+    func pushBattery() {
+        let d = UIDevice.current
+        let level = d.batteryLevel < 0 ? -1 : Int((d.batteryLevel * 100).rounded())
+        let charging = d.batteryState == .charging || d.batteryState == .full
+        WebHolder.shared.push("__wmpBattery", "wmp-battery", ["level": level, "charging": charging] as [String: Any])
+    }
+
+    /// window.__wmpRoute = {name, type}: the first output's port name ("Ryan's AirPods") and type
+    /// ("BluetoothA2DPOutput", "Speaker").
+    func pushRoute() {
+        let out = AVAudioSession.sharedInstance().currentRoute.outputs.first
+        WebHolder.shared.push("__wmpRoute", "wmp-route", ["name": out?.portName ?? "", "type": out?.portType.rawValue ?? ""])
+    }
+
+    /// window.__wmpBrightness, 0...1.
+    func pushBrightness() {
+        guard let screen = windowScene()?.screen else { return }
+        WebHolder.shared.push("__wmpBrightness", "wmp-brightness", Double(screen.brightness))
+    }
+
+    /// window.__wmpHost = {build, version, ios, model ("iPhone16,1"), scale (pixels per point), fps (the
+    /// screen's most), voiceOver, viewport}, then every report and the broadcast state: what a page asks
+    /// for once at load.
+    func pushAll() {
+        var u = utsname()
+        _ = uname(&u)
+        let model = withUnsafeBytes(of: u.machine) { bytes in String(decoding: bytes.prefix(while: { $0 != 0 }), as: UTF8.self) }
+        let info = Bundle.main.infoDictionary
+        let screen = windowScene()?.screen
+        WebHolder.shared.push("__wmpHost", "wmp-host", [
+            "build": info?["CFBundleVersion"] as? String ?? "",
+            "version": info?["CFBundleShortVersionString"] as? String ?? "",
+            "ios": UIDevice.current.systemVersion,
+            "model": model,
+            "scale": Double(screen?.scale ?? 0),
+            "fps": screen?.maximumFramesPerSecond ?? 0,
+            "voiceOver": UIAccessibility.isVoiceOverRunning,
+            "viewport": PageLayout.viewport,
+        ] as [String: Any])
+        pushVolume()
+        pushBattery()
+        pushRoute()
+        pushBrightness()
+        pushProximity()
+        pushLowPower()
+        pushThermal()
+        pushScene()
+        pushKeyboard()
+        AudioServer.shared.pushState()
+    }
 }
 
 struct Player: View {
@@ -185,7 +420,10 @@ struct Player: View {
             }
             .ignoresSafeArea(.keyboard)
             if layout.edge { BroadcastButton().frame(width: 1, height: 1).opacity(0.01) }
+            RoutePicker().frame(width: 1, height: 1).opacity(0.01)
         }
+        .statusBarHidden(layout.statusBarHidden)
+        .persistentSystemOverlays(layout.homeIndicatorHidden ? .hidden : .automatic)
         .sheet(isPresented: $layout.showLog) {
             VStack(spacing: 0) {
                 HStack(spacing: 24) {
@@ -214,20 +452,22 @@ struct Player: View {
         }
         .onChange(of: scenePhase, initial: true) { _, phase in
             HostLog.shared.log("scene: \(phase)", quiet: true)
+            DeviceState.shared.scene = phase == .active ? "active" : phase == .background ? "background" : "inactive"
         }
         .task {
             script = await userScript()
             ready = true
-            // iOS's broadcast sheet 2 s after the page is up, so it need not be hunted for: a tap
-            // sent to the picker's own button, the widely used way to open it from code (ReplayKit
-            // has no call for it). The user still taps Start Broadcast; iOS requires that tap.
+            // iOS's broadcast sheet 2 s after the page is up, so it need not be hunted for, unless
+            // the page's "broadcast" message has set "manual" (UserDefaults broadcast.prompt).
             try? await Task.sleep(for: .seconds(2))
             // A broadcast from before the app closed reconnects within that time (the extension
             // tries every second): the sheet would only offer to stop it.
             if AudioServer.shared.connected { HostLog.shared.log("broadcast: already running, no picker"); return }
-            guard let picker = WebHolder.shared.picker else { return }
-            HostLog.shared.log("broadcast: picker shown")
-            for case let b as UIButton in picker.subviews { b.sendActions(for: .touchUpInside) }
+            if UserDefaults.standard.string(forKey: "broadcast.prompt") == "manual" {
+                HostLog.shared.log("broadcast: manual, no picker")
+                return
+            }
+            guard WebHolder.shared.showPicker() else { return }
             // The extension's log once a broadcast has likely started (or failed to).
             try? await Task.sleep(for: .seconds(8))
             HostLog.shared.importExtensionLog()
@@ -254,6 +494,17 @@ struct BroadcastButton: UIViewRepresentable {
     }
 
     func updateUIView(_ picker: RPSystemBroadcastPickerView, context: Context) {}
+}
+
+// AirPlay's route picker, all but invisible in the corner, for the page's "routepicker" message to tap.
+struct RoutePicker: UIViewRepresentable {
+    func makeUIView(context: Context) -> AVRoutePickerView {
+        let picker = AVRoutePickerView(frame: CGRect(x: 0, y: 0, width: 1, height: 1))
+        WebHolder.shared.routePicker = picker
+        return picker
+    }
+
+    func updateUIView(_ picker: AVRoutePickerView, context: Context) {}
 }
 
 // dist/spotify-inject.js as the site publishes it (tools/postbuild.js).
@@ -317,11 +568,11 @@ struct WebView: UIViewRepresentable {
         config.allowsInlineMediaPlayback = true
         config.mediaTypesRequiringUserActionForPlayback = []
         config.defaultWebpagePreferences.preferredContentMode = .desktop
-        config.userContentController.add(context.coordinator, name: "log")
-        config.userContentController.add(context.coordinator, name: "volume")
-        config.userContentController.add(context.coordinator, name: "open")
-        config.userContentController.add(context.coordinator, name: "layout")
-        config.userContentController.add(context.coordinator, name: "showlog")
+        for name in ["log", "volume", "open", "layout", "showlog", "haptic", "awake", "statusbar", "orientation",
+                     "broadcast", "brightness", "share", "homeindicator", "host", "reset", "viewport", "proximity",
+                     "hapticpattern", "sound", "routepicker", "audiosession", "notify", "appearance", "clipboard"] {
+            config.userContentController.add(context.coordinator, name: name)
+        }
         if let script {
             config.userContentController.addUserScript(
                 WKUserScript(source: script, injectionTime: .atDocumentStart, forMainFrameOnly: true))
@@ -336,6 +587,7 @@ struct WebView: UIViewRepresentable {
         // The overlay is position:fixed and its panes scroll themselves.
         web.scrollView.isScrollEnabled = false
         web.scrollView.bounces = false
+        web.navigationDelegate = context.coordinator  // the viewport, before the first load
         web.load(URLRequest(url: URL(string: "https://open.spotify.com/")!))
         WebHolder.shared.web = web
         return web
@@ -351,8 +603,27 @@ struct WebView: UIViewRepresentable {
     // The page's messages (webkit.messageHandlers.<name>.postMessage), on the main thread:
     // log, window.alchemyLog's line; volume, window.alchemySetVolume's level, 0...100; open, an http(s)
     // URL to open outside the app; layout, "edge" or "safe" (PageLayout), the insets pushed again for
-    // a page that asks after a reload; showlog, the log sheet.
-    final class Coordinator: NSObject, WKScriptMessageHandler {
+    // a page that asks after a reload; showlog, the log sheet. For a phone skin: haptic, a kind for
+    // Haptics; awake, "on" or "off", the screen kept from sleeping; statusbar, "hidden" or "shown";
+    // orientation, "portrait", "landscape" or "any", the window turned to it and kept there; broadcast,
+    // "picker" (the broadcast sheet, start or stop), "auto" or "manual" (the sheet at launch or not,
+    // kept in UserDefaults broadcast.prompt), "state" (AudioServer.pushState now); brightness, 0...1
+    // (a number or its string) or "state"; share, a text or URL for the share sheet; homeindicator,
+    // "hidden" or "shown"; host, everything DeviceState pushes; reset, the website data cleared and
+    // the page reloaded (Spotify signed out). open also takes "settings", the app's page in Settings.
+    // viewport, "mobile" or "desktop", kept and the page reloaded when it changes; hapticpattern, JSON for
+    // HapticPatterns; sound, a system sound id; routepicker, AirPlay's picker; audiosession, "solo", "mix"
+    // or "duck"; notify, JSON for notify(_:) or "cancel:<id>"; appearance, "light", "dark" or "auto";
+    // clipboard, a text copied.
+    final class Coordinator: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
+        // Each navigation in the stored viewport's content mode; the desktop user agent stays either way.
+        func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction,
+                     preferences: WKWebpagePreferences,
+                     decisionHandler: @escaping (WKNavigationActionPolicy, WKWebpagePreferences) -> Void) {
+            preferences.preferredContentMode = PageLayout.viewport == "mobile" ? .mobile : .desktop
+            decisionHandler(.allow, preferences)
+        }
+
         func userContentController(_ userContentController: WKUserContentController,
                                    didReceive message: WKScriptMessage) {
             switch message.name {
@@ -362,6 +633,11 @@ struct WebView: UIViewRepresentable {
                       n.isFinite else { return }
                 SystemVolume.shared.set(Int(min(max(n, 0), 100).rounded()))
             case "open":
+                if message.body as? String == "settings" {
+                    HostLog.shared.log("open: settings", quiet: true)
+                    UIApplication.shared.open(URL(string: UIApplication.openSettingsURLString)!)
+                    return
+                }
                 guard let s = message.body as? String, let url = URL(string: s),
                       let scheme = url.scheme?.lowercased(), scheme == "http" || scheme == "https" else { return }
                 HostLog.shared.log("open: \(url)", quiet: true)
@@ -374,10 +650,145 @@ struct WebView: UIViewRepresentable {
                 if let web = message.webView as? InsetWebView { MainActor.assumeIsolated { web.pushInsets() } }
             case "showlog":
                 PageLayout.shared.showLog = true
+            case "haptic":
+                guard let kind = message.body as? String else { return }
+                Haptics.shared.play(kind)
+            case "awake":
+                guard let s = message.body as? String, s == "on" || s == "off" else { return }
+                HostLog.shared.log("awake: \(s)", quiet: true)
+                UIApplication.shared.isIdleTimerDisabled = s == "on"
+            case "statusbar":
+                guard let s = message.body as? String, s == "hidden" || s == "shown" else { return }
+                HostLog.shared.log("statusbar: \(s)", quiet: true)
+                PageLayout.shared.statusBarHidden = s == "hidden"
+            case "orientation":
+                let masks: [String: UIInterfaceOrientationMask] =
+                    ["portrait": .portrait, "landscape": .landscape, "any": .allButUpsideDown]
+                guard let s = message.body as? String, let mask = masks[s] else { return }
+                HostLog.shared.log("orientation: \(s)", quiet: true)
+                PageLayout.shared.orientations = mask
+                // iOS asks AppDelegate again, then turns the window if it is outside the new mask; a
+                // refused turn (an iPad in Split View, say) is left be.
+                let scene = windowScene()
+                scene?.keyWindow?.rootViewController?.setNeedsUpdateOfSupportedInterfaceOrientations()
+                scene?.requestGeometryUpdate(UIWindowScene.GeometryPreferences.iOS(interfaceOrientations: mask))
+            case "broadcast":
+                guard let s = message.body as? String else { return }
+                switch s {
+                case "picker":
+                    WebHolder.shared.showPicker()
+                case "auto", "manual":
+                    HostLog.shared.log("broadcast: \(s)", quiet: true)
+                    UserDefaults.standard.set(s, forKey: "broadcast.prompt")
+                case "state":
+                    AudioServer.shared.pushState()
+                default:
+                    break
+                }
+            case "proximity":
+                let on = (message.body as? String) == "on"
+                UIDevice.current.isProximityMonitoringEnabled = on
+                HostLog.shared.log("proximity: \(on ? "on" : "off")", quiet: true)
+            case "brightness":
+                // observer.js posts the level as a string.
+                if let n = (message.body as? NSNumber)?.doubleValue ?? (message.body as? String).flatMap({ Double($0) }),
+                   n.isFinite, let screen = windowScene()?.screen {
+                    HostLog.shared.log("brightness: \(n)", quiet: true)
+                    screen.brightness = CGFloat(min(max(n, 0), 1))
+                } else if message.body as? String == "state" {
+                    DeviceState.shared.pushBrightness()
+                }
+            case "share":
+                guard let s = message.body as? String, !s.isEmpty,
+                      let root = windowScene()?.keyWindow?.rootViewController else { return }
+                HostLog.shared.log("share: \(s.prefix(80))", quiet: true)
+                let sheet = UIActivityViewController(activityItems: [s], applicationActivities: nil)
+                // An iPad shows it as a popover, centered with no arrow; an iPhone ignores this.
+                if let popover = sheet.popoverPresentationController {
+                    popover.sourceView = root.view
+                    popover.sourceRect = CGRect(x: root.view.bounds.midX, y: root.view.bounds.midY, width: 0, height: 0)
+                    popover.permittedArrowDirections = []
+                }
+                root.present(sheet, animated: true)
+            case "homeindicator":
+                guard let s = message.body as? String, s == "hidden" || s == "shown" else { return }
+                HostLog.shared.log("homeindicator: \(s)", quiet: true)
+                PageLayout.shared.homeIndicatorHidden = s == "hidden"
+            case "host":
+                DeviceState.shared.pushAll()
+            case "reset":
+                WKWebsiteDataStore.default().removeData(ofTypes: WKWebsiteDataStore.allWebsiteDataTypes(),
+                                                        modifiedSince: .distantPast) {
+                    HostLog.shared.log("reset: website data cleared", quiet: true)
+                    WebHolder.shared.web?.reload()
+                }
+            case "viewport":
+                // Only a change reloads: a page that sends its viewport at every load would loop.
+                guard let s = message.body as? String, s == "mobile" || s == "desktop", s != PageLayout.viewport else { return }
+                HostLog.shared.log("viewport: \(s)", quiet: true)
+                UserDefaults.standard.set(s, forKey: "viewport")
+                WebHolder.shared.web?.reload()
+            case "hapticpattern":
+                guard let json = message.body as? String else { return }
+                HapticPatterns.shared.play(json)
+            case "sound":
+                // observer.js posts the id as a string.
+                guard let id = (message.body as? NSNumber)?.uint32Value ?? (message.body as? String).flatMap({ UInt32($0) })
+                else { return }
+                HostLog.shared.logOnce("sound: \(id)")
+                AudioServicesPlaySystemSound(SystemSoundID(id))
+            case "routepicker":
+                HostLog.shared.log("routepicker: shown", quiet: true)
+                let views = WebHolder.shared.routePicker?.subviews ?? []
+                for case let b as UIButton in views { b.sendActions(for: .touchUpInside) }
+            case "audiosession":
+                let options: [String: AVAudioSession.CategoryOptions] = ["solo": [], "mix": [.mixWithOthers], "duck": [.duckOthers]]
+                guard let s = message.body as? String, let o = options[s] else { return }
+                HostLog.shared.log("audiosession: \(s)", quiet: true)
+                try? AVAudioSession.sharedInstance().setCategory(.playback, options: o)
+                try? AVAudioSession.sharedInstance().setActive(true)
+            case "notify":
+                guard let s = message.body as? String else { return }
+                notify(s)
+            case "appearance":
+                let styles: [String: UIUserInterfaceStyle] = ["light": .light, "dark": .dark, "auto": .unspecified]
+                guard let s = message.body as? String, let style = styles[s] else { return }
+                HostLog.shared.log("appearance: \(s)", quiet: true)
+                windowScene()?.keyWindow?.overrideUserInterfaceStyle = style
+            case "clipboard":
+                guard let s = message.body as? String else { return }
+                HostLog.shared.log("clipboard: \(s.count) characters", quiet: true)
+                UIPasteboard.general.string = s
             default:
                 HostLog.shared.log("page: \(message.body)")
             }
         }
+    }
+}
+
+// The page's local notification ("notify" message): {"title","body","seconds","id"}, shown that many
+// seconds on (1 at least), a later one with the same id replacing it; "cancel:<id>" drops it before it
+// shows. iOS asks the user to allow notifications the first time only. While the app is in front a
+// notification is not shown (no UNUserNotificationCenterDelegate).
+func notify(_ body: String) {
+    let center = UNUserNotificationCenter.current()
+    if body.hasPrefix("cancel:") {
+        let id = String(body.dropFirst("cancel:".count))
+        HostLog.shared.log("notify: cancel \(id)", quiet: true)
+        center.removePendingNotificationRequests(withIdentifiers: [id])
+        return
+    }
+    struct Note: Decodable { let title, body: String; let seconds: Double; let id: String }
+    guard let note = try? JSONDecoder().decode(Note.self, from: Data(body.utf8)), note.seconds.isFinite else { return }
+    HostLog.shared.log("notify: \(note.id) in \(max(note.seconds, 1)) s", quiet: true)
+    center.requestAuthorization(options: [.alert, .sound]) { granted, _ in
+        guard granted else { HostLog.shared.log("notify: not allowed", quiet: true); return }
+        let content = UNMutableNotificationContent()
+        content.title = note.title
+        content.body = note.body
+        content.sound = .default
+        let trigger = UNTimeIntervalNotificationTrigger(timeInterval: max(note.seconds, 1), repeats: false)
+        center.add(UNNotificationRequest(identifier: note.id, content: content, trigger: trigger))
     }
 }
 
@@ -393,6 +804,17 @@ final class InsetWebView: WKWebView {
     override func didMoveToWindow() {
         super.didMoveToWindow()
         pushInsets()
+        // The first responder, so that a shake reaches motionEnded (WebKit hands this on to its
+        // content view, which passes the motion up to here).
+        if window != nil { becomeFirstResponder() }
+    }
+
+    override var canBecomeFirstResponder: Bool { true }
+
+    // A shake: a "wmp-shake" event on window.
+    override func motionEnded(_ motion: UIEvent.EventSubtype, with event: UIEvent?) {
+        if motion == .motionShake { evaluateJavaScript("window.dispatchEvent(new Event('wmp-shake'))", completionHandler: nil) }
+        super.motionEnded(motion, with: event)
     }
 
     func pushInsets() {
@@ -405,7 +827,7 @@ final class InsetWebView: WKWebView {
 // The phone's output volume, which the skin's slider and mute set: a page cannot change its own
 // playback volume on iOS. An MPVolumeView's slider is the only way an app can set it, and only while
 // the view is in a window, so it sits off screen under the root view. iOS shows its own volume HUD.
-// The hardware buttons' changes are not read back into the skin.
+// Every change, the hardware buttons' included, goes back to the page as __wmpVolume (DeviceState).
 final class SystemVolume {
     static let shared = SystemVolume()
     private let view = MPVolumeView(frame: CGRect(x: -1000, y: -1000, width: 1, height: 1))
@@ -479,6 +901,7 @@ final class AudioServer {
             case .ready:
                 HostLog.shared.log("audio: extension connected")
                 self.connected = true
+                self.pushState()
                 self.receive(c)
             case .failed, .cancelled:
                 self.drop(c)
@@ -525,14 +948,22 @@ final class AudioServer {
         }
     }
 
-    // Once per socket: the broadcast ended (or the extension died), so the page goes silent.
+    // Once per socket: the broadcast ended (or the extension died), so the page goes silent. A socket
+    // already replaced changes nothing, `connected` included: it is the newer socket's.
     private func drop(_ c: NWConnection) {
-        connected = false
         guard c === source else { return }
+        connected = false
         source = nil
         c.cancel()
         HostLog.shared.log("audio: extension disconnected")
+        pushState()
         Forwarder.shared.stopped()
+    }
+
+    /// From any thread: whether a broadcast is running, to the page as window.__wmpBroadcast =
+    /// {running}, then a "wmp-broadcast" event on window. At each change and on the page's "state".
+    func pushState() {
+        WebHolder.shared.push("__wmpBroadcast", "wmp-broadcast", ["running": connected])
     }
 }
 

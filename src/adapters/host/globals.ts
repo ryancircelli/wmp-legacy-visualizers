@@ -50,6 +50,55 @@ declare global {
     alchemyLayout?: (mode: 'edge' | 'safe') => void;
     /** the iOS app: its log sheet */
     alchemyShowLog?: () => void;
+    /** the iOS app, for a click-wheel skin: a haptic ('selection' for a detent; 'light'|'medium'|
+     *  'heavy'|'rigid'|'soft'; 'success'|'warning'|'error'; 'prepare' warms the tick) */
+    alchemyHaptic?: (kind?: string) => void;
+    /** the iOS app: keep the screen awake */
+    alchemyAwake?: (on: boolean) => void;
+    /** the iOS app: the status bar */
+    alchemyStatusBar?: (hidden: boolean) => void;
+    /** the iOS app: the orientations allowed */
+    alchemyOrientation?: (mode: 'portrait' | 'landscape' | 'any') => void;
+    /** the iOS app: its broadcast (the app's audio): 'picker' opens iOS's start/stop sheet,
+     *  'auto'|'manual' whether the app opens it at launch, 'state' asks for __wmpBroadcast now */
+    alchemyBroadcast?: (cmd: 'picker' | 'auto' | 'manual' | 'state') => void;
+    /** the iOS app: whether a broadcast feeds it, with a 'wmp-broadcast' event on each change */
+    __wmpBroadcast?: { running: boolean };
+    /** the iOS app: ask for every report below at once ('wmp-host' and the rest follow) */
+    alchemyHost?: () => void;
+    /** the iOS app: the screen's brightness, set (0..1) or asked for (no argument) */
+    alchemyBrightness?: (v?: number) => void;
+    /** the iOS app: the share sheet for a text or URL */
+    alchemyShare?: (text: string) => void;
+    /** the iOS app: the home indicator, for an edge-to-edge skin */
+    alchemyHomeIndicator?: (hidden: boolean) => void;
+    /** the iOS app: the app's page in Settings */
+    alchemyOpenSettings?: () => void;
+    /** the iOS app: clear the web view's data and reload (a full sign-out) */
+    alchemyReset?: () => void;
+    /** the iOS app's reports, each with a window event of the same name: 'wmp-volume',
+     *  'wmp-battery', 'wmp-route', 'wmp-brightness', 'wmp-host'; and 'wmp-shake' with no global */
+    __wmpVolume?: number;
+    __wmpBattery?: { level: number; charging: boolean };
+    __wmpRoute?: { name: string; type: string };
+    __wmpBrightness?: number;
+    __wmpHost?: { build: string; version: string; ios: string; model: string; scale?: number; fps?: number; voiceOver?: boolean; viewport?: string };
+    /** the iOS app, the rest of the phone (ios/README.md) */
+    alchemyViewport?: (mode: 'mobile' | 'desktop') => void;
+    alchemyHapticPattern?: (events: { t: number; i: number; s: number; d?: number }[]) => void;
+    alchemySound?: (id?: number) => void;
+    alchemyRoutePicker?: () => void;
+    alchemyAudioSession?: (mode: 'solo' | 'mix' | 'duck') => void;
+    alchemyNotify?: (n: { title: string; body: string; seconds: number; id: string } | `cancel:${string}`) => void;
+    alchemyAppearance?: (mode: 'light' | 'dark' | 'auto') => void;
+    alchemyClipboard?: (text: string) => void;
+    /** the iOS app: the proximity sensor's report on (the screen blanks while it is covered) */
+    alchemyProximity?: (on: boolean) => void;
+    __wmpProximity?: boolean;
+    __wmpLowPower?: boolean;
+    __wmpThermal?: 'nominal' | 'fair' | 'serious' | 'critical';
+    __wmpScene?: 'active' | 'inactive' | 'background';
+    __wmpKeyboard?: number;
     __wmpSafeArea?: { top: number; right: number; bottom: number; left: number };
     /** a newer exe is out (tauri/src/update.rs): offer the download */
     alchemyHostUpdate?: boolean;
