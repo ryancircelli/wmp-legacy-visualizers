@@ -120,7 +120,7 @@ librespot's "WMP Spotify".
 - `ios/librespot/` is a small Rust crate (`wmp-librespot`, staticlib and cdylib) on librespot-core,
   -connect, -playback and -discovery 0.8.0 with no audio backend, rustls with compiled-in roots, and a
   sink that hands the app interleaved stereo float32 at 44100 Hz. Its C ABI is `wmp_librespot.h`:
-  `wmp_ls_start(name, cache_dir, pcm, log, ctx)`, `wmp_ls_token(token)` and `wmp_ls_stop()`. `build.sh` builds it for
+  `wmp_ls_start(name, cache_dir, pcm, log, ctx)`, `wmp_ls_token(token, client_id)` and `wmp_ls_stop()`. `build.sh` builds it for
   aarch64-apple-ios into `ios/librespot/out/`, which `project.yml` links (with a bridging header). CI
   runs it before xcodegen, its cargo work cached by Cargo.lock.
 - `Librespot` in App.swift starts it at launch with the cache in Application Support/librespot. Each
@@ -150,9 +150,9 @@ What remains is an access token or zeroconf, and the app tries both.
 
 - **Token (first).** The web view is already signed in, and observer.js already reads the web player's
   access token from its own traffic (the `Authorization` header and open.spotify.com/api/token) and
-  fires `wmp-spotify-token`. A script the app adds next to the observer posts each new token as the
-  `lstoken` message. The site serves master's observer, which has the event but not the message; the
-  branch's observer.js posts it too, and once at mount. The app hands the token to librespot
+  fires `wmp-spotify-token`, and posts each new token, and once at mount, as the `lstoken` message,
+  `"<clientId> <token>"` (the client id from open.spotify.com/api/token's `clientId`). master's
+  observer, which the site serves, is the one that does it. The app hands both to librespot
   (`wmp_ls_token`). With no session up, librespot logs in at once with
   `Credentials::with_access_token(token)` (librespot-core 0.8.0, `AUTHENTICATION_SPOTIFY_TOKEN`) and
   starts the Connect device on that session, as a pick would. With a session up, it keeps the newest
@@ -161,8 +161,13 @@ What remains is an access token or zeroconf, and the app tries both.
   ([librespot#1377](https://github.com/librespot-org/librespot/issues/1377)). A web player token
   (open.spotify.com's) logged librespot in where a developer-app token got "Bad credentials"
   ([librespot#1436](https://github.com/librespot-org/librespot/issues/1436), January 2025).
-  librespot's own client id stays in place (Keymaster's, the desktop one), as in that report. A
-  rejected token is dropped, not retried; the next one the page gets tries again.
+  The session's client id is the token's, not librespot's default (Keymaster's, the desktop one):
+  build 22, with the default, got past the access point (`Authenticated as ...`) and then
+  `connect failed (token): Invalid state { Login request was denied: INVALID_CREDENTIALS }` from
+  login5, which Spirc needs for spclient and which takes the stored credentials a login gives only
+  with the client id the login was for (librespot-core's login5.rs says as much). The id is kept in
+  `client_id` next to the cached credentials, which go with it. A rejected token is dropped, not
+  retried; the next one the page gets tries again.
 - **Zeroconf (the fallback).** A signed-in Spotify app on the same network finds the device, and when
   the device is picked it hands over a credentials blob encrypted for it
   ([docs/authentication.md](https://github.com/librespot-org/librespot/blob/v0.8.0/docs/authentication.md)).
@@ -209,11 +214,16 @@ the AP took it); `librespot: playing`,
 `librespot: output failed: ...` (the audio engine); and librespot's own info, warnings and errors,
 all prefixed `librespot:`.
 
-**Not yet verified.** CI builds, links, archives and uploads it (builds 19, 20 and 22, 2026-10-01;
-22, the first with the token path, is the current one), but none of the following has been seen on a phone:
+**Seen on a phone (build 22, 2026-10-01).** Spotify's access point takes the web player's token
+from librespot presenting as Linux (`Authenticated as '<username>' !`, `Country: "US"`). login5 then
+refused the credentials that login gave with Keymaster's client id (above); build 23 sends the web
+player's.
 
-- Whether Spotify's access points take the web player's token from librespot presenting as Linux
-  (and then login5, with Keymaster's client id, the credentials that login gave).
+**Not yet verified.** CI builds, links, archives and uploads it (builds 19, 20, 22 and 23, 2026-10-01;
+23, with the token's client id, is the current one), but none of the following has been seen on a phone:
+
+- Whether login5 takes the stored credentials with the web player's client id, and then whether
+  Spirc comes up and the device shows in the Spotify app's picker.
 - Why the iOS Spotify app did not list the zeroconf device on its own phone (build 20).
 - Whether the audio engine, which runs from launch and renders silence between songs, keeps the app and
   its session alive in the background as intended, and what it costs in battery.

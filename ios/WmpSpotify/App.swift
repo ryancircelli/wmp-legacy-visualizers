@@ -600,14 +600,6 @@ struct WebView: UIViewRepresentable {
             config.userContentController.addUserScript(
                 WKUserScript(source: script, injectionTime: .atDocumentStart, forMainFrameOnly: true))
         }
-        // The web player's access token to librespot (Librespot.token), from observer.js's
-        // wmp-spotify-token event: here and not only in observer.js, since the observer the app runs
-        // is the site's, master's, which has the event but not the message.
-        config.userContentController.addUserScript(WKUserScript(source: """
-            window.addEventListener('wmp-spotify-token', function (e) {
-              try { webkit.messageHandlers.lstoken.postMessage(String(e.detail.token)); } catch (_) {}
-            });
-            """, injectionTime: .atDocumentStart, forMainFrameOnly: true))
         let web = InsetWebView(frame: .zero, configuration: config)
         // Spotify serves the web player to desktop browsers only; the overlay covers the desktop
         // layout anyway.
@@ -1126,13 +1118,16 @@ final class Librespot {
 
     private var lastToken = ""  // on the main thread
 
-    /// On the main thread: the web player's access token (the "lstoken" message), which librespot logs
-    /// in with when it has no session, and keeps for its next reconnect when it has one. Never logged.
-    func token(_ t: String) {
-        guard t != lastToken else { return }  // observer.js and the app's own script may both send it
-        lastToken = t
-        HostLog.shared.log("librespot: token received")
-        wmp_ls_token(t)
+    /// On the main thread: the web player's access token (the "lstoken" message, "<clientId> <token>"),
+    /// which librespot logs in with when it has no session, and keeps for its next reconnect when it
+    /// has one. The client id is the one the token was issued to, which login5 checks. Never logged.
+    func token(_ body: String) {
+        guard body != lastToken else { return }  // the page repeats the same token
+        lastToken = body
+        let parts = body.split(separator: " ", maxSplits: 1).map(String.init)
+        let (client, t) = parts.count == 2 ? (parts[0], parts[1]) : ("", body)
+        HostLog.shared.log("librespot: token received" + (client.isEmpty ? " (no client id)" : ""))
+        wmp_ls_token(t, client)
     }
 
     /// On the main thread, once, with the audio session active.

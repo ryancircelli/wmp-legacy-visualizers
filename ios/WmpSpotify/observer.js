@@ -116,9 +116,6 @@ window.alchemyOrientation = function (mode) { post('orientation', mode || 'any')
 // 'wmp-broadcast' event on window, whenever it changes.
 window.__wmpBroadcast = { running: false };
 window.alchemyBroadcast = function (cmd) { post('broadcast', cmd || 'state'); };
-// The web player's access token to the app's librespot (ios/README.md, "Librespot"), whenever it
-// changes (seenHeader, seenResponse) and once at mount. The app also listens for it itself.
-window.addEventListener('wmp-spotify-token', function (e) { post('lstoken', e.detail.token); });
 post('broadcast', 'manual');  // the app never opens the sheet by itself: each skin asks (src/app/mount.tsx does, for the visualizers)
 // What the phone reports, each as a window global with an event of the same name on window when it
 // changes: __wmpVolume (0..100, the buttons too) 'wmp-volume'; __wmpBattery {level 0..100 or -1,
@@ -154,7 +151,7 @@ window.__wmpProximity = false; window.__wmpLowPower = false; window.__wmpThermal
 
 // ---- 1. observers on the web player's own channels (never its DOM). Everything lands in
 // window.__wmpSpotify; each change is also a CustomEvent on window:
-//   wmp-spotify-token {token} · wmp-spotify-auth {loggedIn} · wmp-spotify-hash {op, sha}
+//   wmp-spotify-token {token, clientId} · wmp-spotify-auth {loggedIn} · wmp-spotify-hash {op, sha}
 //   wmp-spotify-state = the last connect-state player_state · wmp-spotify-devices = W.devices
 var W = window.__wmpSpotify = { token: null, at: 0, clientToken: null, loggedIn: null, expiresAt: 0,
   clientId: null, deviceId: null, activeDeviceId: '', connectionId: null, hashes: {}, state: null,
@@ -166,6 +163,10 @@ try { performance.setResourceTimingBufferSize(100000); } catch (e) {}
 var hobs = null; // our device id's first 35 hex digits, until the full 40 are known
 var names = {}; // device id -> the last real name a cluster gave it
 function emit(n, d) { window.dispatchEvent(new CustomEvent(n, { detail: d })); }
+// The web player's token to the app, for a librespot session on this account (the librespot branch's
+// "lstoken" message, "<clientId> <token>": librespot's login5 needs the client id the token was issued
+// to; an app without the handler throws here, swallowed). Never logged.
+function lsToken() { try { if (W.token) webkit.messageHandlers.lstoken.postMessage((W.clientId || '') + ' ' + W.token); } catch (e) {} }
 var API = /^https:\/\/(api|api-partner|[a-z0-9-]*spclient[a-z0-9.-]*)\.spotify\.com\//;
 function hdr(h, name) {
   if (!h) return null;
@@ -180,7 +181,8 @@ function seenHeader(url, name, v) {
     var m = /^Bearer\s+(\S+)/i.exec(v);
     if (!m || m[1] === W.token) return; // the page's own calls repeat the same token: once each
     W.token = m[1]; W.at = Date.now();
-    emit('wmp-spotify-token', { token: W.token });
+    emit('wmp-spotify-token', { token: W.token, clientId: W.clientId });
+    lsToken();
   } else if (name === 'client-token' && v !== W.clientToken) {
     W.clientToken = v;
   }
@@ -270,7 +272,7 @@ function seenResponse(url, res) {
     res.clone().json().then(function (j) {
       W.clientId = j.clientId || null;
       W.expiresAt = j.accessTokenExpirationTimestampMs || 0;
-      if (j.accessToken && j.accessToken !== W.token) { W.token = j.accessToken; W.at = Date.now(); emit('wmp-spotify-token', { token: W.token }); }
+      if (j.accessToken && j.accessToken !== W.token) { W.token = j.accessToken; W.at = Date.now(); emit('wmp-spotify-token', { token: W.token, clientId: W.clientId }); lsToken(); }
       var li = j.isAnonymous === false;
       if (li !== W.loggedIn) { W.loggedIn = li; emit('wmp-spotify-auth', { loggedIn: li }); }
       if (j.isAnonymous === true) toLogin();
@@ -391,7 +393,7 @@ function mount() {
   window.alchemyEngine = 'spotify';
   window.alchemyRoot = root;
   log('overlay mounted');
-  if (W.token) post('lstoken', W.token);
+  lsToken();  // a token seen before the handler was up (the in-place refresh)
   RUN();
 }
 function go() { try { mount(); } catch (e) { log('mount failed: ' + (e && e.stack || e)); } }

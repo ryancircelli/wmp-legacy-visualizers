@@ -43,7 +43,7 @@ struct Host {
 // ponytail: one receiver per process, its callbacks global; the app starts one at launch.
 static HOST: Mutex<Option<Host>> = Mutex::new(None);
 static STOP: Mutex<Option<oneshot::Sender<()>>> = Mutex::new(None);
-static TOKENS: Mutex<Option<mpsc::UnboundedSender<String>>> = Mutex::new(None);
+static TOKENS: Mutex<Option<mpsc::UnboundedSender<(String, String)>>> = Mutex::new(None);
 
 fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
     m.lock().unwrap_or_else(|e| e.into_inner())
@@ -154,13 +154,18 @@ pub unsafe extern "C" fn wmp_ls_start(
 /// # Safety
 /// `token` is NUL-terminated UTF-8.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn wmp_ls_token(token: *const c_char) {
+pub unsafe extern "C" fn wmp_ls_token(token: *const c_char, client_id: *const c_char) {
     if token.is_null() {
         return;
     }
     let t = unsafe { CStr::from_ptr(token) }.to_string_lossy().into_owned();
+    let c = if client_id.is_null() {
+        String::new()
+    } else {
+        unsafe { CStr::from_ptr(client_id) }.to_string_lossy().into_owned()
+    };
     if let Some(tx) = lock(&TOKENS).as_ref() {
-        let _ = tx.send(t);
+        let _ = tx.send((t, c));
     }
 }
 
@@ -180,7 +185,7 @@ async fn run(
     name: String,
     dir: String,
     mut stop: oneshot::Receiver<()>,
-    mut tokens: mpsc::UnboundedReceiver<String>,
+    mut tokens: mpsc::UnboundedReceiver<(String, String)>,
 ) {
     const WINDOW: Duration = Duration::from_secs(600);
     const RECONNECTS: usize = 5; // per WINDOW, as librespot's binary allows
@@ -192,10 +197,19 @@ async fn run(
         .iter()
         .map(|b| format!("{b:02x}"))
         .collect();
-    let session_config = SessionConfig {
+    // login5 (the token behind spclient, which Spirc needs) honours stored credentials only with the
+    // client id they were made for: the web player's for a web token, which the page sends with each
+    // token and which outlives the launch here, next to the cached credentials it goes with.
+    let client_id_file = format!("{dir}/client_id");
+    let mut session_config = SessionConfig {
         device_id: device_id.clone(),
         ..SessionConfig::default()
     };
+    if let Ok(c) = std::fs::read_to_string(&client_id_file) {
+        if !c.trim().is_empty() {
+            session_config.client_id = c.trim().to_owned();
+        }
+    }
     // Credentials and volume only: no audio cache.
     let cache = Cache::new(Some(&dir), Some(&dir), None, None)
         .map_err(|e| say(&format!("librespot: no cache: {e}")))
@@ -332,7 +346,14 @@ async fn run(
                 connecting = again(&mut reconnects, WINDOW, RECONNECTS);
                 retry = true;
             },
-            Some(t) = tokens.recv() => {
+            Some((t, c)) = tokens.recv() => {
+                if !c.is_empty() && c != session_config.client_id {
+                    session_config.client_id = c;
+                    let _ = std::fs::write(&client_id_file, &session_config.client_id);
+                    if !session.is_invalid() {
+                        session.set_client_id(&session_config.client_id);
+                    }
+                }
                 let idle = task.is_none() && !connecting;
                 if idle {
                     say("librespot: logging in with the token");
