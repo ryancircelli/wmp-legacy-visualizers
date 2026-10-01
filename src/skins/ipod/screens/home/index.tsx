@@ -1,5 +1,6 @@
 // The home group: the main menu's Home and Radio over Spotify (docs/ipod-skin.md §2.4, §4.2). Home
-// lists Spotify Home's shelves, each opening its items; Radio is Spotify's stations on the FM dial.
+// lists Spotify Home's shelves, each opening its items (a grid of covers, in Settings > General >
+// Library View: Grid); Radio is Spotify's stations on the FM dial.
 // Hold-center on a thing that can be saved opens Like / Add to Playlist / Start Radio.
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import type { HomeItem, HomeSection, Station } from '../../../../model';
@@ -7,8 +8,10 @@ import {
   canSave, isCollectionUri, toggleSaved, useAddTo, useApp, useArtist, useCollection, useHome, usePosition, useRadio, useRadioSeeds,
   useShell, type Shell,
 } from '../../../../ui';
-import { Bar, MenuScreen, Popup, useNav, useWheel } from '../../ui';
-import type { MenuItem, Nav, ScreenEntry } from '../contract';
+import { Bar, GridScreen, MenuScreen, Popup, useNav, useWheel } from '../../ui';
+import type { GridItem, MenuItem, Nav, ScreenEntry } from '../contract';
+import { subline } from '../lists/logic';
+import { useLibraryView } from '../settings';
 import { step } from './step';
 
 /** nano pixels */
@@ -82,16 +85,18 @@ function shelf(sec: HomeSection, k: number): ScreenEntry {
 /** a playlist, album, Liked Songs or artist opens to its songs; anything else plays */
 const opens = (uri: string) => uri.startsWith('spotify:artist:') || isCollectionUri(uri);
 
+/** a shelf's items: rows, or covers with what each is ("Album · Queen", "Playlist · <Spotify's line>") */
 function Shelf({ items, at }: { items: HomeItem[]; at: Kept }) {
   const sh = useShell(), nav = useNav(), [i, setI] = useKept(at), [hold, openHold] = useHold();
-  const menu = items.map((it, k): MenuItem => ({
-    id: String(k), label: it.name, chevron: opens(it.uri),
+  const Screen = useLibraryView()[0] === 'grid' ? GridScreen : MenuScreen;
+  const menu = items.map((it, k): GridItem => ({
+    id: String(k), label: it.name, chevron: opens(it.uri), art: it.img, sub: subline(it.uri, it.sub),
     onSelect: () => { if (opens(it.uri)) nav.push(songs(it.uri, it.name)); else { sh.store.getState().commands.playItem(it); nav.toNowPlaying(); } },
     onHold: canSave(it.uri) ? () => openHold({ uri: it.uri, name: it.name }) : undefined,
   }));
   return (
     <>
-      <MenuScreen items={menu} selected={i} onSelectedChange={setI} empty="Nothing here" />
+      <Screen items={menu} selected={i} onSelectedChange={setI} empty="Nothing here" />
       {hold}
     </>
   );

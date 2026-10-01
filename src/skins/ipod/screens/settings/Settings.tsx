@@ -14,7 +14,8 @@ import type { IpodSettings, MenuItem, ScreenEntry } from '../contract';
 import { cityOf, fmtClock, stepHue, zoneTime } from './logic';
 import { BarPage, check, confirm, DIM, menu, onOff, page, Row, Sun, TEXT, TextPage, u, useNow } from './parts';
 import {
-  CLOCK0, MAIN_MENU, MUSIC_MENU, resetMenu, resetPrefs, setMenuItem, useAppearance, useDisplay, useMenuVisibility, usePref, useShake, useVolumeLimitPref,
+  CLOCK0, MAIN_MENU, MUSIC_MENU, resetMenu, resetPrefs, setMenuItem, useAppearance, useDisplay, useLibraryView, useMenuVisibility, usePref, useShake,
+  useVolumeLimitPref,
 } from './prefs';
 
 declare const __PAGE_BUILD__: string | undefined;
@@ -106,10 +107,11 @@ const BACKLIGHT = [2, 5, 10, 15, 20, 30, 0];
 const seconds = (n: number) => (n ? n + ' Seconds' : 'Always On');
 
 function General() {
-  const nav = useNav(), [ip, patch] = useIpodSettings(), [d] = useDisplay();
+  const nav = useNav(), [ip, patch] = useIpodSettings(), [d] = useDisplay(), [view, setView] = useLibraryView();
   return <MenuScreen items={[
     { id: 'main', label: 'Main Menu', chevron: true, onSelect: to(nav, page('settings/main', 'Main Menu', MainMenu)) },
     { id: 'music', label: 'Library Menu', chevron: true, onSelect: to(nav, page('settings/music', 'Library Menu', LibraryMenu)) },
+    { id: 'view', label: 'Library View', right: view === 'list' ? 'List' : 'Grid', onSelect: () => setView(view === 'list' ? 'grid' : 'list') },
     { id: 'backlight', label: 'Backlight', right: seconds(d.backlight), chevron: true, onSelect: to(nav, page('settings/backlight', 'Backlight', Backlight)) },
     { id: 'brightness', label: 'Brightness', chevron: true, onSelect: to(nav, page('settings/brightness', 'Brightness', Brightness)) },
     { id: 'clicker', label: 'Clicker', right: onOff(ip.clicker), onSelect: () => patch({ clicker: !ip.clicker }) },

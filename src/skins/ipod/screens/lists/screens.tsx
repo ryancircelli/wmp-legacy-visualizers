@@ -1,8 +1,9 @@
 // The Library's screens over the Spotify library, in the nano 5G's look (docs/ipod-skin.md §2.4, §4.2):
 // Playlists (Queue first, which any song's hold-centre > Add to Queue adds to), Liked Songs, Albums,
 // Artists, Podcasts & Shows (empty: the adapter lists none), Queue, Cover Flow; and Search. Lists are the
-// chrome's MenuScreen (center fires the row, hold-center its menu, Play/Pause plays the row); Search
-// and Cover Flow draw themselves. What a screen comes back to (the selected row, the typed query) is
+// chrome's MenuScreen (center fires the row, hold-center its menu, Play/Pause plays the row), or, for
+// the lists with covers in Settings > General > Library View: Grid, its GridScreen; songs are always
+// rows. Search and Cover Flow draw themselves. What a screen comes back to (the selected row, the typed query) is
 // kept on its entry, so it outlives the screen's unmount.
 import { useQuery } from '@tanstack/react-query';
 import { useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
@@ -10,9 +11,10 @@ import { LIKED, type LibraryItem, type SearchResults, type Track } from '../../.
 import {
   canSave, isAlbum, STALE, useAddTo, useApp, useArtist, useCollection, useLibraryList, useSearch, useSearchAll, useShell, type Bucket, type Shell,
 } from '../../../../ui';
-import { MenuScreen, Popup, useNav, useWheel } from '../../ui';
-import type { MenuItem, Nav, ScreenEntry } from '../contract';
-import { albumsBy, artistList, artistsOf, az, SLOTS, strip, STRIP0, type Strip, type StripAct } from './logic';
+import { GridScreen, MenuScreen, Popup, Tile, useNav, useWheel } from '../../ui';
+import type { GridItem, MenuItem, Nav, ScreenEntry } from '../contract';
+import { useLibraryView } from '../settings';
+import { albumsBy, artistList, artistsOf, az, SLOTS, strip, STRIP0, subline, type Strip, type StripAct } from './logic';
 
 /** nano pixels */
 const u = (n: number) => `calc(var(--unit) * ${n})`;
@@ -38,15 +40,19 @@ function screen<T>(key: string, title: string, init: T, body: (k: Box<T>) => Rea
   return { key, title, render: () => body(k) };
 }
 
-/** MenuScreen with the selection kept on the entry; `near` runs as the selection nears the loaded
- *  end; `play` is Play/Pause on a row (the iPod plays it, a collection whole [UG p.6]). */
-function List({ keep, items, near, loading, empty, play }: {
-  keep: Box<number>; items: MenuItem[]; near?: () => void; loading?: boolean; empty?: string; play?: (i: number) => void;
+/** Settings > General > Library View is Grid: the lists with covers are tiles */
+const useGrid = () => useLibraryView()[0] === 'grid';
+
+/** MenuScreen (with `tiles` in the grid view: GridScreen) with the selection kept on the entry; `near`
+ *  runs as the selection nears the loaded end; `play` is Play/Pause on a row (the iPod plays it, a
+ *  collection whole [UG p.6]). */
+function List({ keep, items, near, loading, empty, play, tiles }: {
+  keep: Box<number>; items: GridItem[]; near?: () => void; loading?: boolean; empty?: string; play?: (i: number) => void; tiles?: boolean;
 }) {
-  const [sel, setSel] = useKept(keep), i = Math.min(sel, items.length - 1);
+  const [sel, setSel] = useKept(keep), i = Math.min(sel, items.length - 1), Screen = useGrid() && tiles ? GridScreen : MenuScreen;
   useWheel({ onPlay: play && i >= 0 ? () => play(i) : undefined });
-  return <MenuScreen items={items} selected={sel} loading={loading} empty={empty}
-                     onSelectedChange={(n) => { setSel(n); if (near && n >= items.length - NEAR) near(); }} />;
+  return <Screen items={items} selected={sel} loading={loading} empty={empty}
+                 onSelectedChange={(n) => { setSel(n); if (near && n >= items.length - NEAR) near(); }} />;
 }
 
 // ---- playing -------------------------------------------------------------------------------------
@@ -68,8 +74,16 @@ function shufflePlay(sh: Shell, nav: Nav, rows: readonly Track[]) {
   playSong(sh, nav, t);
 }
 
-const opens = (nav: Nav, x: { uri: string; name: string }): MenuItem =>
-  ({ id: x.uri, label: x.name, chevron: true, onSelect: () => nav.push(collection(x.uri, x.name, true)) });
+/** a playlist or album: a row that opens its songs, or a tile with its cover and what it is */
+const opens = (nav: Nav, x: LibraryItem): GridItem => ({
+  id: x.uri, label: x.name, chevron: true, art: x.image, sub: subline(x.uri, x.artist ?? x.owner),
+  onSelect: () => nav.push(collection(x.uri, x.name, true)),
+});
+/** Liked Songs has no cover: Spotify's own, its gradient and heart */
+const LIKED_ART = 'data:image/svg+xml,' + encodeURIComponent(
+  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><defs><linearGradient id="g" x2="1" y2="1"><stop stop-color="#450af5"/>' +
+  '<stop offset="1" stop-color="#c4efd9"/></linearGradient></defs><rect width="24" height="24" fill="url(#g)"/><path fill="#fff" ' +
+  'transform="translate(7 7.4) scale(.42)" d="M12 21.6 10.3 20C4.2 14.5 0 10.7 0 6.1 0 2.7 2.7 0 6.1 0 8 0 9.9.9 12 3.1 14.1.9 16 0 17.9 0 21.3 0 24 2.7 24 6.1c0 4.6-4.2 8.4-10.3 13.9z"/></svg>');
 
 // ---- tracks --------------------------------------------------------------------------------------
 
@@ -144,14 +158,16 @@ function TrackPopup({ held: { t, lists }, set }: { held: NonNullable<Held>; set:
 /** The Queue (§6 item 7), then Liked Songs (where Spotify pins it), then the library's
  *  playlists in library order. */
 function Playlists({ keep }: { keep: Box<number> }) {
-  const sh = useShell(), nav = useNav(), lib = useLibraryList();
-  const items: MenuItem[] = [
-    { id: 'queue', label: 'Queue', chevron: true, onSelect: () => nav.push(onTheGo()) },
-    opens(nav, { uri: LIKED, name: 'Liked Songs' }),
+  const sh = useShell(), nav = useNav(), lib = useLibraryList(), liked = useCollection(LIKED), next = useApp((s) => s.queue.next[0]);
+  const items: GridItem[] = [
+    // the Queue's tile: the next song's cover
+    { id: 'queue', label: 'Queue', chevron: true, art: next?.art || next?.image, sub: 'Up next', onSelect: () => nav.push(onTheGo()) },
+    { ...opens(nav, { uri: LIKED, name: 'Liked Songs' }), art: LIKED_ART,
+      sub: liked.loaded ? 'Playlist · ' + liked.total.toLocaleString() + (liked.total === 1 ? ' song' : ' songs') : 'Playlist' },
     ...lib.items.filter((x) => !isAlbum(x.uri)).map((x) => opens(nav, x)),
   ];
   // Play/Pause on the Queue is the plain play/pause: the queue is already what plays next
-  return <List keep={keep} items={items} loading={lib.loading} play={(i) => { if (i) playUri(sh, nav, items[i]!.id); }} />;
+  return <List keep={keep} items={items} loading={lib.loading} tiles play={(i) => { if (i) playUri(sh, nav, items[i]!.id); }} />;
 }
 
 /** The Queue: what Spotify plays next; a song joins it from any list's hold-centre > Add to Queue,
@@ -165,7 +181,7 @@ function OnTheGo({ keep }: { keep: Box<number> }) {
 function Albums({ keep }: { keep: Box<number> }) {
   const sh = useShell(), nav = useNav(), lib = useLibraryList();
   const items = lib.items.filter((x) => isAlbum(x.uri)).sort((a, b) => az(a.name, b.name)).map((x) => opens(nav, x));
-  return <List keep={keep} items={items} loading={lib.loading} empty="No Albums" play={(i) => playUri(sh, nav, items[i]!.id)} />;
+  return <List keep={keep} items={items} loading={lib.loading} empty="No Albums" tiles play={(i) => playUri(sh, nav, items[i]!.id)} />;
 }
 
 /** Followed artists (Your Library > Artists) in Spotify's order; none under the local engine. */
@@ -180,14 +196,14 @@ function useFollowedArtists(): { items: LibraryItem[]; loading: boolean } {
  *  ponytail: the fallback's complete A–Z needs every liked page; they load as the selection nears the end. */
 function Artists({ keep }: { keep: Box<string> }) {
   const sh = useShell(), nav = useNav(), followed = useFollowedArtists(), liked = useCollection(LIKED), lib = useLibraryList(), [id, setId] = useKept(keep);
-  const derived = !followed.loading && !followed.items.length;
+  const derived = !followed.loading && !followed.items.length, Screen = useGrid() ? GridScreen : MenuScreen;
   const list = followed.loading ? [] : derived ? artistList(artistsOf(liked.rows), lib.items.filter((x) => isAlbum(x.uri)))
-    : followed.items.map((x) => ({ key: x.uri, name: x.name, uri: x.uri })).sort((a, b) => az(a.name, b.name));
+    : followed.items.map((x) => ({ key: x.uri, name: x.name, uri: x.uri, image: x.image })).sort((a, b) => az(a.name, b.name));
   const sel = Math.max(0, list.findIndex((a) => a.key === id)), a = list[sel];
   useWheel({ onPlay: a?.uri ? () => playUri(sh, nav, a.uri!) : undefined });
-  const items = list.map((x): MenuItem => ({
-    id: x.key, label: x.name, chevron: true, onSelect: () => nav.push(x.uri ? artistPage(x.uri, x.name) : savedArtist(x.name)) }));
-  return <MenuScreen items={items} selected={sel} loading={followed.loading || (!items.length && (liked.loading || lib.loading))} empty="No Artists"
+  const items = list.map((x): GridItem => ({
+    id: x.key, label: x.name, chevron: true, art: x.image, sub: 'Artist', onSelect: () => nav.push(x.uri ? artistPage(x.uri, x.name) : savedArtist(x.name)) }));
+  return <Screen items={items} selected={sel} loading={followed.loading || (!items.length && (liked.loading || lib.loading))} empty="No Artists"
                      onSelectedChange={(n) => { setId(items[n]!.id); if (derived && n >= items.length - NEAR) liked.loadMore(); }} />;
 }
 
@@ -195,11 +211,11 @@ function Artists({ keep }: { keep: Box<string> }) {
  *  Spotify's rows carry no album / single type, so albums and singles are one list. */
 function ArtistPage({ uri, name, keep }: { uri: string; name: string; keep: Box<number> }) {
   const sh = useShell(), nav = useNav(), { page, loading } = useArtist(uri);
-  const items: MenuItem[] = page ? [
-    { id: uri, label: 'All Songs', chevron: true, onSelect: () => nav.push(artistAll(uri, page.meta.name || name)) },
+  const items: GridItem[] = page ? [
+    { id: uri, label: 'All Songs', chevron: true, art: page.meta.image, sub: 'Top songs', onSelect: () => nav.push(artistAll(uri, page.meta.name || name)) },
     ...page.albums.map((x) => opens(nav, x)),
   ] : [];
-  return <List keep={keep} items={items} loading={loading} empty="No Albums" play={(i) => playUri(sh, nav, items[i]!.id)} />;
+  return <List keep={keep} items={items} loading={loading} empty="No Albums" tiles play={(i) => playUri(sh, nav, items[i]!.id)} />;
 }
 const artistPage = (uri: string, name: string) => screen('artist:' + uri, name, 0, (k) => <ArtistPage uri={uri} name={name} keep={k} />);
 
@@ -213,7 +229,7 @@ const artistAll = (uri: string, name: string) => screen('artist-all:' + uri, nam
 function SavedArtist({ name, keep }: { name: string; keep: Box<number> }) {
   const sh = useShell(), nav = useNav(), lib = useLibraryList();
   const items = albumsBy(name, lib.items.filter((x) => isAlbum(x.uri))).sort((a, b) => az(a.name, b.name)).map((x) => opens(nav, x));
-  return <List keep={keep} items={items} loading={lib.loading} empty="No Albums" play={(i) => playUri(sh, nav, items[i]!.id)} />;
+  return <List keep={keep} items={items} loading={lib.loading} empty="No Albums" tiles play={(i) => playUri(sh, nav, items[i]!.id)} />;
 }
 const savedArtist = (name: string) => screen('artist-name:' + name, name, 0, (k) => <SavedArtist name={name} keep={k} />);
 
@@ -231,7 +247,8 @@ const GLYPH: Record<Kind, ReactNode> = {
 const BUCKETS: readonly (readonly [Bucket, Kind, string])[] =
   [['tracks', 'song', 'Songs'], ['artists', 'artist', 'Artists'], ['albums', 'album', 'Albums'], ['playlists', 'playlist', 'Playlists']];
 
-interface Hit { key: string; kind?: Kind; label: string; sub?: string; track?: Track; open: () => void; play?: () => void }
+/** `sub`: a row's dim right side; `art` and `line`: an artist's, album's or playlist's tile in the grid view */
+interface Hit { key: string; kind?: Kind; label: string; sub?: string; art?: string; line?: string; track?: Track; open: () => void; play?: () => void }
 
 function hit(kind: Kind, x: Track | LibraryItem, nav: Nav, sh: Shell): Omit<Hit, 'key'> {
   if (kind === 'song') {
@@ -240,7 +257,8 @@ function hit(kind: Kind, x: Track | LibraryItem, nav: Nav, sh: Shell): Omit<Hit,
   }
   const c = x as LibraryItem;
   const open = kind === 'artist' ? () => nav.push(artistPage(c.uri, c.name)) : () => nav.push(collection(c.uri, c.name, true));
-  return { kind, label: c.name, sub: kind === 'artist' ? undefined : c.artist ?? c.owner, open, play: () => playUri(sh, nav, c.uri) };
+  return { kind, label: c.name, sub: kind === 'artist' ? undefined : c.artist ?? c.owner, art: c.image, line: subline(c.uri, c.artist ?? c.owner),
+           open, play: () => playUri(sh, nav, c.uri) };
 }
 
 /** Every bucket's first page flattened, each bucket ending in "More…" when it has more. */
@@ -254,14 +272,17 @@ function hitsOf(r: SearchResults | undefined, q: string, nav: Nav, sh: Shell): H
 }
 
 const SLOT = 20;
-const LINE: CSSProperties = { display: 'flex', alignItems: 'center', gap: u(6), height: ROW, padding: `0 ${u(9)} 0 ${u(10)}`, whiteSpace: 'nowrap' };
+// a row spans the grid view's two columns
+const LINE: CSSProperties = { display: 'flex', alignItems: 'center', gap: u(6), height: ROW, padding: `0 ${u(9)} 0 ${u(10)}`, whiteSpace: 'nowrap', gridColumn: '1 / -1' };
+const TILES: CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', alignContent: 'start' };
 
 /** Results above, the picker band below: the typed query over the letter strip, the current letter
- *  in a centred blue box. Wheel: the letter (in the results: the row); center: types it (opens the
+ *  in a centred blue box. In the grid view the artists, albums and playlists are tiles, two across,
+ *  between the song rows; the wheel still steps one result at a time. Wheel: the letter (in the results: the row); center: types it (opens the
  *  row); ⏭ a space, ⏮ deletes; MENU: to the results once something was typed, back to the picker,
  *  then out. Each typed character searches (§4.5). */
 function Search({ keep }: { keep: Box<Strip> }) {
-  const sh = useShell(), nav = useNav(), [s, setS] = useKept(keep), list = useRef<HTMLDivElement>(null);
+  const sh = useShell(), nav = useNav(), [s, setS] = useKept(keep), list = useRef<HTMLDivElement>(null), grid = useGrid();
   const { results, loading } = useSearchAll(s.q), [held, setHeld] = useState<Held>(null);
   const hits = hitsOf(results, s.q.trim(), nav, sh), row = s.row >= 0 ? Math.min(s.row, hits.length - 1) : -1, h = hits[row];
   const go = (a: StripAct) => { const n = strip(s, a); if (n) setS(n); return !!n; };
@@ -286,16 +307,18 @@ function Search({ keep }: { keep: Box<Strip> }) {
   const note = loading ? 'Loading…' : s.q.trim() && !hits.length ? 'No Results' : null;
   return (
     <div className="flex flex-col h-full min-h-0" style={{ color: TEXT }}>
-      <div ref={list} className="relative flex-auto min-h-0 overflow-hidden" style={{ fontSize: u(18), fontWeight: 'bold' }}>
-        {note ? <div style={{ ...LINE, color: '#8e8e93' }}>{note}</div> : hits.map((x, i) => (
-          <div key={x.key} onClick={() => { setS({ ...s, row: i, typed: false }); x.open(); }} style={{ ...LINE, ...(i === row ? SEL : {}) }}>
+      <div ref={list} className="relative flex-auto min-h-0 overflow-hidden" style={{ fontSize: u(18), fontWeight: 'bold', ...(grid ? TILES : {}) }}>
+        {note ? <div style={{ ...LINE, color: '#8e8e93' }}>{note}</div> : hits.map((x, i) => {
+          const tap = () => { setS({ ...s, row: i, typed: false }); x.open(); };
+          return grid && x.line != null ? <Tile key={x.key} item={{ id: x.key, label: x.label, sub: x.line, art: x.art }} selected={i === row} onClick={tap} /> : (
+          <div key={x.key} onClick={tap} style={{ ...LINE, ...(i === row ? SEL : {}) }}>
             <svg viewBox="0 0 12 12" fill="currentColor" style={{ flex: 'none', width: u(12), height: u(12) }} aria-hidden="true">
               {x.kind && GLYPH[x.kind]}
             </svg>
             <span className="truncate">{x.label}</span>
             {x.sub && <span className="truncate" style={{ flex: 'none', maxWidth: '45%', fontSize: u(13), fontWeight: 'normal', color: i === row ? 'inherit' : DIM }}>{x.sub}</span>}
           </div>
-        ))}
+        ); })}
       </div>
       <div className="flex-none" style={{ height: u(56), background: 'linear-gradient(#656565, #262626)', color: '#fff', fontWeight: 'bold' }}>
         <div className="flex items-center" style={{ height: u(26), gap: u(6), padding: `0 ${u(10)}`, fontSize: u(16) }}>
@@ -324,11 +347,11 @@ function Search({ keep }: { keep: Box<Strip> }) {
 function More({ q, bucket, kind, keep }: { q: string; bucket: Bucket; kind: Kind; keep: Box<number> }) {
   const sh = useShell(), nav = useNav(), r = useSearch(q, bucket), [held, setHeld] = useState<Held>(null);
   const hits = r.items.map((x) => hit(kind, x, nav, sh));
-  const items = hits.map((x, i): MenuItem => ({ id: String(i), label: x.label, chevron: kind !== 'song', onSelect: x.open,
+  const items = hits.map((x, i): GridItem => ({ id: String(i), label: x.label, chevron: kind !== 'song', art: x.art, sub: x.line, onSelect: x.open,
                                                 onHold: x.track ? () => setHeld({ t: x.track! }) : undefined }));
   return (
     <>
-      <List keep={keep} items={items} loading={r.loading && !items.length} empty="No Results" near={r.loadMore}
+      <List keep={keep} items={items} loading={r.loading && !items.length} empty="No Results" near={r.loadMore} tiles={kind !== 'song'}
             play={held ? undefined : (i) => hits[i]?.play?.()} />
       {held && <TrackPopup held={held} set={setHeld} />}
     </>

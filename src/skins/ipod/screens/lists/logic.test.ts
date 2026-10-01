@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { LibraryItem } from '../../../../model';
-import { albumsBy, artistList, artistsOf, az, SLOTS, strip, STRIP0, type Strip } from './logic';
+import { albumsBy, artistList, artistsOf, az, SLOTS, strip, STRIP0, subline, type Strip } from './logic';
 
 const at = (slot: number, q = '', row = -1, typed = false): Strip => ({ q, slot, row, typed });
 const LAST = SLOTS.length - 1;
@@ -60,4 +60,14 @@ describe('artists', () => {
     expect(albumsBy('David Bowie', [album('Hot Space', 'Queen, David Bowie'), album('Low', 'David Bowie'), album('X')]).map((a) => a.name))
       .toEqual(['Hot Space', 'Low']);
   });
+});
+
+it("words a tile's description as Spotify's library grid does", () => {
+  expect(subline('spotify:playlist:p', 'ryan')).toBe('Playlist · ryan');
+  expect(subline('spotify:playlist:p')).toBe('Playlist · Spotify');
+  expect(subline('spotify:album:a', 'Queen, David Bowie')).toBe('Album · Queen, David Bowie');
+  expect(subline('spotify:album:a')).toBe('Album');
+  expect(subline('spotify:artist:x', 'Artist')).toBe('Artist');
+  expect(subline('spotify:show:s', 'Some host')).toBe('Podcast');
+  expect(subline('spotify:track:t', 'Song')).toBe('Song');
 });

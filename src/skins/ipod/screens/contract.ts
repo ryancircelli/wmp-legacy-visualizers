@@ -55,12 +55,24 @@ export interface MenuItem {
   onHold?: () => void;
 }
 
+/** A tile of GridScreen: `art` square on top (a grey ♪ tile when none), `label` under it, `sub` (its
+ *  description: "Album · Queen") under that. A MenuItem is one too; its `right` and `chevron` go unused. */
+export interface GridItem extends MenuItem {
+  sub?: string;
+  art?: string | null;
+}
+
 /** The screen contents a group may ask the chrome for (implemented in src/skins/ipod/ui.tsx). */
 export interface Chrome {
   /** A list that the wheel scrolls: the selected row follows ticks, center fires onSelect. `preview`
    *  is the split-menu pane under the list (the main menu's album art / clock), when given. */
   MenuScreen: FC<{ items: MenuItem[]; selected?: number; onSelectedChange?: (i: number) => void;
                    preview?: ReactNode; loading?: boolean; empty?: string }>;
+  /** MenuScreen's list as 2 columns of tiles (Settings > General > Library View: Grid): the wheel
+   *  moves the selection a tile at a time, row by row; the rest as MenuScreen. */
+  GridScreen: FC<{ items: GridItem[]; selected?: number; onSelectedChange?: (i: number) => void; loading?: boolean; empty?: string }>;
+  /** one of GridScreen's tiles, for a screen that lays tiles out itself (Search's results) */
+  Tile: FC<{ item: GridItem; selected: boolean; onClick?: () => void }>;
   /** the status row: time, play/pause/shuffle glyphs, battery; drawn by every screen's frame */
   StatusRow: FC<{ title: string }>;
   /** the blue iPod progress bar, 0..1 */

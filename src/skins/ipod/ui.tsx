@@ -1,13 +1,13 @@
-// What the chrome gives the screens (screens/contract.ts ChromeModule): the wheel-driven list, the
-// status row, the progress bar, the hold-centre popup, the spinner, the hooks, and the scan (hold
+// What the chrome gives the screens (screens/contract.ts ChromeModule): the wheel-driven list and its
+// grid of tiles, the status row, the progress bar, the hold-centre popup, the spinner, the hooks, and the scan (hold
 // ⏮ / ⏭) Now Playing shows. Looks and metrics: docs/ipod-skin.md §2.1-2.2.
-import { useContext, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type MouseEvent, type PointerEvent } from 'react';
+import { useContext, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type HTMLAttributes, type MouseEvent, type PointerEvent } from 'react';
 import { useStore } from 'zustand';
 import { createStore } from 'zustand/vanilla';
 import { hasMedia, positionNow } from '../../model';
-import { cx, duration, isPlaying, isSpotify, playingTrack, useAddTo, useApp, useShell, type Shell } from '../../ui';
+import { artOk, cx, duration, isPlaying, isSpotify, playingTrack, useAddTo, useApp, useShell, type Shell } from '../../ui';
 import { useHostGlobal } from './host';
-import type { Chrome } from './screens/contract';
+import type { Chrome, GridItem, MenuItem } from './screens/contract';
 import { useClockPrefs } from './screens';
 import s from './ipod.module.css';
 import { FrameContext, useWheel } from './wheel';
@@ -43,13 +43,13 @@ function placeThumb(l: HTMLElement | null, t: HTMLElement | null) {
 const busy = createStore<{ ids: number[] }>(() => ({ ids: [] }));
 export const useBusy = (frame: number): boolean => useStore(busy, (b) => b.ids.includes(frame));
 
-/** The list the wheel scrolls (§2.2). Selection is the caller's when `selected` is given, else its
- *  own. It moves first and the list scrolls a row only when it would leave the view; lists over 100
- *  rows accelerate. A row with `chevron: true` shows it on the selected row only (the 5G's rule).
- *  The screen is a touch screen too: a drag scrolls the list (natively, with momentum; the selection
- *  stays), a tap selects a row and does what the centre would. The selected row's label marquees
- *  when it does not fit. */
-export const MenuScreen: Chrome['MenuScreen'] = ({ items, selected, onSelectedChange, preview, loading, empty }) => {
+/** What MenuScreen and GridScreen share (§2.2). Selection is the caller's when `selected` is given,
+ *  else its own. It moves first and the list scrolls only when it would leave the view; lists over
+ *  100 rows accelerate. A tap selects and does what the centre would. While it loads, the status bar
+ *  shows the spinner and `note` says why it waits; with nothing to list, `note` is `empty`. */
+function useList({ items, selected, onSelectedChange, loading, empty }: {
+  items: MenuItem[]; selected?: number; onSelectedChange?: (i: number) => void; loading?: boolean; empty?: string;
+}) {
   const [own, setOwn] = useState(0), list = useRef<HTMLDivElement>(null), thumb = useRef<HTMLDivElement>(null);
   const frame = useContext(FrameContext), speed = useRef({ v: 0, at: 0 });
   // a list waiting on Spotify says why: still signing in, signed out, or really loading
@@ -87,38 +87,48 @@ export const MenuScreen: Chrome['MenuScreen'] = ({ items, selected, onSelectedCh
     busy.setState((b) => ({ ids: [...b.ids, id] }));
     return () => busy.setState((b) => { const ids = [...b.ids]; ids.splice(ids.indexOf(id), 1); return { ids }; });
   }, [loading, signedIn, frame]);
-  // the selected row in view (scrolling the list only, never the page), the scroll indicator, the marquee
-  const label = item?.label;
+  // the selected row or tile in view (scrolling the list only, never the page), the scroll indicator
   useLayoutEffect(() => {
-    const l = list.current, row = l?.children[sel] as HTMLElement | undefined;
-    if (!l || !row) return;
-    if (row.offsetTop < l.scrollTop) l.scrollTop = row.offsetTop;
-    else if (row.offsetTop + row.offsetHeight > l.scrollTop + l.clientHeight) l.scrollTop = row.offsetTop + row.offsetHeight - l.clientHeight;
+    const l = list.current, el = l?.children[sel] as HTMLElement | undefined;
+    if (!l || !el) return;
+    if (el.offsetTop < l.scrollTop) l.scrollTop = el.offsetTop;
+    else if (el.offsetTop + el.offsetHeight > l.scrollTop + l.clientHeight) l.scrollTop = el.offsetTop + el.offsetHeight - l.clientHeight;
     placeThumb(l, thumb.current);
-    // after 1 s, 30 units/s to the end, 1 s there, back to the start, again
-    const box = row.firstElementChild as HTMLElement | null, text = box?.firstElementChild as HTMLElement | null;
-    const over = box && text ? text.offsetWidth - box.clientWidth : 0;
-    if (over <= 0 || !text?.animate) return;
+  }, [sel, items.length]);
+  const note = loading ? <div className={s.row} data-loading=""><span className={s.label}>{wait}</span></div>
+    : !items.length && empty ? <div className={s.row}><span className={s.label}>{empty}</span></div> : null;
+  return { sel, pick, tap, note, list, thumb, onScroll: () => placeThumb(list.current, thumb.current) };
+}
+
+/** The list the wheel scrolls (§2.2): useList's rows. A row with `chevron: true` shows it on the
+ *  selected row only (the 5G's rule). The screen is a touch screen too: a drag scrolls the list
+ *  (natively, with momentum; the selection stays). The selected row's label marquees when it does not fit. */
+export const MenuScreen: Chrome['MenuScreen'] = ({ items, selected, onSelectedChange, preview, loading, empty }) => {
+  const { sel, tap, note, list, thumb, onScroll } = useList({ items, selected, onSelectedChange, loading, empty });
+  const label = items[sel]?.label;
+  // after 1 s, 30 units/s to the end, 1 s there, back to the start, again
+  useLayoutEffect(() => {
+    const row = list.current?.children[sel] as HTMLElement | undefined;
+    const box = row?.firstElementChild as HTMLElement | null | undefined, text = box?.firstElementChild as HTMLElement | null | undefined;
+    const over = row && box && text ? text.offsetWidth - box.clientWidth : 0;
+    if (!row || over <= 0 || !text?.animate) return;
     const run = (over / ((30 * row.clientWidth) / 240)) * 1000, total = run + 2000, end = `translateX(${-over}px)`;
     const a = text.animate([{ transform: 'none' }, { transform: 'none', offset: 1000 / total },
                             { transform: end, offset: (1000 + run) / total }, { transform: end }], { duration: total, iterations: Infinity });
     return () => a.cancel();
-  }, [sel, items.length, label]);
+  }, [sel, items.length, label, list]);
   return (
     <div className="flex flex-col h-full min-h-0">
       <div className={cx(preview != null ? s.split : 'flex-auto min-h-0', s.list)}>
-        <div ref={list} className={s.scroll} role="listbox" aria-busy={loading || undefined}
-             onScroll={() => placeThumb(list.current, thumb.current)}>
-          {loading ? <div className={s.row} data-loading=""><span className={s.label}>{wait}</span></div>
-            : !items.length ? (empty ? <div className={s.row}><span className={s.label}>{empty}</span></div> : null)
-            : items.map((it, i) => (
-              <div key={it.id} className={s.row} role="option" aria-selected={i === sel} aria-disabled={it.disabled || undefined}
-                   data-sel={i === sel || undefined} data-disabled={it.disabled || undefined} onClick={() => tap(i)}>
-                <span className={s.label}><span>{it.label}</span></span>
-                {it.right != null && <span className={s.value}>{it.right}</span>}
-                {it.chevron && i === sel && <svg className={s.chevron} viewBox="0 0 7 11" aria-hidden="true"><path d="M1.5 1.5l4 4-4 4" /></svg>}
-              </div>
-            ))}
+        <div ref={list} className={s.scroll} role="listbox" aria-busy={loading || undefined} onScroll={onScroll}>
+          {note ?? items.map((it, i) => (
+            <div key={it.id} className={s.row} role="option" aria-selected={i === sel} aria-disabled={it.disabled || undefined}
+                 data-sel={i === sel || undefined} data-disabled={it.disabled || undefined} onClick={() => tap(i)}>
+              <span className={s.label}><span>{it.label}</span></span>
+              {it.right != null && <span className={s.value}>{it.right}</span>}
+              {it.chevron && i === sel && <svg className={s.chevron} viewBox="0 0 7 11" aria-hidden="true"><path d="M1.5 1.5l4 4-4 4" /></svg>}
+            </div>
+          ))}
         </div>
         <div ref={thumb} className={s.thumb} hidden />
       </div>
@@ -126,6 +136,57 @@ export const MenuScreen: Chrome['MenuScreen'] = ({ items, selected, onSelectedCh
     </div>
   );
 };
+
+/** A press this long on a tile is hold-centre (ms) */
+const LONG_PRESS = 500;
+
+/** MenuScreen's list as 2 columns of tiles, Spotify's library look (Tile). The wheel moves the
+ *  selection a tile at a time, row by row; a drag scrolls; a tap opens; a long press (a finger held
+ *  still: a drag cancels it) is hold-centre. */
+export const GridScreen: Chrome['GridScreen'] = ({ items, selected, onSelectedChange, loading, empty }) => {
+  const { sel, pick, tap, note, list, thumb, onScroll } = useList({ items, selected, onSelectedChange, loading, empty });
+  const press = useRef({ timer: 0, held: false });
+  useEffect(() => () => clearTimeout(press.current.timer), []);
+  const release = () => clearTimeout(press.current.timer);
+  const down = (i: number) => {
+    const it = items[i], p = press.current;
+    release();
+    p.held = false;
+    if (loading || !it?.onHold || it.disabled) return;
+    p.timer = window.setTimeout(() => { p.held = true; pick(i); window.alchemyHaptic?.('medium'); it.onHold?.(); }, LONG_PRESS);
+  };
+  return (
+    <div className={cx('h-full', s.list)}>
+      <div ref={list} className={cx(s.scroll, !note && s.grid)} role="listbox" aria-busy={loading || undefined}
+           onScroll={() => { release(); onScroll(); }}>
+        {note ?? items.map((it, i) => (
+          <Tile key={it.id} item={it} selected={i === sel} onPointerDown={() => down(i)} onPointerUp={release} onPointerCancel={release}
+                onPointerLeave={release} onContextMenu={(e) => e.preventDefault()}
+                // the click that ends a long press is not also a tap
+                onClick={() => { if (press.current.held) press.current.held = false; else tap(i); }} />
+        ))}
+      </div>
+      <div ref={thumb} className={s.thumb} hidden />
+    </div>
+  );
+};
+
+/** One tile: the square art (a grey ♪ tile when none), the name under it in bold, one line, its
+ *  description under that, dim; the selected one ringed in the selection's blue. */
+export function Tile({ item, selected, ...on }: { item: GridItem; selected: boolean } & Omit<HTMLAttributes<HTMLDivElement>, 'children'>) {
+  const art = artOk(item.art);
+  return (
+    <div className={s.cell} role="option" aria-selected={selected} aria-disabled={item.disabled || undefined}
+         data-sel={selected || undefined} data-disabled={item.disabled || undefined} {...on}>
+      <div className={s.art}>
+        {art ? <img src={art} alt="" loading="lazy" draggable={false} />
+          : <svg viewBox="0 0 12 12" aria-hidden="true"><path d="M4.5 2.2 11 .5v7.8a1.9 1.6 0 1 1-1.3-1.5V3.1L5.8 4.2v5.6a1.9 1.6 0 1 1-1.3-1.5z" /></svg>}
+      </div>
+      <div className={s.name}>{item.label}</div>
+      {item.sub && <div className={s.sub}>{item.sub}</div>}
+    </div>
+  );
+}
 
 /** The time now, as the iPod writes it, re-rendered on the minute. */
 export function useTime(h24: boolean): string {

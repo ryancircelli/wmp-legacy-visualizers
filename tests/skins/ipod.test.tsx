@@ -1,7 +1,8 @@
 // The iPod skin mounted: the wheel (its keyboard stand-in) reaches the top screen only, MENU goes back,
-// the nano 5G's menus, the chevron on the selected row only, taps, and the hold-⏮/⏭ scan.
+// the nano 5G's menus, the chevron on the selected row only, taps, the library's grid, and the hold-⏮/⏭ scan.
 import { act, cleanup, fireEvent, render, renderHook, within } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
+import type { ReactNode } from 'react';
 import { makeShell } from '../../src/app/App';
 import type { Ticker } from '../../src/app/ticker';
 import { createAppStore } from '../../src/model';
@@ -9,12 +10,12 @@ import { mainMenu } from '../../src/skins/ipod/menus';
 import { createNav } from '../../src/skins/ipod/nav';
 import { Root } from '../../src/skins/ipod/Root';
 import { nowPlaying } from '../../src/skins/ipod/screens';
-import { Bar, MenuScreen, scan, StatusRow, useScan } from '../../src/skins/ipod/ui';
+import { Bar, GridScreen, MenuScreen, scan, StatusRow, useScan } from '../../src/skins/ipod/ui';
 import { NavContext } from '../../src/skins/ipod/wheel';
 import { ShellContext } from '../../src/ui';
 import { fakeData, mountSkinNow, settle } from './harness';
 
-afterEach(() => { cleanup(); delete window.alchemyHaptic; vi.useRealTimers(); vi.unstubAllGlobals(); });
+afterEach(() => { cleanup(); delete window.alchemyHaptic; vi.useRealTimers(); vi.unstubAllGlobals(); localStorage.clear(); });
 const key = (k: string) => act(() => { window.dispatchEvent(new KeyboardEvent('keydown', { key: k, cancelable: true })); });
 
 function mount() {
@@ -90,6 +91,57 @@ it('a loading list says why it waits: signing in, signed out, or loading', () =>
   expect(say(null)).toBe('Signing in…');
   expect(say(false)).toBe('Not signed in');
   expect(say(true)).toBe('Loading…');
+});
+
+it('the library is a grid: the wheel steps a tile at a time, row by row, a tile says what it is, Enter opens; List view is rows again', async () => {
+  const album = (i: number, name: string, artist: string) => ({ uri: 'spotify:album:' + i, name, artist, image: 'https://i.scdn.co/' + i });
+  const data = fakeData({
+    list: [album(2, 'Kid A', 'Radiohead'), album(0, 'Abbey Road', 'The Beatles'), album(1, 'Hot Space', 'Queen')],
+    collections: { 'spotify:album:1': { tracks: [{ uri: 'spotify:track:s', title: 'Staying Power', artist: 'Queen', duration: 1 }] } },
+  });
+  const m = mountSkinNow('spotify', data, <div data-testid="ipod"><Root /></div>);
+  const ipod = m.getByTestId('ipod'), shown = (q: string) => [...ipod.querySelectorAll(q)].filter((x) => !x.closest('[hidden]'));
+  const sel = () => shown('[aria-selected=true]').map((x) => x.textContent), rows = () => shown('[role=option]').map((x) => x.textContent);
+  key('ArrowDown'); key('ArrowDown'); key('Enter');          // Library
+  key('ArrowDown'); key('ArrowDown'); key('Enter');          // Albums
+  await settle();
+  expect(rows()).toEqual(['Abbey RoadAlbum · The Beatles', 'Hot SpaceAlbum · Queen', 'Kid AAlbum · Radiohead']);
+  expect(shown('[role=option] img').map((x) => x.getAttribute('src'))).toEqual(['https://i.scdn.co/0', 'https://i.scdn.co/1', 'https://i.scdn.co/2']);
+  expect(sel()).toEqual(['Abbey RoadAlbum · The Beatles']);
+  key('ArrowDown');                                          // the next tile, beside it
+  expect(sel()).toEqual(['Hot SpaceAlbum · Queen']);
+  key('ArrowDown'); key('ArrowDown');                        // the next row's first, then the end holds
+  expect(sel()).toEqual(['Kid AAlbum · Radiohead']);
+  key('ArrowUp'); key('Enter');                              // songs are rows
+  await settle();
+  expect(rows()).toEqual(['Shuffle', 'Staying Power']);
+  key('Escape');
+  act(() => { localStorage.setItem('ipod.view', '"list"'); window.dispatchEvent(new StorageEvent('storage')); });
+  expect(rows()).toEqual(['Abbey Road', 'Hot Space', 'Kid A']);
+  expect(sel()).toEqual(['Hot Space']);
+});
+
+it('a grid waits and empties as a list does, a tap opens a tile, a long press is its hold (and not also a tap)', () => {
+  const store = createAppStore({ persist: false });
+  store.setState((s) => ({ auth: { ...s.auth, engine: 'spotify', loggedIn: true } }));
+  const wrap = (el: ReactNode) => <ShellContext.Provider value={makeShell(store, {} as Ticker)}>{el}</ShellContext.Provider>;
+  const { container, rerender, getByText } = render(wrap(<GridScreen items={[]} loading />));
+  expect(container.textContent).toBe('Loading…');
+  rerender(wrap(<GridScreen items={[]} empty="No Albums" />));
+  expect(container.textContent).toBe('No Albums');
+  const open = vi.fn(), hold = vi.fn();
+  rerender(wrap(<GridScreen items={[{ id: 'a', label: 'A', sub: 'Artist', art: null }, { id: 'b', label: 'B', onSelect: open, onHold: hold }]} />));
+  const a = getByText('A').closest('[role=option]')!, b = getByText('B').closest('[role=option]')!;
+  expect([a.querySelector('img'), a.querySelector('svg')?.tagName]).toEqual([null, 'svg']);   // no cover: the ♪ tile
+  act(() => { fireEvent.click(b); });
+  expect([open.mock.calls.length, b.getAttribute('aria-selected')]).toEqual([1, 'true']);
+  vi.useFakeTimers();
+  act(() => { fireEvent.pointerDown(b); vi.advanceTimersByTime(500); });
+  act(() => { fireEvent.pointerUp(b); fireEvent.click(b); });
+  expect([hold.mock.calls.length, open.mock.calls.length]).toEqual([1, 1]);
+  act(() => { fireEvent.pointerDown(a); vi.advanceTimersByTime(500); });      // A has no hold: its press stays a press
+  act(() => { fireEvent.pointerUp(a); fireEvent.click(a); });
+  expect(a.getAttribute('aria-selected')).toBe('true');
 });
 
 it('a swipe right on the screen is MENU, and not also a tap on the row it ended on', () => {

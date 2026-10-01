@@ -5,12 +5,14 @@
 // - useClockPrefs(): Date & Time, {twentyFourHour, timeInTitle} ('ipod.clock').
 // - useDisplayPrefs(): General > Backlight (s, 0 = Always On) and Brightness (off the iPhone, for the
 //   LCD), Playback > Energy Saver ('ipod.display'); the chrome does the dimming.
+// - useLibraryView(): General > Library View, ['grid' | 'list', set] ('ipod.view'; grid first): how
+//   the lists with covers draw (GridScreen or MenuScreen).
 // - useSleepTimer(): Alarms > Sleep Timer, [{at, mins}] ('ipod.sleep'; at null = off), for the moon.
 // - useSettingsEffects() (also named useVolumeLimit): mount once in Root: Volume Limit, Shake, the
 //   sleep timer and the alarm.
 export { settings } from './Settings';
 export { alarms, extras } from './Extras';
 export {
-  MAIN_MENU, MUSIC_MENU, useClockPrefs, useDisplayPrefs, useMenuVisibility, useSettingsEffects, useSleepTimer, useVolumeLimit,
-  type ClockPrefs, type DisplayPrefs, type MenuVisibility, type SleepTimer,
+  MAIN_MENU, MUSIC_MENU, useClockPrefs, useDisplayPrefs, useLibraryView, useMenuVisibility, useSettingsEffects, useSleepTimer, useVolumeLimit,
+  type ClockPrefs, type DisplayPrefs, type LibraryView, type MenuVisibility, type SleepTimer,
 } from './prefs';

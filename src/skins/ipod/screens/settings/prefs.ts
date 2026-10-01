@@ -88,6 +88,10 @@ export interface DisplayPrefs { backlight: number; brightness: number; energySav
 export const DISPLAY0: DisplayPrefs = { backlight: 10, brightness: 1, energySaver: true };
 export const useDisplay = () => usePref('ipod.display', DISPLAY0);
 export const useDisplayPrefs = (): DisplayPrefs => useDisplay()[0];
+/** 'ipod.view': General > Library View: the library's lists (Home's shelves, Playlists, Albums,
+ *  Artists, Search's artists, albums and playlists) as a grid of covers, or as rows; songs are always rows */
+export type LibraryView = 'grid' | 'list';
+export const useLibraryView = () => usePref<LibraryView>('ipod.view', 'grid');
 /** 'ipod.shake': Playback > Shake (iPhone): a shake skips to the next song */
 export const useShake = () => usePref('ipod.shake', true);
 

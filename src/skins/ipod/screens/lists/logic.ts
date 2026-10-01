@@ -1,5 +1,5 @@
-// The Library screens' pure parts: Search's letter picker, the iPod's A–Z order and the Artists list.
-// No React, no DOM.
+// The Library screens' pure parts: Search's letter picker, the iPod's A–Z order, the Artists list and
+// the grid's description lines. No React, no DOM.
 import type { LibraryItem, Track } from '../../../../model';
 
 /** The picker's strip: letters then digits (⏭ types a space, ⏮ deletes; docs/ipod-skin.md §2.4). */
@@ -52,7 +52,7 @@ export function artistsOf(rows: readonly Track[]): Map<string, string> {
   return m;
 }
 
-export interface Artist { key: string; name: string; uri?: string }
+export interface Artist { key: string; name: string; uri?: string; image?: string }
 
 /** Library > Artists: the liked songs' artists (with their uri) and the saved albums' (names only, the
  *  adapter lists no followed artists), one per name, A–Z. */
@@ -70,3 +70,16 @@ export function artistList(liked: Map<string, string>, albums: readonly LibraryI
 /** An artist's saved albums, by the name the album lists them under. */
 export const albumsBy = (name: string, albums: readonly LibraryItem[]): LibraryItem[] =>
   albums.filter((a) => a.artist?.split(', ').includes(name));
+
+/** the kind a uri names, as the grid's description line words it */
+const KIND: Record<string, string> = { album: 'Album', artist: 'Artist', show: 'Podcast', episode: 'Podcast', track: 'Song' };
+
+/** A tile's description line, Spotify's library grid's words: "Playlist · <by>" (Spotify when no one
+ *  is named), "Album · <by>", "Song · <by>", "Artist", "Podcast". `by` is an album's artists, a
+ *  playlist's owner (or, on Home, Spotify's own line under it); one that only repeats the kind is dropped. */
+export function subline(uri: string, by?: string): string {
+  const kind = KIND[uri.split(':')[1] ?? ''] ?? 'Playlist';
+  if (kind === 'Artist' || kind === 'Podcast') return kind;
+  const who = kind === 'Playlist' ? by || 'Spotify' : by;
+  return who && who.toLowerCase() !== kind.toLowerCase() ? kind + ' · ' + who : kind;
+}
