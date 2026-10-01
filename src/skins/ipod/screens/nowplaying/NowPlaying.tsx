@@ -135,7 +135,9 @@ function NowPlaying() {
       } else if (m === 'radio') {
         if (dir > 0) { startRadio(); setMode('default'); }
       } else {
-        const v = volumeStep(s.settings.muted ? 0 : s.settings.volume, dir, p.max);
+        // The phone's own level when it reports one (its buttons move it too), else the setting.
+        const hv = window.__wmpVolume, base = typeof hv === 'number' && hv >= 0 && hv <= 100 ? hv : s.settings.muted ? 0 : s.settings.volume;
+        const v = volumeStep(base, dir, p.max);
         s.actions.setVolume(v);
         setVol({ v: v / p.max });
       }

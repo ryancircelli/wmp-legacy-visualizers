@@ -109,8 +109,14 @@ export function createSpotifyAdapter(store: AppStore): { start(): void; stop(): 
         try { actions.setSettings({ volume: Math.round(v), muted: false }); } finally { sp.fromDevice = false; }
       };
       window.addEventListener('wmp-volume', buttons);
+      // The app's first report can land before this listener (the skin asks at mount, the adapter
+      // starts after the first paint), and a report while the page was in the background may be
+      // lost: read the level now and whenever the page is seen again.
+      buttons();
+      const seen = () => { if (document.visibilityState === 'visible') buttons(); };
+      document.addEventListener('visibilitychange', seen);
       offs = [
-        () => window.removeEventListener('wmp-volume', buttons),
+        () => { window.removeEventListener('wmp-volume', buttons); document.removeEventListener('visibilitychange', seen); },
         store.subscribe((s) => (s.settings.muted ? 0 : s.settings.volume), (v) => { if (!sp.fromDevice) C.volume(sp, v); }),
         transport().start(),   // first: the Tauri bridge sets up what observe reads
         observe(sp),
