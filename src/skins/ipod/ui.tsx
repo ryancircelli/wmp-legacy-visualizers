@@ -299,17 +299,13 @@ export const CollectionHeader: Chrome['CollectionHeader'] = ({ art, title, line,
   );
 };
 
-/** Spotify's filter chips, a MenuScreen's or GridScreen's `head`: rounded pills in a row that scrolls
- *  sideways, the `active` one filled dark; the pills are the list's first items (the wheel reaches
- *  them up past the first tile), the selected one kept in view. */
+/** The filters, a MenuScreen's or GridScreen's `head`: the nano's segmented control across the
+ *  screen, the `active` segment in the selection blue; the segments are the list's first items (the
+ *  wheel reaches them up past the first tile, a tap or the centre switches). */
 export const FilterChips: Chrome['FilterChips'] = ({ chips, active }) => {
-  const { sel, tap } = useContext(HeadContext), row = useRef<HTMLDivElement>(null);
-  useLayoutEffect(() => {
-    const r = row.current, el = r?.querySelector<HTMLElement>('[aria-selected=true]') ?? r?.querySelector<HTMLElement>('[data-on]');
-    if (r && el) reveal(r, el, true, (r.firstElementChild as HTMLElement).offsetLeft);
-  }, [sel, active]);
+  const { sel, tap } = useContext(HeadContext);
   return (
-    <div ref={row} className={s.chips} data-head="">
+    <div className={s.chips} data-head="">
       {chips.map((c, i) => (
         <div key={c.id} className={s.chip} role="option" aria-selected={i === sel} data-sel={i === sel || undefined}
              data-on={c.id === active || undefined} onClick={() => tap(i)}>{c.label}</div>
@@ -398,9 +394,9 @@ export function Bar({ value, className, onSeek }: { value: number; className?: s
   );
 }
 
-/** Spotify's mini player under the screens (Root shows it while a track is loaded, never over Now
- *  Playing): the cover, "Title • Artist" and the playing device (else where it plays from), play /
- *  pause, and a thin progress line along its foot. The wheel ignores it; touch: a tap opens Now
+/** The Now Playing bar under the screens, Spotify's mini player in the nano's look (Root shows it while
+ *  a track is loaded, never over Now Playing): the cover, "Title • Artist" and the playing device
+ *  (else where it plays from), play / pause, and the blue progress bar along its foot. The wheel ignores it; touch: a tap opens Now
  *  Playing (`onOpen`), the button plays / pauses, a swipe across (40 units, more across than down)
  *  skips, left to the next, right to the previous, the bar nudged that way. Its touches are its
  *  own, never the screen's swipe-back; a light haptic each. */
@@ -418,7 +414,7 @@ export function NowPlayingBar({ onOpen }: { onOpen: () => void }) {
            e.stopPropagation();
            const g = swipe.current, el = e.currentTarget;
            if (!g || g.id !== e.pointerId) return;
-           const dx = e.clientX - g.x, dy = e.clientY - g.y, unit = el.getBoundingClientRect().width / 228;
+           const dx = e.clientX - g.x, dy = e.clientY - g.y, unit = el.getBoundingClientRect().width / 240;
            if (Math.abs(dx) < 40 * unit || Math.abs(dy) >= Math.abs(dx)) return;
            g.done = true;
            window.alchemyHaptic?.('light');

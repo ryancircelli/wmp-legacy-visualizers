@@ -254,7 +254,7 @@ it('a swipe right on the screen is MENU, and not also a tap on the row it ended 
 it('the Now Playing bar: with a track, under every screen but Now Playing; a tap opens it, the button plays / pauses, a swipe left is next and not also a tap', () => {
   const m = mount();
   const bar = () => m.shown('[aria-label="Now Playing"][role=button]')[0] as HTMLElement | undefined;
-  const rect = () => ({ left: 0, width: 228, top: 0, height: 44, right: 228, bottom: 44, x: 0, y: 0, toJSON: () => ({}) });
+  const rect = () => ({ left: 0, width: 240, top: 0, height: 44, right: 240, bottom: 44, x: 0, y: 0, toJSON: () => ({}) });
   expect(bar()).toBeUndefined();
   act(() => { m.store.setState((s) => ({ playback: { ...s.playback, status: 'paused', track: { uri: 'spotify:track:a', title: 'Song', artist: 'Band', duration: 1000 } } })); });
   expect(bar()!.textContent).toContain('Song • Band');

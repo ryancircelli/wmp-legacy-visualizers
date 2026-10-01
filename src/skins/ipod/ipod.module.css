@@ -433,32 +433,41 @@
 .act[data-sel] { outline: calc(var(--unit) * 2.5) solid #3F7FCD; outline-offset: calc(var(--unit) * 1.5); }
 /* the Library's filter chips (FilterChips), Spotify's: pills in a row over the grid, scrolling
    sideways when they overflow; the chosen filter filled dark, the others outlined */
+/* the Library's filters (FilterChips) as the nano's segmented control: adjoining glossy segments,
+   1-unit dark dividers, the outer corners rounded; the active one the selection blue, white; full
+   width inside 6-unit margins, 24 tall; the wheel's place ringed blue (white on the active one) */
 .chips {
   position: relative;
   grid-column: 1 / -1;
   display: flex;
-  gap: calc(var(--unit) * 6);
-  overflow: auto hidden;
-  overscroll-behavior-x: contain;
-  scrollbar-width: none;
-  padding: calc(var(--unit) * 8) calc(var(--unit) * 7) calc(var(--unit) * 4);
-  /* its height set: a scroll container in the grid gets none of its own once the tiles overflow */
+  overflow: hidden;
+  padding: calc(var(--unit) * 7) calc(var(--unit) * 6);
+  /* its height set: a block in the grid gets none of its own once the tiles overflow */
   height: calc(var(--unit) * 38);
 }
-.chips::-webkit-scrollbar { display: none; }
 .chip {
-  flex: none;
-  height: calc(var(--unit) * 26);
-  padding: 0 calc(var(--unit) * 12);
-  border: var(--unit) solid #B9B9BE;
-  border-radius: calc(var(--unit) * 13);
+  flex: 1 1 auto;
+  min-width: 0;
+  height: calc(var(--unit) * 24);
+  padding: 0 calc(var(--unit) * 5);
+  overflow: hidden;
+  border: var(--unit) solid #5A5F64;
+  border-left-width: 0;
+  background: linear-gradient(#FDFDFD, #E6E6E6 50%, #D0D0D0 51%, #E4E4E4);
+  color: #000000;
   font-size: calc(var(--unit) * 13);
-  line-height: calc(var(--unit) * 24);
+  font-weight: 700;
+  line-height: calc(var(--unit) * 22);
+  text-align: center;
+  text-overflow: ellipsis;
   white-space: nowrap;
   cursor: default;
 }
-.chip[data-on] { background: #2A2A2E; border-color: #2A2A2E; color: #FFFFFF; }
-.chip[data-sel] { outline: calc(var(--unit) * 2.5) solid #3F7FCD; outline-offset: calc(var(--unit) * 1); }
+.chip:first-child { border-left-width: var(--unit); border-radius: calc(var(--unit) * 5) 0 0 calc(var(--unit) * 5); }
+.chip:last-child { border-radius: 0 calc(var(--unit) * 5) calc(var(--unit) * 5) 0; }
+.chip[data-on] { background: var(--ipod-sel-bg); color: var(--ipod-sel-ink); }
+.chip[data-sel] { box-shadow: inset 0 0 0 calc(var(--unit) * 2) #3F7FCD; }
+.chip[data-on][data-sel] { box-shadow: inset 0 0 0 calc(var(--unit) * 1.5) #FFFFFF; }
 /* Home as Spotify's (ShelvesScreen): the shelves down one page, each its title (bold 14, 10 in)
    over one strip of tiles 100 wide (3 + 2 at the ends, 4 between: the art is 90, 10 in like the
    title), 2.3 of them across; a strip scrolls across on its own */
@@ -494,43 +503,46 @@
   overflow: hidden;
   background: #000000;
 }
-/* the Now Playing bar (Root, ui.tsx NowPlayingBar): Spotify's mini player, 44 tall with 6 round it,
-   so a plain list above it keeps whole rows: 10 of 30 in the 300 left */
-.screen[data-bar] { --ipod-row-h: calc(var(--unit) * 30); }
+/* the Now Playing bar (Root, ui.tsx NowPlayingBar) in the nano's own language: flush across the foot
+   of the screen, a dark line over it, the light status bar's gloss, the cover in a thin dark frame,
+   the title black bold 14 over dim 11, a grey play / pause, and the nano's blue progress bar along
+   its foot. 44 tall, so a plain list above it keeps whole rows: 11 in the 312 left. It keeps the
+   light look over dark screens too, as the nano mixes its light menus and dark pages */
+.screen[data-bar] { --ipod-row-h: calc(var(--unit) * 312 / 11); }
 .npbar {
   position: relative;
   flex: none;
   display: flex;
   align-items: center;
-  gap: calc(var(--unit) * 8);
+  gap: calc(var(--unit) * 7);
   height: calc(var(--unit) * 44);
-  margin: calc(var(--unit) * 6);
-  padding: 0 calc(var(--unit) * 4) 0 calc(var(--unit) * 6);
+  padding: 0 calc(var(--unit) * 5) calc(var(--unit) * 6) calc(var(--unit) * 6);
   overflow: hidden;
-  border-radius: calc(var(--unit) * 6);
-  background: #2A2A2A;
-  color: #FFFFFF;
+  background: linear-gradient(#FBFBFB, #B2B2B2);
+  border-top: var(--unit) solid #7A7E81;
+  color: #000000;
   touch-action: none;
   cursor: pointer;
 }
-.nparts { flex: none; width: calc(var(--unit) * 32); }
+.nparts { flex: none; width: calc(var(--unit) * 28); border: var(--unit) solid #4A4A4A; border-radius: 0; }
 .nptext { flex: auto; min-width: 0; }
 .nptitle, .npline { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-.nptitle { font-size: calc(var(--unit) * 13); line-height: 1.3; }
-.nptitle > span, .npline { font-weight: 400; color: #B3B3B3; }
-.npline { font-size: calc(var(--unit) * 11); line-height: 1.3; }
-.npbtn { flex: none; display: grid; place-items: center; width: calc(var(--unit) * 32); height: calc(var(--unit) * 32); }
-.npbtn svg { width: calc(var(--unit) * 14); fill: currentColor; }
-/* the progress line along the foot */
+.nptitle { font-size: calc(var(--unit) * 14); line-height: 1.25; }
+.nptitle > span, .npline { font-size: calc(var(--unit) * 11); font-weight: 400; color: var(--ipod-dim); }
+.npline { line-height: 1.3; }
+.npbtn { flex: none; display: grid; place-items: center; width: calc(var(--unit) * 26); height: calc(var(--unit) * 26); color: #6D6D6D; }
+.npbtn svg { width: calc(var(--unit) * 12); fill: currentColor; }
+/* the progress: the nano's blue bar on its light track, 3 tall along the foot */
 .npbar::after {
   content: "";
   position: absolute;
   left: calc(var(--unit) * 6);
   right: calc(var(--unit) * 6);
-  bottom: 0;
-  height: calc(var(--unit) * 2);
+  bottom: calc(var(--unit) * 3);
+  height: calc(var(--unit) * 3);
   border-radius: var(--unit);
-  background: linear-gradient(90deg, #FFFFFF calc(var(--v, 0) * 100%), rgb(255 255 255 / .25) 0);
+  box-shadow: inset 0 0 0 calc(var(--unit) * .5) rgb(0 0 0 / .18);
+  background: var(--ipod-bar-fill) 0 0 / calc(var(--v, 0) * 100%) 100% no-repeat, var(--ipod-bar-bg);
 }
 .bar {
   position: relative;
