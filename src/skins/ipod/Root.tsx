@@ -110,7 +110,10 @@ export function Root() {
   }, [asleep]);
   // §3.4: under a desktop host that draws no title, the aluminium (and the backdrop) is the caption
   const drag = (e: MouseEvent) => { if (!(e.target as Element).closest(`.${s.bezel}, .${s.wheel}`)) win.onCaptionMouseDown(e); };
-  const insets = safe && ({ '--safe-top': safe.top + 'px', '--safe-right': safe.right + 'px', '--safe-bottom': safe.bottom + 'px', '--safe-left': safe.left + 'px' } as CSSProperties);
+  // The insets come in points; in the desktop-wide viewport the phone scales the page, so a point is
+  // (viewport width / screen width) CSS pixels (host.ts: why the viewport is the desktop one).
+  const k = Math.min(4, Math.max(1, window.innerWidth / (window.screen?.width || window.innerWidth)));
+  const insets = safe && ({ '--safe-top': safe.top * k + 'px', '--safe-right': safe.right * k + 'px', '--safe-bottom': safe.bottom * k + 'px', '--safe-left': safe.left * k + 'px' } as CSSProperties);
 
   return (
     <NavContext.Provider value={nav}>

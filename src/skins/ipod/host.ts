@@ -37,21 +37,21 @@ export function useHostChrome(): void {
 }
 
 const ASKED = 'ipod.viewport';
-/** The iPod is drawn for a phone-wide viewport, so it asks WebKit for the mobile content mode. That
- *  is kept across launches and a change reloads the page, so it is asked once per session at most
- *  (a host that reloads and still says 'desktop' is never asked again), and the flag clears once
- *  the host says 'mobile'. The WMP 9 skin asks for 'desktop' back the same way on its own mount
- *  (src/skins/wmp9/Root.tsx useDesktopViewport). */
+/** The desktop viewport, as the WMP 9 skin has: measured on the phone (2026-09-30), Spotify's web
+ *  player at a phone-wide viewport stops reporting its state (no song info, nothing in the lists),
+ *  so the iPod draws itself in the desktop-wide one and the phone scales it, which costs nothing:
+ *  every size is relative to the viewport. A host still in 'mobile' from an earlier build is asked
+ *  for 'desktop' once per session (a change reloads the page). */
 export function useMobileViewport(): void {
   useEffect(() => {
     if (!window.alchemyViewport) return;
     const check = () => {
       try {
-        if (window.__wmpHost?.viewport === 'mobile') { sessionStorage.removeItem(ASKED); return; }
+        if (window.__wmpHost?.viewport !== 'mobile') { sessionStorage.removeItem(ASKED); return; }
         if (sessionStorage.getItem(ASKED)) return;
         sessionStorage.setItem(ASKED, '1');
       } catch { return; }                  // no storage, no guard: never risk a reload loop
-      window.alchemyViewport?.('mobile');
+      window.alchemyViewport?.('desktop');
     };
     window.addEventListener('wmp-host', check);
     window.alchemyHost?.();

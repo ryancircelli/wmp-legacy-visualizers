@@ -67,8 +67,8 @@ function useBroadcastPrompt() {
 }
 
 const ASKED = 'wmp9.viewport';
-/** WMP 9 is drawn for a desktop-wide viewport. The iPod skin asks WebKit for the mobile content mode
- *  (src/skins/ipod/host.ts useMobileViewport), which the iOS app keeps across launches, so coming
+/** WMP 9 is drawn for a desktop-wide viewport. An earlier iPod skin asked WebKit for the mobile
+ *  content mode (it no longer does: src/skins/ipod/host.ts), which the iOS app keeps across launches, so coming
  *  back to WMP 9 asks for 'desktop' again. A change reloads the page, so it is asked once per session
  *  at most (a host that reloads and still says 'mobile' is never asked again), and the flag clears
  *  once the host says anything but 'mobile'. */
