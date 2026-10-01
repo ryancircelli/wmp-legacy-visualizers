@@ -253,9 +253,11 @@ function payload(m) {
     : Promise.resolve(new TextDecoder().decode(bin));
   return s.then(JSON.parse);
 }
+var dealerOpen = false;
 function dealer(ws) {
   log('dealer socket opened');
-  ws.addEventListener('close', function (e) { log('dealer socket closed (' + e.code + ')'); });
+  dealerOpen = true;
+  ws.addEventListener('close', function (e) { dealerOpen = false; log('dealer socket closed (' + e.code + ')'); });
   ws.addEventListener('error', function () { log('dealer socket error'); });
   ws.addEventListener('message', function (e) {
     if (typeof e.data !== 'string') return;
@@ -278,7 +280,17 @@ WS.prototype = OWS.prototype;
 window.WebSocket = WS;
 
 // The page in and out of the background (WebKit suspends it there): what the lines above follow.
-document.addEventListener('visibilitychange', function () { log('page ' + document.visibilityState); });
+// Suspended, the dealer socket dies (1006, measured) and the web player did not open another on
+// its own; without it this page is no Connect device: commands answer 404 and no state arrives.
+// So, visible again with the dealer closed: an 'online' event 5 s in, the nudge its reconnect
+// listens for; still closed 15 s in, the page is reloaded, which registers a new device (the
+// overlay remounts; the host's audio goes on).
+document.addEventListener('visibilitychange', function () {
+  log('page ' + document.visibilityState);
+  if (document.visibilityState !== 'visible') return;
+  setTimeout(function () { if (!dealerOpen) { log('dealer still closed: online event'); window.dispatchEvent(new Event('online')); } }, 5000);
+  setTimeout(function () { if (!dealerOpen) { log('dealer still closed: reloading'); location.reload(); } }, 15000);
+});
 
 // ---- 2. the overlay, once there is a body to put it in
 function mount() {

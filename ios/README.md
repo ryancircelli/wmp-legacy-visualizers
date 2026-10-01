@@ -56,6 +56,8 @@ workflow takes three repository secrets:
 | `ASC_KEY_ID`    | The key's Key ID                                        |
 | `ASC_ISSUER_ID` | The Issuer ID, shown above the list of keys             |
 | `ASC_KEY_P8`    | The whole contents of the downloaded `AuthKey_<id>.p8`  |
+| `DEV_CERT_P12`  | An Apple Development certificate with its key, as a base64 .p12 (made through the API: `POST /v1/certificates` with a CSR; cloud signing manages distribution certificates only, and a runner without a development identity mints a new one per build until the account's cap) |
+| `DEV_CERT_PASSWORD` | That .p12's password |
 
 The key is made at App Store Connect > Users and Access > Integrations > App Store Connect API, as a
 Team key with the Admin role: cloud signing creates the distribution certificate, which needs Admin.
