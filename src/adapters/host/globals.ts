@@ -25,6 +25,8 @@ export interface SpotifyObserved {
 declare global {
   interface Window {
     alchemyEngine?: string;
+    /** the host's log (the Deno host's, the iOS app's): a line, no answer */
+    alchemyLog?: (line: string) => void;
     alchemyRoot?: ShadowRoot | Document;
     alchemyElectron?: { loopback?: boolean; mode?: string };
     alchemyScreensaver?: { audio?: boolean; url?: string };

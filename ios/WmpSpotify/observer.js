@@ -121,13 +121,14 @@ function seenRequest(url, body) {
   if (/\/track-playback\/v1\/devices$/.test(url) && body) {
     try {
       var full = JSON.parse(body).device.device_id;
-      if (/^[0-9a-f]{40}$/.test(full)) W.deviceId = full;
+      if (/^[0-9a-f]{40}$/.test(full)) { W.deviceId = full; log('registered as ' + full.slice(0, 8)); }
     } catch (e) {}
   }
   var d = /^https:\/\/([a-z0-9.-]*spclient[a-z0-9.-]*\.spotify\.com)\/connect-state\/v1\/devices\/hobs_([0-9a-f]+)/.exec(url);
   if (d) {
     W.spclient = d[1];
     // A new registration (every page load makes one) replaces an id that does not match it.
+    if (hobs !== d[2]) log('connect-state registration hobs_' + d[2].slice(0, 8) + (W.deviceId && W.deviceId.indexOf(d[2]) !== 0 ? ', dropping device ' + W.deviceId.slice(0, 8) : ''));
     hobs = d[2];
     if (W.deviceId && W.deviceId.indexOf(hobs) !== 0) W.deviceId = null;
   }
@@ -136,6 +137,7 @@ function seenCluster(c) {
   if (!c || typeof c !== 'object') return;
   // Idle (nothing playing anywhere): Spotify omits active_device_id entirely while still sending
   // the last player_state. "" then, never a stale id: the page shows such a state as paused.
+  if ((c.active_device_id || '') !== W.activeDeviceId) log('active device ' + (c.active_device_id || '(none)').slice(0, 8));
   W.activeDeviceId = c.active_device_id || '';
   // Play on Device: every cluster carries the account's Connect devices.
   if (c.devices) {
@@ -252,6 +254,9 @@ function payload(m) {
   return s.then(JSON.parse);
 }
 function dealer(ws) {
+  log('dealer socket opened');
+  ws.addEventListener('close', function (e) { log('dealer socket closed (' + e.code + ')'); });
+  ws.addEventListener('error', function () { log('dealer socket error'); });
   ws.addEventListener('message', function (e) {
     if (typeof e.data !== 'string') return;
     var m; try { m = JSON.parse(e.data); } catch (x) { return; }
@@ -271,6 +276,9 @@ var WS = function WebSocket(url, protocols) {
 WS.prototype = OWS.prototype;
 ['CONNECTING', 'OPEN', 'CLOSING', 'CLOSED'].forEach(function (k) { WS[k] = OWS[k]; });
 window.WebSocket = WS;
+
+// The page in and out of the background (WebKit suspends it there): what the lines above follow.
+document.addEventListener('visibilitychange', function () { log('page ' + document.visibilityState); });
 
 // ---- 2. the overlay, once there is a body to put it in
 function mount() {

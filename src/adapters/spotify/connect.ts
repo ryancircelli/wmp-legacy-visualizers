@@ -26,14 +26,18 @@ export type Cmd = { endpoint: string; value?: unknown } & Record<string, unknown
 /** true when the player took it (2xx); false after the fallback ran (refused, offline, no device). */
 export async function command(sp: Sp, cmd: Cmd, orElse?: (() => void) | null): Promise<boolean> {
   const w = W(), to = w.activeDeviceId || w.deviceId;
-  if (!authed() || !w.deviceId || !to) { orElse?.(); return false; }
+  // The host's log (a no-op on the website): what a command was sent as, and how it went.
+  const log = (how: string) => window.alchemyLog?.('spotify: ' + cmd.endpoint + ' from ' + (w.deviceId || '-').slice(0, 8)
+    + ' to ' + (to || '-').slice(0, 8) + ': ' + how);
+  if (!authed() || !w.deviceId || !to) { log(!authed() ? 'no token' : 'no device'); orElse?.(); return false; }
   const url = 'https://' + spclient() + '/connect-state/v1/player/command/from/' + w.deviceId + '/to/' + to;
   try {
     const r = await post(sp, url, { command: cmd });
-    if (r.status >= 200 && r.status < 300) return true;
+    if (r.status >= 200 && r.status < 300) { log(String(r.status)); return true; }
     const msg = (r.json as { error?: { message?: string } } | null)?.error?.message;
+    log(r.status + ' ' + (msg || ''));
     status(sp, 'Spotify: ' + (msg || 'command refused (' + r.status + ')'));
-  } catch { status(sp, 'Spotify: command failed (offline)'); }
+  } catch { log('offline'); status(sp, 'Spotify: command failed (offline)'); }
   orElse?.();
   return false;
 }
