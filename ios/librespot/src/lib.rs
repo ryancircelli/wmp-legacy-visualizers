@@ -1,0 +1,325 @@
+//! The app's Spotify Connect receiver (ios/README.md, "Librespot"): librespot's discovery, session,
+//! Connect state and player, wired as librespot's own binary wires them (src/main.rs at v0.8.0), with
+//! a sink that hands the app interleaved stereo f32 at 44100 Hz. The C ABI is wmp_librespot.h.
+
+use std::{
+    ffi::{CStr, CString, c_char, c_void},
+    future::Future,
+    pin::Pin,
+    sync::{Mutex, MutexGuard},
+    time::{Duration, Instant},
+};
+
+use futures_util::StreamExt;
+use librespot_connect::{ConnectConfig, Spirc};
+use librespot_core::{
+    cache::Cache,
+    config::{DeviceType, SessionConfig},
+    session::Session,
+};
+use librespot_discovery::Discovery;
+use librespot_playback::{
+    audio_backend::{Sink, SinkResult},
+    config::PlayerConfig,
+    convert::Converter,
+    decoder::AudioPacket,
+    mixer::{self, MixerConfig},
+    player::{Player, PlayerEvent},
+};
+use sha1::{Digest, Sha1};
+use tokio::sync::oneshot;
+
+pub type PcmCb = extern "C" fn(*mut c_void, *const f32, usize);
+pub type LogCb = extern "C" fn(*mut c_void, *const c_char);
+
+#[derive(Clone, Copy)]
+struct Host {
+    pcm: PcmCb,
+    log: LogCb,
+    ctx: usize, // the app's pointer, handed back untouched
+}
+
+// ponytail: one receiver per process, its callbacks global; the app starts one at launch.
+static HOST: Mutex<Option<Host>> = Mutex::new(None);
+static STOP: Mutex<Option<oneshot::Sender<()>>> = Mutex::new(None);
+
+fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
+    m.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+// Copied out, so no lock is held while the app's callback runs (pcm blocks on purpose).
+fn host() -> Option<Host> {
+    *lock(&HOST)
+}
+
+fn say(line: &str) {
+    if let (Some(h), Ok(c)) = (host(), CString::new(line)) {
+        (h.log)(h.ctx as *mut c_void, c.as_ptr());
+    }
+}
+
+// librespot's own log (info and up) into the app's log: its errors are the only word on why a
+// connect failed.
+struct Forward;
+
+impl log::Log for Forward {
+    fn enabled(&self, m: &log::Metadata) -> bool {
+        m.level() <= log::Level::Info && m.target().starts_with("librespot")
+    }
+
+    fn log(&self, r: &log::Record) {
+        if !self.enabled(r.metadata()) {
+            return;
+        }
+        match r.level() {
+            log::Level::Info => say(&format!("librespot: {}", r.args())),
+            level => say(&format!("librespot: {level}: {}", r.args())),
+        }
+    }
+
+    fn flush(&self) {}
+}
+
+// The app's sink: librespot decodes at 44100 Hz stereo, f64 interleaved.
+struct HostSink;
+
+impl Sink for HostSink {
+    fn stop(&mut self) -> SinkResult<()> {
+        if let Some(h) = host() {
+            (h.pcm)(h.ctx as *mut c_void, std::ptr::null(), 0);
+        }
+        Ok(())
+    }
+
+    fn write(&mut self, packet: AudioPacket, converter: &mut Converter) -> SinkResult<()> {
+        if let (AudioPacket::Samples(samples), Some(h)) = (packet, host()) {
+            let f = converter.f64_to_f32(&samples);
+            (h.pcm)(h.ctx as *mut c_void, f.as_ptr(), f.len() / 2);
+        }
+        Ok(())
+    }
+}
+
+/// # Safety
+/// `name` and `cache_dir` are NUL-terminated UTF-8; the callbacks and `ctx` outlive the receiver.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn wmp_ls_start(
+    name: *const c_char,
+    cache_dir: *const c_char,
+    pcm: PcmCb,
+    log: LogCb,
+    ctx: *mut c_void,
+) -> i32 {
+    if name.is_null() || cache_dir.is_null() {
+        return -1;
+    }
+    let (name, dir) = unsafe {
+        (
+            CStr::from_ptr(name).to_string_lossy().into_owned(),
+            CStr::from_ptr(cache_dir).to_string_lossy().into_owned(),
+        )
+    };
+    let mut stop = lock(&STOP);
+    if stop.is_some() {
+        return -1;
+    }
+    *lock(&HOST) = Some(Host {
+        pcm,
+        log,
+        ctx: ctx as usize,
+    });
+    if log::set_logger(&Forward).is_ok() {
+        log::set_max_level(log::LevelFilter::Info);
+    }
+    let (tx, rx) = oneshot::channel();
+    let spawned = std::thread::Builder::new()
+        .name("librespot".into())
+        .spawn(move || {
+            match tokio::runtime::Builder::new_multi_thread().enable_all().build() {
+                Ok(rt) => rt.block_on(run(name, dir, rx)),
+                Err(e) => say(&format!("librespot: no runtime: {e}")),
+            }
+        });
+    if spawned.is_err() {
+        return -1;
+    }
+    *stop = Some(tx);
+    0
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn wmp_ls_stop() {
+    if let Some(tx) = lock(&STOP).take() {
+        let _ = tx.send(());
+    }
+}
+
+type SpircTask = Pin<Box<dyn Future<Output = ()> + Send>>;
+
+async fn run(name: String, dir: String, mut stop: oneshot::Receiver<()>) {
+    const WINDOW: Duration = Duration::from_secs(600);
+    const RECONNECTS: usize = 5; // per WINDOW, as librespot's binary allows
+
+    // Stable across launches, as librespot's binary derives it: the credentials blob a phone hands
+    // over is encrypted for this id, and the Spotify app keeps one entry per id.
+    let device_id: String = Sha1::digest(name.as_bytes())
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect();
+    let session_config = SessionConfig {
+        device_id: device_id.clone(),
+        ..SessionConfig::default()
+    };
+    // Credentials and volume only: no audio cache.
+    let cache = Cache::new(Some(&dir), Some(&dir), None, None)
+        .map_err(|e| say(&format!("librespot: no cache: {e}")))
+        .ok();
+    let mut credentials = cache.as_ref().and_then(Cache::credentials);
+    if credentials.is_some() {
+        say("librespot: cached credentials");
+    }
+
+    let mut discovery = match Discovery::builder(device_id, session_config.client_id.clone())
+        .name(name.clone())
+        .device_type(DeviceType::Speaker)
+        .launch()
+    {
+        Ok(d) => {
+            say("librespot: discovery up");
+            Some(d)
+        }
+        Err(e) => {
+            say(&format!("librespot: discovery failed: {e}"));
+            None
+        }
+    };
+
+    let mixer = match mixer::find(None).map(|open| open(MixerConfig::default())) {
+        Some(Ok(m)) => m,
+        _ => {
+            say("librespot: no mixer");
+            return;
+        }
+    };
+    let mut session = Session::new(session_config.clone(), cache.clone());
+    let player = Player::new(
+        PlayerConfig::default(),
+        session.clone(),
+        mixer.get_soft_volume(),
+        || Box::new(HostSink),
+    );
+    let mut events = player.get_player_event_channel();
+    // Full volume: the phone's own volume is the one to turn.
+    let config = ConnectConfig {
+        name,
+        device_type: DeviceType::Speaker,
+        initial_volume: u16::MAX,
+        ..ConnectConfig::default()
+    };
+
+    let mut spirc: Option<Spirc> = None;
+    let mut task: Option<SpircTask> = None;
+    let mut connecting = credentials.is_some();
+    let mut retry = false; // the next connect follows a failure: it waits 5 s first
+    let mut reconnects: Vec<Instant> = vec![];
+
+    loop {
+        tokio::select! {
+            _ = &mut stop => break,
+            c = async {
+                match discovery.as_mut() {
+                    Some(d) => d.next().await,
+                    None => None,
+                }
+            }, if discovery.is_some() => match c {
+                Some(c) => {
+                    say("librespot: credentials from discovery");
+                    credentials = Some(c);
+                    reconnects.clear();
+                    retry = false;
+                    if let Some(s) = spirc.take() {
+                        let _ = s.shutdown();
+                    }
+                    if let Some(t) = task.take() {
+                        tokio::spawn(t); // its shutdown finishes on its own
+                    }
+                    if !session.is_invalid() {
+                        session.shutdown();
+                    }
+                    connecting = true;
+                }
+                None => {
+                    say("librespot: discovery stopped");
+                    discovery = None;
+                }
+            },
+            _ = async {}, if connecting => {
+                connecting = false;
+                if retry {
+                    tokio::time::sleep(Duration::from_secs(5)).await;
+                }
+                if session.is_invalid() {
+                    session = Session::new(session_config.clone(), cache.clone());
+                    player.set_session(session.clone());
+                }
+                let Some(c) = credentials.clone() else { continue };
+                match Spirc::new(config.clone(), session.clone(), c, player.clone(), mixer.clone()).await {
+                    Ok((s, t)) => {
+                        say("librespot: session up");
+                        spirc = Some(s);
+                        task = Some(Box::pin(t));
+                    }
+                    Err(e) => {
+                        say(&format!("librespot: connect failed: {e}"));
+                        connecting = again(&mut reconnects, WINDOW, RECONNECTS);
+                        retry = true;
+                    }
+                }
+            },
+            _ = async {
+                if let Some(t) = task.as_mut() {
+                    t.await;
+                }
+            }, if task.is_some() && !connecting => {
+                task = None;
+                spirc = None;
+                say("librespot: session ended");
+                if !session.is_invalid() {
+                    session.shutdown();
+                }
+                connecting = again(&mut reconnects, WINDOW, RECONNECTS);
+                retry = true;
+            },
+            Some(e) = events.recv() => match e {
+                PlayerEvent::Playing { .. } => say("librespot: playing"),
+                PlayerEvent::Paused { .. } => say("librespot: paused"),
+                PlayerEvent::Stopped { .. } => say("librespot: stopped"),
+                PlayerEvent::Unavailable { track_id, .. } => say(&format!("librespot: unavailable: {track_id:?}")),
+                _ => {}
+            },
+        }
+    }
+
+    say("librespot: shutting down");
+    if let Some(s) = spirc {
+        let _ = s.shutdown();
+    }
+    if let Some(t) = task {
+        t.await;
+    }
+    if let Some(d) = discovery {
+        d.shutdown().await;
+    }
+}
+
+// Another connect, unless there were `max` in the last `window`: then it waits for the phone to pick
+// the device again (fresh credentials) or for the next launch.
+fn again(times: &mut Vec<Instant>, window: Duration, max: usize) -> bool {
+    times.retain(|t| t.elapsed() < window);
+    if times.len() >= max {
+        say("librespot: too many reconnects, waiting to be picked again");
+        return false;
+    }
+    times.push(Instant::now());
+    true
+}

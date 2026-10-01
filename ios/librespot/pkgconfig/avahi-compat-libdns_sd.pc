@@ -1,0 +1,7 @@
+# dns-sd's build script asks pkg-config for Avahi's dns_sd on every target but macOS. On iOS dns_sd is
+# part of libSystem, which every app links, so this answers with nothing to link (build.sh).
+Name: avahi-compat-libdns_sd
+Description: dns_sd from libSystem
+Version: 0.0
+Libs:
+Cflags:

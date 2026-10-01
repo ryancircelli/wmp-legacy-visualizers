@@ -1,0 +1,34 @@
+# The app's Spotify Connect receiver (ios/README.md, "Librespot"): librespot 0.8.0 with a sink that hands
+# the app its PCM, behind the C ABI in wmp_librespot.h. build.sh builds it for the iPhone.
+[package]
+name = "wmp-librespot"
+version = "0.1.0"
+edition = "2024"
+publish = false
+license = "MIT"
+
+[lib]
+crate-type = ["staticlib", "cdylib"]
+
+# No audio backend (the app plays the PCM), rustls with compiled-in roots (iOS has no root files for
+# rustls-native-certs to read), and discovery through the system's mDNSResponder (dns-sd): libmdns's own
+# multicast socket needs an entitlement on iOS that this app does not have.
+[dependencies]
+librespot-core = { version = "=0.8.0", default-features = false, features = ["rustls-tls-webpki-roots"] }
+librespot-connect = { version = "=0.8.0", default-features = false, features = ["rustls-tls-webpki-roots"] }
+librespot-playback = { version = "=0.8.0", default-features = false, features = ["rustls-tls-webpki-roots"] }
+librespot-discovery = { version = "=0.8.0", default-features = false, features = ["with-dns-sd", "rustls-tls-webpki-roots"] }
+futures-util = { version = "0.3", default-features = false }
+log = "0.4"
+sha1 = "0.10"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time"] }
+
+# librespot-core 0.8.0 with one line changed, fetched and patched by build.sh: on iOS it presents itself
+# to Spotify as Linux (aarch64, what a Raspberry Pi sends), since Spotify's access points turn away
+# librespot presenting as an iPhone (librespot issue #1477; the same for Android, fixed by presenting
+# as Linux in #1403).
+[patch.crates-io]
+librespot-core = { path = "vendor/librespot-core" }
+
+[profile.release]
+lto = true
