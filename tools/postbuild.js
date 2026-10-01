@@ -24,6 +24,7 @@ fs.copyFileSync(path.join(DIST, 'index.html'), path.join(ROOT, 'alchemy.html'));
 fs.copyFileSync(path.join(DIST, 'index.html'), path.join(DIST, 'alchemy.html'));
 fs.writeFileSync(path.join(DIST, '_headers'), `/*
   Cache-Control: public, max-age=300
+  Access-Control-Allow-Origin: *
   X-Content-Type-Options: nosniff
   Referrer-Policy: no-referrer
   Permissions-Policy: microphone=(self), display-capture=(self), autoplay=(self)
