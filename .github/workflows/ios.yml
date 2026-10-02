@@ -14,7 +14,9 @@
 name: ios
 on:
   push:
-    branches: [master]
+    # master is off until the librespot branch merges: a master build (no speaker) uploaded from here takes a
+    # higher build number than the branch's and TestFlight offers it as the newest (build 28, 2026-10-01).
+    branches: []
     paths: ['ios/**', '!ios/WmpSpotify/observer.js', '!ios/README.md', '.github/workflows/ios.yml'] # the observer reaches the phone from the site (deploy.yml)
   workflow_dispatch:
 concurrency: { group: ios, cancel-in-progress: true }
