@@ -37,7 +37,7 @@ export const scrubAccel = (gapMs: number): 1 | 2 | 4 => (gapMs < 100 ? 4 : gapMs
 /** The wheel's volume, in percent of the range (Spotify's 0..100, the capture's sensitivity 0..200): a
  *  turn of the ring moves it continuously, VOLUME_TURN % a full turn (shown and sent to 1 %); a key or a
  *  mouse-wheel tick VOLUME_TICK %; what is sent goes at most every VOLUME_SEND_MS. */
-export const VOLUME_TURN = 65, VOLUME_TICK = 2, VOLUME_SEND_MS = 50;
+export const VOLUME_TURN = 45, VOLUME_TICK = 2, VOLUME_SEND_MS = 50;
 /** `pct` moved by `d` percent, within 0..100 */
 export const volumeBy = (pct: number, d: number): number => Math.min(100, Math.max(0, pct + d));
 /** degrees of the ring as percent of the volume */

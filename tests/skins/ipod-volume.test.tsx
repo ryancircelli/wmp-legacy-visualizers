@@ -49,13 +49,13 @@ it('a gesture runs from the level reported when it starts, the report never movi
   expect(m.S().settings.volume).toBe(72);
 });
 
-it('a turn of the ring moves it continuously, 65 % a full turn, 1 % shown and sent, clamped with one light haptic at an end; the scrubber keeps the detents', () => {
+it('a turn of the ring moves it continuously, 45 % a full turn, 1 % shown and sent, clamped with one light haptic at an end; the scrubber keeps the detents', () => {
   const haptic = vi.fn();
   window.alchemyHaptic = haptic;
   const m = atNowPlaying();                          // no phone report: the setting (100 of 100) is the base
   haptic.mockClear();                                // (the tap on the bar that opened it)
   let took = false;
-  act(() => { took = offerTurn((-360 / 65) * 10); });   // -10 %
+  act(() => { took = offerTurn((-360 / 45) * 10); });   // -10 %
   expect([took, m.bar(), m.S().settings.volume]).toEqual([true, '90', 90]);
   act(() => { offerTurn(2); });                      // under 1 %: shown and sent as it was
   wait(VOLUME_SEND_MS);
@@ -65,7 +65,7 @@ it('a turn of the ring moves it continuously, 65 % a full turn, 1 % shown and se
   wait(VOLUME_SEND_MS);
   expect([m.bar(), m.S().settings.volume, haptic.mock.calls.filter((c) => c[0] === 'light').length]).toEqual(['100', 100, 1]);
   act(() => { offerTurn(-25); });                    // back at once (the turn past the end was not kept)
-  expect(m.bar()).toBe(String(Math.round(100 - (25 * 65) / 360)));
+  expect(m.bar()).toBe(String(Math.round(100 - (25 * 45) / 360)));
   wait(VOLUME_MS);
   key('Enter');                                      // the scrubber: no continuous turn, the detents as ever
   expect(!!m.np().querySelector('[class*=diamond]')).toBe(true);

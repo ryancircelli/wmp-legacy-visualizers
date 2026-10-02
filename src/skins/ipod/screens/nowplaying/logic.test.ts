@@ -24,8 +24,8 @@ describe('Now Playing logic', () => {
   });
   it('steps the volume within its range', () => {
     expect([volumeBy(50, 2), volumeBy(1, -2), volumeBy(99.5, 2), volumeBy(0, -10)]).toEqual([52, 0, 100, 0]);
-    // a full turn of the ring is 65 % of the range; 1 % is about 5.5 degrees
-    expect([VOLUME_TURN, turnPct(360), turnPct(-360 / 65 * 10)]).toEqual([65, 65, -10]);
+    // a full turn of the ring is 45 % of the range; 1 % is 8 degrees
+    expect([VOLUME_TURN, turnPct(360), turnPct(-360 / 45 * 10)]).toEqual([45, 45, -10]);
   });
   it('cycles the modes on center in the nano order, skipping what the track lacks (no lyrics mode)', () => {
     const all = { scrub: true, radio: true };

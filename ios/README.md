@@ -48,9 +48,12 @@ window's safe area where the web view overlaps it, never the keyboard (which Swi
 view's own insets while it shows).
 Playback is meant to carry on with the phone locked (the audio background mode).
 Link previews are off in the web view: a long press on a link is the page's, not a preview.
-The skin's volume slider and mute set the phone's system volume: a page cannot change its own playback
-volume on iOS, so the app sets it through an off-screen MPVolumeView (`SystemVolume` in App.swift; iOS
-shows its volume HUD); every change, the hardware buttons' included, comes back as `__wmpVolume` (below).
+The skin's volume and mute set the phone's system volume: a page cannot change its own playback
+volume on iOS, and there is no API for the system's, so the app drives the slider of an off-screen
+MPVolumeView (`SystemVolume` in App.swift; iOS shows its volume HUD). The view's size and touch
+matter: a 1 x 1 view with touch disabled was found and driven and the system did not follow (build 37:
+"asked 12, the system is at 10" at every set); at 160 x 40 with touch on it followed at the first set
+(build 39). Every change, the hardware buttons' included, comes back as `__wmpVolume` (below).
 
 For a phone skin (an iPod click wheel, say) the page has more messages, each a string (JSON where
 noted), posted with `webkit.messageHandlers.<name>.postMessage(<string>)` and wrapped by `observer.js` as
