@@ -130,7 +130,7 @@
 }
 /* plain lyrics: four lines' window, scrolled with the track */
 .root:not(:has(.of)) .lyrics { bottom: calc(var(--unit) * 38); }
-.plain { max-height: calc(var(--unit) * 72); overflow: hidden; white-space: pre-line; }
+.plain { max-height: calc(var(--unit) * 60); overflow: hidden; white-space: pre-line; }
 .cur { font-weight: bold; }
 .next { margin-top: calc(var(--unit) * 8); color: rgb(255 255 255 / .5); }
 /* karaoke: the line's words dim until sung, the current one filling */
