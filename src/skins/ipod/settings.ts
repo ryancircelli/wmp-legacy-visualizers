@@ -14,8 +14,9 @@ type Preset = Exclude<IpodSettings['color'], 'custom'>;
 export const COLORS: Record<Preset, readonly [number, number, number]> = {
   silver: [0, 0, 66], black: [0, 0, 19], purple: [268, 42, 44], blue: [196, 89, 44], green: [140, 70, 34],
   yellow: [52, 89, 49], orange: [30, 85, 50], red: [357, 62, 47], pink: [331, 70, 62],
-  // the owner's two (2026-10-02): a greyed tan, lights capped as Silver's; a deep brown, its band still lit
-  mocha: [30, 34, 60], espresso: [24, 45, 25],
+  // the owner's two (2026-10-02): a greyed tan and a deep brown, set darker and greyer than they read,
+  // since the cylinder's lights (below) lift a muted colour more than a vivid one (his: "a little too bright")
+  mocha: [30, 28, 50], espresso: [22, 36, 17],
 };
 /** Custom's lightness range: the body's lights top out at 72 % (ipod.module.css --hi), so past 75 the
  *  cylinder goes flat (its centre as bright as its bands); under 15 its edge and shade go black */
@@ -61,6 +62,11 @@ export const bodyHsl = (s: IpodSettings, color = s.color): readonly [number, num
 /** The body colour as the one hue knob the module's .body reads (§1.3: --h --s --l; the highlight,
  *  shadow and centre button derive from it). */
 export function bodyVars(s: IpodSettings): CSSProperties {
-  const [h, sat, l] = bodyHsl(s);
-  return { '--h': h, '--s': sat + '%', '--l': l + '%' } as CSSProperties;
+  const [h, sat, l] = bodyHsl(s), k = s.color === 'custom' ? LOOK : 1;
+  return { '--h': h, '--s': sat / k + '%', '--l': l / k + '%' } as CSSProperties;
 }
+/** The cylinder's lights (ipod.module.css --hi and its neighbours: up to 1.36 times the base's lightness
+ *  and 1.3 its saturation, over most of what shows beside the screen) make the body read about this much
+ *  brighter and richer than its base. A preset's numbers are the base, tuned by eye; Custom's are what the
+ *  picker shows, so its base is taken down to look like the colour picked. */
+const LOOK = 1.15;

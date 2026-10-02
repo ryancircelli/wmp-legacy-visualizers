@@ -99,8 +99,8 @@ in the render are duller than real photos, so the suggested values are saturated
 | Orange (owner's) | #e59a1f | `30 85% 50%` | #933917 | #efe9dc | white / #8e8e93 |
 | Pink | #e25c9d | `331 70% 62%` | #9b2952 | #eebed7 | white / #8e8e93 |
 | (PRODUCT) RED | #c8333a | `357 62% 47%` | #ab2e2a | #ed8fa2 | white / #8e8e93 |
-| Mocha Tan (owner's, not Apple's) | — | `30 34% 60%` | #674d32 | #d7be98 | white / #8e8e93 |
-| Espresso Brown (owner's, not Apple's) | — | `24 45% 25%` | #2e1d12 | #895724 | white / #8e8e93 |
+| Mocha Tan (owner's, not Apple's; darkened 2026-10-02, "a little too bright") | — | `30 28% 50%` | — | — | white / #8e8e93 |
+| Espresso Brown (owner's, not Apple's; darkened 2026-10-02) | — | `22 36% 17%` | — | — | white / #8e8e93 |
 
 ### 1.3 The aluminium in CSS: one hue knob
 
@@ -667,7 +667,7 @@ caption (`useWindowControls().onCaptionMouseDown`).
 | **Home / Media Guide shelves** | **Music > Genius Mixes** (§4.2) |
 | **Log out** | **Settings > Log Out**, the last row, under Account (only when `auth.canLogout`), confirm list, then `commands.logout()` |
 | **Skin switch** | **Settings > Skin** (under Appearance): "iPod ✓" / "Windows Media Player 9" sets `actions.setSettings({ skin: 'wmp9' })`. WMP 9's way here is its View > Skin submenu (already in `src/skins/menus.ts`) |
-| **Colour** | **Settings > Color** (under Appearance): the nine names (§1.2), the owner's **Mocha Tan** and **Espresso Brown** (2026-10-02), plus **Custom** (`screens/settings/CustomColor.tsx`, the owner's 2026-10-02 "needs a y axis… only controlled by wheel which i don't like"): a field the finger drags in (hue across, lightness down, light at the top, the rainbow shaded at the current saturation) with a ring at the colour, a saturation slider (grey to full) under it, and a readout of the three. The wheel turns the focused one (hue 5°, lightness 1 %, saturation 2 % a detent); centre moves the focus hue → lightness → saturation → hue (the ring or the thumb, and the readout's name, in blue); a touch on a control focuses it; MENU leaves. Every change shows on the body at once and is kept (`ipod.settings` v1: `light` added; a v0 blob loads as lightness 50, its saturation 0 as 85). Plus **Click Wheel**: White / Black ring |
+| **Colour** | **Settings > Color** (under Appearance): the nine names (§1.2), the owner's **Mocha Tan** and **Espresso Brown** (2026-10-02), plus **Custom** (`screens/settings/CustomColor.tsx`, the owner's 2026-10-02 "needs a y axis… only controlled by wheel which i don't like"): a field the finger drags in (hue across, lightness down, light at the top, the rainbow shaded at the current saturation) with a ring at the colour, a saturation slider (grey to full) under it, and a readout of the three. The wheel turns the focused one (hue 5°, lightness 1 %, saturation 2 % a detent); centre moves the focus hue → lightness → saturation → hue (the ring or the thumb, and the readout's name, in blue); a touch on a control focuses it; MENU leaves. Custom's base is the picked colour taken down by 1.15 (`settings.ts` LOOK), since the cylinder's lights lift the body above its base. Every change shows on the body at once and is kept (`ipod.settings` v1: `light` added; a v0 blob loads as lightness 50, its saturation 0 as 85). Plus **Click Wheel**: White / Black ring |
 | **Shuffle / Repeat** | the Now Playing status row's toggles only (not in Settings) |
 | **Visualizer** | Now Playing's ⋯ menu and hold-centre popup: **Visualizer…**, Over Cover (§4.3) then the engines, then an engine's presets (not in Settings). **Settings > Visualizer Fit** (under Appearance): Fit / Stretch |
 | **Shake** (iPhone only) | **Settings > Shake** (under Playback): Shuffle / Off. On `wmp-shake`, `commands.next()` (with shuffle on, Spotify's next is random; the iPod's shake also leaves the shuffle setting alone [UG p.43]) |

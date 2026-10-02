@@ -24,8 +24,13 @@ function atColor() {
     ...m, shown, click,
     rows: () => shown('[role=option]').map((x) => x.textContent),
     title: () => shown('[class*=status] [class*=title]')[0]?.textContent,
-    /** the body's colour knobs, as bodyVars set them */
-    hsl: () => ['--h', '--s', '--l'].map((v) => body.style.getPropertyValue(v)),
+    /** the body's colour as it is meant to look: the knobs bodyVars set, Custom's brought back up by
+     *  the 1.15 its base is taken down by (settings.ts LOOK), so a picked value reads as picked */
+    hsl: () => {
+      const k = (JSON.parse(localStorage.getItem('ipod.settings') ?? '{}') as { state?: IpodSettings }).state?.color === 'custom' ? 1.15 : 1;
+      const [h, sat, l] = ['--h', '--s', '--l'].map((v) => body.style.getPropertyValue(v));
+      return [h, Math.round(parseFloat(sat!) * k) + '%', Math.round(parseFloat(l!) * k) + '%'];
+    },
     focus: () => shown('[data-focus]').map((x) => x.textContent),
     saved: () => (JSON.parse(localStorage.getItem('ipod.settings')!) as { state: IpodSettings }).state,
   };
@@ -48,10 +53,10 @@ it('lists the nine colours, Mocha Tan and Espresso Brown, then Custom; a preset 
     'Mocha Tan', 'Espresso Brown', 'Custom']);
   expect(m.hsl()).toEqual(['140', '70%', '34%']);
   m.click('Mocha Tan');
-  expect(m.hsl()).toEqual(['30', '34%', '60%']);
+  expect(m.hsl()).toEqual(['30', '28%', '50%']);
   expect(m.rows()).toContain('Mocha Tan✓ ');
   m.click('Espresso Brown');
-  expect(m.hsl()).toEqual(['24', '45%', '25%']);
+  expect(m.hsl()).toEqual(['22', '36%', '17%']);
   expect(m.saved().color).toBe('espresso');
 });
 
@@ -137,7 +142,8 @@ it('a blob stored before the lightness loads as it looked: lightness 50, the old
   };
   const [old, vars] = await load({ state: { color: 'custom', hue: 30, sat: 0, clicker: false, wheel: 'black' }, version: 0 });
   expect(old).toEqual({ color: 'custom', hue: 30, sat: 85, light: 50, clicker: false, wheel: 'black' });
-  expect(vars).toEqual({ '--h': 30, '--s': '85%', '--l': '50%' });
+  // Custom's base is the picked colour taken down by 1.15: the cylinder's lights bring it back up
+  expect(vars).toEqual({ '--h': 30, '--s': 85 / 1.15 + '%', '--l': 50 / 1.15 + '%' });
   expect(JSON.parse(localStorage.getItem('ipod.settings')!)).toMatchObject({ version: 1, state: { light: 50 } });   // migrated, rewritten
   const [grey] = await load({ state: { color: 'custom', hue: 30, sat: 0, light: 90, clicker: true, wheel: 'white' }, version: 1 });
   expect([grey.sat, grey.light]).toEqual([0, 50]);                          // out of range: the default
