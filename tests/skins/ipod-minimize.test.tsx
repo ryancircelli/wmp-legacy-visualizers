@@ -113,9 +113,10 @@ it('a wheel turn or a tap on the screen restores it and does nothing else; the w
   expect([m.mini(), !!m.np().querySelector('[class*=diamond]')]).toEqual([false, true]);
 });
 
-it('minimized with a cover, its mirror image above it and below it (the ♪ tile: none); the bar is the clear one here, the menus\' its own', () => {
+it('minimized with a cover, its mirror image above it and below it, behind the bar (the ♪ tile: none); the bar is the clear one here, the menus\' its own', () => {
   const m = atNowPlaying();
-  const mirrors = () => [m.np().querySelector('[class*=mirror] > img')?.getAttribute('src') ?? null, m.np().querySelector('[class*=reflection]')?.getAttribute('src') ?? null];
+  // the mirror above the cover and the one under it (behind the bar)
+  const mirrors = () => ['up', 'down'].map((k) => m.np().querySelector(`[class*=mirror][class*=${k}] > img`)?.getAttribute('src') ?? null);
   wait(MINIMIZE_MS);
   expect([m.mini(), ...mirrors()]).toEqual([true, null, null]);   // no cover: the ♪ tile, black round it
   m.play('spotify:track:a', 'Song', 'playing', 'https://i.scdn.co/image/abc');

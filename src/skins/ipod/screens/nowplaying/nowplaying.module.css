@@ -150,37 +150,44 @@
 }
 
 /* Minimized (NowPlaying.tsx: MINIMIZE_MS without input while it plays): the info band slides up, the
-   mode row and "N of M" fade and the ⋯ with them. The cover, at its own size and crop, is centred in
-   the area (356 tall; the cover 240, 258 without "N of M"), its mirror image above it and below it,
-   each dimmed as the full view's reflection is (.25 over the band's grey) and meeting the cover's edge:
-   below, the controls band; above, .mirror. With no cover (the ♪ tile) neither: black. A visualizer
-   takes the whole area (plain as ever; Over Cover's over the cover and its mirrors too). The menus'
-   Now Playing bar slides up at the foot, clear here (.foot), and the lyrics sit on it. */
-.info, .more, .foot, .mirror { transition: transform .3s ease, opacity .3s ease; }
-.controls { transition: transform .3s ease, opacity .3s ease, height .3s ease; }
+   controls band slides down, the ⋯ fades. The cover, at its own size and crop, sits on the Now Playing
+   bar (the area 356 tall, the bar 44; the cover 240, 258 without "N of M"); its mirror image runs up
+   from its top edge to the status row and down from its bottom edge behind the bar (.mirror .up,
+   .down): the cover flipped on the screen's black, at .45 where it meets the cover and fading to
+   nothing away from it (a mask: darker than the cover always, black on a black cover; no grey, no
+   blur). With no cover (the ♪ tile) no mirror: black. A visualizer takes the whole area (plain as
+   ever; Over Cover's over the cover and its mirrors too). The bar slides up at the foot, partly
+   see-through here (.foot), and the lyrics sit on it. */
+.info, .controls, .more, .foot, .mirror { transition: transform .3s ease, opacity .3s ease; }
 .row, .of { transition: opacity .3s ease; }
 .art, .tap { transition: top .3s ease; }
 .root[data-mini] .info { transform: translateY(-100%); opacity: 0; pointer-events: none; }
 .root[data-mini] .controls { transform: translateY(100%); opacity: 0; pointer-events: none; }
-.root[data-mini]:has(.reflection) .controls { transform: none; opacity: 1; height: calc(var(--unit) * (356 - 240) / 2); }
-.root[data-mini]:has(.reflection):not(:has(.of)) .controls { height: calc(var(--unit) * (356 - 258) / 2); }
-.root[data-mini]:not(:has(.of)) .reflection { height: calc(var(--unit) * 258); }
-.root[data-mini] :is(.row, .of) { opacity: 0; }
 .root[data-mini] .more { opacity: 0; pointer-events: none; }
-.root[data-mini] :is(.art, .tap) { top: calc(var(--unit) * (356 - 240) / 2); }
-.root[data-mini]:not(:has(.of)) :is(.art, .tap) { top: calc(var(--unit) * (356 - 258) / 2); }
-.mirror {
-  position: absolute; top: 0; left: 0; right: 0; height: calc(var(--unit) * (356 - 240) / 2); overflow: hidden;
-  background: linear-gradient(to top, #656565, #262626); opacity: 0; pointer-events: none;
-}
-.root:not(:has(.of)) .mirror { height: calc(var(--unit) * (356 - 258) / 2); }
+.root[data-mini] :is(.art, .tap) { top: calc(var(--unit) * (312 - 240)); }
+.root[data-mini]:not(:has(.of)) :is(.art, .tap) { top: calc(var(--unit) * (312 - 258)); }
+.mirror { position: absolute; left: 0; right: 0; overflow: hidden; opacity: 0; pointer-events: none; }
 .mirror > img {
-  position: absolute; bottom: 0; left: 0; width: calc(var(--unit) * 240); height: calc(var(--unit) * 240);
-  object-fit: cover; transform: scaleY(-1); opacity: .25;
+  position: absolute; left: 0; width: calc(var(--unit) * 240); height: calc(var(--unit) * 240);
+  object-fit: cover; transform: scaleY(-1);
 }
 .root:not(:has(.of)) .mirror > img { height: calc(var(--unit) * 258); }
+.up { top: 0; height: calc(var(--unit) * (312 - 240)); }
+.root:not(:has(.of)) .up { height: calc(var(--unit) * (312 - 258)); }
+.up > img {
+  bottom: 0;
+  /* the mask is the image's own, flipped with it: its top edge meets the cover */
+  -webkit-mask-image: linear-gradient(rgb(0 0 0 / .45), transparent calc(var(--unit) * 70));
+  mask-image: linear-gradient(rgb(0 0 0 / .45), transparent calc(var(--unit) * 70));
+}
+.down { top: calc(var(--unit) * 312); bottom: 0; }
+.down > img {
+  top: 0;
+  -webkit-mask-image: linear-gradient(to top, rgb(0 0 0 / .45), transparent calc(var(--unit) * 44));
+  mask-image: linear-gradient(to top, rgb(0 0 0 / .45), transparent calc(var(--unit) * 44));
+}
 .root[data-mini] .mirror { opacity: 1; }
-.root[data-mini] .lyrics { top: 0; bottom: calc(var(--unit) * 45); }
+.root[data-mini] .lyrics { top: 0; bottom: calc(var(--unit) * 44); }
 .foot { position: absolute; left: 0; right: 0; bottom: 0; transform: translateY(100%); pointer-events: none; }
 .root[data-mini] .foot { transform: none; pointer-events: auto; }
 /* the bar partly see-through on this page (the menus' own is opaque), as the full view's controls band

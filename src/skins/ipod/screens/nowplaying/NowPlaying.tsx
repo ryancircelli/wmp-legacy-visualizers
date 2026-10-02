@@ -110,9 +110,9 @@ function NowPlaying() {
   }, []);
 
   // Minimized (MINIMIZE_MS without input while it plays, this screen the top one, no popup, no scrubber or
-  // Radio slider): the bands and the ⋯ go, the cover stays as it is, centred with its mirror image above
-  // and below, a visualizer takes the whole area, and the menus' Now Playing bar comes up at the foot
-  // with the lyrics on it. Any input restores it. A tap on the screen, a
+  // Radio slider): the bands and the ⋯ go, the cover stays as it is, set on the menus' Now Playing bar
+  // that comes up at the foot, its mirror image above it and below it (behind the bar), a visualizer
+  // takes the whole area, and the lyrics sit on the bar. Any input restores it. A tap on the screen, a
   // wheel turn or an arrow key that restores does nothing else (`woke`: the press or key that woke it,
   // its ticks and its click consumed), but for the bar's (its button plays / pauses, a swipe skips, a
   // tap on it restores); the wheel's buttons and their keys act as ever too.
@@ -262,8 +262,9 @@ function NowPlaying() {
     <div ref={root} className={css.root} data-canvas={bg ? '' : undefined} data-mini={mini ? '' : undefined}>
       {vis && !cover ? <Vis /> : canvas?.type === 'video' ? <CanvasVideo src={canvas.url} poster={art || undefined} onError={fail} />
         : canvas ? <img className={css.bg} src={canvas.url} alt="" onError={fail} /> : null}
-      {/* minimized: the cover's mirror image above it too */}
-      {art && !bg && <div className={css.mirror}><img src={art} alt="" /></div>}
+      {/* minimized: the cover's mirror image above it and below it (behind the bar) */}
+      {art && !bg && <div className={cx(css.mirror, css.up)}><img src={art} alt="" /></div>}
+      {art && !bg && <div className={cx(css.mirror, css.down)}><img src={art} alt="" /></div>}
       <div className={css.info}>
         <Line className={css.artist} text={t?.artist} />
         <Line className={css.title} text={t?.title} />
