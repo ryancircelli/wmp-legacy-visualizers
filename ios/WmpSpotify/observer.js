@@ -397,6 +397,11 @@ function mount() {
   root.adoptedStyleSheets = [sheet];
   root.innerHTML = HTML;
   document.body.appendChild(host);
+  // Spotify's page under the overlay stays selectable to a long press (a selection flashed over the
+  // click wheel): none of it is, nor its link and image callouts. The overlay's own fields opt back in.
+  var nosel = document.createElement('style');
+  nosel.textContent = 'html,body,body *{-webkit-user-select:none!important;user-select:none!important;-webkit-touch-callout:none!important}';
+  document.documentElement.appendChild(nosel);
   window.alchemyEngine = 'spotify';
   window.alchemyRoot = root;
   log('overlay mounted');

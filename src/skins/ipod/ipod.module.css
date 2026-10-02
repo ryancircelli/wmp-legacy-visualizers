@@ -74,6 +74,8 @@
   /* the cylinder and a tone change from top to bottom */
   background: linear-gradient(180deg, transparent 55%, rgb(0 0 0 / .2)), var(--metal);
 }
+/* a text field types and selects its own text, whatever the body says */
+.body input { user-select: text; -webkit-user-select: text; }
 @media (min-aspect-ratio: 3/4) {
   .body:not([data-phone]) {
     --bw: min(100vw, 96vh * .46);
