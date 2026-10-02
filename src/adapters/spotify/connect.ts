@@ -195,10 +195,12 @@ export async function playContext(sp: Sp, ctx: string, track?: string | null, sh
   }
   const c: Cmd = { endpoint: 'play', context: { uri: ctx, url: 'context://' + ctx },
                    play_origin: { feature_identifier: 'playlist', feature_version: 'xpui' } };
+  // options always present, even empty: librespot's play command requires the field (an absent
+  // one is "unknown endpoint" → 400), so a shelf play with no starting track died on the speaker.
   const o: Record<string, unknown> = {};
   if (track) o.skip_to = { track_uri: track };
   if (shuffle) o.player_options_override = { shuffling_context: true };
-  if (track || shuffle) c.options = o;
+  c.options = o;
   await command(sp, c, null);
 }
 

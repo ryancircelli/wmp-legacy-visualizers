@@ -515,6 +515,8 @@ describe('6. library list and collection pages (the query functions)', () => {
     env.C.playAll(PL); await settle();                                 // from the remembered first page
     const all = env.cmds().pop();
     expect([all.context.uri, all.options.skip_to.track_uri]).toEqual([PL, 'spotify:track:0gEyKnHvgkrkBM6fbeHdwK']);
+    env.C.playContext('spotify:playlist:shelf'); await settle();    // no start track: options still sent (librespot requires it)
+    expect(env.cmds().pop().options).toEqual({});
   });
   it('Liked Songs pages in 50s; rows play in Liked Songs; with no username known, Play all starts its first track in its album', async () => {
     const env = setup();
