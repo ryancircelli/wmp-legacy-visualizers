@@ -103,6 +103,7 @@ it('black (the tap\'s third art): WMP\'s own look, no art, no reflection, the vi
   tap();                                             // black
   expect([...m.out(), ...shown(), m.layer()?.style.opacity, m.layer()?.style.filter, !!m.np.querySelector('canvas')])
     .toEqual(['opaque', null, false, 0, false, true, '', '', true]);
+  expect(m.np.querySelector('[data-black]')).not.toBeNull();   // the overlay reaches up behind the info band (CSS on the root's flag)
   m.menu();
   expect([m.options().map((x) => x.textContent), m.row('Opacity').getAttribute('aria-disabled')])
     .toEqual([['VisualizerOn', 'Opacity50%', 'Alchemy', 'Bars and WavesBars', 'Battery'], null]);   // no Background row; Opacity as ever

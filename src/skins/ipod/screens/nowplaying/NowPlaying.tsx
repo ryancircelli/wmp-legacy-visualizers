@@ -303,7 +303,7 @@ function NowPlaying() {
     canvasPref.setState({ show: show === 'video' && canvas ? 'cover' : show === 'black' ? 'video' : 'black' });
   };
   return (
-    <div ref={root} className={css.root} data-canvas={bg ? '' : undefined} data-quiet={quiet ? '' : undefined}>
+    <div ref={root} className={css.root} data-canvas={bg ? '' : undefined} data-black={black ? '' : undefined} data-quiet={quiet ? '' : undefined}>
       {black ? null : canvas?.type === 'video' ? <CanvasVideo src={canvas.url} poster={art || undefined} onError={fail} />
         : canvas ? <img className={css.bg} src={canvas.url} alt="" onError={fail} /> : null}
       {bg ? null : art ? <img className={css.art} src={art} alt="" /> : <div className={cx(css.art, css.noart)}>♪</div>}
