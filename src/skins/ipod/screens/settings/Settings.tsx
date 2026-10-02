@@ -59,8 +59,6 @@ function SettingsMenu() {
     // The newest player from the site, in place: the music goes on (ios/WmpSpotify/observer.js alchemyRestart)
     !!window.alchemyRestart && { id: 'refresh', label: 'Refresh Player', onSelect: restartApp },
     { id: 'support', label: 'Support', chevron: true, onSelect: to(nav, menu('settings/support', 'Support', () => [
-      // the iOS app's log sheet (the band that opens it is hidden under this skin)
-      ...(window.alchemyShowLog ? [{ id: 'log', label: 'Host Log', onSelect: () => window.alchemyShowLog?.() }] : []),
       { id: 'repo', label: 'Source Code', onSelect: () => openLink(LINKS.repo) },
       { id: 'issues', label: 'Report a Problem', onSelect: () => openLink(LINKS.repo + '/issues') }])) },
     st.canLogout && { id: 'logout', label: 'Log Out', chevron: true,
@@ -259,11 +257,13 @@ function CustomColor({ prev }: { prev: Partial<IpodSettings> }) {
 // ---- Play On, Appearance, Check for Updates -----------------------------------------------------------
 /** The Connect devices (§4.4), the playing one checked, offline ones greyed; AirPlay is the iOS app's picker. */
 function PlayOn() {
-  const d = useDevices(() => '');
-  const items: MenuItem[] = d.items().flatMap((e, i) => ('label' in e
+  const d = useDevices(() => ''), entries = d.items();
+  const items: MenuItem[] = entries.flatMap((e, i) => ('label' in e
     ? [{ id: 'd' + i, label: e.label, right: check(!!e.check), disabled: e.disabled, onSelect: e.act }] : []));
   if (window.alchemyRoutePicker) items.push({ id: 'airplay', label: 'AirPlay…', onSelect: () => window.alchemyRoutePicker?.() });
-  return <MenuScreen items={items} empty="No Devices" />;
+  // the cursor starts on the playing device (the check), so the list reads as "this one"
+  const [sel, setSel] = useState(Math.max(0, entries.findIndex((e) => 'check' in e && e.check)));
+  return <MenuScreen items={items} selected={sel} onSelectedChange={setSel} empty="No Devices" />;
 }
 
 const MODES = [['light', 'Light'], ['dark', 'Dark'], ['auto', 'Automatic']] as const;

@@ -33,3 +33,5 @@ ios/WmpSpotify/Info.plist
 ios/WmpSpotifyBroadcast/Info.plist
 ios/WmpSpotify/WmpSpotify.entitlements
 ios/WmpSpotifyBroadcast/WmpSpotifyBroadcast.entitlements
+ios/librespot/target/
+ios/librespot/vendor/
