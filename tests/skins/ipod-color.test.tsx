@@ -47,10 +47,10 @@ const drag = (el: HTMLElement, id: number, ...pts: [number, number][]) => {
   act(() => { fireEvent.pointerUp(el, { pointerId: id, clientX: pts.at(-1)![0], clientY: pts.at(-1)![1] }); });
 };
 
-it('lists the nine colours, Mocha Tan and Espresso Brown, then Custom; a preset sets the body', () => {
+it('lists the nine colours, Mocha Tan, Espresso Brown and Crimson, then Custom; a preset sets the body', () => {
   const m = atColor();
   expect(m.rows()).toEqual(['Silver', 'Black', 'Purple', 'Blue', 'Green✓ ', 'Yellow', 'Orange', 'Pink', '(PRODUCT) RED',
-    'Mocha Tan', 'Espresso Brown', 'Custom']);
+    'Mocha Tan', 'Espresso Brown', 'Crimson', 'Custom']);
   expect(m.hsl()).toEqual(['140', '70%', '34%']);
   m.click('Mocha Tan');
   expect(m.hsl()).toEqual(['24', '32%', '40%']);

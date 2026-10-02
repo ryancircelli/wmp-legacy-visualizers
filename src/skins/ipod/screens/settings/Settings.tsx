@@ -126,7 +126,7 @@ const Legal = () => (
 /** the nine 5G colours in Apple's order (§1.2), the owner's two, then Custom */
 const COLOR_ROWS: readonly (readonly [IpodSettings['color'], string])[] = [['silver', 'Silver'], ['black', 'Black'], ['purple', 'Purple'],
   ['blue', 'Blue'], ['green', 'Green'], ['yellow', 'Yellow'], ['orange', 'Orange'], ['pink', 'Pink'], ['red', '(PRODUCT) RED'],
-  ['mocha', 'Mocha Tan'], ['espresso', 'Espresso Brown'], ['custom', 'Custom']];
+  ['mocha', 'Mocha Tan'], ['espresso', 'Espresso Brown'], ['crimson', 'Crimson'], ['custom', 'Custom']];
 /** a body colour as CSS, as the chrome's bodyVars draws it */
 function swatch(s: IpodSettings, color = s.color): string {
   const [h, sat, l] = bodyHsl(s, color);

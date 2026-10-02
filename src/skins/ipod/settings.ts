@@ -18,6 +18,8 @@ export const COLORS: Record<Preset, readonly [number, number, number]> = {
   // since the cylinder's lights (below) lift a muted colour more than a vivid one (his: "a little too bright")
   // Mocha again (the owner: "not mocha enough and too pale", "too orangish"): the hue toward brown, darker, a touch richer
   mocha: [24, 32, 40], espresso: [22, 36, 17],
+  // the owner's Custom pick (2026-10-02, "add this red": hue 0, saturation 100, lightness 29), as its base (the three over LOOK)
+  crimson: [0, 87, 25],
 };
 /** Custom's lightness range: the body's lights top out at 72 % (ipod.module.css --hi), so past 75 the
  *  cylinder goes flat (its centre as bright as its bands); under 15 its edge and shade go black */

@@ -101,6 +101,7 @@ in the render are duller than real photos, so the suggested values are saturated
 | (PRODUCT) RED | #c8333a | `357 62% 47%` | #ab2e2a | #ed8fa2 | white / #8e8e93 |
 | Mocha Tan (owner's, not Apple's; darkened 2026-10-02, "a little too bright"; browner and darker again the same day, "not mocha enough and too pale… too orangish") | — | `24 32% 40%` | — | — | white / #8e8e93 |
 | Espresso Brown (owner's, not Apple's; darkened 2026-10-02) | — | `22 36% 17%` | — | — | white / #8e8e93 |
+| Crimson (owner's, 2026-10-02, "add this red": his Custom pick hue 0, saturation 100, lightness 29, kept as its base over LOOK) | — | `0 87% 25%` | — | — | white / #8e8e93 |
 
 ### 1.3 The aluminium in CSS: one hue knob
 
