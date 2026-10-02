@@ -71,6 +71,18 @@ final class WebHolder {
 // The host's log. print reaches nobody on a TestFlight install, so Player shows the last line under
 // the web view and the whole log on a long press. It persists in host.log in the App Group container
 // (Application Support without one), the last 3000 lines kept.
+/// A log line's kind for the sheet's filter: the word after the time ("librespot", "scene"), the page's lines
+/// split one further ("page: spotify", "page: perf"); nil for the launch markers.
+func logKind(_ line: String) -> String? {
+    let body = line.split(separator: " ", maxSplits: 1, omittingEmptySubsequences: true)
+    guard body.count == 2, !body[1].hasPrefix("----") else { return nil }
+    let parts = body[1].split(separator: ":", maxSplits: 2, omittingEmptySubsequences: false)
+    guard parts.count >= 2 else { return String(body[1]) }
+    let first = parts[0].trimmingCharacters(in: .whitespaces)
+    if first == "page", parts.count == 3 { return "page: " + parts[1].trimmingCharacters(in: .whitespaces) }
+    return first
+}
+
 final class HostLog: ObservableObject {
     static let shared = HostLog()
     private static let cap = 3000
@@ -405,6 +417,7 @@ final class DeviceState {
 }
 
 struct Player: View {
+    @State private var hiddenKinds: Set<String> = []
     @State private var script: String?
     @State private var ready = false
     @ObservedObject private var log = HostLog.shared
@@ -454,24 +467,44 @@ struct Player: View {
         .statusBarHidden(layout.statusBarHidden)
         .persistentSystemOverlays(layout.homeIndicatorHidden ? .hidden : .automatic)
         .sheet(isPresented: $layout.showLog) {
+            // The lines a kind at a time (the owner: "filter log types so i can copy subsets"): a chip per kind
+            // seen (the word after the time, "page: spotify" and the like split one further), tapped off and
+            // on; Copy and Copy All take the kinds shown. The launch markers always show.
+            let kinds = Array(Set(log.lines.compactMap(logKind))).sorted()
+            let shown = log.lines.filter { line in logKind(line).map { !hiddenKinds.contains($0) } ?? true }
             VStack(spacing: 0) {
                 HStack(spacing: 24) {
                     // Copy: this launch's lines (from its "---- launch" marker), what a report needs; Copy All: the file.
                     Button("Copy") {
-                        let from = log.lines.lastIndex { $0.contains("---- launch ") } ?? log.lines.startIndex
-                        UIPasteboard.general.string = log.lines[from...].joined(separator: "\n")
+                        let from = shown.lastIndex { $0.contains("---- launch ") } ?? shown.startIndex
+                        UIPasteboard.general.string = shown[from...].joined(separator: "\n")
                     }
-                    Button("Copy All") { UIPasteboard.general.string = log.lines.joined(separator: "\n") }
+                    Button("Copy All") { UIPasteboard.general.string = shown.joined(separator: "\n") }
                     Button("Clear") { HostLog.shared.clear() }
                     Spacer()
                 }
                 .padding()
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        ForEach(kinds, id: \.self) { kind in
+                            let on = !hiddenKinds.contains(kind)
+                            Button(kind) { if on { hiddenKinds.insert(kind) } else { hiddenKinds.remove(kind) } }
+                                .font(.system(size: 12))
+                                .padding(.horizontal, 10).padding(.vertical, 5)
+                                .background(on ? Color.accentColor.opacity(0.2) : Color.gray.opacity(0.15), in: Capsule())
+                                .foregroundStyle(on ? Color.accentColor : .gray)
+                        }
+                        if !hiddenKinds.isEmpty { Button("all") { hiddenKinds = [] }.font(.system(size: 12)) }
+                    }
+                    .padding(.horizontal)
+                }
+                .padding(.bottom, 8)
                 // A Text per line, laid out lazily: 3000 lines in one Text would all be laid out again at
                 // every new line.
                 ScrollViewReader { proxy in
                     ScrollView {
                         LazyVStack(alignment: .leading, spacing: 0) {
-                            ForEach(Array(log.lines.enumerated()), id: \.offset) { _, line in Text(line) }
+                            ForEach(Array(shown.enumerated()), id: \.offset) { _, line in Text(line) }
                             Color.clear.frame(height: 1).id("end")
                         }
                         .font(.system(size: 10, design: .monospaced))
