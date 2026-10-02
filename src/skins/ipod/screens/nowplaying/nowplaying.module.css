@@ -131,7 +131,7 @@
   background: rgb(0 0 0 / .45); color: #fff; text-align: center; cursor: pointer;
   line-height: calc(var(--unit) * 28); font-size: calc(var(--unit) * 18);
 }
-.track { right: auto; left: calc(var(--unit) * 4); font-size: calc(var(--unit) * 15); }
+.song { right: auto; left: calc(var(--unit) * 4); font-size: calc(var(--unit) * 15); }
 
 /* the Canvas: the 9:16 clip (or still) cropped to the whole area, the bands translucent over it */
 .bg { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }

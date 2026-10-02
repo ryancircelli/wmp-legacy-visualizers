@@ -330,7 +330,7 @@ function NowPlaying() {
       <div className={css.tap} onClick={swap} />
       {p.lyrics && <Lyrics onClick={swap} />}
       {/* the track's menu (the hold-centre one) at the top-left, the page's options at the top-right */}
-      <span className={cx(css.more, css.track)} role="button" aria-label="Track"
+      <span className={cx(css.more, css.song)} role="button" aria-label="Track"
             onClick={(e) => { e.stopPropagation(); window.alchemyHaptic?.('light'); setPopup('main'); }}>♪</span>
       <span className={css.more} role="button" aria-label="Options"
             onClick={(e) => { e.stopPropagation(); window.alchemyHaptic?.('light'); setPopup('options'); }}>⋯</span>
