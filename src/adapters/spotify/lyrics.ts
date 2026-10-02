@@ -50,7 +50,9 @@ export async function fetchLyrics(sp: Sp, trackUri: string, imageUrl?: string | 
     const L = (r.json as any)?.lyrics;
     console.debug('spotify lyrics keys', Object.keys((r.json as object | null) ?? {}), L && Object.keys(L), L?.lines?.[0] && Object.keys(L.lines[0]));
   }
-  return normalizeLyrics(r.json, track);
+  const out = normalizeLyrics(r.json, track);
+  window.alchemyLog?.('spotify: lyrics for ' + id + ': 200, ' + out.status + ', ' + (out.lines?.length ?? 0) + ' lines');
+  return out;
 }
 
 /** A fetchLyrics result for trackUri -> the lyrics slice, when it is still the playing track and
@@ -58,6 +60,9 @@ export async function fetchLyrics(sp: Sp, trackUri: string, imageUrl?: string | 
 export function acceptLyrics(sp: Sp, trackUri: string, l: Lyrics): void {
   const { playback, actions } = sp.store.getState();
   const t = playback.track;
-  if (!t || t.uri !== trackUri || l.status === 'none') return;
+  if (!t || t.uri !== trackUri || l.status === 'none') {
+    window.alchemyLog?.('spotify: lyrics not kept: ' + (l.status === 'none' ? 'none' : 'for ' + trackUri.slice(-6) + ', playing ' + (t?.uri ?? '-').slice(-6)));
+    return;
+  }
   actions.setLyrics({ ...l, track: { title: t.title, artist: t.artist, uri: t.uri }, source: 'spotify' });
 }
