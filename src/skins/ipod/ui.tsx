@@ -347,6 +347,12 @@ export const StatusRow = ({ title, dark, busy: loading }: { title: string; dark?
   const time = useTime();
   const bat = useHostGlobal('__wmpBattery', 'wmp-battery');
   const level = bat && bat.level >= 0 ? bat.level / 100 : 1;
+  // where the sound goes, in place of ▶ / ❚❚ (the owner, 2026-10-02): another Connect device's speaker
+  // when it plays elsewhere; else the phone's route (the iOS app's __wmpRoute): headphones (wired,
+  // Bluetooth, USB, line out), AirPlay, or the phone's own speaker. No report (the desktop): ▶ / ❚❚ as before.
+  const route = useHostGlobal('__wmpRoute', 'wmp-route');
+  const away = useApp((x) => x.devices.list.some((d) => d.active && d.id !== x.devices.self && d.id !== window.__wmpSpeaker?.id));
+  const out = away ? 'speaker' : route ? outputKind(route.type) : null;
   return (
     <div className={s.status} data-dark={dark || undefined}>
       {dark && <span className={s.modes}>{st.spotify && <>
@@ -367,13 +373,40 @@ export const StatusRow = ({ title, dark, busy: loading }: { title: string; dark?
       <span key={time} className={cx(s.title, s.clock, 'min-w-0 truncate text-center')}>{time}</span>
       <span className={s.icons}>
         {loading ? <Spinner />
+          : out ? st.media && <Output kind={out} away={away} />
           : st.media && (st.playing || st.paused) && <span className={st.playing ? s.playing : s.paused} role="img" aria-label={st.playing ? 'Playing' : 'Paused'} />}
         <span className={s.battery} style={{ '--v': clamp01(level) } as CSSProperties} data-charging={bat?.charging || undefined}
-              aria-label={bat && bat.level >= 0 ? 'Battery ' + bat.level + '%' : 'Battery'} />
+              aria-label={bat && bat.level >= 0 ? 'Battery ' + bat.level + '%' + (bat.charging ? ', charging' : '') : 'Battery'}>
+          {bat?.charging && <svg className={s.bolt} viewBox="0 0 6 10" aria-hidden="true"><path d="M3.6 0L0 5.6h2.4L2.2 10 6 4.2H3.5z" /></svg>}
+        </span>
       </span>
     </div>
   );
 };
+
+/** An AVAudioSession output port type (the iOS app's __wmpRoute.type) as one of three glyphs */
+export function outputKind(type: string): 'headphones' | 'airplay' | 'speaker' {
+  if (/^(Headphones|Bluetooth|USBAudio|LineOut)/.test(type)) return 'headphones';
+  return type === 'AirPlay' ? 'airplay' : 'speaker';
+}
+
+function Output({ kind, away }: { kind: 'headphones' | 'airplay' | 'speaker'; away: boolean }) {
+  const label = away ? 'Playing elsewhere' : kind === 'headphones' ? 'Headphones' : kind === 'airplay' ? 'AirPlay' : 'Speaker';
+  return (
+    <svg className={s.output} viewBox="0 0 12 12" role="img" aria-label={label}>
+      {kind === 'headphones' ? <>
+        <path d="M1.5 8V6a4.5 4.5 0 0 1 9 0v2" fill="none" stroke="currentColor" strokeWidth="1.3" />
+        <rect x="1" y="7" width="2.6" height="4" rx=".8" /><rect x="8.4" y="7" width="2.6" height="4" rx=".8" />
+      </> : kind === 'airplay' ? <>
+        <path d="M2.2 8.6H1.5A1 1 0 0 1 .5 7.6V2.5a1 1 0 0 1 1-1h9a1 1 0 0 1 1 1v5.1a1 1 0 0 1-1 1h-.7" fill="none" stroke="currentColor" strokeWidth="1.2" />
+        <path d="M6 6.4l3.4 4.4H2.6z" />
+      </> : <>
+        <path d="M1 4.2h2.4L6.6 1.5v9L3.4 7.8H1z" />
+        <path d="M8.3 3.8a3 3 0 0 1 0 4.4M9.8 2.3a5 5 0 0 1 0 7.4" fill="none" stroke="currentColor" strokeWidth="1.1" />
+      </>}
+    </svg>
+  );
+}
 
 /** The status row's Like: the playing track's, by Now Playing's own useAddTo (one saved query for both) */
 function Like({ tap }: { tap: (e: MouseEvent, act: () => void) => void }) {

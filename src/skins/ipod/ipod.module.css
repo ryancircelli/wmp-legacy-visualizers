@@ -233,6 +233,11 @@
 }
 .paused { background: linear-gradient(90deg, #6D6D6D 35%, transparent 35% 65%, #6D6D6D 65%); }
 .status[data-dark] .playing { background: #FFFFFF; }
+/* where the sound goes (headphones, AirPlay, the speaker), in ▶'s place and colour */
+.output { flex: none; width: calc(var(--unit) * 12); height: calc(var(--unit) * 12); fill: #3A9BE0; color: #3A9BE0; }
+.status[data-dark] .output { fill: #FFFFFF; color: #FFFFFF; }
+/* charging: a bolt over the fill */
+.bolt { position: absolute; z-index: 1; left: 50%; top: 50%; width: calc(var(--unit) * 6); height: calc(var(--unit) * 10); transform: translate(-50%, -50%); fill: #FFFFFF; filter: drop-shadow(0 0 1px rgb(0 0 0 / .6)); }
 .status[data-dark] .paused { background: linear-gradient(90deg, #FFFFFF 35%, transparent 35% 65%, #FFFFFF 65%); }
 .battery {
   position: relative;

@@ -115,3 +115,22 @@ it('the overlay is the whole area in both views, quiet or not: over the cover an
   act(() => { window.dispatchEvent(new StorageEvent('storage', { key: 'ipod.visualizer' })); });
   expect([m.S().vis.kind, box()]).toEqual(['bars', 'overlay']);
 });
+
+it('the status row: the output in ▶\'s place once the phone reports a route (headphones / AirPlay / the speaker; another device playing: the speaker), ▶ without one; a charging battery carries a bolt', () => {
+  const m = atNowPlaying(), ipod = m.getByTestId('ipod');
+  const push = (key: string, event: string, v: unknown) => act(() => { (window as unknown as Record<string, unknown>)[key] = v; window.dispatchEvent(new Event(event)); });
+  const img = () => ipod.querySelector('[class*=status] [role=img]')?.getAttribute('aria-label') ?? null;
+  expect(img()).toBe('Playing');
+  push('__wmpRoute', 'wmp-route', { name: 'AirPods', type: 'BluetoothA2DPOutput' });
+  expect(img()).toBe('Headphones');
+  push('__wmpRoute', 'wmp-route', { name: 'Speaker', type: 'Speaker' });
+  expect(img()).toBe('Speaker');
+  push('__wmpRoute', 'wmp-route', { name: 'TV', type: 'AirPlay' });
+  expect(img()).toBe('AirPlay');
+  act(() => { m.store.getState().actions.setDevices([{ id: 'other', name: 'Kitchen', type: 'Speaker', active: true }], 'me'); });
+  expect(img()).toBe('Playing elsewhere');
+  expect(ipod.querySelector('[class*=bolt]')).toBeNull();
+  push('__wmpBattery', 'wmp-battery', { level: 40, charging: true });
+  expect([!!ipod.querySelector('[class*=bolt]'), ipod.querySelector('[class*=battery]')?.getAttribute('aria-label')]).toEqual([true, 'Battery 40%, charging']);
+  delete (window as unknown as Record<string, unknown>).__wmpRoute; delete (window as unknown as Record<string, unknown>).__wmpBattery;
+});
