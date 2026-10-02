@@ -236,7 +236,7 @@ function NowPlaying() {
     // Visualizer and Opacity keep the list open (it closes on a choice; it is opened again at once), so
     // the values can be stepped through while the picture changes behind it
     vis: vz.engines((g) => { setGroup(g); setPopup('presets'); })
-      .map((x) => (x.id === 'on' || x.id === 'opacity' ? { ...x, onSelect: () => { x.onSelect?.(); setPopup('vis'); } } : x)),
+      .map((x) => (x.id === 'on' || x.id === 'background' || x.id === 'opacity' ? { ...x, onSelect: () => { x.onSelect?.(); setPopup('vis'); } } : x)),
     presets: vz.presets(group),
     options: [...options, cancel],
   };
@@ -290,20 +290,22 @@ function NowPlaying() {
   const fetched = useCanvas(show === 'video' ? uri : null), canvas = fetched && fetched.url !== failed ? fetched : null;
   const fail = () => setFailed(canvas?.url ?? '');
   // The overlay (Visualizer… > Visualizer): over the whole area under the status row, the cover and the
-  // black round it, or the Canvas (with no cover, the black: the ♪ tile left out then)
-  const overlay = vz.on, bg = !!canvas || (overlay && !art);
-  const bars = vz.preset.startsWith('bars:'), accent = useAccent(overlay && bars && art ? art : '');
+  // black round it, or the Canvas (with no cover, the black: the ♪ tile left out then). Background >
+  // Black: WMP's own look, the visualization opaque on black with no art shown (the bands translucent
+  // over it, as over the Canvas)
+  const overlay = vz.on, black = overlay && vz.background === 'black', bg = !!canvas || (overlay && !art) || black;
+  const bars = vz.preset.startsWith('bars:'), accent = useAccent(overlay && !black && bars && art ? art : '');
   /** a tap on the cover's area (the lyrics over it too): the Canvas <-> the cover; with no Canvas on
-   *  screen to swap from, nothing */
+   *  screen to swap from, nothing; over black the swap is of what is hidden: no haptic for it */
   const swap = (e: { stopPropagation(): void }) => {
     e.stopPropagation();
     if (show === 'video' && !canvas) return;
-    window.alchemyHaptic?.('light');
+    if (!black) window.alchemyHaptic?.('light');
     canvasPref.setState({ show: show === 'video' ? 'cover' : 'video' });
   };
   return (
     <div ref={root} className={css.root} data-canvas={bg ? '' : undefined} data-quiet={quiet ? '' : undefined}>
-      {canvas?.type === 'video' ? <CanvasVideo src={canvas.url} poster={art || undefined} onError={fail} />
+      {black ? null : canvas?.type === 'video' ? <CanvasVideo src={canvas.url} poster={art || undefined} onError={fail} />
         : canvas ? <img className={css.bg} src={canvas.url} alt="" onError={fail} /> : null}
       {bg ? null : art ? <img className={css.art} src={art} alt="" /> : <div className={cx(css.art, css.noart)}>♪</div>}
       {/* the cover's reflection, part of the picture: under the visualizer, the lyrics' shade and the band */}
@@ -311,7 +313,7 @@ function NowPlaying() {
       {/* and upward behind the info band: the picture is behind that band too, as the Canvas is (over
           black it went darker as the band thinned) */}
       {art && !bg && <div className={css.above}><img className={css.reflection} src={art} alt="" /></div>}
-      {overlay && <Vis tint={bars && art ? accent : null} opacity={vz.opacity} />}
+      {overlay && <Vis tint={!black && bars && art ? accent : null} opacity={black ? 100 : vz.opacity} opaque={black} />}
       <div className={css.info}>
         <Line className={css.artist} text={t?.artist} />
         <Line className={css.title} text={t?.title} />
@@ -427,7 +429,7 @@ function useAccent(url: string): string {
  *  Opacity. Its canvas is mounted only while this screen is
  *  the top one and the page is visible: the ticker's loop runs only with a canvas attached, so it
  *  costs nothing elsewhere, and nothing at all while the visualizer is off (not mounted). */
-function Vis({ tint, opacity = 100 }: { tint: string | null; opacity: number }) {
+function Vis({ tint, opacity = 100, opaque = false }: { tint: string | null; opacity: number; opaque?: boolean }) {
   const sh = useShell(), ref = useRef<HTMLDivElement>(null), on = useOnScreen(ref);
   // The ticker holds the engine while WMP's view is off Now Playing (vis.hold: a WMP view left on
   // Library sets it again at every Spotify start); here it is the screen, so no hold while shown,
@@ -477,14 +479,15 @@ function Vis({ tint, opacity = 100 }: { tint: string | null; opacity: number }) 
     return () => scale(null);
   }, [on, preset, cw, sh]);
   // the engine's output with alpha from brightness while shown (vis.alpha / tint, which the ticker hands
-  // the engine as it does the scale), then opaque again (the WMP 9 skin's)
+  // the engine as it does the scale), then opaque again (the WMP 9 skin's); `opaque` (Background > Black):
+  // opaque while shown too, WMP's own picture
   useEffect(() => {
     if (!on) return;
     const st = sh.store, out = (alpha: 'opaque' | 'luma', t: readonly [number, number, number] | null) =>
       st.setState((s) => ({ vis: { ...s.vis, alpha, tint: t } }));
-    out('luma', tint ? (rgbOf(tint) as [number, number, number]) : null);
+    out(opaque ? 'opaque' : 'luma', !opaque && tint ? (rgbOf(tint) as [number, number, number]) : null);
     return () => out('opaque', null);
-  }, [on, tint, sh]);
+  }, [on, tint, opaque, sh]);
   return (
     // the thinner the layer, the more it mixes with the picture behind and pales: its own colour is
     // made stronger as it thins (saturation 1.75 at 75 %, 2.5 at 50 %, 3.25 at 25 %)

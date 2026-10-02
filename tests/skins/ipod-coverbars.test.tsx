@@ -92,6 +92,35 @@ it('Opacity (dim while the overlay is off), 50 by default, steps 50 -> 25 -> 100
   expect(m.layer()?.style.opacity).toBe('0.25');
 });
 
+it('Background: Art (the overlay over the art) or Black (WMP\'s own: opaque on black, no art, no reflection, no tint, Opacity dim and not applied); the row keeps the list open; Art again restores it all', async () => {
+  const haptic = vi.fn();
+  window.alchemyHaptic = haptic;
+  const m = atNowPlaying();
+  const ART = 'https://i.scdn.co/image/abc';
+  const shown = () => [!!m.np.querySelector('img[class*=art]'), m.np.querySelectorAll('[class*=reflection]').length, !!m.np.querySelector('video'),
+                       m.np.firstElementChild!.hasAttribute('data-canvas')];   // the bands' translucent look
+  await m.play('spotify:track:a', ART);              // the cover, Bars in its accent
+  m.menu();
+  expect([m.row('Background').textContent, ...m.out(), ...shown(), m.layer()?.style.opacity, m.layer()?.style.filter])
+    .toEqual(['BackgroundArt', 'luma', [230, 40, 40], true, 2, false, false, '0.5', 'saturate(2.5)']);
+  m.pick('Background');                              // Black, the list kept open
+  expect([m.row('Background').textContent, readPref('ipod.visBackground', 'art'), m.row('Opacity').getAttribute('aria-disabled')])
+    .toEqual(['BackgroundBlack', 'black', 'true']);
+  expect([...m.out(), ...shown(), m.layer()?.style.opacity, m.layer()?.style.filter, !!m.np.querySelector('canvas')])
+    .toEqual(['opaque', null, false, 0, false, true, '', '', true]);
+  await m.play('spotify:track:c', ART);              // a track with a Canvas: none shown either
+  expect([...shown(), m.box()]).toEqual([false, 0, false, true, 'overlay']);
+  act(() => { fireEvent.click(m.np.querySelector('[class*=tap]')!); });   // the swap: of what is hidden, no haptic
+  haptic.mockClear();
+  act(() => { fireEvent.click(m.np.querySelector('[class*=tap]')!); });
+  expect(haptic).not.toHaveBeenCalled();
+  m.menu();
+  m.pick('Background');                              // Art again: the Canvas, the tint, the opacity
+  await settle();
+  expect([...m.out(), ...shown(), m.layer()?.style.opacity, m.row('Opacity').getAttribute('aria-disabled')])
+    .toEqual(['luma', [230, 40, 40], false, 0, true, true, '0.5', null]);
+});
+
 it('a stored opacity that is not 100, 75, 50 or 25 reads as 50', () => {
   localStorage.setItem('ipod.visOpacity', '60');
   const m = atNowPlaying();

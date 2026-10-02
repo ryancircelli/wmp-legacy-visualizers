@@ -102,6 +102,14 @@ export const useVisualizer = () => usePref('ipod.visualizer', 'bars:0');
  *  or the black when there is neither), clear where it is dark (the engine's 'luma' output; Bars and
  *  Waves in the cover's accent). On at first. */
 export const useVisOn = () => usePref('ipod.visOn', true);
+/** 'ipod.visBackground': Visualizer… > Background: 'art', the visualization over the cover or the
+ *  Canvas (clear where dark, Bars and Waves in the cover's accent), or 'black', WMP's own (opaque on
+ *  black, its own colours, no art shown); anything else read as 'art' */
+export type VisBackground = 'art' | 'black';
+export function useVisBackground(): [VisBackground, (v: VisBackground) => void] {
+  const [v, set] = usePref<string>('ipod.visBackground', 'art');
+  return [v === 'black' ? 'black' : 'art', set];
+}
 /** 'ipod.visOpacity': Visualizer… > Opacity, in percent: the visualization's while it is on; one of
  *  VIS_OPACITY, 50 by default (the owner, 2026-10-02), anything else read as 50 */
 export const VIS_OPACITY = [100, 75, 50, 25] as const;
@@ -123,24 +131,29 @@ export function migrateVisPrefs(): void {
 }
 migrateVisPrefs();
 /** The visualizations for Now Playing's Visualizer… (its ⋯ and hold menus): `engines(open)` is the
- *  Visualizer toggle and Opacity (100 -> 75 -> 50 -> 25 -> 100; dim while it is off), then the registry's
+ *  Visualizer toggle, Background (Art / Black; dim while it is off) and Opacity (100 -> 75 -> 50 -> 25 ->
+ *  100; dim while it is off or over black), then the registry's
  *  engines (Alchemy, Bars and Waves, Battery), the one holding the choice showing its name, each
  *  `open`ing its `presets(group)`, the choice checked; an engine of one preset (Alchemy's Random) is
  *  picked at its own row. A pick, the toggle or a step sets its pref; a pick turns it on. `preset`: the
  *  choice; `on`: it is on; `opacity`: its percent. */
 export function useVisualizers() {
   const sh = useShell(), [cur, set] = useVisualizer(), [on, setOn] = useVisOn(), [opacity, setOpacity] = useVisOpacity();
+  const [background, setBackground] = useVisBackground();
   const chosen = sh.presets.find((p) => visId(p) === cur);
   const of = (g: string) => sh.presets.filter((p) => p.group === g);
   const pick = (id: string, label: string): MenuItem => ({ id, label, right: id === cur ? '✓' : undefined, onSelect: () => { set(id); setOn(true); } });
   return {
     preset: cur,
     on,
+    background,
     opacity,
     presets: (g: string) => of(g).map((p) => pick(visId(p), p.name)),
     engines: (open: (g: string) => void): MenuItem[] => [
       { id: 'on', label: 'Visualizer', right: on ? 'On' : 'Off', onSelect: () => setOn(!on) },
-      { id: 'opacity', label: 'Opacity', right: opacity + '%', disabled: !on,
+      { id: 'background', label: 'Background', right: background === 'black' ? 'Black' : 'Art', disabled: !on,
+        onSelect: () => setBackground(background === 'black' ? 'art' : 'black') },
+      { id: 'opacity', label: 'Opacity', right: opacity + '%', disabled: !on || background === 'black',
         onSelect: () => setOpacity(VIS_OPACITY[(VIS_OPACITY.indexOf(opacity as 100) + 1) % VIS_OPACITY.length]!) },
       ...[...new Set(sh.presets.map((p) => p.group))].map((g) => {
         const ps = of(g);
