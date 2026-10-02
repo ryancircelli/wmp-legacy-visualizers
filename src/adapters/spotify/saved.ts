@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-return */
 // Like / Remove from Liked Songs (and save / follow albums, playlists, artists): the web player's
-// persisted mutations addToLibrary / removeFromLibrary { uris }, and areEntitiesInLibrary { uris }
+// persisted mutations addToLibrary / removeFromLibrary { libraryItemUris }, and areEntitiesInLibrary { uris }
 // for the saved state (50 per call). Hashes: W.hashes -> the bundle scan -> spike 4's baked ones.
 // ponytail: response shapes unverified against a live capture; read defensively, and with
 // settings.debug the first answers' keys go to the console.
@@ -27,13 +27,14 @@ function flags(d: any, n: number): (boolean | undefined)[] {
   });
 }
 
-/** The mutations' answers (captured live): success is the op's own payload key. */
+/** The mutations' answers (captured live): success is the op's own payload key. A 200 with no data
+ *  and no errors is taken as done too (query's `mutation`). */
 const PAYLOAD: Record<string, string> = { addToLibrary: 'addLibraryItems', removeFromLibrary: 'removeLibraryItems',
   addToPlaylist: 'addItemsToPlaylist', removeFromPlaylist: 'removeItemsFromPlaylist' };
 async function mutate(sp: Sp, op: string, variables: object): Promise<void> {
-  const d = await query(sp, op, variables);
+  const d = await query(sp, op, variables, { mutation: true });
   debugShape(sp, op, d);
-  if (!(d && d[PAYLOAD[op]!])) throw new Error('unexpected answer');
+  if (d && !d[PAYLOAD[op]!]) throw new Error('unexpected answer');
 }
 
 /** Saved state of these uris: known ones (Liked Songs rows, our mutations) without asking, the

@@ -2,7 +2,7 @@
 // The Spotify adapter against CONTRACT.md v6.1: a port of every behaviour tests/spotify.test.js
 // checks that is not presentation (menus, DOM rows and dialogs are the skin's, tests/skins/**).
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { LIKED, positionNow, totalMs, trackLabel } from '../../src/model';
+import { LIKED, lyricsShown, positionNow, totalMs, trackLabel } from '../../src/model';
 import { createSpotifyAdapter, newSp } from '../../src/adapters/spotify';
 import { hashFor, query, rescan, visitRoute } from '../../src/adapters/spotify/pathfinder';
 import { dateOf } from '../../src/adapters/spotify/library';
@@ -1286,6 +1286,70 @@ describe('21. Spotify lyrics first, LRCLIB as the fallback (synthetic responses;
     expect((await Q.fetchLyrics(TR)).status).toBe('none');
     expect((await Q.fetchLyrics('spotify:episode:x')).status).toBe('none');
   });
+
+  // LRCLIB (the page's own fallback; shapes as lrclib.net answered 2026-10-02)
+  const SYNCED = '[00:10.72] Forgotten thoughts\n[ar:Band]\n[00:16.45] Through my eyes\n[00:20.00]\n[00:05.00][01:00.50]Twice';
+  const hit = (o: object) => ({ id: 1, trackName: 'Wish I Knew You', artistName: 'The Revivalists', albumName: 'X', duration: 274, instrumental: false,
+                                plainLyrics: null, syncedLyrics: null, ...o });
+  function lrclib(get: object, search?: object) {
+    const env = setup({ status: 404 });
+    env.route(/lrclib\.net\/api\/get/, get as never);
+    if (search) env.route(/lrclib\.net\/api\/search/, search as never);
+    const log = vi.fn();
+    window.alchemyLog = log;
+    const asked = () => env.calls.filter((c) => /lrclib/.test(c.url));
+    return Object.assign(env, { log, asked });
+  }
+  afterEach(() => { delete window.alchemyLog; delete window.__TAURI__; });
+  it('404 from Spotify, then LRCLIB synced: lines in ms, stamped with the uri, shown; the log says so', async () => {
+    const env = lrclib({ status: 200, json: hit({ plainLyrics: 'p', syncedLyrics: SYNCED }) });
+    expect((await Q.fetchLyrics(TR)).status).toBe('none');
+    const l = await Q.fetchLrclib(TR);
+    const u = new URL(env.asked()[0]!.url);
+    expect([u.pathname, Object.fromEntries(u.searchParams)]).toEqual(['/api/get',
+      { track_name: 'Wish I Knew You', artist_name: 'The Revivalists', album_name: env.S.playback.track!.album ?? '', duration: '274' }]);
+    expect(env.asked()[0]!.headers['Lrclib-Client']).toMatch(/^WmpLegacyVisualizers\/1\.0 /);
+    expect(l).toEqual({ status: 'synced', source: 'lrclib', plain: null, track: { title: 'Wish I Knew You', artist: 'The Revivalists', uri: TR },
+      lines: [{ t: 5000, text: 'Twice' }, { t: 10720, text: 'Forgotten thoughts' }, { t: 16450, text: 'Through my eyes' }, { t: 20000, text: '' }, { t: 60500, text: 'Twice' }] });
+    Q.acceptLyrics(TR, l);
+    expect(env.S.lyrics).toMatchObject({ status: 'synced', source: 'lrclib', track: { uri: TR } });
+    expect(lyricsShown(env.S)).toBe('synced');
+    expect(env.log).toHaveBeenCalledWith('spotify: lyrics for ' + ID + ': none on Spotify, LRCLIB: synced, 5 lines');
+  });
+  it('LRCLIB plain -> plain; instrumental -> none', async () => {
+    lrclib({ status: 200, json: hit({ plainLyrics: ' la la\nla \n' }) });
+    expect(await Q.fetchLrclib(TR)).toMatchObject({ status: 'plain', plain: 'la la\nla', lines: null, source: 'lrclib', track: { uri: TR } });
+    const env = lrclib({ status: 200, json: hit({ instrumental: true, plainLyrics: 'x', syncedLyrics: '[00:01.00]x' }) });
+    expect((await Q.fetchLrclib(TR)).status).toBe('none');
+    expect(env.log).toHaveBeenCalledWith('spotify: lyrics for ' + ID + ': none on Spotify, LRCLIB: none');
+  });
+  it('get 404 -> search: the hit within 2 s (a synced one first), else none', async () => {
+    const far = hit({ duration: 230, syncedLyrics: '[00:01.00]far' }), plain = hit({ duration: 275.5, plainLyrics: 'near' });
+    const env = lrclib({ status: 404, json: { message: 'Failed to find specified track', name: 'TrackNotFound', statusCode: 404 } },
+                       { status: 200, json: [far, plain, hit({ duration: 272.5, syncedLyrics: '[00:02.00]near synced' })] });
+    expect((await Q.fetchLrclib(TR)).lines).toEqual([{ t: 2000, text: 'near synced' }]);
+    expect(Object.fromEntries(new URL(env.asked()[1]!.url).searchParams)).toEqual({ track_name: 'Wish I Knew You', artist_name: 'The Revivalists' });
+    lrclib({ status: 404 }, { status: 200, json: [far] });
+    expect((await Q.fetchLrclib(TR)).status).toBe('none');
+  });
+  it('LRCLIB failures: logged and thrown (429 carries Retry-After)', async () => {
+    const env = lrclib({ status: 503, body: 'busy' });
+    await expect(Q.fetchLrclib(TR)).rejects.toMatchObject({ name: 'QueryError', op: 'lrclib', status: 503 });
+    expect(env.log).toHaveBeenCalledWith('spotify: lyrics for ' + ID + ': none on Spotify, LRCLIB: failed (503)');
+    lrclib({ status: 429, headers: { 'Retry-After': 7 } });
+    await expect(Q.fetchLrclib(TR)).rejects.toMatchObject({ name: 'RateLimitError', retryAfterMs: 7000 });
+  });
+  it('never asked for a blank title, another track, or on the desktop host (it sends its own)', async () => {
+    const env = lrclib({ status: 200, json: hit({ syncedLyrics: SYNCED }) });
+    const t = env.S.playback.track!;
+    env.S.actions.setPlayback({ track: { ...t, title: '' } });
+    expect((await Q.fetchLrclib(TR)).status).toBe('none');
+    env.S.actions.setPlayback({ track: t });
+    expect((await Q.fetchLrclib('spotify:track:someOtherTrack')).status).toBe('none');
+    window.__TAURI__ = {} as never;
+    expect((await Q.fetchLrclib(TR)).status).toBe('none');
+    expect(env.asked()).toEqual([]);
+  });
 });
 
 describe('22. like / unlike, add to playlist, membership (synthetic responses; shapes unverified)', () => {
@@ -1332,6 +1396,23 @@ describe('22. like / unlike, add to playlist, membership (synthetic responses; s
     await env2.C.setLiked(TRK, true);                                   // 200 without the op's payload: a failure
     expect(TRK in env2.S.saved).toBe(false);
     expect(env2.S.ui.status).toMatch(/could not add to your library \(unexpected answer\)/);
+  });
+  it('a 200 with errors fails and the log names the first; a 200 with no data and no errors is done', async () => {
+    const log = vi.fn();
+    window.alchemyLog = log;
+    try {
+      const env = setup((op) => (op === 'addToLibrary' ? { status: 200, json: { errors: [{ message: 'Not allowed' }, { message: 'second' }], data: null } } : undefined));
+      await env.C.setLiked(TRK, true);
+      expect(TRK in env.S.saved).toBe(false);
+      expect(log).toHaveBeenCalledWith('spotify: query addToLibrary failed: 200 (Not allowed)');
+      const env2 = setup((op) => (/Library$/.test(op) ? { status: 200, json: { data: null, extensions: {} } } : undefined));
+      await env2.C.setLiked(TRK, true);
+      expect(env2.S.saved[TRK]).toBe(true);
+      expect(env2.inv.pop()).toEqual([['spotify', 'collection', LIKED], ['spotify', 'library'], ['spotify', 'saved']]);
+      expect(log).toHaveBeenLastCalledWith('spotify: query addToLibrary: 200 without data, taken as done: {"data":null,"extensions":{}}');
+      // a query (not a mutation) with no data still fails
+      await expect(Q.fetchSaved(['spotify:track:other'])).rejects.toMatchObject({ name: 'QueryError', op: 'areEntitiesInLibrary', status: 200 });
+    } finally { delete window.alchemyLog; }
   });
   it('saved flags: Liked Songs rows without a call, the rest 50 per areEntitiesInLibrary', async () => {
     const env = setup((op, v) => (op === 'areEntitiesInLibrary'

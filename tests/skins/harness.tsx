@@ -32,6 +32,8 @@ export interface FakeData {
   albums: Record<string, CollectionMeta>;
   /** Spotify's lyrics by track uri */
   lyrics: Record<string, Lyrics>;
+  /** LRCLIB's lyrics by track uri */
+  lrclib: Record<string, Lyrics>;
   /** saved (Liked) flags by uri (absent = false) */
   saved: Record<string, boolean>;
   /** the playlists the user can add to, and which of them hold a track (track -> playlist -> in it) */
@@ -55,6 +57,7 @@ export interface FakeQueries {
   fetchArtist: Mock<(uri: string) => Promise<ArtistPage>>;
   fetchAlbumMeta: Mock<(uri: string) => Promise<CollectionMeta>>;
   fetchLyrics: Mock<(uri: string, image?: string | null) => Promise<Lyrics>>;
+  fetchLrclib: Mock<(uri: string) => Promise<Lyrics>>;
   acceptLyrics: Mock<(uri: string, l: Lyrics) => void>;
   fetchSaved: Mock<(uris: string[]) => Promise<Record<string, boolean>>>;
   savedKey: (uri: string) => unknown[];
@@ -78,7 +81,7 @@ export function fakeQueries(data: FakeData): FakeQueries {
       collectionPage: (uri: string, o: number) => k('collection', uri, o),
       search: (s: string, t: SearchType, o = 0) => k('search', s.trim(), t, o), home: () => k('home'),
       radio: (seeds: readonly string[]) => k('radio', ...seeds), artist: (uri: string) => k('artist', uri), album: (uri: string) => k('album', uri),
-      lyrics: (id: string) => k('lyrics', id), saved: (uris: readonly string[]) => k('saved', ...uris),
+      lyrics: (id: string) => k('lyrics', id), lrclib: (id: string) => k('lrclib', id), saved: (uris: readonly string[]) => k('saved', ...uris),
       followedArtists: () => k('library', 'artists'), canvas: (uri: string) => k('canvas', uri),
     },
     fetchFollowedArtists: vi.fn(() => Promise.resolve([] as LibraryItem[])),
@@ -113,6 +116,7 @@ export function fakeQueries(data: FakeData): FakeQueries {
     fetchArtist: vi.fn((uri: string) => Promise.resolve(data.artists[uri] ?? { meta: { kind: 'artist' as const, name: uri, total: 0 }, tracks: [], albums: [] })),
     fetchAlbumMeta: vi.fn((uri: string) => Promise.resolve(data.albums[uri] ?? { kind: 'album' as const, name: uri, total: 0 })),
     fetchLyrics: vi.fn((uri: string) => Promise.resolve(data.lyrics[uri] ?? { status: 'none' as const, lines: null, plain: null, track: null, source: 'spotify' as const })),
+    fetchLrclib: vi.fn((uri: string) => Promise.resolve(data.lrclib[uri] ?? { status: 'none' as const, lines: null, plain: null, track: null, source: 'lrclib' as const })),
     acceptLyrics: vi.fn(),
     remember: vi.fn(),
     retryPolicy: { retry: () => false, retryDelay: () => 0 },
@@ -134,7 +138,7 @@ export interface Mounted extends ReturnType<typeof render> {
 }
 
 export const fakeData = (o: Partial<FakeData> = {}): FakeData => ({
-  list: [], collections: {}, search: {}, typed: {}, home: { greeting: '', sections: [] }, stations: [], seeds: [], artists: {}, albums: {}, lyrics: {},
+  list: [], collections: {}, search: {}, typed: {}, home: { greeting: '', sections: [] }, stations: [], seeds: [], artists: {}, albums: {}, lyrics: {}, lrclib: {},
   saved: {}, editable: [], membership: {}, ...o,
 });
 

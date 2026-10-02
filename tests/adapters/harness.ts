@@ -60,8 +60,9 @@ export function mkEnv(W: Record<string, unknown> = {}, settings: Partial<Setting
       const r = fn(url, i);
       if (r instanceof Error) return Promise.reject(r);
       const text = typeof r.body === 'string' ? r.body : r.json === undefined ? '' : JSON.stringify(r.json);
+      const body = () => (r.delay ?? Promise.resolve()).then(() => text);
       return Promise.resolve({ status: r.status, headers: { get: (k: string) => (r.headers?.[k] == null ? null : String(r.headers[k])) },
-                               text: () => (r.delay ?? Promise.resolve()).then(() => text) });
+                               text: body, json: () => body().then((t) => JSON.parse(t)) });
     }
     return Promise.resolve({ status: 404, headers: { get: () => null }, text: () => Promise.resolve('') });
   });

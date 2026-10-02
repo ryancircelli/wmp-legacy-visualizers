@@ -76,8 +76,10 @@ export async function visitRoute(sp: Sp, path: string, ops: string[]): Promise<v
 }
 
 /** POST pathfinder/v2/query as the page does; the response's `data`. Throws RateLimitError on 429
- *  (carrying the wait) and QueryError otherwise; the status bar says why. */
-export async function query<T = any>(sp: Sp, op: string, variables: object, opts: { quiet?: boolean; retried?: boolean } = {}): Promise<T> { // eslint-disable-line @typescript-eslint/no-explicit-any
+ *  (carrying the wait) and QueryError otherwise; the status bar says why, the host's log adds
+ *  GraphQL's first error message. `mutation`: a 200 without `errors` is done even with no `data`
+ *  (then null; the log keeps the body). */
+export async function query<T = any>(sp: Sp, op: string, variables: object, opts: { quiet?: boolean; retried?: boolean; mutation?: boolean } = {}): Promise<T> { // eslint-disable-line @typescript-eslint/no-explicit-any
   await (sp.scan || rescan(sp));
   const sha = hashFor(sp, op);
   if (!sha) { if (!opts.quiet) status(sp, 'Spotify: no query hash for ' + op); throw new QueryError(op, 0); }
@@ -89,9 +91,16 @@ export async function query<T = any>(sp: Sp, op: string, variables: object, opts
     return query<T>(sp, op, variables, { ...opts, retried: true });
   }
   if (r.status === 429) throw new RateLimitError(Math.max(1000, sp.blockedUntil - Date.now()));
-  const data = (r.json as { data?: T } | null)?.data;
+  const body = r.json as { data?: T | null; errors?: { message?: string }[] } | null, data = body?.data;
+  const err = Array.isArray(body?.errors) ? body.errors : null;
+  if (r.status === 200 && !data && opts.mutation && !err?.length) {
+    // ponytail: what such an answer means is unknown (the phone's heart got these); taken as done
+    window.alchemyLog?.('spotify: query ' + op + ': 200 without data, taken as done: ' + r.text.slice(0, 160));
+    return null as T;
+  }
   if (r.status !== 200 || !data) {
-    window.alchemyLog?.('spotify: query ' + op + ' failed: ' + r.status);   // the host's log, quiet or not
+    const why = err?.[0]?.message;
+    window.alchemyLog?.('spotify: query ' + op + ' failed: ' + r.status + (why ? ' (' + why + ')' : ''));   // the host's log, quiet or not
     if (!opts.quiet) status(sp, 'Spotify: ' + op + ' failed (' + r.status + ')');
     throw new QueryError(op, r.status);
   }

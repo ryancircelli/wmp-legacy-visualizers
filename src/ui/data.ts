@@ -217,16 +217,25 @@ export function useRadio(seeds: RadioSeed[]) {
 
 /** Spotify's lyrics for the playing track (fetchLyrics), handed to the store with acceptLyrics as
  *  they arrive (it keeps them only while that track still plays; 'none' leaves the host's LRCLIB
- *  lyrics). Cached an hour per track; nothing is asked while lyrics are off. */
+ *  lyrics). When Spotify has none, LRCLIB's (fetchLrclib), once the track is named: a speaker's bare
+ *  state gets its title a moment later. Each cached an hour per track; nothing is asked while
+ *  lyrics are off. */
 export function useLyricsFor(trackUri: string | null | undefined, imageUrl?: string | null): void {
   const q = useQ(), ready = useReady(), on = useApp((s) => s.settings.lyrics);
-  const id = trackUri?.split(':').pop() ?? '';
+  const named = useApp((s) => { const t = s.playback.track; return !!t && t.uri === trackUri && !!t.title && !!t.artist && t.duration > 0; });
+  const id = trackUri?.split(':').pop() ?? '', go = !!trackUri && !!id && ready && on;
   const r = useQuery({
     queryKey: q.keys.lyrics(id), queryFn: () => q.fetchLyrics(trackUri!, imageUrl),
-    enabled: !!trackUri && !!id && ready && on, staleTime: 60 * 60_000,
+    enabled: go, staleTime: 60 * 60_000,
   });
   const data = r.data;
+  const lr = useQuery({
+    queryKey: q.keys.lrclib(id), queryFn: () => q.fetchLrclib(trackUri!),
+    enabled: go && named && data?.status === 'none', staleTime: 60 * 60_000,
+  });
+  const more = lr.data;
   useEffect(() => { if (trackUri && data) q.acceptLyrics(trackUri, data); }, [trackUri, data, q]);
+  useEffect(() => { if (trackUri && more) q.acceptLyrics(trackUri, more); }, [trackUri, more, q]);
 }
 
 /** The track's Canvas (Spotify's looping clip behind Now Playing): { url, type } or null (none, not
