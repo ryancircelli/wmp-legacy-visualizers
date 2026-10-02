@@ -150,26 +150,27 @@
   /* a band behind the lines only, fading out above: the art (the visualizer, the Canvas) stays bright */
   background: linear-gradient(to top, rgb(0 0 0 / .8), rgb(0 0 0 / .55) calc(var(--unit) * 123), transparent calc(var(--unit) * 176)); text-align: center;
   text-shadow: 0 calc(var(--unit) * 1) calc(var(--unit) * 3) rgb(0 0 0 / .9);
-  /* 10 (the owner, 2026-10-02: "80% smaller lyric font rounded to nearest common font size" from 11.5,
-     then "increase font to 10"), the lines close */
-  font-size: calc(var(--unit) * 10); line-height: calc(var(--unit) * 13);
+  /* 11 on 12 (the owner, 2026-10-02: 80% of 11.5, then "increase font to 10", then "too small and gaps
+     too much still, especially between lyric lines"): tight lines */
+  font-size: calc(var(--unit) * 11); line-height: calc(var(--unit) * 12);
 }
 /* plain lyrics: four lines' window, scrolled with the track */
 /* the lines end 6 units above the mode row (the owner: "too much padding above progress bar") */
 .root:not(:has(.of)) .lyrics { padding-bottom: calc(var(--unit) * 34); background: linear-gradient(to top, rgb(0 0 0 / .8), rgb(0 0 0 / .55) calc(var(--unit) * 105), transparent calc(var(--unit) * 158)); }
 .plain { max-height: calc(var(--unit) * 60); overflow: hidden; white-space: pre-line; }
 .cur { font-weight: bold; }
-.next { margin-top: calc(var(--unit) * 3); color: rgb(255 255 255 / .5); }
+.next { margin-top: calc(var(--unit) * 2); color: rgb(255 255 255 / .5); }
 /* karaoke: the line's words dim until sung, the current one filling. The fill is a white copy of the
    word (its text in data-w) clipped to --f over the dim one, both with the box's shadow: a gradient
    through background-clip: text let WebKit paint the shadow over the letters ("messed up"). */
 .synced[data-karaoke] .cur { color: rgb(255 255 255 / .5); }
 .sung { color: #fff; }
-/* the word and its copy in the one grid cell, so they sit on the same pixels (an absolutely placed
-   copy at 0,0 of the inline was a little off: "a slight offset between characters") */
-.now { display: inline-grid; grid-template: 1fr / 1fr; }
+/* the word an inline block, its copy laid over its whole box: the same font in the same box lands
+   the glyphs on the same pixels (over a plain inline the copy sat a little off; a grid cell put the
+   word's own text in a second row) */
+.now { display: inline-block; position: relative; }
 .now::after {
-  content: attr(data-w); grid-area: 1 / 1; color: #fff;
+  content: attr(data-w); position: absolute; inset: 0; color: #fff; white-space: nowrap;
   clip-path: inset(0 calc(100% - var(--f, 0%)) 0 0);
 }
 

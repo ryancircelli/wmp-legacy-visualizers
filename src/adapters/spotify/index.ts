@@ -115,8 +115,13 @@ export function createSpotifyAdapter(store: AppStore): { start(): void; stop(): 
       buttons();
       const seen = () => { if (document.visibilityState === 'visible') buttons(); };
       document.addEventListener('visibilitychange', seen);
+      // the phone's heat and power mode, as they change, into the host's log (the owner: "my phone does overheat")
+      const thermal = () => window.alchemyLog?.('phone: thermal ' + (window.__wmpThermal ?? '?') + (window.__wmpLowPower ? ', low power' : ''));
+      window.addEventListener('wmp-thermal', thermal); window.addEventListener('wmp-lowpower', thermal);
+      if (window.__wmpThermal && window.__wmpThermal !== 'nominal') thermal();
       offs = [
-        () => { window.removeEventListener('wmp-volume', buttons); document.removeEventListener('visibilitychange', seen); },
+        () => { window.removeEventListener('wmp-volume', buttons); document.removeEventListener('visibilitychange', seen);
+                window.removeEventListener('wmp-thermal', thermal); window.removeEventListener('wmp-lowpower', thermal); },
         store.subscribe((s) => (s.settings.muted ? 0 : s.settings.volume), (v) => { if (!sp.fromDevice) C.volume(sp, v); }),
         transport().start(),   // first: the Tauri bridge sets up what observe reads
         observe(sp),

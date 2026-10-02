@@ -20,6 +20,8 @@ export interface Ticker {
 
 /** ms: rAF timestamps jitter by about half a millisecond; any display under 500 Hz has vsyncs further apart than this. */
 const SLACK = 2;
+/** ms between the host log's perf lines */
+const PERF_MS = 60_000;
 
 function mark(n: string) {
   window.alchemyMarks?.push(n + '=' + Math.round(performance.now()));
@@ -29,6 +31,9 @@ export function createTicker(store: AppStore, onFirstFrame: () => void): Ticker 
   const silent = makeLevel();
   let canvas: HTMLCanvasElement | null = null, eng: VisEngine | null = null, level: TimedLevel = silent;
   let acc = 0, last = 0, frames = 0, fpsAt = 0, fps = 0, raf = 0, first = true;
+  // the host's log, once a minute while frames are drawn: the fps reached, the draw's cost (render +
+  // present, main thread only), the sizes and the phone's thermal state (the owner: "my phone does overheat")
+  let perfAt = 0, drawMs = 0, drawn = 0;
   const S = () => store.getState().settings;
   const full = (s = store.getState()) => !!document.fullscreenElement || s.ui.bare || s.auth.mode === 'screensaver';
   /** Nothing to draw: held (a library view covers the visualizer; full screen always shows it), or
@@ -69,11 +74,11 @@ export function createTicker(store: AppStore, onFirstFrame: () => void): Ticker 
     // 8 and 25 ms apart instead of every 16.7 (measured 2026-09-29: 5-59% of presents per run; 0-1% with it).
     while (acc >= step - SLACK && runs < 3) {     // hard cap: no spiral of death
       acc -= step; runs++;
-      if (eng && !paused) { eng.render(fillLevel()); drew = true; }
+      if (eng && !paused) { const t0 = performance.now(); eng.render(fillLevel()); drawMs += performance.now() - t0; drew = true; }
     }
     if (acc > step * 3) acc = 0;
     if (drew && eng) {
-      eng.present(); frames++;
+      const t0 = performance.now(); eng.present(); drawMs += performance.now() - t0; frames++; drawn++;
       if (first) {
         first = false; mark('firstRender');
         // setTimeout, not straight through: inside rAF the frame is not composited yet.
@@ -83,6 +88,14 @@ export function createTicker(store: AppStore, onFirstFrame: () => void): Ticker 
     if (now - fpsAt >= 500) {
       fps = Math.round((frames * 1000) / (now - fpsAt));
       frames = 0; fpsAt = now;
+    }
+    if (!perfAt) perfAt = now;
+    else if (now - perfAt >= PERF_MS && window.alchemyLog && eng && canvas) {
+      const s = store.getState();
+      window.alchemyLog('perf: fps ' + fps + '/' + S().fps + ', draw ' + (drawn ? (drawMs / drawn).toFixed(1) : '-') + ' ms, ' +
+        s.vis.kind + ':' + s.vis.preset + ' ' + eng.width + 'x' + eng.height + ' -> ' + canvas.width + 'x' + canvas.height +
+        ', thermal ' + (window.__wmpThermal ?? '?') + (window.__wmpLowPower ? ', low power' : ''));
+      perfAt = now; drawMs = 0; drawn = 0;
     }
   }
 
