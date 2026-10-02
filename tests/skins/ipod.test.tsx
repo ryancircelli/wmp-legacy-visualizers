@@ -435,25 +435,36 @@ it('Now Playing\'s visualizer is Bars (ipod.visualizer) while shown, a change at
   expect(vis()).toEqual(['battery', 3, 'battery', 3]);
 });
 
-it('Settings > Visualizer lists every visualization by name, Bars checked; a choice is stored and Now Playing shows it at once', () => {
+it('Settings > Visualizer: the engines, the chosen one\'s showing its preset, each a page of its presets (Alchemy picked at its row); Now Playing shows a choice at once', () => {
   vi.stubGlobal('IntersectionObserver', class { observe() {} disconnect() {} });
   const nav = createNav(mainMenu(), () => nowPlaying());
   const m = mount(fakeData(), <NavContext.Provider value={nav}><div data-testid="np">{nowPlaying().render(nav)}</div></NavContext.Provider>);
   const tap = () => act(() => { fireEvent.click(m.getByTestId('np').querySelector('[class*=tap]')!); });
+  const click = (label: string) => act(() => { fireEvent.click(m.row(label)); });
+  const now = () => [localStorage.getItem('ipod.visualizer'), m.S().vis.kind, m.S().vis.preset];
+  act(() => m.store.getState().actions.setVis('battery', 3));   // the WMP 9 skin's own choice
   tap();                                             // Now Playing on its visualizer
-  act(() => { fireEvent.click(m.row('Settings')); });
-  act(() => { fireEvent.click(m.row('VisualizerBars')); });
-  expect(m.rows()).toEqual(m.sh.presets.map((p) => p.name + (p.vis === 'bars' && p.preset === 0 ? '✓' : '')));
-  act(() => { fireEvent.click(m.row('Ocean Mist')); });
-  expect([localStorage.getItem('ipod.visualizer'), m.S().vis.kind, m.S().vis.preset]).toEqual(['"bars:1"', 'bars', 1]);
-  expect(m.rows().filter((r) => r?.endsWith('✓'))).toEqual(['Ocean Mist✓']);
+  click('Settings');
+  click('VisualizerBars');
+  expect(m.rows()).toEqual(['Alchemy', 'Bars and WavesBars', 'Battery']);
+  click('Bars and WavesBars');
+  expect(m.rows()).toEqual(['Bars✓', 'Ocean Mist', 'Fire Storm', 'Scope']);
+  click('Ocean Mist');
+  expect([now(), m.rows()]).toEqual([['"bars:1"', 'bars', 1], ['Bars', 'Ocean Mist✓', 'Fire Storm', 'Scope']]);
   key('Escape');
-  expect(m.rows()).toContain('VisualizerOcean Mist');
+  expect(m.rows()).toEqual(['Alchemy', 'Bars and WavesOcean Mist', 'Battery']);
+  click('Battery');
+  expect(m.rows()).toEqual(m.sh.presets.filter((p) => p.group === 'Battery').map((p) => p.name));
+  key('Escape');
+  click('Alchemy');                                  // its one preset: picked here, no page
+  expect([now(), m.rows()]).toEqual([['"alchemy:0"', 'alchemy', 0], ['Alchemy✓', 'Bars and Waves', 'Battery']]);
+  key('Escape');
+  expect(m.rows()).toContain('VisualizerAlchemy');
   tap();                                             // back to the Canvas for the tests after
-  expect(m.S().vis.kind).toBe('alchemy');            // WMP's default, untouched
+  expect([m.S().vis.kind, m.S().vis.preset]).toEqual(['battery', 3]);   // WMP's own choice, untouched
 });
 
-it('the ⋯ over the cover opens this page\'s options: Lyrics and Karaoke toggle, Visualizer… picks one, put on screen at once', () => {
+it('the ⋯ over the cover opens this page\'s options: Lyrics and Karaoke toggle, Visualizer… picks one by engine, put on screen at once', () => {
   vi.stubGlobal('IntersectionObserver', class { observe() {} disconnect() {} });
   const haptic = vi.fn();
   window.alchemyHaptic = haptic;
@@ -473,11 +484,18 @@ it('the ⋯ over the cover opens this page\'s options: Lyrics and Karaoke toggle
   pick('KaraokeOn');
   open();
   expect([m.S().settings.karaoke, rows()]).toEqual([false, ['Visualizer…', 'LyricsOff', 'KaraokeOff', 'Cancel']]);
-  pick('Visualizer…');
-  expect(rows()).toEqual(m.sh.presets.map((p) => p.name + (p.vis === 'bars' && p.preset === 0 ? '✓' : '')));
+  pick('Visualizer…');                               // the engines, then (a second popup) an engine's presets
+  expect(rows()).toEqual(['Alchemy', 'Bars and WavesBars', 'Battery']);
+  pick('Bars and WavesBars');
+  expect(rows()).toEqual(['Bars✓', 'Ocean Mist', 'Fire Storm', 'Scope']);
   expect(np.querySelector('canvas')).toBeNull();     // the cover (no Canvas) until one is picked
   pick('Fire Storm');
-  expect([localStorage.getItem('ipod.visualizer'), !!np.querySelector('canvas'), m.S().vis.kind, m.S().vis.preset])
-    .toEqual(['"bars:2"', true, 'bars', 2]);
+  expect([localStorage.getItem('ipod.visualizer'), !!np.querySelector('canvas'), m.S().vis.kind, m.S().vis.preset, rows()])
+    .toEqual(['"bars:2"', true, 'bars', 2, []]);
+  open();
+  pick('Visualizer…');
+  expect(rows()).toEqual(['Alchemy', 'Bars and WavesFire Storm', 'Battery']);
+  pick('Alchemy');                                   // its one preset: picked at its row
+  expect([localStorage.getItem('ipod.visualizer'), m.S().vis.kind, rows()]).toEqual(['"alchemy:0"', 'alchemy', []]);
   act(() => { fireEvent.click(np.querySelector('[class*=tap]')!); });   // back to the Canvas for the tests after
 });

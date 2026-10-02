@@ -22,7 +22,7 @@ import {
   usePlainLyrics, usePosition, useRadioSeeds, useShell, type MenuEntry,
 } from '../../../../ui';
 import type { MenuItem, ScreenEntry } from '../contract';
-import { useVisFit, useVisualizer, useVisualizerItems, visId } from '../settings';
+import { useVisFit, useVisualizer, useVisualizers, visId } from '../settings';
 import { Bar, MenuScreen, Popup, useNav, useScan, useWheel } from '../../ui';
 import { IDLE_MS, nextMode, ofText, SCRUB_COMMIT_MS, scrubAccel, scrubStep, times, volumeStep, VOLUME_MS, type Mode } from './logic';
 import css from './nowplaying.module.css';
@@ -38,7 +38,7 @@ const canvasPref = createStore<{ show: Show }>()(persist((): { show: Show } => (
   name: 'ipod.canvas', version: 1, migrate: (old) => ({ show: (old as { on?: boolean } | null)?.on === false ? 'cover' : 'video' }),
 }));
 
-type Pop = 'main' | 'playlists' | 'devices' | 'vis' | 'options';
+type Pop = 'main' | 'playlists' | 'devices' | 'vis' | 'presets' | 'options';
 /** a wheel scrub: the position shown, then (sent) held until the player reports the seek */
 type Scrub = { uri: string; ms: number; sent?: boolean };
 
@@ -109,7 +109,8 @@ function NowPlaying() {
   const of = p.shuffle ? '' : ofText(col.rows, uri, col.total);
 
   const devices = useDevices(() => '');
-  const show = useStore(canvasPref, (x) => x.show), visItems = useVisualizerItems();
+  const show = useStore(canvasPref, (x) => x.show), [group, setGroup] = useState('');
+  const vz = useVisualizers(() => canvasPref.setState({ show: 'vis' }));
   /** song radio: the first seed's own station (§4.3) */
   const startRadio = () => {
     const seed = seeds[0];
@@ -118,8 +119,9 @@ function NowPlaying() {
       if (hit) c().playItem({ uri: hit.uri });
     }, () => {});
   };
-  /** this page's options (the ⋯, and the popup's): a visualization picked shows at once, the
-   *  visualizer put on screen if it was not; Lyrics and Karaoke as Settings toggles them */
+  /** this page's options (the ⋯, and the popup's): Visualizer… lists the engines, an engine its presets
+   *  (a second popup); a pick shows at once, the visualizer put on screen if it was not; Lyrics and
+   *  Karaoke as Settings toggles them */
   const options: MenuItem[] = [
     { id: 'vis', label: 'Visualizer…', onSelect: () => setPopup('vis') },
     { id: 'lyrics', label: 'Lyrics', right: p.lyricsOn ? 'On' : 'Off', onSelect: () => get().actions.setLyricsEnabled(!p.lyricsOn) },
@@ -141,7 +143,8 @@ function NowPlaying() {
     ],
     playlists: toItems(plMenu.sub ?? []),
     devices: toItems(devices.items()),
-    vis: visItems.map((x) => ({ ...x, onSelect: () => { x.onSelect?.(); canvasPref.setState({ show: 'vis' }); } })),
+    vis: vz.engines((g) => { setGroup(g); setPopup('presets'); }),
+    presets: vz.presets(group),
     options: [...options, cancel],
   };
 
