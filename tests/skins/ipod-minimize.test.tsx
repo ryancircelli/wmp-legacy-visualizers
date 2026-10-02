@@ -1,6 +1,7 @@
 // The iPod's Now Playing minimizes after MINIMIZE_MS without input while it plays: the bands and the ⋯
-// go, one line (title · artist over a progress line) stays; any input restores it, a tap on the screen,
-// a wheel turn or an arrow key doing nothing else, the wheel's buttons acting as ever.
+// go, the cover stays as it is, and the menus' Now Playing bar comes up at the foot; any input restores
+// it, a tap on the screen, a wheel turn or an arrow key doing nothing else, the wheel's buttons and the
+// bar's acting as ever. (Where the cover and the lyrics sit is layout: checked in Chromium.)
 import { act, cleanup, fireEvent, within } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { Root } from '../../src/skins/ipod/Root';
@@ -23,21 +24,43 @@ function atNowPlaying() {
   play('spotify:track:a', 'Song');
   act(() => { fireEvent.click(m.getByTestId('ipod').querySelector('[aria-label="Now Playing"][role=button]')!); });
   const np = () => m.getByTestId('ipod').querySelector<HTMLElement>('[class*=root]:has([class*=controls])')!;
-  return { ...m, play, np, mini: () => np().hasAttribute('data-mini'), line: () => np().querySelector('[class*=miniline]')?.textContent };
+  /** the bar at the foot, there only while minimized (hidden from the accessibility tree otherwise) */
+  const bar = () => within(np()).queryByRole('button', { name: 'Now Playing' });
+  return { ...m, play, np, bar, mini: () => np().hasAttribute('data-mini'), line: () => bar()?.querySelector('[class*=nptitle]')?.textContent };
 }
 
-it('minimizes after MINIMIZE_MS without input while it plays, to one line over the progress; a track change keeps it so', () => {
+it('minimizes after MINIMIZE_MS without input while it plays: the menus\' Now Playing bar at the foot, the cover the same; a track change keeps it so', () => {
   const m = atNowPlaying();
+  const cover = m.np().querySelector('img[class*=art]') ?? m.np().querySelector('[class*=noart]');
   expect(MINIMIZE_MS).toBe(5000);
+  expect(m.bar()).toBeNull();
   wait(MINIMIZE_MS - 1);
   expect(m.mini()).toBe(false);
   wait(1);
-  expect([m.mini(), m.line()]).toEqual([true, 'Song · Band']);
-  const width = parseFloat(m.np().querySelector<HTMLElement>('[class*=miniprog] > div')!.style.width);
-  expect(width).toBeGreaterThanOrEqual(25);         // 25 s of 100 and on
-  expect(width).toBeLessThanOrEqual(31);
-  m.play('spotify:track:b', 'Next One');             // the next track: still minimized, the line its own
-  expect([m.mini(), m.line()]).toEqual([true, 'Next One · Band']);
+  expect([m.mini(), m.line()]).toEqual([true, 'Song • Band']);
+  expect(m.np().querySelector('[class*=miniline]')).toBeNull();   // the bar, not a line of its own
+  expect([m.np().querySelector('img[class*=art]') ?? m.np().querySelector('[class*=noart]')]).toEqual([cover]);   // the same cover, its box CSS's
+  const v = parseFloat(m.bar()!.style.getPropertyValue('--v'));
+  expect(v).toBeGreaterThanOrEqual(0.25);            // 25 s of 100 and on
+  expect(v).toBeLessThanOrEqual(0.31);
+  m.play('spotify:track:b', 'Next One');             // the next track: still minimized, the bar its own
+  expect([m.mini(), m.line()]).toEqual([true, 'Next One • Band']);
+});
+
+it('the bar: a tap on it restores (Now Playing is where it would go), its button plays / pauses and restores, a swipe skips', () => {
+  const m = atNowPlaying();
+  wait(MINIMIZE_MS);
+  const tapBar = () => { const b = m.bar()!; act(() => { fireEvent.pointerDown(b, { pointerId: 1, clientX: 100, clientY: 10 }); fireEvent.pointerUp(b, { pointerId: 1, clientX: 100, clientY: 10 }); fireEvent.click(b); }); };
+  tapBar();
+  expect([m.mini(), m.np().closest('[hidden]'), m.cmd.playPause.mock.calls.length]).toEqual([false, null, 0]);
+  wait(MINIMIZE_MS);
+  const button = within(m.bar()!).getByRole('button', { name: 'Pause' });
+  act(() => { fireEvent.pointerDown(button); fireEvent.click(button); });
+  expect([m.cmd.playPause.mock.calls.length, m.mini()]).toEqual([1, false]);
+  wait(MINIMIZE_MS);
+  const b = m.bar()!;
+  act(() => { fireEvent.pointerDown(b, { pointerId: 2, clientX: 200, clientY: 10 }); fireEvent.pointerUp(b, { pointerId: 2, clientX: 100, clientY: 12 }); fireEvent.click(b); });
+  expect([m.cmd.next.mock.calls.length, m.mini()]).toEqual([1, false]);
 });
 
 it('not while paused, nor with a popup open; pausing restores', () => {

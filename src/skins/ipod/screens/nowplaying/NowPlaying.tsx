@@ -30,7 +30,7 @@ import {
 import { useHostGlobal } from '../../host';
 import type { MenuItem, ScreenEntry } from '../contract';
 import { useVisFit, useVisualizers, visId } from '../settings';
-import { Bar, MenuScreen, Popup, useNav, useScan, useWheel } from '../../ui';
+import { Bar, MenuScreen, NowPlayingBar, Popup, useNav, useScan, useWheel } from '../../ui';
 import { pickAccent, rgbOf } from './accent';
 import { barsFit, IDLE_MS, MINIMIZE_MS, nextMode, ofText, SCRUB_COMMIT_MS, scrubAccel, scrubStep, times, volumeStep, VOLUME_MS, type Mode } from './logic';
 import css from './nowplaying.module.css';
@@ -110,10 +110,12 @@ function NowPlaying() {
   }, []);
 
   // Minimized (MINIMIZE_MS without input while it plays, this screen the top one, no popup, no scrubber or
-  // Radio slider): the bands and the ⋯ go, the art takes the whole area, and one line (title · artist
-  // over a thin progress line) stays at the foot. Any input restores it. A tap on the screen, a wheel
-  // turn or an arrow key that restores does nothing else (`woke`: the press or key that woke it, its
-  // ticks and its click consumed); the wheel's buttons and their keys act as ever too.
+  // Radio slider): the bands and the ⋯ go, the cover stays as it is (centred in the room they leave),
+  // and the menus' Now Playing bar comes up at the foot. Any input restores it. A tap on the screen, a
+  // wheel turn or an arrow key that restores does nothing else (`woke`: the press or key that woke it,
+  // its ticks and its click consumed), but for the bar's (its button plays / pauses, a swipe skips, a
+  // tap on it restores); the wheel's buttons and their keys act as ever too.
+  const foot = useRef<HTMLDivElement>(null);
   const root = useRef<HTMLDivElement>(null), seen = useOnScreen(root), playing = useApp(isPlaying);
   const [mini, setMini] = useState(false), [wasIdle, setWasIdle] = useState(false);
   const idle = seen && playing && !popup && m === 'default';
@@ -126,7 +128,13 @@ function NowPlaying() {
     const arm = () => { clearTimeout(L.timer); if (L.idle) L.timer = window.setTimeout(() => setMini(true), MINIMIZE_MS); };
     // the ref first, so the same input's other listeners (the wheel's, whichever runs first) see it awake
     const input = () => { L.woke = L.mini; if (L.mini) { L.mini = false; setMini(false); } arm(); };
-    const click = (e: Event) => { if (!L.woke) return; L.woke = false; e.stopPropagation(); e.preventDefault(); };
+    const click = (e: Event) => {
+      if (!L.woke) return;
+      L.woke = false;
+      if (foot.current && e.composedPath().includes(foot.current)) return;   // the bar's own
+      e.stopPropagation();
+      e.preventDefault();
+    };
     arm();
     const opts = { capture: true };
     window.addEventListener('pointerdown', input, opts);
@@ -300,11 +308,8 @@ function NowPlaying() {
           </div>
         )}
       </div>
-      {/* minimized: the one line and the progress under it, over a shade at the foot */}
-      <div className={css.mini} aria-hidden={!mini}>
-        <div className={css.miniline}>{[t?.title, t?.artist].filter(Boolean).join(' · ')}</div>
-        <div className={css.miniprog}><div style={{ width: f * 100 + '%' }} /></div>
-      </div>
+      {/* minimized: the menus' Now Playing bar at the foot; a tap on it restores (it is already here) */}
+      <div ref={foot} className={css.foot} aria-hidden={!mini}><NowPlayingBar onOpen={() => setMini(false)} /></div>
       {popup && <Popup items={items[popup]} onClose={() => setPopup((x) => (x === popup ? null : x))} />}
     </div>
   );

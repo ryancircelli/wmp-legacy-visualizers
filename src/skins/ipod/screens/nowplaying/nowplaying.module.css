@@ -123,7 +123,8 @@
   position: absolute; top: calc(var(--unit) * 60); left: 0; right: 0; bottom: calc(var(--unit) * 56);
   display: flex; flex-direction: column; justify-content: flex-end; padding: 0 calc(var(--unit) * 10) calc(var(--unit) * 6);
   /* a band behind the lines only, fading out above: the art (the visualizer, the Canvas) stays bright */
-  background: linear-gradient(to top, rgb(0 0 0 / .75), rgb(0 0 0 / .5) 28%, transparent 50%); text-align: center;
+  /* in units, not percent: the same band whatever the box's height (minimized, it is taller) */
+  background: linear-gradient(to top, rgb(0 0 0 / .75), rgb(0 0 0 / .5) calc(var(--unit) * 67), transparent calc(var(--unit) * 120)); text-align: center;
   text-shadow: 0 calc(var(--unit) * 1) calc(var(--unit) * 3) rgb(0 0 0 / .9);
   font-size: calc(var(--unit) * 11.5); line-height: calc(var(--unit) * 15);
 }
@@ -141,27 +142,20 @@
 }
 
 /* Minimized (NowPlaying.tsx: MINIMIZE_MS without input while it plays): the bands slide out and the ⋯
-   fades, the art takes the whole area (cropped to it), and one line stays at the foot: "Title · Artist"
-   over a 2.5-unit progress line, on a shade that reads on any picture; the lyrics sit just above it */
-.info, .controls, .more { transition: transform .3s ease, opacity .3s ease; }
-.art, .tap, .overart { transition: top .3s ease, height .3s ease; }
+   fades; the cover keeps its size and crop, centred between the status row and the menus' Now Playing
+   bar (45 tall), which slides up at the foot; the Canvas and a plain visualizer fill the area as ever,
+   Over Cover's stays on the cover; the lyrics' band is their own box's, so it goes where they go */
+.info, .controls, .more, .foot { transition: transform .3s ease, opacity .3s ease; }
+.art, .tap, .overart { transition: top .3s ease; }
 .root[data-mini] .info { transform: translateY(-100%); opacity: 0; pointer-events: none; }
 .root[data-mini] .controls { transform: translateY(100%); opacity: 0; pointer-events: none; }
 .root[data-mini] .more { opacity: 0; pointer-events: none; }
-.root[data-mini] :is(.art, .tap, .overart) { top: 0; height: 100%; }
-.root[data-mini] .lyrics { top: 0; bottom: calc(var(--unit) * 22); }
-.mini {
-  position: absolute; left: 0; right: 0; bottom: 0; height: calc(var(--unit) * 30);
-  display: flex; flex-direction: column; justify-content: flex-end;
-  background: linear-gradient(transparent, rgb(0 0 0 / .65));
-  opacity: 0; transition: opacity .3s ease; pointer-events: none;
-}
-.root[data-mini] .mini { opacity: 1; }
-.miniline {
-  padding: 0 calc(var(--unit) * 8) calc(var(--unit) * 5); text-align: center;
-  font-size: calc(var(--unit) * 11); font-weight: bold; line-height: calc(var(--unit) * 14);
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-shadow: 0 1px 2px #000;
-}
-.miniprog { height: calc(var(--unit) * 2.5); background: rgb(255 255 255 / .25); }
-.miniprog > div { height: 100%; background: linear-gradient(#7a98ce, #5181d6); }
-
+.root[data-mini] :is(.art, .tap, .overart) { top: calc(var(--unit) * (311 - 240) / 2); }
+.root[data-mini]:not(:has(.of)) :is(.art, .tap, .overart) { top: calc(var(--unit) * (311 - 258) / 2); }
+/* the lyrics on the bar over the Canvas or a plain visualizer (the whole area), on the cover's foot over
+   the cover (and Over Cover), as in the full view; the area is 356 tall */
+.root[data-mini] .lyrics { top: 0; bottom: calc(var(--unit) * 45); }
+.root[data-mini]:not([data-canvas]) .lyrics { top: calc(var(--unit) * (311 - 240) / 2); bottom: calc(var(--unit) * (356 - (311 + 240) / 2)); }
+.root[data-mini]:not([data-canvas]):not(:has(.of)) .lyrics { top: calc(var(--unit) * (311 - 258) / 2); bottom: calc(var(--unit) * (356 - (311 + 258) / 2)); }
+.foot { position: absolute; left: 0; right: 0; bottom: 0; transform: translateY(100%); pointer-events: none; }
+.root[data-mini] .foot { transform: none; pointer-events: auto; }
