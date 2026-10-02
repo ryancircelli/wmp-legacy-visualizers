@@ -13,6 +13,12 @@ export const isContext = (uri: string) => /^spotify:(playlist|album):/.test(uri)
 export const isAlbum = (uri: string) => uri.startsWith('spotify:album:');
 /** only inline images and https: art is shown (no file:, no http:) */
 export const artOk = (a: string | null | undefined) => (a && /^(data:image\/|https:)/.test(a) ? a : '');
+/** An album cover's 640 px address: Spotify's cover ids carry the size in a fixed prefix, so a list
+ *  row's 64 px or a 300 px one is rewritten; anything else is returned as it is.
+ *  ponytail: the twin of the adapter's bigCover (src/adapters/spotify/state.ts; src/ui imports no
+ *  adapter); move both to src/model if a third place needs it. */
+export const bigCover = (u: string | null | undefined): string | null =>
+  u ? u.replace(/(\/image\/ab67616d0000)(?:4851|1e02)(?=[0-9a-f]{24}$)/, '$1b273') : null;
 
 /** 0..1 through the track (4 decimals), -1 = no session (the seek thumb goes home) */
 export function seekFraction(s: AppState, now = Date.now()): number {

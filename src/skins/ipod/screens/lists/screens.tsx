@@ -10,7 +10,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { LIKED, type LibraryItem, type SearchResults, type Track } from '../../../../model';
 import {
-  canSave, isAlbum, STALE, useAddTo, useApp, useArtist, useCollection, useDebounced, useLibraryList, useSearch, useSearchAll, useShell, type Bucket, type Shell,
+  bigCover, canSave, isAlbum, STALE, useAddTo, useApp, useArtist, useCollection, useDebounced, useLibraryList, useSearch, useSearchAll, useShell, type Bucket, type Shell,
 } from '../../../../ui';
 import { CollectionHeader, FilterChips, GridScreen, MenuScreen, Popup, Tile, useNav, useWheel } from '../../ui';
 import type { GridItem, HeadAction, MenuItem, Nav, ScreenEntry } from '../contract';
@@ -93,9 +93,9 @@ const PLAYING = <svg viewBox="0 0 8 10" fill="currentColor" style={{ width: u(7)
  *  Songs' page (`head`) leads with Spotify's header: the cover, Play (Pause while it is what plays:
  *  then it pauses / resumes), the Shuffle toggle (Spotify's shuffle, as the status row's), the heart
  *  and "…" (Save to Library, Start Radio; hold-centre on a button too), and its songs are two-line
- *  rows with their covers (the collection's when a song has none). */
-function TrackList({ keep, rows, loading, more, head }: {
-  keep: Box<number>; rows: readonly Track[]; loading: boolean; more?: () => void; head?: Head;
+ *  rows with their covers (the collection's when a song has none), as `tall` asks for without one. */
+function TrackList({ keep, rows, loading, more, head, tall = !!head }: {
+  keep: Box<number>; rows: readonly Track[]; loading: boolean; more?: () => void; head?: Head; tall?: boolean;
 }) {
   const sh = useShell(), nav = useNav(), [held, setHeld] = useState<Held>(null), [menu, setMenu] = useState(false);
   const like = useAddTo(head && canSave(head.uri) ? head.uri : null, head?.saved), playing = useApp((s) => s.playback.track?.uri);
@@ -122,7 +122,7 @@ function TrackList({ keep, rows, loading, more, head }: {
   const play = (i: number) => (i >= lead ? playSong(sh, nav, rows[i - lead]!) : start());
   return (
     <>
-      <List keep={keep} items={items} loading={loading} empty="No Songs" near={more} play={held || menu ? undefined : play} lead={lead} tall={!!head}
+      <List keep={keep} items={items} loading={loading} empty="No Songs" near={more} play={held || menu ? undefined : play} lead={lead} tall={tall}
             head={head && <CollectionHeader art={head.art} title={head.title} line={head.line} actions={acts} onMore={open} />} />
       {held && <TrackPopup held={held} set={setHeld} />}
       {menu && head && <Popup onClose={() => setMenu(false)} items={[
@@ -214,8 +214,8 @@ type Body = (p: { bar: Bar; keep: Box<string> }) => ReactNode;
 const Playlists: Body = ({ bar, keep }) => {
   const sh = useShell(), nav = useNav(), lib = useLibraryList(), liked = useCollection(LIKED), next = useApp((s) => s.queue.next[0]);
   const items: GridItem[] = [
-    // the Queue's tile: the next song's cover
-    { id: 'queue', label: 'Queue', chevron: true, art: next?.art || next?.image, sub: 'Up next', onSelect: () => nav.push(onTheGo()) },
+    // the Queue's tile: the next song's cover, at 640 px (its row carries the 64 px thumbnail)
+    { id: 'queue', label: 'Queue', chevron: true, art: bigCover(next?.art || next?.image), sub: 'Up next', onSelect: () => nav.push(onTheGo()) },
     { ...opens(nav, { uri: LIKED, name: 'Liked Songs' }), art: LIKED_ART,
       sub: liked.loaded ? 'Playlist · ' + liked.total.toLocaleString() + (liked.total === 1 ? ' song' : ' songs') : 'Playlist' },
     ...lib.items.filter((x) => !isAlbum(x.uri)).map((x) => opens(nav, x)),
@@ -228,7 +228,7 @@ const Playlists: Body = ({ bar, keep }) => {
  *  and shows here with the player's next state. */
 function OnTheGo({ keep }: { keep: Box<number> }) {
   const rows = useApp((s) => s.queue.next);
-  return <TrackList keep={keep} rows={rows} loading={false} />;
+  return <TrackList keep={keep} rows={rows} loading={false} tall />;
 }
 const onTheGo = () => screen('onTheGo', 'Queue', 0, (k) => <OnTheGo keep={k} />);
 
