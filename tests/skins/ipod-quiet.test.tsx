@@ -1,8 +1,8 @@
-// The iPod's Now Playing goes quiet after QUIET_MS without input while it plays: nothing moves, the
-// bands' backgrounds and the ⋯ fade away (CSS on data-quiet; their look is checked in Chromium); any
-// input wakes it, a tap on the screen, a wheel turn or an arrow key doing nothing else, the wheel's
-// buttons acting as ever. The visualizer overlay is the whole area in both views; the minimized view's
-// bar and mirrors are gone.
+// The iPod's Now Playing goes quiet after QUIET_MS without input while it plays: nothing moves or goes,
+// the bands (and the cover's reflection) thin to .55 and the ⋯ fades out (CSS on data-quiet; the look is
+// checked in Chromium against the original build); any input wakes it, a tap on the screen, a wheel turn
+// or an arrow key doing nothing else, the wheel's buttons acting as ever. The visualizer overlay is the
+// whole area in both views; the minimized view's bar and mirrors are gone.
 import { act, cleanup, fireEvent, within } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { Root } from '../../src/skins/ipod/Root';
@@ -28,9 +28,12 @@ function atNowPlaying() {
   return { ...m, play, np, quiet: () => np().hasAttribute('data-quiet') };
 }
 
-it('goes quiet after QUIET_MS without input while it plays: nothing added or moved, the title and the progress where they were; a track change keeps it so', () => {
+it('goes quiet after QUIET_MS without input while it plays: nothing added, moved or taken away (the cover\'s reflection too), the title and the progress where they were; a track change keeps it so', () => {
   const m = atNowPlaying();
-  const before = m.np().innerHTML;
+  m.play('spotify:track:a', 'Song', 'playing', 'https://i.scdn.co/image/abc');
+  const reflection = () => m.np().querySelector('[class*=reflection]')?.getAttribute('src') ?? null;
+  expect([reflection(), m.np().hasAttribute('data-canvas')]).toEqual(['https://i.scdn.co/image/abc', false]);   // the cover's view
+  const before = m.np().querySelectorAll('*').length;
   expect(QUIET_MS).toBe(5000);
   wait(QUIET_MS - 1);
   expect(m.quiet()).toBe(false);
@@ -40,7 +43,7 @@ it('goes quiet after QUIET_MS without input while it plays: nothing added or mov
   expect([m.np().querySelector('[class*=title]')?.textContent, !!m.np().querySelector('[class*=row] [class*=track]'),
           !!within(m.np()).queryByRole('button', { name: 'Options' }), within(m.np()).queryByRole('button', { name: 'Now Playing' }),
           m.np().querySelector('[class*=mirror], [class*=foot]')]).toEqual(['Song', true, true, null, null]);
-  expect(m.np().innerHTML.replace(/ data-quiet=""/, '').length).toBeGreaterThan(before.length * 0.9);
+  expect([m.np().querySelectorAll('*').length, reflection()]).toEqual([before, 'https://i.scdn.co/image/abc']);   // the same elements
   m.play('spotify:track:b', 'Next One');             // the next track: still quiet, its title shown
   expect([m.quiet(), m.np().querySelector('[class*=title]')?.textContent]).toEqual([true, 'Next One']);
 });

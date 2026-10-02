@@ -8,17 +8,11 @@
   font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
 }
 
-/* artist / title / album, centred, pitch 17, the first centred at screen y 32.5. The band is translucent
-   over the art and the visualizer, the cover's view as the Canvas's (the owner, 2026-10-02: one design);
-   its background is a layer of its own (::before) so the quiet state can fade it away */
+/* artist / title / album, centred, pitch 17, the first centred at screen y 32.5, on the nano's dark
+   band; its background is a layer of its own (::before) so the quiet state can thin it */
 .info { position: absolute; top: 0; left: 0; right: 0; height: calc(var(--unit) * 60); isolation: isolate; }
-.info::before, .controls::before, .info::after, .controls::after {
-  content: ""; position: absolute; inset: 0; z-index: -1; transition: opacity .3s ease;
-}
-.info::before { background: linear-gradient(rgb(66 66 66 / .6), rgb(1 1 1 / .6)); }
-/* quiet, a light shade instead, from nothing (white text on a bright picture needs one) */
-.info::after { background: linear-gradient(rgb(0 0 0 / .45), transparent); opacity: 0; }
-.controls::after { background: linear-gradient(transparent, rgb(0 0 0 / .6)); opacity: 0; }
+.info::before, .controls::before { content: ""; position: absolute; inset: 0; z-index: -1; transition: opacity .3s ease; }
+.info::before { background: linear-gradient(#424242, #010101); }
 .line {
   position: absolute; left: calc(var(--unit) * 8); right: calc(var(--unit) * 8);
   height: calc(var(--unit) * 17); line-height: calc(var(--unit) * 17);
@@ -42,15 +36,13 @@
   color: #fff; font-size: calc(var(--unit) * 120);
 }
 
-/* the controls band: a shade that grows from nothing over the art and the visualizer (no edge on a bright
-   picture), the cover's mirror image at .25 over the cover's view, the mode row centred at screen y 345,
-   "N of M" centred at y 361; under the lyrics it carries on their band's shade */
+/* the controls band: the dark gradient (::before), the cover's mirror image at .25, the mode row
+   centred at screen y 345, "N of M" centred at y 361 */
 .controls {
   position: absolute; bottom: 0; left: 0; right: 0; height: calc(var(--unit) * 56);
   overflow: hidden; isolation: isolate;
 }
-.controls::before { background: linear-gradient(transparent, rgb(0 0 0 / .75)); }
-.root:has(.lyrics) .controls::before { background: rgb(0 0 0 / .75); }
+.controls::before { background: linear-gradient(#656565, #262626); }
 /* no "N of M" under it: the band is the mode row alone (the owner: too much padding under the bar) */
 .root:not(:has(.of)) .controls { height: calc(var(--unit) * 38); }
 .root:not(:has(.of)) .row { top: calc(var(--unit) * 10); }
@@ -121,7 +113,12 @@
    over the whole area under the status row whatever the art, behind the bands: one size always */
 .overlay { position: absolute; inset: 0; }
 .clear { display: block; width: 100%; height: 100%; }
-.line, .row, .of { text-shadow: 0 1px 2px #000; }
+/* over the Canvas (or the visualizer over the black) the bands are translucent; the controls band a
+   shade that grows from nothing (no edge on a bright picture), under the lyrics carrying on theirs */
+.root[data-canvas] .info::before { background: linear-gradient(rgb(66 66 66 / .6), rgb(1 1 1 / .6)); }
+.root[data-canvas] .controls::before { background: linear-gradient(transparent, rgb(0 0 0 / .75)); }
+.root[data-canvas]:has(.lyrics) .controls::before { background: rgb(0 0 0 / .75); }
+.root[data-canvas] :is(.line, .row, .of), .root[data-quiet] :is(.line, .row, .of) { text-shadow: 0 1px 2px #000; }
 
 /* lyrics over the cover, at its foot just above the mode row: white 14 on black at 70 % */
 .lyrics {
@@ -145,12 +142,12 @@
   background-image: linear-gradient(90deg, #fff var(--f, 0%), rgb(255 255 255 / .5) var(--f, 0%));
 }
 
-/* Quiet (NowPlaying.tsx: QUIET_MS without input while it plays): nothing moves; the bands' backgrounds
-   (and the cover's reflection with the controls band's) fade away and the ⋯ fades out, the text, the
-   progress, "N of M" and the device line staying with their shadow over the picture, on a light shade
-   from nothing at the top and at the foot (::after: bare, white text did not read over a bright Canvas) */
+/* Quiet (NowPlaying.tsx: QUIET_MS without input while it plays): nothing moves; the bands stay the same
+   bands, thinned to .55 (their gradient and the controls band's reflection with it) so the visualizer and
+   the Canvas show through, the text, the progress, "N of M" and the device line whole with a shadow; the
+   ⋯ fades out. (With lyrics showing over the Canvas the controls band keeps its shade: it carries on
+   theirs, which they keep.) */
 .more { transition: opacity .3s ease; }
-/* (with lyrics showing the controls band keeps its shade: it carries on theirs, which they keep) */
-.root[data-quiet] .info::before, .root[data-quiet]:not(:has(.lyrics)) .controls::before, .root[data-quiet] .reflection { opacity: 0; }
-.root[data-quiet] .info::after, .root[data-quiet]:not(:has(.lyrics)) .controls::after { opacity: 1; }
+.root[data-quiet] .info::before, .root[data-quiet]:not([data-canvas]:has(.lyrics)) .controls::before { opacity: .55; }
+.root[data-quiet] .reflection { opacity: calc(.25 * .55); }
 .root[data-quiet] .more { opacity: 0; pointer-events: none; }
