@@ -1,6 +1,6 @@
 // The iPod nano 5G Now Playing (docs/ipod-skin.md §2.4, §3.1, §4.3), under the chrome's 20-unit status
 // row: artist / title / album on the dark band, the 240×240 cover, then the controls band with the
-// cover's reflection, the mode row and "N of M". Ticks change the volume (the row becomes a volume bar
+// cover's reflection and the mode row (no "N of M": the owner, 2026-10-02). Ticks change the volume (the row becomes a volume bar
 // for 2 s); the center cycles the mode row: scrubber (ticks seek 1 % a detent, accelerated, sent 400 ms
 // after the last or on center; MENU cancels) -> Radio slider (the nano's Genius) -> back; each falls
 // back after 5 s idle (shuffle and Like: the status row's toggles). The track's lyrics show over the
@@ -16,7 +16,7 @@
 // output), Bars and Waves in the cover's accent (accent.ts), Visualizer… > Opacity its opacity; on black
 // it is WMP's own, opaque in its own colours at full strength. On silence it draws as the engines do
 // (Bars and Waves nothing). Playing on another device than this one (not this
-// page's player, nor the iPhone's own speaker): its name, in Spotify's green, on the "N of M" line;
+// page's player, nor the iPhone's own speaker): its name, in Spotify's green, under the mode row;
 // a tap on it opens Play On….
 import { Vibrant } from 'node-vibrant/browser';
 import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from 'react';
@@ -35,7 +35,7 @@ import { useVisFit, useVisualizers, visId } from '../settings';
 import { Bar, MenuScreen, Popup, useNav, useScan, useWheel } from '../../ui';
 import { useTurn } from '../../wheel';
 import { pickAccent, rgbOf } from './accent';
-import { barsFit, IDLE_MS, nextMode, ofText, QUIET_MS, SCRUB_COMMIT_MS, scrubAccel, scrubStep, times, turnPct, volumeBy, VOLUME_MS, VOLUME_SEND_MS, VOLUME_TICK, type Mode } from './logic';
+import { barsFit, IDLE_MS, nextMode, QUIET_MS, SCRUB_COMMIT_MS, scrubAccel, scrubStep, times, turnPct, volumeBy, VOLUME_MS, VOLUME_SEND_MS, VOLUME_TICK, type Mode } from './logic';
 import css from './nowplaying.module.css';
 
 export function nowPlaying(): ScreenEntry {
@@ -152,7 +152,7 @@ function NowPlaying() {
 
   // Quiet (QUIET_MS without input while it plays, this screen the top one, no popup, no scrubber or
   // Radio slider): nothing moves; the bands' backgrounds and the ⋯ fade away, the text, the progress and
-  // "N of M" staying over the picture, as over the Canvas. Any input wakes it. A tap on the screen, a
+  // the device line staying over the picture, as over the Canvas. Any input wakes it. A tap on the screen, a
   // wheel turn or an arrow key that wakes it does nothing else (`woke`: the press or key that woke it,
   // its ticks and its click consumed); the wheel's buttons and their keys act as ever too.
   const root = useRef<HTMLDivElement>(null), seen = useOnScreen(root), playing = useApp(isPlaying);
@@ -188,12 +188,11 @@ function NowPlaying() {
     };
   }, [idle]);
 
-  // what it plays from: "N of M" (its first loaded page only), and the row's album / artist
+  // what it plays from: the row's album / artist
   const col = useCollection(t?.ctx);
   const row = col.rows.find((r) => r.uri === uri);
   const artistUri = t?.artistUris?.[0] ?? row?.artistUris?.[0] ?? seeds.find((x) => x.seed.startsWith('spotify:artist:'))?.seed;
   const albumUri = t?.albumUri ?? row?.albumUri ?? (t?.ctx?.startsWith('spotify:album:') ? t.ctx : undefined);
-  const of = p.shuffle ? '' : ofText(col.rows, uri, col.total);
 
   const devices = useDevices(() => '');
   // the device it plays on when that is not this one: not this page's player, nor the phone's own speaker
@@ -350,9 +349,8 @@ function NowPlaying() {
             <span className={css.right}>{remaining}</span>
           </div>
         )}
-        {(of || away) && (
+        {away && (
           <div className={css.of}>
-            {of}{of && away && ' · '}
             {away && <span className={css.device} role="button" aria-label={'Playing on ' + away}
                             onClick={(e) => { e.stopPropagation(); setPopup('devices'); }}><Speaker loud className={css.devspk} />{away}</span>}
           </div>

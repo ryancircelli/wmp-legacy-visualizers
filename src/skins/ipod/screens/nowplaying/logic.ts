@@ -56,8 +56,3 @@ export const barsFit = (w: number, bars: number, barW: number, gap: number): num
 export const nextMode = (m: Mode, has: Partial<Record<Mode, boolean>>): Mode =>
   MODES.slice(MODES.indexOf(m) + 1).find((x) => has[x]) ?? 'default';
 
-/** "3 of 12": the track's place among the loaded rows of what it plays from, '' when not among them */
-export function ofText(rows: readonly { uri: string }[], uri: string, total: number): string {
-  const i = uri ? rows.findIndex((r) => r.uri === uri) : -1;
-  return i < 0 ? '' : i + 1 + ' of ' + Math.max(total, rows.length);
-}

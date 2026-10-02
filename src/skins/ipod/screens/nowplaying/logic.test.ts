@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { A } from '../../../../engine';
-import { barsFit, clock, nextMode, ofText, scrubAccel, scrubStep, times, turnPct, volumeBy, VOLUME_TURN, type Mode } from './logic';
+import { barsFit, clock, nextMode, scrubAccel, scrubStep, times, turnPct, volumeBy, VOLUME_TURN, type Mode } from './logic';
 
 describe('Now Playing logic', () => {
   it('formats the clock as the iPod does', () => {
@@ -36,12 +36,6 @@ describe('Now Playing logic', () => {
     expect(nextMode('scrub', {})).toBe('default');
     expect(nextMode('radio', { scrub: true, radio: true })).toBe('default');
     expect(nextMode('default', {})).toBe('default');
-  });
-  it('says N of M only when the track is among the rows', () => {
-    const rows = [{ uri: 'a' }, { uri: 'b' }];
-    expect(ofText(rows, 'b', 12)).toBe('2 of 12');
-    expect(ofText(rows, 'c', 12)).toBe('');
-    expect(ofText(rows, '', 12)).toBe('');
   });
 
   it('sizes Bars and Waves\' Bars to a width its bars fill edge to edge, as the engine draws them', () => {
