@@ -55,11 +55,11 @@ it('arrows move the selection, Enter opens Library, Escape comes back; a tick th
   expect(m.sel()).toEqual(['Library']);
 });
 
-it('Spotify\'s menus in the nano\'s look: Extras hidden, Now Playing only with a track; the Library\'s chips without Podcasts', async () => {
+it('Spotify\'s menus in the nano\'s look: Extras hidden, no Now Playing row (the bar opens it); the Library\'s chips without Podcasts', async () => {
   const m = mount();
   expect(m.rows()).toEqual(['Home', 'Search', 'Library', 'Radio', 'Settings']);
   act(() => { m.store.setState((s) => ({ playback: { ...s.playback, track: { uri: 'spotify:track:a', title: 'T', artist: 'A', duration: 1 } } })); });
-  expect(m.rows()).toEqual(['Home', 'Search', 'Library', 'Radio', 'Now Playing', 'Settings']);
+  expect(m.rows()).toEqual(['Home', 'Search', 'Library', 'Radio', 'Settings']);
   act(() => { fireEvent.click(m.row('Library')); });
   await settle();
   expect(m.rows()).toEqual(['Playlists', 'Albums', 'Artists', 'QueueUp next', 'Liked SongsPlaylist · 0 songs']);
@@ -527,7 +527,7 @@ it('lyrics show at the cover\'s foot by themselves while Lyrics is on; a tap on 
 it('the centre cycles progress -> scrubber -> back, no lyrics step; the lyrics stay over the cover throughout', async () => {
   const m = mount();
   withLyrics(m);
-  act(() => { fireEvent.click(m.row('Now Playing')); });
+  act(() => { fireEvent.click(m.shown('[aria-label="Now Playing"][role=button]')[0]!); });
   await settle();
   const at = () => [m.shown('[class*=diamond]').length, m.shown('[class*=lyrics]').length];
   expect(at()).toEqual([0, 1]);

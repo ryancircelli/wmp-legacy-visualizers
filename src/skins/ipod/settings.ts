@@ -14,7 +14,7 @@ export const COLORS: Record<Preset, readonly [number, number, number]> = {
   silver: [0, 0, 66], black: [0, 0, 19], purple: [268, 42, 44], blue: [196, 89, 44], green: [140, 70, 34],
   yellow: [52, 89, 49], orange: [30, 85, 50], red: [357, 62, 47], pink: [331, 70, 62],
 };
-export const DEFAULTS: IpodSettings = { color: 'silver', hue: 0, sat: 0, clicker: true, wheel: 'white' };
+export const DEFAULTS: IpodSettings = { color: 'green', hue: 0, sat: 0, clicker: true, wheel: 'white' };
 
 const clamp = (v: unknown, lo: number, hi: number, d: number) => (typeof v === 'number' && v >= lo && v <= hi ? v : d);
 /** Whatever localStorage held (an older or hand-edited blob) as valid settings. */

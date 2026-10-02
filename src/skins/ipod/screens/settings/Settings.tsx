@@ -21,7 +21,7 @@ import {
 declare const __PAGE_BUILD__: string | undefined;
 const BUILD = typeof __PAGE_BUILD__ === 'string' ? __PAGE_BUILD__ : 'dev';
 /** the chrome's defaults (src/skins/ipod/settings.ts), for Reset Settings */
-const IPOD0: IpodSettings = { color: 'silver', hue: 0, sat: 0, clicker: true, wheel: 'white' };
+const IPOD0: IpodSettings = { color: 'green', hue: 0, sat: 0, clicker: true, wheel: 'white' };
 
 const REPEAT: [RepeatMode, string][] = [['off', 'Off'], ['track', 'One'], ['context', 'All']];
 const FILL: CSSProperties = { display: 'flex', flexDirection: 'column', height: '100%', color: TEXT };

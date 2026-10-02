@@ -36,9 +36,12 @@
 /* the controls band: the dark gradient, the cover's mirror image at .25, the mode row centred at
    screen y 345, "N of M" centred at y 361 */
 .controls {
-  position: absolute; top: calc(var(--unit) * 300); left: 0; right: 0; height: calc(var(--unit) * 56);
+  position: absolute; bottom: 0; left: 0; right: 0; height: calc(var(--unit) * 56);
   overflow: hidden; background: linear-gradient(#656565, #262626);
 }
+/* no "N of M" under it: the band is the mode row alone (the owner: too much padding under the bar) */
+.root:not(:has(.of)) .controls { height: calc(var(--unit) * 38); }
+.root:not(:has(.of)) .row { top: calc(var(--unit) * 10); }
 .reflection {
   position: absolute; top: 0; left: 0; width: calc(var(--unit) * 240); height: calc(var(--unit) * 240);
   object-fit: cover; transform: scaleY(-1); opacity: .25;
@@ -99,19 +102,23 @@
 /* the visualizer in the Canvas's place, stretched to the area as WMP stretches it to its screen */
 .vis { display: block; width: 100%; height: 100%; background: #000; }
 .root[data-canvas] .info { background: linear-gradient(rgb(66 66 66 / .6), rgb(1 1 1 / .6)); }
-.root[data-canvas] .controls { background: linear-gradient(rgb(101 101 101 / .55), rgb(38 38 38 / .7)); }
+/* over the Canvas or the visualizer the band is a shade that grows from nothing, so no edge shows on
+   a bright picture; under the lyrics it carries on their band's shade */
+.root[data-canvas] .controls { background: linear-gradient(transparent, rgb(0 0 0 / .75)); }
+.root[data-canvas]:has(.lyrics) .controls { background: rgb(0 0 0 / .75); }
 .root[data-canvas] .line, .root[data-canvas] .row, .root[data-canvas] .of { text-shadow: 0 1px 2px #000; }
 
 /* lyrics over the cover, at its foot just above the mode row: white 14 on black at 70 % */
 .lyrics {
-  position: absolute; top: calc(var(--unit) * 60); left: 0; right: 0; height: calc(var(--unit) * 240);
-  display: flex; flex-direction: column; justify-content: flex-end; padding: 0 calc(var(--unit) * 10) calc(var(--unit) * 10);
+  position: absolute; top: calc(var(--unit) * 60); left: 0; right: 0; bottom: calc(var(--unit) * 56);
+  display: flex; flex-direction: column; justify-content: flex-end; padding: 0 calc(var(--unit) * 10) calc(var(--unit) * 6);
   /* a band behind the lines only, fading out above: the art (the visualizer, the Canvas) stays bright */
-  background: linear-gradient(to top, rgb(0 0 0 / .8), rgb(0 0 0 / .55) 28%, transparent 48%); text-align: center;
+  background: linear-gradient(to top, rgb(0 0 0 / .75), rgb(0 0 0 / .5) 28%, transparent 50%); text-align: center;
   text-shadow: 0 calc(var(--unit) * 1) calc(var(--unit) * 3) rgb(0 0 0 / .9);
   font-size: calc(var(--unit) * 14); line-height: calc(var(--unit) * 18);
 }
 /* plain lyrics: four lines' window, scrolled with the track */
+.root:not(:has(.of)) .lyrics { bottom: calc(var(--unit) * 38); }
 .plain { max-height: calc(var(--unit) * 72); overflow: hidden; white-space: pre-line; }
 .cur { font-weight: bold; }
 .next { margin-top: calc(var(--unit) * 8); color: rgb(255 255 255 / .5); }
