@@ -546,10 +546,9 @@ async fn run(
                     now_playing(&track, playing, position_ms);
                 }
                 PlayerEvent::Seeked { position_ms, .. } => now_playing(&track, playing, position_ms),
-                PlayerEvent::EndOfTrack { .. } => {
-                    playing = false;
-                    now_playing(&track, playing, track.duration);
-                }
+                // Not a pause: the next track's Playing follows at once, and Control Center flickered to
+                // paused at every track change. A session that ends here says Paused or Stopped itself.
+                PlayerEvent::EndOfTrack { .. } => now_playing(&track, playing, track.duration),
                 PlayerEvent::Stopped { .. } => {
                     say("librespot: stopped");
                     playing = false;

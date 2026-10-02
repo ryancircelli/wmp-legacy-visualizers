@@ -456,7 +456,12 @@ struct Player: View {
         .sheet(isPresented: $layout.showLog) {
             VStack(spacing: 0) {
                 HStack(spacing: 24) {
-                    Button("Copy") { UIPasteboard.general.string = log.lines.joined(separator: "\n") }
+                    // Copy: this launch's lines (from its "---- launch" marker), what a report needs; Copy All: the file.
+                    Button("Copy") {
+                        let from = log.lines.lastIndex { $0.contains("---- launch ") } ?? log.lines.startIndex
+                        UIPasteboard.general.string = log.lines[from...].joined(separator: "\n")
+                    }
+                    Button("Copy All") { UIPasteboard.general.string = log.lines.joined(separator: "\n") }
                     Button("Clear") { HostLog.shared.clear() }
                     Spacer()
                 }
@@ -1231,12 +1236,24 @@ final class Librespot {
     private func output() {
         guard !engine.isRunning else { return }
         do {
+            // Another app's audio (a call, Spotify's own app) leaves the session inactive, and the engine
+            // cannot start on an inactive session ('what', 2003329396, a burst of them each time, seen
+            // 2026-10-02): the speaker is being played to, so the session is taken back first.
+            try AVAudioSession.sharedInstance().setActive(true)
             try engine.start()
             node.play()
+            if outputFailed {
+                outputFailed = false
+                HostLog.shared.log("librespot: output back")
+            }
         } catch {
-            HostLog.shared.log("librespot: output failed: \(error.localizedDescription)")
+            if !outputFailed {  // once per outage, not once per packet
+                outputFailed = true
+                HostLog.shared.log("librespot: output failed: \(error.localizedDescription)")
+            }
         }
     }
+    private var outputFailed = false  // on librespot's player thread, but for the first start
 
     // librespot's player thread. No samples: the sink stopped (a pause, a stop), so what is queued is
     // dropped and the page goes dark.
