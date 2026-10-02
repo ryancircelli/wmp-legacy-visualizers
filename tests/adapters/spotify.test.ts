@@ -70,7 +70,7 @@ describe('2. player_state -> playback', () => {
     expect(p.track!.title).toBe('Wish I Knew You');
     expect(p.track!.artist).toBe('The Revivalists');
     expect(p.track!.album).toBe('Men Amongst Mountains');
-    expect(p.track!.art).toBe('https://i.scdn.co/image/ab67616d00001e02c5214ee5d4300598a8a95264');
+    expect(p.track!.art).toBe('https://i.scdn.co/image/ab67616d0000b273c5214ee5d4300598a8a95264');   // the state's 300 px cover, at 640
     expect(p.track!.duration).toBe(274140);
     expect(p.position).toBe(30091 + 5000);
     expect(p.canSeek && p.canNext && p.canPrev).toBe(true);
@@ -96,7 +96,7 @@ describe('2. player_state -> playback', () => {
     expect(p.status).toBe('paused');
     expect(p.position).toBe(30091);
     expect(positionNow(env.S, T0 + 10_000)).toBe(30091);
-    expect(p.track!.art).toBe('https://i.scdn.co/image/ab67616d00001e02c5214ee5d4300598a8a95264');
+    expect(p.track!.art).toBe('https://i.scdn.co/image/ab67616d0000b273c5214ee5d4300598a8a95264');   // the state's 300 px cover, at 640
     expect(p.canPrev).toBe(false);
     expect(env.S.ui.status).toBe('Paused: The Revivalists – Wish I Knew You');
   });
@@ -1737,6 +1737,16 @@ describe('26. a device that sends the uri alone (librespot): getTrack names it (
     env.start();
     return Object.assign(env, { asked: () => env.pf().filter((c) => c.body.operationName === 'getTrack').map((c) => c.body.variables.uri) });
   }
+  it('the playing track\'s cover is asked for at 640 px whatever size its address names (bigCover)', async () => {
+    const { bigCover } = await import('../../src/adapters/spotify/state');
+    const h = 'c5214ee5d4300598a8a95264';
+    expect(bigCover('https://i.scdn.co/image/ab67616d00004851' + h)).toBe('https://i.scdn.co/image/ab67616d0000b273' + h);
+    expect(bigCover('https://i.scdn.co/image/ab67616d00001e02' + h)).toBe('https://i.scdn.co/image/ab67616d0000b273' + h);
+    expect(bigCover('https://i.scdn.co/image/ab67616d0000b273' + h)).toBe('https://i.scdn.co/image/ab67616d0000b273' + h);
+    expect(bigCover('https://mosaic.scdn.co/640/abc')).toBe('https://mosaic.scdn.co/640/abc');   // not an album cover: as it is
+    expect(bigCover('https://i.scdn.co/image/ab6761610000e5eb' + h)).toBe('https://i.scdn.co/image/ab6761610000e5eb' + h);   // an artist's picture
+    expect(bigCover(null)).toBeNull();
+  });
   it('the host\'s speaker names what it plays (CONTRACT __wmpSpeakerTrack): no getTrack, and the state is read again when it does', async () => {
     const env = setup(bare(A));
     await settle();
@@ -1813,6 +1823,6 @@ describe('26. a device that sends the uri alone (librespot): getTrack names it (
     await settle();
     expect(env.asked()).toEqual([]);
     expect(env.S.playback.track).toMatchObject({ title: 'Wish I Knew You', artist: 'The Revivalists', album: 'Men Amongst Mountains',
-      duration: 274140, art: 'https://i.scdn.co/image/ab67616d00001e02c5214ee5d4300598a8a95264' });
+      duration: 274140, art: 'https://i.scdn.co/image/ab67616d0000b273c5214ee5d4300598a8a95264' });
   });
 });

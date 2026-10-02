@@ -10,6 +10,14 @@ export function img(u: string | undefined): string | null {
   const m = /^spotify:image:([0-9a-f]+)$/.exec(u || '');
   return m ? 'https://i.scdn.co/image/' + m[1] : u || null;
 }
+
+/** An album cover's address at its largest size. Spotify's cover ids carry the size in a fixed prefix
+ *  (ab67616d0000 + 4851 the 64 px, 1e02 the 300 px, b273 the 640 px, then the cover's own hash), so the
+ *  640 px one needs no lookup: a list row's thumbnail or a state's 300 px cover becomes it. Anything
+ *  else (a playlist's mosaic, an artist's picture, a data URL) is returned as it is. */
+export function bigCover(u: string | null | undefined): string | null {
+  return u ? u.replace(/(\/image\/ab67616d0000)(?:4851|1e02)(?=[0-9a-f]{24}$)/, '$1b273') : null;
+}
 const none = (a: string[] | undefined) => !a || !a.length;
 
 /** The context's name: the state's own description, the current track's album title when the
@@ -93,7 +101,7 @@ export function toPlayback(sp: Sp, ps: PlayerState): Partial<Playback> {
     track: t.uri ? { uri: t.uri, title: md.title || own?.title || row?.title || '',
                      artist: md.artist_name || own?.artist || artistName(sp, t.uri, ctx, md),
                      album: md.album_title || own?.album || row?.album || '', duration: dur,
-                     art: img(md.image_url || md.image_large_url) || own?.art || row?.art || row?.image || null, ctx: ctx ?? null } : null,
+                     art: bigCover(img(md.image_url || md.image_large_url) || own?.art || row?.art || row?.image || null), ctx: ctx ?? null } : null,
     canSeek: !!t.uri && none(rs.disallow_seeking_reasons),
     canNext: !!t.uri && none(rs.disallow_skipping_next_reasons),
     canPrev: !!t.uri && none(rs.disallow_skipping_prev_reasons),
