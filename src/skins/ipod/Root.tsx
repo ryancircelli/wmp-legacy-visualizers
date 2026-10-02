@@ -140,7 +140,9 @@ export function Root() {
               onPlay={or('onPlay', () => void c().playPause())}
               onPrev={or('onPrev', () => void c().prev())}
               onNext={or('onNext', () => void c().next())}
-              onHoldCenter={() => { const f = h('onHoldCenter'); if (!f) return false; f(); }}
+              // a hold on centre: the screen's (a row's own menu, Now Playing's), else Now Playing itself
+              // while a track plays (the owner, 2026-10-02: "long press center button should open now playing")
+              onHoldCenter={() => { const f = h('onHoldCenter'); if (f) { f(); return; } if (!bar) return false; nav.toNowPlaying(); }}
               onHoldMenu={() => nav.home()}
               onHoldPlay={or('onHoldPlay', () => { void c().pause(); setAsleep(true); })}
               onHoldPrev={() => hold('onHoldPrev', -1)}

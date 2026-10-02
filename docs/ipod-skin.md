@@ -661,6 +661,7 @@ caption (`useWindowControls().onCaptionMouseDown`).
 
 | Thing | Place in the iPod UI |
 |---|---|
+| **Hold centre** | The screen's own when it has one (a song row's Add to Playlist…, Now Playing's hold menu); otherwise, while a track plays, it opens Now Playing (the owner, 2026-10-02). |
 | **Connect device picker** (WMP's "Play on") | Now Playing's **Play On…** (its ⋯ menu and hold-centre popup; no longer in Settings, 2026-10-02) (checkmark list from `useDevices().items()`; offline ones greyed; ours named "WMP Spotify (This Device)") and Now Playing's **Play On…** (its ⋯ menu and hold-centre popup). When playing on another device, Now Playing names it (§4.3). Optional on iPhone: a last row "AirPlay…" calls `alchemyRoutePicker()` |
 | **Like / Unlike** | Now Playing mode 5 (§6); hold-centre on Now Playing and on any song row |
 | **Add to playlist** | hold-centre > Add to Playlist… (only `fetchEditablePlaylists` targets; membership via `fetchMembership`; optimistic marks in `store.membership`) |
