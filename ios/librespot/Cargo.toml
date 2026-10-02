@@ -18,6 +18,8 @@ librespot-core = { version = "=0.8.0", default-features = false, features = ["ru
 librespot-connect = { version = "=0.8.0", default-features = false, features = ["rustls-tls-webpki-roots"] }
 librespot-playback = { version = "=0.8.0", default-features = false, features = ["rustls-tls-webpki-roots"] }
 librespot-discovery = { version = "=0.8.0", default-features = false, features = ["with-dns-sd", "rustls-tls-webpki-roots"] }
+# The track's artists and album in a TrackChanged (UniqueFields), which -playback does not re-export.
+librespot-metadata = { version = "=0.8.0", default-features = false, features = ["rustls-tls-webpki-roots"] }
 futures-util = { version = "0.3", default-features = false }
 log = "0.4"
 sha1 = "0.10"

@@ -118,16 +118,27 @@ librespot is only the audio sink. The page's own player shows up as "WMP Spotify
 librespot's "WMP Spotify".
 
 - `ios/librespot/` is a small Rust crate (`wmp-librespot`, staticlib and cdylib) on librespot-core,
-  -connect, -playback and -discovery 0.8.0 with no audio backend, rustls with compiled-in roots, and a
-  sink that hands the app interleaved stereo float32 at 44100 Hz. Its C ABI is `wmp_librespot.h`:
-  `wmp_ls_start(name, cache_dir, pcm, log, ctx)`, `wmp_ls_token(token, client_id)` and `wmp_ls_stop()`. `build.sh` builds it for
-  aarch64-apple-ios into `ios/librespot/out/`, which `project.yml` links (with a bridging header). CI
-  runs it before xcodegen, its cargo work cached by Cargo.lock.
+  -connect, -playback, -metadata and -discovery 0.8.0 with no audio backend, rustls with compiled-in
+  roots, and a sink that hands the app interleaved stereo float32 at 44100 Hz. Its C ABI is
+  `wmp_librespot.h`: `wmp_ls_start(name, id, cache_dir, pcm, log, state, np, ctx)`,
+  `wmp_ls_token(token, client_id, client_token)`, `wmp_ls_command(cmd)` and `wmp_ls_stop()`. `build.sh`
+  builds it for aarch64-apple-ios into `ios/librespot/out/`, which `project.yml` links (with a bridging
+  header). CI runs it before xcodegen, its cargo work cached by Cargo.lock.
 - `Librespot` in App.swift starts it at launch with the cache in Application Support/librespot. Each
   packet plays through an AVAudioEngine player node and, as it is heard, goes to `Forwarder`, which
   feeds the page from librespot while it plays and from the broadcast otherwise. The callback blocks
   while half a second is queued, which paces librespot's decoding. A pause flushes the queue and the
   visualizers go dark.
+- **Control Center and the lock screen.** The audio no longer goes through WebKit, so the app feeds
+  them itself. librespot's player events (track change, play, pause, seek, end of track, stop) come
+  to `Librespot` as one whole JSON object each (the `np` callback: title, artists joined with ", ",
+  album, the largest cover's url, duration, position, playing), which it puts in
+  `MPNowPlayingInfoCenter`, the cover fetched once per url and added when it lands; a stop clears it.
+  `MPRemoteCommandCenter`'s play, pause, play/pause, next, previous and scrubbing go back through
+  `wmp_ls_command` ("play", "pause", "toggle", "next", "prev", "seek:<ms>") to the live Spirc, as if
+  pressed in the Spotify app; its other commands are off. The session is `.playback` without
+  `.mixWithOthers`, which would keep the app out of Control Center: the page's `audiosession`
+  message set to `"mix"` or `"duck"` (which implies mixing) would do that, and no skin sends it.
 - **Name, id, and which device plays.** The speaker is "WMP Spotify (iOS)": the phone's own name
   ("Ryan's iPhone") is "iPhone" or "iPad" to apps since iOS 16 without an entitlement Apple grants on
   request. The page can rename it (`alchemySpeakerName(name)`, the "speaker" message; a rename

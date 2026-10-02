@@ -19,6 +19,7 @@ use librespot_core::{
     session::Session,
 };
 use librespot_discovery::Discovery;
+use librespot_metadata::audio::{AudioItem, UniqueFields};
 use librespot_playback::{
     audio_backend::{Sink, SinkResult},
     config::PlayerConfig,
@@ -33,12 +34,14 @@ use tokio::sync::{mpsc, oneshot};
 pub type PcmCb = extern "C" fn(*mut c_void, *const f32, usize);
 pub type LogCb = extern "C" fn(*mut c_void, *const c_char);
 pub type StateCb = extern "C" fn(*mut c_void, *const c_char);
+pub type NpCb = extern "C" fn(*mut c_void, *const c_char);
 
 #[derive(Clone, Copy)]
 struct Host {
     pcm: PcmCb,
     log: LogCb,
     state: StateCb,
+    np: NpCb,
     ctx: usize, // the app's pointer, handed back untouched
 }
 
@@ -46,6 +49,7 @@ struct Host {
 static HOST: Mutex<Option<Host>> = Mutex::new(None);
 static STOP: Mutex<Option<oneshot::Sender<()>>> = Mutex::new(None);
 static TOKENS: Mutex<Option<mpsc::UnboundedSender<(String, String, String)>>> = Mutex::new(None);
+static COMMANDS: Mutex<Option<mpsc::UnboundedSender<String>>> = Mutex::new(None);
 
 fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
     m.lock().unwrap_or_else(|e| e.into_inner())
@@ -69,6 +73,71 @@ fn state(id: Option<&str>) {
 fn say(line: &str) {
     if let (Some(h), Ok(c)) = (host(), CString::new(line)) {
         (h.log)(h.ctx as *mut c_void, c.as_ptr());
+    }
+}
+
+// The track the now-playing messages carry, kept from the last TrackChanged so each message is whole.
+#[derive(Default)]
+struct Track {
+    title: String,
+    artist: String,
+    album: String,
+    art: String,
+    duration: u32,
+    uri: String,
+}
+
+impl Track {
+    fn new(a: &AudioItem) -> Self {
+        let (artist, album) = match &a.unique_fields {
+            UniqueFields::Track { artists, album, .. } => {
+                (artists.iter().map(|x| x.name.as_str()).collect::<Vec<_>>().join(", "), album.clone())
+            }
+            UniqueFields::Local { artists, album, .. } => {
+                (artists.clone().unwrap_or_default(), album.clone().unwrap_or_default())
+            }
+            UniqueFields::Episode { show_name, .. } => (show_name.clone(), String::new()),
+        };
+        Track {
+            title: a.name.clone(),
+            artist,
+            album,
+            art: a.covers.iter().max_by_key(|c| c.width).map(|c| c.url.clone()).unwrap_or_default(),
+            duration: a.duration_ms,
+            uri: a.uri.clone(),
+        }
+    }
+}
+
+// A JSON string literal: quotes, backslashes and control characters escaped.
+fn quote(s: &str) -> String {
+    let mut o = String::with_capacity(s.len() + 2);
+    o.push('"');
+    for c in s.chars() {
+        match c {
+            '"' => o.push_str("\\\""),
+            '\\' => o.push_str("\\\\"),
+            c if c < ' ' => o.push_str(&format!("\\u{:04x}", c as u32)),
+            c => o.push(c),
+        }
+    }
+    o.push('"');
+    o
+}
+
+// What plays, to the app (wmp_librespot.h): one whole JSON object each time.
+fn now_playing(t: &Track, playing: bool, position: u32) {
+    let json = format!(
+        r#"{{"playing":{playing},"position":{position},"title":{},"artist":{},"album":{},"art":{},"duration":{},"uri":{}}}"#,
+        quote(&t.title),
+        quote(&t.artist),
+        quote(&t.album),
+        quote(&t.art),
+        t.duration,
+        quote(&t.uri)
+    );
+    if let (Some(h), Ok(c)) = (host(), CString::new(json)) {
+        (h.np)(h.ctx as *mut c_void, c.as_ptr());
     }
 }
 
@@ -125,6 +194,7 @@ pub unsafe extern "C" fn wmp_ls_start(
     pcm: PcmCb,
     log: LogCb,
     state: StateCb,
+    np: NpCb,
     ctx: *mut c_void,
 ) -> i32 {
     if name.is_null() || cache_dir.is_null() {
@@ -146,6 +216,7 @@ pub unsafe extern "C" fn wmp_ls_start(
         pcm,
         log,
         state,
+        np,
         ctx: ctx as usize,
     });
     if log::set_logger(&Forward).is_ok() {
@@ -154,11 +225,13 @@ pub unsafe extern "C" fn wmp_ls_start(
     let (tx, rx) = oneshot::channel();
     let (token_tx, tokens) = mpsc::unbounded_channel();
     *lock(&TOKENS) = Some(token_tx);
+    let (command_tx, commands) = mpsc::unbounded_channel();
+    *lock(&COMMANDS) = Some(command_tx);
     let spawned = std::thread::Builder::new()
         .name("librespot".into())
         .spawn(move || {
             match tokio::runtime::Builder::new_multi_thread().enable_all().build() {
-                Ok(rt) => rt.block_on(run(name, id, dir, rx, tokens)),
+                Ok(rt) => rt.block_on(run(name, id, dir, rx, tokens, commands)),
                 Err(e) => say(&format!("librespot: no runtime: {e}")),
             }
         });
@@ -188,6 +261,19 @@ pub unsafe extern "C" fn wmp_ls_token(token: *const c_char, client_id: *const c_
     }
 }
 
+/// # Safety
+/// `cmd` is NUL-terminated UTF-8.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn wmp_ls_command(cmd: *const c_char) {
+    if cmd.is_null() {
+        return;
+    }
+    let cmd = unsafe { CStr::from_ptr(cmd) }.to_string_lossy().into_owned();
+    if let Some(tx) = lock(&COMMANDS).as_ref() {
+        let _ = tx.send(cmd);
+    }
+}
+
 #[unsafe(no_mangle)]
 pub extern "C" fn wmp_ls_stop() {
     if let Some(tx) = lock(&STOP).take() {
@@ -206,6 +292,7 @@ async fn run(
     dir: String,
     mut stop: oneshot::Receiver<()>,
     mut tokens: mpsc::UnboundedReceiver<(String, String, String)>,
+    mut commands: mpsc::UnboundedReceiver<String>,
 ) {
     const WINDOW: Duration = Duration::from_secs(600);
     const RECONNECTS: usize = 5; // per WINDOW, as librespot's binary allows
@@ -307,6 +394,8 @@ async fn run(
     let mut connecting = false;
     let mut retry = false; // the next connect follows a failure: it waits 5 s first
     let mut reconnects: Vec<Instant> = vec![];
+    let mut track = Track::default(); // the now-playing messages' track and state
+    let mut playing = false;
 
     loop {
         tokio::select! {
@@ -416,10 +505,57 @@ async fn run(
                     retry = false;
                 }
             },
+            // Control Center's buttons (wmp_ls_command), to the live session.
+            Some(c) = commands.recv() => {
+                let Some(s) = spirc.as_ref() else {
+                    say(&format!("librespot: {c}: no session"));
+                    continue;
+                };
+                let done = match c.as_str() {
+                    "play" => s.play(),
+                    "pause" => s.pause(),
+                    "toggle" => s.play_pause(),
+                    "next" => s.next(),
+                    "prev" => s.prev(),
+                    _ => match c.strip_prefix("seek:").and_then(|ms| ms.parse().ok()) {
+                        Some(ms) => s.set_position_ms(ms),
+                        None => {
+                            say(&format!("librespot: unknown command {c}"));
+                            continue;
+                        }
+                    },
+                };
+                if let Err(e) = done {
+                    say(&format!("librespot: {c} failed: {e}"));
+                }
+            },
             Some(e) = events.recv() => match e {
-                PlayerEvent::Playing { .. } => say("librespot: playing"),
-                PlayerEvent::Paused { .. } => say("librespot: paused"),
-                PlayerEvent::Stopped { .. } => say("librespot: stopped"),
+                PlayerEvent::TrackChanged { audio_item } => {
+                    track = Track::new(&audio_item);
+                    say(&format!("librespot: now playing: {} \u{2014} {}", track.title, track.artist));
+                    now_playing(&track, playing, 0);
+                }
+                PlayerEvent::Playing { position_ms, .. } => {
+                    say("librespot: playing");
+                    playing = true;
+                    now_playing(&track, playing, position_ms);
+                }
+                PlayerEvent::Paused { position_ms, .. } => {
+                    say("librespot: paused");
+                    playing = false;
+                    now_playing(&track, playing, position_ms);
+                }
+                PlayerEvent::Seeked { position_ms, .. } => now_playing(&track, playing, position_ms),
+                PlayerEvent::EndOfTrack { .. } => {
+                    playing = false;
+                    now_playing(&track, playing, track.duration);
+                }
+                PlayerEvent::Stopped { .. } => {
+                    say("librespot: stopped");
+                    playing = false;
+                    track = Track::default();
+                    now_playing(&track, playing, 0);
+                }
                 PlayerEvent::Unavailable { track_id, .. } => say(&format!("librespot: unavailable: {track_id:?}")),
                 _ => {}
             },
@@ -448,4 +584,12 @@ fn again(times: &mut Vec<Instant>, window: Duration, max: usize) -> bool {
     }
     times.push(Instant::now());
     true
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn quote_escapes() {
+        assert_eq!(super::quote("a\"b\\c\n\u{1}é—"), r#""a\"b\\c\u000a\u0001é—""#);
+    }
 }

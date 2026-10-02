@@ -1135,6 +1135,35 @@ final class Librespot {
 
     private var lastToken = ""  // on the main thread
     private var deviceId: String?  // on the main thread: librespot's Connect device id while its session is up
+    private var art: (url: String, image: MPMediaItemArtwork?) = ("", nil)  // on the main thread: the last cover
+
+    /// On the main thread (WmpSpotifyApp.init is the first to use `shared`): Control Center's and the lock
+    /// screen's buttons go to librespot's session (wmp_ls_command); the ones it has no command for are off.
+    private init() {
+        let center = MPRemoteCommandCenter.shared()
+        let commands = [(center.playCommand, "play"), (center.pauseCommand, "pause"),
+                        (center.togglePlayPauseCommand, "toggle"), (center.nextTrackCommand, "next"),
+                        (center.previousTrackCommand, "prev")]
+        for (command, name) in commands {
+            command.isEnabled = true
+            command.addTarget { _ in
+                wmp_ls_command(name)
+                return .success
+            }
+        }
+        center.changePlaybackPositionCommand.isEnabled = true
+        center.changePlaybackPositionCommand.addTarget { event in
+            guard let event = event as? MPChangePlaybackPositionCommandEvent else { return .commandFailed }
+            wmp_ls_command("seek:\(Int(event.positionTime * 1000))")
+            return .success
+        }
+        let off: [MPRemoteCommand] = [center.stopCommand, center.skipForwardCommand, center.skipBackwardCommand,
+                                      center.seekForwardCommand, center.seekBackwardCommand,
+                                      center.changeRepeatModeCommand, center.changeShuffleModeCommand,
+                                      center.changePlaybackRateCommand, center.ratingCommand, center.likeCommand,
+                                      center.dislikeCommand, center.bookmarkCommand]
+        for command in off { command.isEnabled = false }
+    }
 
     /// The speaker's name in Spotify's pickers, the page's to set (alchemySpeakerName). The phone's own
     /// name is "iPhone" or "iPad" to apps since iOS 16 without an entitlement Apple grants on request.
@@ -1188,8 +1217,61 @@ final class Librespot {
                 Librespot.shared.deviceId = s
                 Librespot.shared.push()
             }
+        }, { _, json in
+            guard let json else { return }
+            let s = String(cString: json)
+            DispatchQueue.main.async { Librespot.shared.nowPlaying(s) }
         }, nil)
         if started != 0 { HostLog.shared.log("librespot: not started") }
+    }
+
+    private struct NowPlaying: Decodable {
+        let playing: Bool
+        let position, duration: Double  // ms
+        let title, artist, album, art, uri: String
+    }
+
+    /// On the main thread: librespot's now-playing message (wmp_librespot.h) to Control Center and the
+    /// lock screen; a stop (no uri) clears them. The cover is fetched once per url and added when it lands.
+    private func nowPlaying(_ json: String) {
+        guard let np = try? JSONDecoder().decode(NowPlaying.self, from: Data(json.utf8)) else { return }
+        let center = MPNowPlayingInfoCenter.default()
+        guard !np.uri.isEmpty else {
+            center.nowPlayingInfo = nil
+            return
+        }
+        var info: [String: Any] = [
+            MPMediaItemPropertyTitle: np.title,
+            MPMediaItemPropertyArtist: np.artist,
+            MPMediaItemPropertyAlbumTitle: np.album,
+            MPMediaItemPropertyPlaybackDuration: np.duration / 1000,
+            MPNowPlayingInfoPropertyElapsedPlaybackTime: np.position / 1000,
+            MPNowPlayingInfoPropertyPlaybackRate: np.playing ? 1.0 : 0.0,
+            MPNowPlayingInfoPropertyMediaType: MPNowPlayingInfoMediaType.audio.rawValue,
+        ]
+        if np.art != art.url {
+            art = (np.art, nil)
+            if let url = URL(string: np.art) {
+                URLSession.shared.dataTask(with: url) { data, _, _ in
+                    let artwork = data.flatMap(UIImage.init(data:)).map { image in
+                        MPMediaItemArtwork(boundsSize: image.size) { _ in image }
+                    }
+                    DispatchQueue.main.async {
+                        guard self.art.url == np.art else { return }  // a later cover's
+                        guard let artwork else {
+                            self.art.url = ""  // failed: the next message tries again
+                            return
+                        }
+                        self.art.image = artwork
+                        guard var info = center.nowPlayingInfo else { return }
+                        info[MPMediaItemPropertyArtwork] = artwork
+                        center.nowPlayingInfo = info
+                    }
+                }.resume()
+            }
+        }
+        if let image = art.image { info[MPMediaItemPropertyArtwork] = image }
+        center.nowPlayingInfo = info
     }
 
     // ponytail: the engine runs from launch to the end, rendering silence between songs, which keeps the
