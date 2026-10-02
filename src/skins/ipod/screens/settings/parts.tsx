@@ -1,7 +1,7 @@
 // What the Settings pages share: nano-pixel metrics and colours, the screen-entry helpers, the red
-// confirm list, a text page the wheel scrolls and a bar page the wheel sets.
+// confirm list and a text page the wheel scrolls.
 import { useRef, useState, type FC, type ReactNode } from 'react';
-import { Bar, MenuScreen, useNav, useWheel } from '../../ui';
+import { MenuScreen, useNav, useWheel } from '../../ui';
 import type { MenuItem, Nav, ScreenEntry } from '../contract';
 
 /** n nano pixels */
@@ -52,18 +52,3 @@ export const Row = ({ label, value }: { label: string; value: ReactNode }) => (
   </div>
 );
 
-/** A setting the wheel turns (Volume Limit, Brightness): the volume's bar between two glyphs; centre
- *  keeps it and goes back. `onTick` returns false when the value stays (no click at the ends). */
-export function BarPage({ value, onTick, caption, lo, hi }: {
-  value: number; onTick: (d: 1 | -1) => boolean | void; caption: ReactNode; lo?: ReactNode; hi?: ReactNode;
-}) {
-  const nav = useNav();
-  useWheel({ onTick, onCenter: () => nav.pop() });
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', height: '100%', padding: `0 ${u(12)}`, gap: u(12),
-                  color: TEXT, fontSize: u(14), textAlign: 'center' }}>
-      <div>{caption}</div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: u(6) }}>{lo}<div style={{ flex: 1 }}><Bar value={value} /></div>{hi}</div>
-    </div>
-  );
-}

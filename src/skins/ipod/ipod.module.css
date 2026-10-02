@@ -171,14 +171,15 @@
   background: #000000;
 }
 
-/* the status bar, 20 tall: light over menus, dark over Now Playing and the media pages (§2.2) */
+/* the status bar, 20 tall: light over menus, dark over Now Playing and the media pages (§2.2); three
+   columns, the two sides alike so the time stays centred and a long title stops short of it */
 .status {
   flex: none;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   align-items: center;
   height: calc(var(--unit) * 20);
-  padding: 0 calc(var(--unit) * 4) 0 calc(var(--unit) * 10);
+  padding: 0 calc(var(--unit) * 4);
   background: linear-gradient(#FBFBFB, #B2B2B2);
   border-bottom: var(--unit) solid #7A7E81;
   color: #000000;
@@ -186,13 +187,16 @@
   font-weight: 700;
 }
 .status[data-dark] {
-  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   padding-left: calc(var(--unit) * 4);
   background: linear-gradient(#4F4F4F, #474747);
   border-bottom-color: #2E2E2E;
   color: #FFFFFF;
 }
 .title { animation: fade .22s ease-out; }
+/* over menus, the title 10 from the edge (the row's own padding is even, so the time is centred) and a
+   gap between it and the time */
+.status:not([data-dark]) > :first-child { padding-left: calc(var(--unit) * 6); }
+.status:not([data-dark]) .clock { padding: 0 calc(var(--unit) * 4); }
 @keyframes fade { from { opacity: 0; } }
 .modes, .icons {
   display: flex;

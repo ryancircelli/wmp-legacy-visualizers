@@ -1,23 +1,22 @@
 // Settings: this player's tree in the nano's look (docs/ipod-skin.md §4.4), one list in sections under
-// headers (Playback, Appearance, Menus, General, Support, Account); a row that is a real choice opens
-// its page. What Now Playing controls itself is not here (Shuffle and Repeat: the status row; Lyrics,
-// Karaoke, Visualizer: its ⋯ and hold menus), nor what the device does (brightness, backlight, the date
-// and time, the clock's 24 hours), nor what has no meaning on Spotify (§4.4: Radio Regions, Language,
+// headers (Appearance, Menus, General, Support, Account); a row that is a real choice opens its page.
+// What Now Playing controls itself is not here (Shuffle and Repeat: the status row; Lyrics, Karaoke,
+// Visualizer, Play On: its ⋯ and hold menus), nor what the device does (brightness, backlight, the date
+// and time, the clock's 24 hours, the volume), nor what has no meaning on Spotify (§4.4: Radio Regions, Language,
 // Font Size, Rotate, Sort Contacts, Spoken Menus, Sound Check, EQ, Audio Crossfade, Audiobooks, Mono
 // Audio). A value shows at its row's right; a value list checks the current choice; a toggle flips in
 // place (§2.4).
 import { useEffect, useState, type CSSProperties } from 'react';
 import { LIKED, type UpdateCheck } from '../../../../model';
-import { appDownload, isAlbum, LINKS, openLink, restartApp, useApp, useCollection, useDevices, useLibraryList, useShell } from '../../../../ui';
+import { appDownload, isAlbum, LINKS, openLink, restartApp, useApp, useCollection, useLibraryList, useShell } from '../../../../ui';
 import { useHostGlobal } from '../../host';
 import { bodyHsl, DEFAULTS } from '../../settings';
 import { MenuScreen, Spinner, useIpodSettings, useNav, useWheel } from '../../ui';
 import type { IpodSettings, MenuItem, ScreenEntry } from '../contract';
 import { CustomColor } from './CustomColor';
-import { BarPage, check, confirm, DIM, menu, onOff, page, Row, TEXT, TextPage, u } from './parts';
+import { check, confirm, DIM, menu, onOff, page, Row, TEXT, TextPage, u } from './parts';
 import {
-  CLOCK0, LIBRARY_FILTERS, MAIN_MENU, resetMenu, resetPrefs, setMenuItem, useAppearance, useLibraryView, useMenuVisibility, usePref, useShake,
-  useVisFit, useVolumeLimitPref,
+  LIBRARY_FILTERS, MAIN_MENU, resetMenu, resetPrefs, setMenuItem, useAppearance, useLibraryView, useMenuVisibility, useVisFit,
 } from './prefs';
 
 declare const __PAGE_BUILD__: string | undefined;
@@ -33,16 +32,9 @@ const shown = (items: (MenuItem | false)[]) => items.filter((x): x is MenuItem =
 
 function SettingsMenu() {
   const nav = useNav(), sh = useShell(), canLogout = useApp((s) => s.auth.canLogout);
-  const [ip, patch] = useIpodSettings(), [theme] = useAppearance(), [clock, setClock] = usePref('ipod.clock', CLOCK0);
-  const [shake, setShake] = useShake(), [limit] = useVolumeLimitPref(), [fit, setFit] = useVisFit(), [view, setView] = useLibraryView();
+  const [ip, patch] = useIpodSettings(), [theme] = useAppearance(), [fit, setFit] = useVisFit(), [view, setView] = useLibraryView();
   const stretch = fit === 'stretch';
   return <MenuScreen items={shown([
-    header('Playback'),
-    { id: 'playon', label: 'Play On', chevron: true, onSelect: to(nav, page('settings/playon', 'Play On', PlayOn)) },
-    { id: 'volume', label: 'Volume Limit', right: limit < 100 ? limit + '%' : 'Off', chevron: true, onSelect: to(nav, page('settings/volume', 'Volume Limit', VolumeLimit)) },
-    // the iPhone's shake; nothing else reports one
-    !!window.alchemyHaptic && { id: 'shake', label: 'Shake', right: shake ? 'Shuffle' : 'Off', onSelect: () => setShake(!shake) },
-
     header('Appearance'),
     { id: 'skin', label: 'Skin', right: 'iPod', chevron: true, onSelect: to(nav, menu('settings/skin', 'Skin', () => [
       { id: 'ipod', label: 'iPod', right: '✓' },
@@ -55,8 +47,6 @@ function SettingsMenu() {
                                     onSelect: to(nav, page('settings/theme', 'Theme', Theme)) },
     // Now Playing's visualizer: the screen's real shape, or WMP's native surface stretched to it
     { id: 'visfit', label: 'Visualizer Fit', right: stretch ? 'Stretch' : 'Fit', onSelect: () => setFit(stretch ? 'fit' : 'stretch') },
-    // the status row over the menus shows the time instead of the screen's title
-    { id: 'title', label: 'Time in Title', right: onOff(clock.timeInTitle), onSelect: () => setClock({ timeInTitle: !clock.timeInTitle }) },
 
     header('Menus'),
     { id: 'main', label: 'Main Menu', chevron: true, onSelect: to(nav, page('settings/main', 'Main Menu', MainMenu)) },
@@ -127,17 +117,6 @@ function LibraryFilters() {
   ]} />;
 }
 
-// ---- Volume Limit ------------------------------------------------------------------------------------
-/** Root's useSettingsEffects holds the volume under it everywhere. */
-function VolumeLimit() {
-  const [limit, set] = useVolumeLimitPref();
-  return <BarPage value={limit / 100} caption={limit < 100 ? 'Limit ' + limit + '%' : 'No Limit'} onTick={(d) => {
-    const x = Math.max(0, Math.min(100, limit + d * 2));
-    if (x === limit) return false;
-    set(x);
-  }} />;
-}
-
 const Legal = () => (
   <TextPage>
     <p style={{ margin: `0 0 ${u(8)}` }}><b>WMP Legacy Visualizers</b> is an independent open-source project.</p>
@@ -170,17 +149,7 @@ function Color() {
   }))} />;
 }
 
-// ---- Play On, Theme, Check for Updates ---------------------------------------------------------------
-/** The Connect devices (§4.4), the playing one checked, offline ones greyed; AirPlay is the iOS app's picker. */
-function PlayOn() {
-  const d = useDevices(() => ''), entries = d.items();
-  const items: MenuItem[] = entries.flatMap((e, i) => ('label' in e
-    ? [{ id: 'd' + i, label: e.label, right: check(!!e.check), disabled: e.disabled, onSelect: e.act }] : []));
-  if (window.alchemyRoutePicker) items.push({ id: 'airplay', label: 'AirPlay…', onSelect: () => window.alchemyRoutePicker?.() });
-  // the cursor starts on the playing device (the check), so the list reads as "this one"
-  const [sel, setSel] = useState(Math.max(0, entries.findIndex((e) => 'check' in e && e.check)));
-  return <MenuScreen items={items} selected={sel} onSelectedChange={setSel} empty="No Devices" />;
-}
+// ---- Theme, Check for Updates ------------------------------------------------------------------------
 
 const MODES = [['light', 'Light'], ['dark', 'Dark'], ['auto', 'Automatic']] as const;
 function Theme() {

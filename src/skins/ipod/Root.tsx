@@ -11,7 +11,7 @@ import { Boot } from './Boot';
 import { ClickWheel } from './ClickWheel';
 import { useHostChrome, useHostGlobal, useDesktopViewport } from './host';
 import { mainMenu } from './menus';
-import { fmRadio, nowPlaying, useVolumeLimit } from './screens';
+import { fmRadio, nowPlaying } from './screens';
 import { createNav, top, type NavStore, type Slot } from './nav';
 import type { WheelInput } from './screens/contract';
 import { bodyVars, ipodSettings, useIpodSettings } from './settings';
@@ -41,7 +41,6 @@ export function Root() {
   const [asleep, setAsleep] = useState(false);
   useHostChrome();
   useDesktopViewport();
-  useVolumeLimit();                 // Settings > Volume Limit holds everywhere, not only on its page
 
   const c = () => sh.store.getState().commands;
   const h = <K extends keyof WheelInput>(k: K) => handler(hub, top(nav.store.getState()).id, k);

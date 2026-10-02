@@ -1,7 +1,8 @@
 // The Settings screens' own preferences, each a localStorage 'ipod.*' key read through one
-// external store, so every reader (the chrome's status row and main menu included) re-renders on a
-// change. Storage that throws (blocked) falls back to memory for the session.
-import { useEffect, useMemo, useSyncExternalStore } from 'react';
+// external store, so every reader (the chrome's main menu included) re-renders on a change. Storage
+// that throws (blocked) falls back to memory for the session. (Earlier builds' 'ipod.clock',
+// 'ipod.volumeLimit' and 'ipod.shake' are read by nothing now; Reset Settings clears them with the rest.)
+import { useMemo, useSyncExternalStore } from 'react';
 import { useShell } from '../../../../ui';
 import type { MenuItem } from '../contract';
 
@@ -87,8 +88,6 @@ export type LibraryView = 'grid' | 'list';
 export const useLibraryView = () => usePref<LibraryView>('ipod.view', 'grid');
 /** 'ipod.libraryFilter': the Library's chosen chip (a LIBRARY_FILTERS id) */
 export const useLibraryFilter = () => usePref('ipod.libraryFilter', 'playlists');
-/** 'ipod.shake': Playback > Shake (iPhone): a shake skips to the next song */
-export const useShake = () => usePref('ipod.shake', true);
 /** 'ipod.visFit': Appearance > Visualizer Fit: Fit draws it at the screen's own shape (settings.scale 'auto'),
  *  Stretch is WMP's native surface stretched to the screen ('original'); Now Playing applies it while
  *  the visualizer shows. Anything but 'stretch' reads as Fit. */
@@ -151,36 +150,6 @@ export function useVisualizers() {
   };
 }
 
-// ---- Time in Title ---------------------------------------------------------------------------------
-/** 'ipod.clock': Appearance > Time in Title (the status row over the menus shows the time instead of
- *  the screen's title). The clock's 12 / 24 hours are the device's (ui.tsx useTime); an old stored
- *  twentyFourHour is ignored, and dropped at the next write. */
-export interface ClockPrefs { timeInTitle: boolean }
-export const CLOCK0: ClockPrefs = { timeInTitle: false };
-export const useClockPrefs = (): ClockPrefs => usePref('ipod.clock', CLOCK0)[0];
-
-// ---- Volume Limit ----------------------------------------------------------------------------------
-/** 'ipod.volumeLimit': 0..100, 100 = no limit. */
-export const useVolumeLimitPref = () => usePref('ipod.volumeLimit', 100);
-
 // ---- Theme -----------------------------------------------------------------------------------------
 /** 'ipod.appearance': what Settings' Theme last asked the host for */
 export const useAppearance = () => usePref<'light' | 'dark' | 'auto'>('ipod.appearance', 'auto');
-
-// ---- what runs everywhere ------------------------------------------------------------------------------
-/** Mount once, in the chrome's Root: Volume Limit holds the Spotify player's volume (settings.volume)
- *  at or under it (the local engine's volume is capture sensitivity, never limited); Shake skips on
- *  the iPhone's 'wmp-shake'. */
-export function useSettingsEffects(): void {
-  const store = useShell().store, [limit] = useVolumeLimitPref(), [shake] = useShake();
-  useEffect(() => store.subscribe((s) => s.auth.engine === 'spotify' && s.settings.volume > limit,
-    (over) => { if (over) store.getState().actions.setSettings({ volume: limit }); }, { fireImmediately: true }), [store, limit]);
-  useEffect(() => {
-    if (!shake) return;
-    const next = () => void store.getState().commands.next();
-    window.addEventListener('wmp-shake', next);
-    return () => window.removeEventListener('wmp-shake', next);
-  }, [store, shake]);
-}
-/** The name Root mounts it by (it began as Volume Limit alone). */
-export const useVolumeLimit = useSettingsEffects;

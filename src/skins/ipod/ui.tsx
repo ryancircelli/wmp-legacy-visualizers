@@ -8,7 +8,6 @@ import { hasMedia, positionNow } from '../../model';
 import { artOk, cx, duration, isPlaying, isSpotify, playingTrack, seekFraction, useAddTo, useApp, usePosition, useShell, type Shell } from '../../ui';
 import { useHostGlobal } from './host';
 import type { Chrome, GridItem, HeadAction, MenuItem } from './screens/contract';
-import { useClockPrefs } from './screens';
 import s from './ipod.module.css';
 import { FrameContext, useWheel } from './wheel';
 export { useNav, useWheel } from './wheel';
@@ -334,9 +333,9 @@ export function useTime(): string {
   return new Date(now).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
 }
 
-/** The status bar (§2.2, §2.4). Over menus (light): the title at the left, or the time with Settings >
- *  Time in Title. Over Now Playing and the media pages (`dark`): shuffle and repeat at
- *  the left (Spotify only), the time centred. At the right always: ▶ playing / ❚❚ paused (the spinner
+/** The status bar (§2.2, §2.4): the time centred always (the device's 12 / 24 hours); at the left over
+ *  menus (light) the screen's title, cut short before it reaches the time, over Now Playing and the
+ *  media pages (`dark`) shuffle, repeat and Like (Spotify only). At the right always: ▶ playing / ❚❚ paused (the spinner
  *  while the screen loads), then the battery (the phone's, when the iOS app reports it). Shuffle,
  *  repeat and Like are toggles: a tap flips shuffle (dimmed when off), steps repeat Off -> All -> One
  *  (dimmed when off), or likes / unlikes the track (♡ / ♥, dimmed with none). */
@@ -345,10 +344,9 @@ export const StatusRow = ({ title, dark, busy: loading }: { title: string; dark?
   const st = useApp((x) => ({ media: hasMedia(x), playing: isPlaying(x), paused: x.playback.status === 'paused',
                                shuffle: x.playback.shuffle, repeat: x.playback.repeat, spotify: isSpotify(x) }));
   const tap = (e: MouseEvent, act: () => void) => { e.stopPropagation(); window.alchemyHaptic?.('light'); act(); };
-  const prefs = useClockPrefs(), time = useTime();
+  const time = useTime();
   const bat = useHostGlobal('__wmpBattery', 'wmp-battery');
   const level = bat && bat.level >= 0 ? bat.level / 100 : 1;
-  const text = dark || prefs.timeInTitle ? time : title;
   return (
     <div className={s.status} data-dark={dark || undefined}>
       {dark && <span className={s.modes}>{st.spotify && <>
@@ -365,7 +363,8 @@ export const StatusRow = ({ title, dark, busy: loading }: { title: string; dark?
         </span>
         <Like tap={tap} />
       </>}</span>}
-      <span key={text} className={cx(s.title, 'min-w-0 truncate', dark && 'text-center')}>{text}</span>
+      {!dark && <span key={title} className={cx(s.title, 'min-w-0 truncate')}>{title}</span>}
+      <span key={time} className={cx(s.title, s.clock, 'min-w-0 truncate text-center')}>{time}</span>
       <span className={s.icons}>
         {loading ? <Spinner />
           : st.media && (st.playing || st.paused) && <span className={st.playing ? s.playing : s.paused} role="img" aria-label={st.playing ? 'Playing' : 'Paused'} />}

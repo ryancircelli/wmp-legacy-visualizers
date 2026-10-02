@@ -215,7 +215,7 @@ Load no web font: the page runs inside Spotify's.
 
 | Element | Value |
 |---|---|
-| **Menu status bar** | y 0–19 (20 tall): `linear-gradient(#fbfbfb, #b2b2b2)`, 1 px bottom line **#7a7e81** |
+| **Menu status bar** | y 0–19 (20 tall): `linear-gradient(#fbfbfb, #b2b2b2)`, 1 px bottom line **#7a7e81**. This player (the owner, 2026-10-02): the screen's title at the left, **the time centred** as on the dark bar (the device's 12 / 24 hours), ▶ and the battery at the right; three columns, the two sides alike, so the time stays centred and a long title is cut short (…) before it; no Time in Title setting |
 | **Dark status bar** (Now Playing, Genius Mixes, Radio, Cover Flow, Extras apps) | y 0–19: flat #4f4f4f to #474747, white 12 px bold text, **time centred** ("9:42 AM") |
 | Status icons (right, 4 px apart, 4 px from the edge) | play ▶ light blue `#67caff→#3a9be0` when playing; ❚❚ grey #6d6d6d when paused (none when stopped); battery 24×11, green #a2c871 fill, outlined; lock 7×9 when Screen Lock is on; on dark bars all white |
 | Now Playing status, left | shuffle and repeat glyphs (white 12×9 each) when on; "repeat one" shows a 1 badge |
@@ -455,9 +455,9 @@ Contacts, Fitness, Voice Memos (§2.3).
 
 #### Settings pages
 
-- **Value lists** (Color, Play On, Theme, Skin) are a list with a checkmark on the
+- **Value lists** (Color, Theme, Skin) are a list with a checkmark on the
   current choice.
-- **Toggles** (Clicker, Click Wheel, Visualizer Fit, Time in Title, Library View) flip in place on
+- **Toggles** (Clicker, Click Wheel, Visualizer Fit, Library View) flip in place on
   centre and show their value in blue.
 - This player's Settings is **one list under section headers** (§4.4, "This player's Settings
   tree"): a header is the iPod OS grouped list's short grey band with its name in bold white
@@ -661,7 +661,7 @@ caption (`useWindowControls().onCaptionMouseDown`).
 
 | Thing | Place in the iPod UI |
 |---|---|
-| **Connect device picker** (WMP's "Play on") | **Settings > Play On** (under Playback) (checkmark list from `useDevices().items()`; offline ones greyed; ours named "WMP Spotify (This Device)") and Now Playing's **Play On…** (its ⋯ menu and hold-centre popup). When playing on another device, Now Playing names it (§4.3). Optional on iPhone: a last row "AirPlay…" calls `alchemyRoutePicker()` |
+| **Connect device picker** (WMP's "Play on") | Now Playing's **Play On…** (its ⋯ menu and hold-centre popup; no longer in Settings, 2026-10-02) (checkmark list from `useDevices().items()`; offline ones greyed; ours named "WMP Spotify (This Device)") and Now Playing's **Play On…** (its ⋯ menu and hold-centre popup). When playing on another device, Now Playing names it (§4.3). Optional on iPhone: a last row "AirPlay…" calls `alchemyRoutePicker()` |
 | **Like / Unlike** | Now Playing mode 5 (§6); hold-centre on Now Playing and on any song row |
 | **Add to playlist** | hold-centre > Add to Playlist… (only `fetchEditablePlaylists` targets; membership via `fetchMembership`; optimistic marks in `store.membership`) |
 | **Lyrics** | over Now Playing's art while on (§4.3). **Lyrics** On/Off (`actions.setLyricsEnabled`) and **Karaoke** On/Off (`setKaraoke`) in Now Playing's ⋯ menu and its hold-centre popup (not in Settings) |
@@ -672,20 +672,19 @@ caption (`useWindowControls().onCaptionMouseDown`).
 | **Colour** | **Settings > Color** (under Appearance): the nine names (§1.2), the owner's **Mocha Tan** and **Espresso Brown** (2026-10-02), plus **Custom** (`screens/settings/CustomColor.tsx`, the owner's 2026-10-02 "needs a y axis… only controlled by wheel which i don't like"): a field the finger drags in (hue across, lightness down, light at the top, the rainbow shaded at the current saturation) with a ring at the colour, a saturation slider (grey to full) under it, and a readout of the three. The wheel turns the focused one (hue 5°, lightness 1 %, saturation 2 % a detent); centre moves the focus hue → lightness → saturation → hue (the ring or the thumb, and the readout's name, in blue); a touch on a control focuses it; MENU leaves. Custom's base is the picked colour taken down by 1.15 (`settings.ts` LOOK), since the cylinder's lights lift the body above its base. Every change shows on the body at once and is kept (`ipod.settings` v1: `light` added; a v0 blob loads as lightness 50, its saturation 0 as 85). Plus **Click Wheel**: White / Black ring |
 | **Shuffle / Repeat** | the Now Playing status row's toggles only (not in Settings) |
 | **Visualizer** | Now Playing's ⋯ menu and hold-centre popup: **Visualizer…**: **Visualizer** On / Off (the overlay, §4.3), **Opacity**, then the engines, then an engine's presets; picking one while it is off turns it on (not in Settings). **Settings > Visualizer Fit** (under Appearance): Fit / Stretch, which still shapes Alchemy's and Battery's frame (the screen's shape, or their native surface stretched) |
-| **Shake** (iPhone only) | **Settings > Shake** (under Playback): Shuffle / Off. On `wmp-shake`, `commands.next()` (with shuffle on, Spotify's next is random; the iPod's shake also leaves the shuffle setting alone [UG p.43]) |
+| **Shake** (iPhone only) | none (2026-10-02, the owner): the setting and the skin's response to `wmp-shake` are gone; the host still reports the shake (CONTRACT) |
 | **Brightness, backlight, date and time** | not the skin's (the owner's ruling, 2026-10-02: "we are not the OS"): the device's own. The status row's clock follows the device's 12 / 24 hours (the platform's locale default, `ui.tsx useTime`) |
 | **Battery** in the status bar | iPhone: `window.__wmpBattery` / `wmp-battery` (`useHostGlobal`). Windows / Chromium: `navigator.getBattery()` when present. Otherwise draw it full |
 | **About** | Songs = `useCollection(LIKED).total`; Playlists and Albums = `useLibraryList` counts; Version = `__wmpHost.version (build)` on iPhone; Playing On = the active device; **Check for Updates** = `commands.checkForUpdates()` answered in a 1-row page |
 
 **This player's Settings tree** (2026-10-02, the owner's rulings: what Now Playing controls is not
-repeated here, nor what the device does (brightness, backlight, energy saver, date and time, the 24-hour
-clock), and the rest is **one screen** under section headers; a row marked › opens its page; *gated*
+repeated here (Play On too), nor what the device does (brightness, backlight, energy saver, date and time, the 24-hour
+clock, the volume: Volume Limit and Shake went 2026-10-02, the time is always in the status row), and the rest is **one screen** under section headers; a row marked › opens its page; *gated*
 rows show only with their host, and a header with no row shown under it is not shown):
 
 | Header | Its rows, in order |
 |---|---|
-| **Playback** | Play On ›, Volume Limit ›, Shake (*iPhone*: Shuffle / Off) |
-| **Appearance** | Skin ›, Color ›, Click Wheel (White / Black), Clicker (On / Off), Theme › (Light / Dark / Automatic, *`alchemyAppearance`*), Visualizer Fit (Fit / Stretch), Time in Title (On / Off) |
+| **Appearance** | Skin ›, Color ›, Click Wheel (White / Black), Clicker (On / Off), Theme › (Light / Dark / Automatic, *`alchemyAppearance`*), Visualizer Fit (Fit / Stretch) |
 | **Menus** | Main Menu ›, Library Filters ›, Library View (Grid / List) |
 | **General** | About ›, Check for Updates ›, Refresh Player (*`alchemyRestart`*), Reset Settings ›, Legal › |
 | **Support** | Source Code, Report a Problem, Host Log (*`alchemyShowLog`*) |
@@ -693,12 +692,12 @@ rows show only with their host, and a header with no row shown under it is not s
 
 **Settings that have no Spotify meaning: hidden.** Language, Radio Regions, Rotate, Sort Contacts,
 Spoken Menus, EQ, Sound Check, Audio Crossfade, Audiobooks speed, Mono Audio, Font Size (stretch),
-and Volume Limit (stretch: a skin-local cap on `setVolume`).
+and Volume Limit (built, then removed 2026-10-02: it never held the phone's volume).
 
 **Kept and skin-local** (in `ipod.settings`, `src/skins/ipod/settings.ts`):
 
 - Main Menu checklist plus Preview Panel, and the Music Menu checklist
-- Clicker, Shake, Time in Title
+- Clicker
 - Color, Click Wheel
 - Reset Settings (resets `ipod.settings` only, never the app's)
 
