@@ -329,7 +329,7 @@ that fed it until 2026-10-02 is gone, ios/README.md "History"), `alchemyLog` (a 
 (the web view edge to edge for a skin made for the phone, with the insets in `window.__wmpSafeArea`
 and a `wmp-safe-area` event), `alchemyShowLog` (the host's log sheet), and for a click-wheel skin
 `alchemyHaptic(kind)`, `alchemyAwake(on)`, `alchemyStatusBar(hidden)`, `alchemyOrientation(mode)`.
-The phone's reports, each a window global with an event of the same name: `__wmpVolume` (the buttons too), `__wmpBattery`, `__wmpRoute`,
+The phone's reports, each a window global with an event of the same name: `__wmpVolume` (the app's own output level, which `alchemySetVolume` sets: iOS lets no app set the system's volume, so the hardware buttons' level is the ceiling it plays under and is not reported), `__wmpBattery`, `__wmpRoute`,
 `__wmpBrightness`, `__wmpHost`, and `wmp-shake`; `alchemyHost()` asks for all at once. Also
 `alchemyBrightness(v?)`, `alchemyShare(text)`, `alchemyHomeIndicator(hidden)`, `alchemyOpenSettings()`,
 `alchemyReset()` (the web view's data cleared, a reload); and the rest of the phone mapped whether

@@ -48,9 +48,12 @@ window's safe area where the web view overlaps it, never the keyboard (which Swi
 view's own insets while it shows).
 Playback is meant to carry on with the phone locked (the audio background mode).
 Link previews are off in the web view: a long press on a link is the page's, not a preview.
-The skin's volume slider and mute set the phone's system volume: a page cannot change its own playback
-volume on iOS, so the app sets it through an off-screen MPVolumeView (`SystemVolume` in App.swift; iOS
-shows its volume HUD); every change, the hardware buttons' included, comes back as `__wmpVolume` (below).
+The skin's volume and mute set the app's own output level (`Librespot.setLevel`, the "volume" message:
+a squared gain on the speaker's player node, kept across launches, the visualizers fed before it), and
+it comes back as `__wmpVolume` (below). It is not the system's volume: iOS gives apps no way to set
+that. The usual workaround, the slider of an off-screen MPVolumeView, was found and driven and the
+system did not follow ("volume: asked 12, the system is at 10" at every try, build 37, 2026-10-02), so
+the hardware buttons' level is the ceiling the app's level plays under.
 
 For a phone skin (an iPod click wheel, say) the page has more messages, each a string (JSON where
 noted), posted with `webkit.messageHandlers.<name>.postMessage(<string>)` and wrapped by `observer.js` as
@@ -96,7 +99,7 @@ noted), posted with `webkit.messageHandlers.<name>.postMessage(<string>)` and wr
 
 The app pushes state as a global on `window` and an `Event` of the matching name, each at its change and
 all on `host`: `__wmpHost` `{build, version, ios, model, scale, fps, voiceOver, viewport}` (`wmp-host`,
-on `host` only), `__wmpVolume` 0 to 100, the hardware buttons included (`wmp-volume`), `__wmpBattery` `{level, charging}`
+on `host` only), `__wmpVolume` 0 to 100, the app's own output level (`wmp-volume`; not the system's volume: see `alchemySetVolume`), `__wmpBattery` `{level, charging}`
 with `level` -1 when unknown and `charging` true when plugged in (`wmp-battery`), `__wmpRoute`
 `{name, type}` of the first audio output (`wmp-route`), `__wmpBrightness` 0 to 1 (`wmp-brightness`, on
 asking only), `__wmpProximity` (`wmp-proximity`; only after `proximity` "on", since iOS blanks the screen while the sensor is covered), `__wmpLowPower` (`wmp-lowpower`), `__wmpThermal`

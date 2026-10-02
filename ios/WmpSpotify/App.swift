@@ -294,17 +294,15 @@ final class HapticPatterns {
 }
 
 // The phone, told to the page (WebHolder.push): each report at its change (the brightness only when
-// asked), and all of them with the host's own details on "host". On the main thread but pushVolume.
+// asked), and all of them with the host's own details on "host". On the main thread.
 final class DeviceState {
     static let shared = DeviceState()
-    private var volume: NSKeyValueObservation?  // kept: the observation ends when it is released
     var scene = "active" { didSet { pushScene() } }  // Player's scenePhase
     private var keyboard = 0.0 { didSet { pushKeyboard() } }
 
     /// On the main thread, once, with the audio session active. Proximity monitoring also turns the
     /// screen off while the sensor is covered, as in a call.
     func start() {
-        volume = AVAudioSession.sharedInstance().observe(\.outputVolume, options: [.new]) { _, _ in self.pushVolume() }
         UIDevice.current.isBatteryMonitoringEnabled = true
         // Proximity only when the page asks ("proximity" on): on, iOS blanks the screen while the sensor is covered.
         let center = NotificationCenter.default
@@ -346,9 +344,12 @@ final class DeviceState {
     /// window.__wmpKeyboard: the keyboard's height in points, 0 hidden.
     func pushKeyboard() { WebHolder.shared.push("__wmpKeyboard", "wmp-keyboard", keyboard) }
 
-    /// window.__wmpVolume, 0...100: the system volume, the hardware buttons' changes included.
+    /// window.__wmpVolume, 0...100: the app's own output level (Librespot.level), which is what the
+    /// page's volume turns. Not the system's: iOS refused every set through MPVolumeView's slider
+    /// ("asked 12, the system is at 10", build 37), so the hardware buttons' level is the ceiling
+    /// the app's level plays under, and is not reported.
     func pushVolume() {
-        WebHolder.shared.push("__wmpVolume", "wmp-volume", Int((AVAudioSession.sharedInstance().outputVolume * 100).rounded()))
+        WebHolder.shared.push("__wmpVolume", "wmp-volume", Librespot.shared.level)
     }
 
     /// window.__wmpBattery = {level: 0...100 or -1 unknown, charging: plugged in (charging or full)}.
@@ -740,7 +741,7 @@ struct WebView: UIViewRepresentable {
                 // A JS number arrives as an NSNumber; a numeric string is taken too.
                 guard let n = (message.body as? NSNumber)?.doubleValue ?? (message.body as? String).flatMap({ Double($0) }),
                       n.isFinite else { return }
-                SystemVolume.shared.set(Int(min(max(n, 0), 100).rounded()))
+                Librespot.shared.setLevel(Int(min(max(n, 0), 100).rounded()))
             case "open":
                 if message.body as? String == "settings" {
                     HostLog.shared.log("open: settings", quiet: true)
@@ -976,54 +977,6 @@ func keepAtRest(_ scrollView: UIScrollView) {
     if held(scrollView), scrollView.contentOffset != rest { scrollView.contentOffset = rest }
 }
 
-// The phone's output volume, which the skin's slider and mute set: a page cannot change its own
-// playback volume on iOS. An MPVolumeView's slider is the only way an app can set it, and only while
-// the view is in a window, so it sits off screen under the root view. iOS shows its own volume HUD.
-// Every change, the hardware buttons' included, goes back to the page as __wmpVolume (DeviceState).
-final class SystemVolume {
-    static let shared = SystemVolume()
-    private let view = MPVolumeView(frame: CGRect(x: -1000, y: -1000, width: 1, height: 1))
-    private var level: Int?  // the latest asked for
-
-    /// On the main thread: the system volume to `pct` (0...100).
-    func set(_ pct: Int) {
-        if pct != level { HostLog.shared.log("volume: \(pct)", quiet: true) }
-        level = pct
-        if view.superview != nil { apply(); return }
-        guard let root = UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene })
-            .first?.keyWindow?.rootViewController?.view else { return }
-        view.alpha = 0.01
-        view.isUserInteractionEnabled = false
-        root.addSubview(view)
-        // Its slider does not take a value the moment the view joins the window.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { self.apply() }
-    }
-
-    private func apply() {
-        guard let level else { return }
-        // The slider wherever MPVolumeView keeps it (a direct subview once, nested on later systems).
-        func find(_ v: UIView) -> UISlider? {
-            if let s = v as? UISlider { return s }
-            for sub in v.subviews { if let s = find(sub) { return s } }
-            return nil
-        }
-        guard let slider = find(view) else {
-            HostLog.shared.logOnce("volume: no slider in MPVolumeView: the system volume cannot be set")
-            return
-        }
-        slider.setValue(Float(level) / 100, animated: false)
-        slider.sendActions(for: .valueChanged)  // a bare assignment moved the knob and not the volume
-        // What the system's volume became: a set that did not take shows here (the wheel then steps
-        // from the same level each time, 13 and 17 for ever, seen 2026-10-02).
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-            guard self.level == level else { return }  // a later set reports for itself
-            let now = Int((AVAudioSession.sharedInstance().outputVolume * 100).rounded())
-            if now != level { HostLog.shared.log("volume: asked \(level), the system is at \(now)", quiet: true) }
-            DeviceState.shared.pushVolume()
-        }
-    }
-}
-
 // The audio into the page by evaluateJavaScript (WebKit refuses ws:// from Spotify's https page), to
 // the stand-in socket observer.js puts in its place: __wmpAudio.rate(n) once librespot's rate is known,
 // then every 100 ms __wmpAudio.pcm(<base64 interleaved stereo int16 LE>, n) with all that was heard
@@ -1104,6 +1057,18 @@ final class Librespot {
     private var playing = false       // on librespot's player thread only
 
     private var lastToken = ""  // on the main thread
+
+    /// The app's output level, 0...100, the page's to set (the "volume" message) and kept across
+    /// launches: a gain on the player node, squared so the turn feels even. The visualizers get the
+    /// audio before it, at full.
+    private(set) var level = UserDefaults.standard.object(forKey: "speaker.level") as? Int ?? 100
+    func setLevel(_ pct: Int) {
+        guard pct != level else { return }
+        level = pct
+        UserDefaults.standard.set(pct, forKey: "speaker.level")
+        node.volume = pow(Float(pct) / 100, 2)
+        DeviceState.shared.pushVolume()
+    }
     private var deviceId: String?  // on the main thread: librespot's Connect device id while its session is up
     private var art: (url: String, image: MPMediaItemArtwork?) = ("", nil)  // on the main thread: the last cover
 
@@ -1174,6 +1139,7 @@ final class Librespot {
     func start() {
         engine.attach(node)
         engine.connect(node, to: engine.mainMixerNode, format: format)
+        node.volume = pow(Float(level) / 100, 2)
         output()
         Forwarder.shared.rate(44100)
         try? FileManager.default.createDirectory(at: Self.cache, withIntermediateDirectories: true)
