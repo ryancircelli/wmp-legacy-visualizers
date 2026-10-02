@@ -165,9 +165,11 @@
    through background-clip: text let WebKit paint the shadow over the letters ("messed up"). */
 .synced[data-karaoke] .cur { color: rgb(255 255 255 / .5); }
 .sung { color: #fff; }
-.now { position: relative; }
+/* the word and its copy in the one grid cell, so they sit on the same pixels (an absolutely placed
+   copy at 0,0 of the inline was a little off: "a slight offset between characters") */
+.now { display: inline-grid; grid-template: 1fr / 1fr; }
 .now::after {
-  content: attr(data-w); position: absolute; left: 0; top: 0; color: #fff;
+  content: attr(data-w); grid-area: 1 / 1; color: #fff;
   clip-path: inset(0 calc(100% - var(--f, 0%)) 0 0);
 }
 
