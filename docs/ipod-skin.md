@@ -43,7 +43,7 @@ the end.
 | Device | iPod nano 5G: 2.2" 240×376 portrait LCD at 204 ppi, Click Wheel, polished anodized aluminium, 9 colours ([EveryMac](https://everymac.com/systems/apple/ipod/specs/ipod-5th-generation-5g-nano-specs.html)) |
 | UI font | Helvetica Bold (2007+ iPods; Podium Sans before) ([Wikipedia: Podium Sans](https://en.wikipedia.org/wiki/Podium_Sans)) |
 | Build | every page of the 5G menu tree. Pages with no Spotify meaning are **hidden** or **repurposed** (§4), and pure-UI Extras are built for real (Clocks, Stopwatch, Calendars, Screen Lock, Notes, Sleep Timer) |
-| Do not build | visualizer, broadcast, capture, Video Camera, Voice Memos recording, FM hardware |
+| Do not build | visualizer, capture, Video Camera, Voice Memos recording, FM hardware |
 | Wheel | 15° detents (24 per turn), a haptic `selection` plus sound 1104 per detent that moves something |
 
 ---
@@ -656,7 +656,6 @@ caption (`useWindowControls().onCaptionMouseDown`).
 | **Brightness** | iPhone: `alchemyBrightness(v)` (the phone's real brightness; read back with `alchemyBrightness()` and `wmp-brightness`). Elsewhere: `filter: brightness()` on the LCD only |
 | **Battery** in the status bar | iPhone: `window.__wmpBattery` / `wmp-battery` (`useHostGlobal`). Windows / Chromium: `navigator.getBattery()` when present. Otherwise draw it full |
 | **About** | Songs = `useCollection(LIKED).total`; Playlists and Albums = `useLibraryList` counts; Version = `__wmpHost.version (build)` on iPhone; Playing On = the active device; **Check for Updates** = `commands.checkForUpdates()` answered in a 1-row page |
-| **Broadcast** | **never.** No visualizer, so no audio is wanted. `useHostChrome` sends `alchemyBroadcast('manual')` once and the skin **never calls `'picker'`** (that ask now lives only in WMP 9's Root, §4.6) |
 
 **Settings that have no Spotify meaning: hidden.** Language, Radio Regions, Rotate, Sort Contacts,
 Spoken Menus, EQ, Sound Check, Audio Crossfade, Audiobooks speed, Mono Audio, Font Size (stretch),
@@ -672,7 +671,7 @@ and Volume Limit (stretch: a skin-local cap on `setVolume`).
 
 ### 4.5 Must-nots
 
-- No `alchemyBroadcast('picker')`, ever, and no `startCapture`.
+- No `startCapture`.
 - No visualizer: the skin never renders the engine canvas.
 - No calls to the WMP view navigators (`openInLibrary` / `openAlbum` / `openArtist` / `openFrom`)
   and no `actions.setView`. They move WMP 9's state (`ui.view`, `libNode`), which would greet the
@@ -685,8 +684,6 @@ and Volume Limit (stretch: a skin-local cap on `setVolume`).
 
 - `src/skins/registry.ts` lists `ipod`.
 - WMP 9's **View > Skin** submenu is in `src/skins/menus.ts`.
-- The broadcast `'picker'` ask moved from `src/app/mount.tsx` into WMP 9's own Root
-  (`useBroadcastPrompt`), so the iPod never triggers it.
 
 **Still open** (for the lead; this spec does not make them):
 

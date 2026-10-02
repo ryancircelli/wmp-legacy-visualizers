@@ -12,12 +12,10 @@ export function useHostGlobal<K extends keyof Window>(key: K, event: string): Wi
 }
 
 /** While the iPod shows: edge to edge, no status bar, home indicator or log band, portrait, a black
- *  backdrop, the screen kept awake, and the broadcast sheet never offered (no visualizer here).
- *  Unmounted (the skin switched), the app's defaults come back. */
+ *  backdrop and the screen kept awake. Unmounted (the skin switched), the app's defaults come back. */
 export function useHostChrome(): void {
   useEffect(() => {
     const w = window;
-    w.alchemyBroadcast?.('manual');
     w.alchemyLayout?.('edge');
     w.alchemyStatusBar?.(true);
     w.alchemyHomeIndicator?.(true);

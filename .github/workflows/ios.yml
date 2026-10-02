@@ -4,9 +4,9 @@
 # Signing is Xcode's cloud-managed signing: no certificate or profile is stored anywhere. xcodebuild signs in to
 # App Store Connect with the API key (-allowProvisioningUpdates) and creates or fetches what it needs, so:
 #   - the key must have the Admin role, which cloud signing needs to create the distribution certificate;
-#   - the App IDs com.rcircelli.wmpspotify and com.rcircelli.wmpspotify.broadcast are registered by hand (the
-#     archive step does not do it, measured 2026-09-30), and the upload
-#     fails until the App Store Connect app record for that bundle id exists (made by hand, once).
+#   - the App ID com.rcircelli.wmpspotify is registered by hand (the archive step does not do it, measured
+#     2026-09-30; com.rcircelli.wmpspotify.broadcast, the retired broadcast extension's, is no longer used),
+#     and the upload fails until the App Store Connect app record for that bundle id exists (made by hand, once).
 # Secrets: ASC_KEY_ID, ASC_ISSUER_ID, ASC_KEY_P8 (the whole AuthKey_<id>.p8 file), from App Store Connect >
 # Users and Access > Integrations > App Store Connect API; DEV_CERT_P12 (base64) and DEV_CERT_PASSWORD, one
 # Apple Development certificate with its key: cloud signing manages distribution certificates only, and

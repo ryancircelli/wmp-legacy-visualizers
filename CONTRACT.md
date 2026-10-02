@@ -320,20 +320,15 @@ player to desktop browsers only. Host bindings the page sees: `alchemyElectron =
 mode:'app'}` and `alchemyScreensaver = {audio:true, url:'ws://127.0.0.1:47831/audio'}` (the v8 audio
 socket's frames, but no socket in the page: WebKit refuses ws:// from the https page, so observer.js
 answers that one URL with a stand-in that App.swift feeds by evaluateJavaScript, `__wmpAudio.rate(n)`
-and `__wmpAudio.pcm(<base64 stereo int16 LE>, n)` per 100 ms batch, from the broadcast upload
-extension `WmpSpotifyBroadcast`, which hears the system's app audio mix and sends it to the app on a
-real ws://127.0.0.1:47831; no microphone; ReplayKit's in-app capture hears zeros from the web view),
-`alchemyLog` (a WKScriptMessageHandler), `alchemySpotifyLogout` (accounts.spotify.com/logout),
+and `__wmpAudio.pcm(<base64 stereo int16 LE>, n)` per 100 ms batch, from the app's own Spotify Connect
+speaker (librespot), whose audio the app plays itself; no microphone; the broadcast upload extension
+that fed it until 2026-10-02 is gone, ios/README.md "History"), `alchemyLog` (a WKScriptMessageHandler), `alchemySpotifyLogout` (accounts.spotify.com/logout),
 `alchemySetVolume` (the phone's system volume: a page cannot set its own on iOS), `alchemyOpenUrl`
 (Safari), `alchemyRestart` (a reload), `alchemyCheckUpdate` (answered in words), `alchemyLayout('edge'|'safe')`
 (the web view edge to edge for a skin made for the phone, with the insets in `window.__wmpSafeArea`
 and a `wmp-safe-area` event), `alchemyShowLog` (the host's log sheet), and for a click-wheel skin
-`alchemyHaptic(kind)`, `alchemyAwake(on)`, `alchemyStatusBar(hidden)`, `alchemyOrientation(mode)`,
-`alchemyBroadcast('picker'|'auto'|'manual'|'state')` with `window.__wmpBroadcast = {running}` and a
-`wmp-broadcast` event: the page owns the broadcast (observer.js sets 'manual' at start, so the app
-never opens the sheet by itself; the WMP 9 skin asks for it 2 s into a logged-in mount, in
-src/app/mount.tsx, since its visualizers want the audio; a skin without visuals never asks). The phone's reports, each a window global with
-an event of the same name: `__wmpVolume` (the buttons too), `__wmpBattery`, `__wmpRoute`,
+`alchemyHaptic(kind)`, `alchemyAwake(on)`, `alchemyStatusBar(hidden)`, `alchemyOrientation(mode)`.
+The phone's reports, each a window global with an event of the same name: `__wmpVolume` (the buttons too), `__wmpBattery`, `__wmpRoute`,
 `__wmpBrightness`, `__wmpHost`, and `wmp-shake`; `alchemyHost()` asks for all at once. Also
 `alchemyBrightness(v?)`, `alchemyShare(text)`, `alchemyHomeIndicator(hidden)`, `alchemyOpenSettings()`,
 `alchemyReset()` (the web view's data cleared, a reload); and the rest of the phone mapped whether

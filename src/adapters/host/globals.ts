@@ -59,11 +59,6 @@ declare global {
     alchemyStatusBar?: (hidden: boolean) => void;
     /** the iOS app: the orientations allowed */
     alchemyOrientation?: (mode: 'portrait' | 'landscape' | 'any') => void;
-    /** the iOS app: its broadcast (the app's audio): 'picker' opens iOS's start/stop sheet,
-     *  'auto'|'manual' whether the app opens it at launch, 'state' asks for __wmpBroadcast now */
-    alchemyBroadcast?: (cmd: 'picker' | 'auto' | 'manual' | 'state') => void;
-    /** the iOS app: whether a broadcast feeds it, with a 'wmp-broadcast' event on each change */
-    __wmpBroadcast?: { running: boolean };
     /** the iOS app: ask for every report below at once ('wmp-host' and the rest follow) */
     alchemyHost?: () => void;
     /** the iOS app: the screen's brightness, set (0..1) or asked for (no argument) */

@@ -6,13 +6,8 @@ targets:
     type: application
     platform: iOS
     deploymentTarget: "17.0"
-    # xcodegen writes a shared scheme only for targets that ask for one; CI builds -scheme WmpSpotify,
-    # which builds the extension too (a dependency).
+    # xcodegen writes a shared scheme only for targets that ask for one; CI builds -scheme WmpSpotify.
     scheme: {}
-    # Embedded in PlugIns.
-    dependencies:
-      - target: WmpSpotifyBroadcast
-        embed: true
     # Listed file by file so the generated Info.plist next to them is never a resource.
     sources:
       - path: WmpSpotify/App.swift
@@ -30,7 +25,7 @@ targets:
         UILaunchScreen: {}
         UIBackgroundModes: [audio]
         ITSAppUsesNonExemptEncryption: false
-        # librespot's discovery (ios/README.md, "Librespot (branch)"): the app advertised to the Spotify app
+        # librespot's discovery (ios/README.md, "Librespot"): the app advertised to the Spotify app
         # through Bonjour, which iOS allows only for the types listed here, after asking the user once.
         NSBonjourServices: [_spotify-connect._tcp]
         NSLocalNetworkUsageDescription: WMP Spotify shows itself to the Spotify app on this network as a speaker to play to.
@@ -43,8 +38,10 @@ targets:
           - UIInterfaceOrientationPortraitUpsideDown
           - UIInterfaceOrientationLandscapeLeft
           - UIInterfaceOrientationLandscapeRight
-    # The App Group holds the extension's socket and log. xcodegen writes the file (not committed) and
-    # sets CODE_SIGN_ENTITLEMENTS; the group has to be on both App IDs in the portal (ios/README.md).
+    # The App Group holds host.log. It was made for the broadcast extension (gone 2026-10-02, ios/README.md
+    # "History") and stays: host.log lives in its container, so dropping the group would lose the log at
+    # the update, and the App ID's provisioning already carries it. xcodegen writes the file (not
+    # committed) and sets CODE_SIGN_ENTITLEMENTS.
     entitlements:
       path: WmpSpotify/WmpSpotify.entitlements
       properties:
@@ -66,38 +63,3 @@ targets:
         SWIFT_OBJC_BRIDGING_HEADER: WmpSpotify/Bridging.h
         LIBRARY_SEARCH_PATHS: $(PROJECT_DIR)/librespot/out
         OTHER_LDFLAGS: -lwmp_librespot -framework CoreFoundation -liconv
-  # The broadcast upload extension (ios/README.md): the system's app audio to the app over a Unix socket
-  # in the App Group container.
-  WmpSpotifyBroadcast:
-    type: app-extension
-    platform: iOS
-    deploymentTarget: "17.0"
-    sources:
-      - path: WmpSpotifyBroadcast/SampleHandler.swift
-    info:
-      path: WmpSpotifyBroadcast/Info.plist
-      properties:
-        CFBundleDisplayName: WMP Spotify
-        # The app's version and build number: App Store Connect wants the extension's to match.
-        CFBundleShortVersionString: $(MARKETING_VERSION)
-        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
-        NSExtension:
-          NSExtensionPointIdentifier: com.apple.broadcast-services-upload
-          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).SampleHandler
-          RPBroadcastProcessMode: RPBroadcastProcessModeSampleBuffer
-    entitlements:
-      path: WmpSpotifyBroadcast/WmpSpotifyBroadcast.entitlements
-      properties:
-        com.apple.security.application-groups: [group.com.rcircelli.wmpspotify]
-    settings:
-      base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.rcircelli.wmpspotify.broadcast
-        # Archived only inside the app: without this the archive is a generic one that will not export.
-        SKIP_INSTALL: "YES"
-        DEVELOPMENT_TEAM: QKSF9UQ8WT
-        CODE_SIGN_STYLE: Automatic
-        MARKETING_VERSION: "0.1"
-        CURRENT_PROJECT_VERSION: 1
-        TARGETED_DEVICE_FAMILY: "1,2"
-        SWIFT_VERSION: "5.9"
-        GENERATE_INFOPLIST_FILE: "NO"

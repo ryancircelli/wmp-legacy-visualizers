@@ -30,9 +30,9 @@ var log = function (m) { window.alchemyLog('spotify: ' + m); };
 // (CONTRACT v8's frames), but no socket in the page: WebKit refuses ws:// from Spotify's https page
 // (measured, build 6), so the WebSocket wrapper below answers this one URL with a stand-in that
 // App.swift feeds by evaluateJavaScript, __wmpAudio.rate(n) and __wmpAudio.pcm(<base64 stereo
-// int16 LE>, n) per batch, from what the broadcast upload extension hears (the system's app audio
-// mix, Spotify's included; ios/README.md). The stand-in is never closed: a broadcast stopped and
-// started again just resumes.
+// int16 LE>, n) per batch, from the app's own Spotify Connect speaker (librespot) as the app plays
+// it (ios/README.md, "Librespot"). The stand-in is never closed: a pause and the next song carry on
+// in it.
 window.alchemyElectron = { loopback: false, mode: 'app' };
 var AUDIO_URL = 'ws://127.0.0.1:47831/audio';
 window.alchemyScreensaver = { audio: true, url: AUDIO_URL };
@@ -109,19 +109,15 @@ window.alchemyHaptic = function (kind) { post('haptic', kind || 'selection'); };
 window.alchemyAwake = function (on) { post('awake', on ? 'on' : 'off'); };
 window.alchemyStatusBar = function (hidden) { post('statusbar', hidden ? 'hidden' : 'shown'); };
 window.alchemyOrientation = function (mode) { post('orientation', mode || 'any'); };
-// The broadcast (the app's audio, ios/README.md) from the page: 'picker' opens iOS's sheet, which
-// starts a broadcast or, while one runs, offers to stop it; 'auto'|'manual' is whether the app opens
-// that sheet by itself at launch (kept across launches; a skin without visuals wants 'manual');
-// 'state' asks for window.__wmpBroadcast = {running} now, which also arrives, with a
-// 'wmp-broadcast' event on window, whenever it changes.
-window.__wmpBroadcast = { running: false };
-window.alchemyBroadcast = function (cmd) { post('broadcast', cmd || 'state'); };
 // The app's own Spotify Connect speaker (librespot): window.__wmpSpeaker = {id, name}, id its device id
 // while its session is up and null otherwise, with a 'wmp-speaker' event on window at each change; the
 // app sends it with the host report. alchemySpeakerName(name) renames it (kept across launches).
 window.__wmpSpeaker = { id: null, name: '' };
 window.alchemySpeakerName = function (name) { post('speaker', String(name || '').trim()); };
-post('broadcast', 'manual');  // the app never opens the sheet by itself: each skin asks (src/app/mount.tsx does, for the visualizers)
+// The broadcast (screen recording) is gone: the speaker feeds the visualizers. This file is served to
+// every installed build, and builds up to 32 still have the broadcast sheet and open it by themselves at
+// launch unless told 'manual'; a build without the handler throws here and `post` swallows it.
+post('broadcast', 'manual');
 // What the phone reports, each as a window global with an event of the same name on window when it
 // changes: __wmpVolume (0..100, the buttons too) 'wmp-volume'; __wmpBattery {level 0..100 or -1,
 // charging} 'wmp-battery'; __wmpRoute {name, type} (AirPods, Speaker) 'wmp-route'; __wmpBrightness

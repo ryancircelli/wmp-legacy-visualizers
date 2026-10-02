@@ -28,7 +28,7 @@ shows its volume HUD); every change, the hardware buttons' included, comes back 
 
 For a phone skin (an iPod click wheel, say) the page has more messages, each a string (JSON where
 noted), posted with `webkit.messageHandlers.<name>.postMessage(<string>)` and wrapped by `observer.js` as
-`alchemy*` bindings (`alchemyHaptic`, `alchemyAwake`, `alchemyBroadcast` and so on):
+`alchemy*` bindings (`alchemyHaptic`, `alchemyAwake` and so on):
 
 - `haptic`: `"selection"` (a wheel detent), `"light"`, `"medium"`, `"heavy"`, `"rigid"`, `"soft"`,
   `"success"`, `"warning"`, `"error"`, or `"prepare"` (readies the selection generator). One generator
@@ -51,9 +51,6 @@ noted), posted with `webkit.messageHandlers.<name>.postMessage(<string>)` and wr
 - `brightness`: a level 0 to 1, or `"state"` for `__wmpBrightness`.
 - `viewport`: `"mobile"` or `"desktop"` (the default), WebKit's content mode, kept across launches; a
   change reloads the page. The desktop user agent stays either way, since Spotify needs it.
-- `broadcast`: `"picker"` opens the broadcast sheet (which offers Stop while a broadcast runs); `"auto"`
-  (the default) or `"manual"`, kept across launches, is whether the app opens that sheet by itself at
-  launch; `"state"` asks for `__wmpBroadcast`.
 - `routepicker`: AirPlay's output picker.
 - `audiosession`: `"solo"` (the default: other apps' audio stops), `"mix"` (plays alongside it) or
   `"duck"` (lowers it).
@@ -67,8 +64,7 @@ noted), posted with `webkit.messageHandlers.<name>.postMessage(<string>)` and wr
 
 The app pushes state as a global on `window` and an `Event` of the matching name, each at its change and
 all on `host`: `__wmpHost` `{build, version, ios, model, scale, fps, voiceOver, viewport}` (`wmp-host`,
-on `host` only), `__wmpBroadcast` `{running}` (`wmp-broadcast`, when the extension connects or drops),
-`__wmpVolume` 0 to 100, the hardware buttons included (`wmp-volume`), `__wmpBattery` `{level, charging}`
+on `host` only), `__wmpVolume` 0 to 100, the hardware buttons included (`wmp-volume`), `__wmpBattery` `{level, charging}`
 with `level` -1 when unknown and `charging` true when plugged in (`wmp-battery`), `__wmpRoute`
 `{name, type}` of the first audio output (`wmp-route`), `__wmpBrightness` 0 to 1 (`wmp-brightness`, on
 asking only), `__wmpProximity` (`wmp-proximity`; only after `proximity` "on", since iOS blanks the screen while the sensor is covered), `__wmpLowPower` (`wmp-lowpower`), `__wmpThermal`
@@ -78,42 +74,27 @@ when hidden (`wmp-keyboard`). Two events carry no global: `wmp-shake` (the phone
 `wmp-memory` (a memory warning). Proximity monitoring is on for the report, so the screen goes dark
 while the sensor is covered, as in a call.
 
-The visualizers hear a broadcast upload extension (`WmpSpotifyBroadcast/`), the system-level capture a
-screen recording uses. It receives the system's mix of every app's audio, so it has Spotify wherever it
-plays: a system screen recording of the app carries the music (checked 2026-09-30), where ReplayKit's
-in-app capture delivered only zeros from the web view (build 7; WebKit's audio comes out of a process
-in-app capture does not hear). The extension sends its audio to the app over a Unix socket,
-`audio.sock` in the App Group container group.com.rcircelli.wmpspotify (`AudioServer` in App.swift):
-loopback TCP from the extension to the app never connected (build 9). Each frame is the body's length
-(4 bytes, little-endian), a type byte and the body: type 0 `{"rate":n}` first, then type 1 with each
-buffer as interleaved stereo int16 LE. The app cannot pass it to the page over a socket, since WebKit
-refuses ws:// from Spotify's https page (build 6), so it runs `__wmpAudio.pcm(<base64>, n)` in the
-page by evaluateJavaScript, batched every 100 ms, and `observer.js` hands that to the page as its
-audio socket. There is no microphone
-anywhere: the app's audio session is plain playback, and the picker has no microphone button.
+The visualizers hear the app's own Spotify Connect speaker (librespot, below): the app plays its
+audio itself and hands the same buffers to the page as they are played. It cannot pass them over a
+socket, since WebKit refuses ws:// from Spotify's https page (build 6), so `Forwarder` in App.swift runs
+`__wmpAudio.pcm(<base64>, n)` in the page by evaluateJavaScript, batched every 100 ms (interleaved
+stereo int16 LE at rate n), and `observer.js` hands that to the page as its audio socket. A pause or a
+stop ends with a moment of silence, so the visualizers go dark instead of holding the last spectrum.
+There is no microphone anywhere: the app's audio session is plain playback.
 
-To start it: about 2 s after launch the app opens iOS's broadcast sheet by itself, unless the page has
-set `broadcast` to `"manual"` (the button at the right end of the band, and the page's `"picker"`, open it
-too). Tap Start Broadcast; after a 3 s countdown the red indicator in
-the status bar stays for as long as it runs. Stop it from that indicator or from Control Center. When
-the app closes, the extension keeps the broadcast and tries its socket again every second, so the
-app opened again resumes the visualizers on the same broadcast; 5 min without the app ends it with
-"WMP Spotify is not running (<the connection's last state>)". Between broadcasts the visualizers go
-dark. The band under the web view (unless the page hides it with `band`)
-shows the host's last log line (scene changes go only to the list): tap it to reload the page,
-long-press it for the whole log, scrolled to its end, with Copy (all of it to the clipboard) and Clear.
-The log persists across launches in `host.log` in the App Group container (the last 3000 lines, each
-timestamped, a `---- launch <date> ----` line at each start). The extension logs each broadcast to
-`broadcast.log` in the same container; the app merges its lines into the host log, prefixed `ext:`,
-when the list opens and 8 s after the broadcast sheet comes up, each line once.
+The band under the web view (unless the page hides it with `band`) shows the host's last log line
+(scene changes go only to the list): tap it to reload the page, long-press it for the whole log,
+scrolled to its end, with Copy (all of it to the clipboard) and Clear. The log persists across launches
+in `host.log` in the App Group container group.com.rcircelli.wmpspotify (the last 3000 lines, each
+timestamped, a `---- launch <date> ----` line at each start). The group was made for the broadcast
+extension (History, below) and stays: moving the log out of it would lose it at the update.
 
 ## Librespot
 
 The app is also a Spotify Connect receiver (merged from the `librespot` branch 2026-10-01), through
 [librespot](https://github.com/librespot-org/librespot) 0.8.0. It shows up in Spotify's device list as
 **WMP Spotify** (a speaker); picked, Spotify plays to the app itself, and the app gets the raw audio.
-The music plays out of the app's own audio session, and the visualizers get the same audio with no
-broadcast. The web view stays the control plane exactly as on master (sign-in, library, commands);
+The music plays out of the app's own audio session, and the visualizers get the same audio. The web view stays the control plane exactly as on master (sign-in, library, commands);
 librespot is only the audio sink. The page's own player shows up as "WMP Spotify (This Device)", next to
 librespot's "WMP Spotify".
 
@@ -126,7 +107,7 @@ librespot's "WMP Spotify".
   header). CI runs it before xcodegen, its cargo work cached by Cargo.lock.
 - `Librespot` in App.swift starts it at launch with the cache in Application Support/librespot. Each
   packet plays through an AVAudioEngine player node and, as it is heard, goes to `Forwarder`, which
-  feeds the page from librespot while it plays and from the broadcast otherwise. The callback blocks
+  feeds the page. The callback blocks
   while half a second is queued, which paces librespot's decoding. A pause flushes the queue and the
   visualizers go dark.
 - **Control Center and the lock screen.** The audio no longer goes through WebKit, so the app feeds
@@ -167,8 +148,6 @@ librespot's "WMP Spotify".
   same happened on Android, and [librespot#1403](https://github.com/librespot-org/librespot/pull/1403)
   fixed it by presenting as Linux. On an iPhone's arm64 this is what a Raspberry Pi running librespot
   sends.
-- Once paired, the page's broadcast prompt is skipped (`broadcast: librespot paired, no picker`). The
-  broadcast still works as the fallback, from the band's button.
 
 **Sign-in: the web player's token first.** There is no second sign-in. Spotify ended username and
 password login for librespot in July 2024
@@ -272,8 +251,7 @@ with the next one preloaded. No pairing, no prompt.
 - Why the iOS Spotify app did not list the zeroconf device on its own phone (build 20).
 - Whether the audio engine, which runs from launch and renders silence between songs, keeps the app and
   its session alive in the background as intended, and what it costs in battery.
-- How the visualizers keep time with librespot's audio. The page gets each buffer as it is played;
-  the broadcast's latency was never measured either.
+- How the visualizers keep time with librespot's audio. The page gets each buffer as it is played.
 
 **Prior art.** [lufinkey/librespot-swift](https://github.com/lufinkey/librespot-swift) (2025, OAuth
 and rodio, built for aarch64-apple-ios) is the only iOS build of librespot found. Its author opened
@@ -283,7 +261,7 @@ and rodio, built for aarch64-apple-ios) is the only iOS build of librespot found
 
 No Xcode project is checked in. `ios/project.yml` is an [XcodeGen](https://github.com/yonaskolb/XcodeGen)
 spec; `xcodegen generate --spec ios/project.yml` writes `ios/WmpSpotify.xcodeproj` (scheme WmpSpotify),
-and both targets' Info.plist and .entitlements files from it.
+and the app's Info.plist and .entitlements files from it.
 `.github/workflows/ios.yml` does that on every push to master that touches `ios/`, archives a Release
 build numbered with the workflow's run number, and uploads it to TestFlight. The build is for one
 account's private TestFlight and never goes to the App Store.
@@ -307,13 +285,13 @@ The .p8 can be downloaded only once, when the key is made.
 ## One-time setup
 
 1. Make the API key and add the three secrets (repository Settings > Secrets and variables > Actions).
-2. Register the App IDs com.rcircelli.wmpspotify and com.rcircelli.wmpspotify.broadcast (the
-   extension) at developer.apple.com > Identifiers (explicit). The archive step does not register them:
-   measured 2026-09-30, the archive signed without one and the upload failed with "Error Downloading
-   App Information".
+2. Register the App ID com.rcircelli.wmpspotify at developer.apple.com > Identifiers (explicit). The
+   archive step does not register it: measured 2026-09-30, the archive signed without one and the
+   upload failed with "Error Downloading App Information". com.rcircelli.wmpspotify.broadcast, the
+   retired broadcast extension's, is no longer used.
 3. Register the App Group group.com.rcircelli.wmpspotify (Identifiers > App Groups), then turn on the
-   App Groups capability on both App IDs with that group ticked. The extension's socket and log live
-   in its container; without it on both, signing fails or the two see different containers.
+   App Groups capability on the App ID with that group ticked. The host log lives in its container;
+   without it, signing fails.
 4. In App Store Connect, Apps > + > New App: iOS, bundle ID com.rcircelli.wmpspotify, any SKU. The name
    has to be unique across the App Store even though this app never ships there. A pending Program
    License Agreement blocks this until the Account Holder accepts it.
@@ -327,13 +305,32 @@ runs inside the WKWebView itself (Play on Device shows "WMP Spotify (This Device
 device, the position advancing, synced lyrics on), and the player state drives the visualizers.
 Nothing had to be routed through another Spotify Connect device.
 
+2026-10-01, build 24: the app's own speaker logged in with the web player's token, showed in the Spotify
+app's picker on the same phone, and played a track through the app (Librespot, "Works"). 2026-10-02:
+the owner confirmed the speaker works, and the broadcast was removed (History).
+
 ## Known gaps
 
 - By default the web view keeps to the safe area: bars at the notch and the home indicator, black
   unless the page sets `background` (a page can lift that with `layout`).
 - The skin is WMP 9's desktop window at phone size; nothing is laid out for a phone.
-- The broadcast has to be started by hand at every launch (iOS requires the Start Broadcast tap), and
-  it ends when the app is killed.
-- The extension hears every app's audio, not only Spotify's.
+- The visualizers hear only the app's speaker: music played on another device, or on the page's own
+  player before it moves to the speaker, leaves them dark.
 - No signature check on the page update. The Windows exes run a new page only when update.json's
   signature verifies (`tauri/src/update.rs`); this app runs whatever wmp.ryancircelli.com serves.
+
+## History
+
+How the visualizers got their audio before the speaker. ReplayKit's in-app capture delivered only
+zeros from the web view (build 7): WebKit's audio comes out of a process in-app capture does not hear.
+A broadcast upload extension (`WmpSpotifyBroadcast`, the system-level capture a screen recording uses)
+did hear it, since it receives the system's mix of every app's audio (checked 2026-09-30). It sent
+that to the app over a Unix socket, `audio.sock` in the App Group container (loopback TCP from the
+extension to the app never connected, build 9), each frame the body's length (4 bytes, little-endian),
+a type byte and the body (type 0 `{"rate":n}`, type 1 interleaved stereo int16 LE; ReplayKit's app
+audio arrived as big-endian int16, build 6). It worked, but had to be started from iOS's broadcast
+sheet at every launch (the app opened the sheet by tapping an RPSystemBroadcastPickerView's button; iOS
+requires the Start Broadcast tap), heard every app's audio, and showed the red recording indicator. The
+speaker replaced it on 2026-10-02: the extension, its picker, `alchemyBroadcast` and `__wmpBroadcast`
+were removed (the code is in git history). observer.js still posts `broadcast` `"manual"` once at
+start, so builds up to 32, which still have the sheet, never open it by themselves.
