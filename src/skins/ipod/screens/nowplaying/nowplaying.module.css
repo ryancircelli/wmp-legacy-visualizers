@@ -43,7 +43,7 @@
 .root:not(:has(.of)) .controls { height: calc(var(--unit) * 38); }
 .root:not(:has(.of)) .row { top: calc(var(--unit) * 10); }
 /* the cover and its tap area reach down to the shorter band (the cover crops a little at the sides) */
-.root:not(:has(.of)) .art, .root:not(:has(.of)) .tap, .root:not(:has(.of)) .overart { height: calc(var(--unit) * 258); }
+.root:not(:has(.of)) .art, .root:not(:has(.of)) .tap, .root:not(:has(.of)):not([data-mini]) .overart { height: calc(var(--unit) * 258); }
 .reflection {
   position: absolute; top: 0; left: 0; width: calc(var(--unit) * 240); height: calc(var(--unit) * 240);
   object-fit: cover; transform: scaleY(-1); opacity: .25;
@@ -106,8 +106,16 @@
 /* the Canvas: the 9:16 clip (or still) cropped to the whole area, the bands translucent over it */
 .bg { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
 /* Over Cover: the visualizer over the cover only, no backdrop of its own (its dark is clear: the
-   engine's 'luma' output) */
-.overart { position: absolute; top: calc(var(--unit) * 60); left: 0; width: calc(var(--unit) * 240); height: calc(var(--unit) * 240); }
+   engine's 'luma' output). Bars and Waves' box is the cover's, the whole area minimized (a resize: its
+   bars are back on the next frame); Alchemy's and Battery's is the whole area always, clipped to the
+   cover in the full view, so they are never resized (a resize clears their buffers: a restart) */
+.overart { position: absolute; top: calc(var(--unit) * 60); left: 0; width: calc(var(--unit) * 240); height: calc(var(--unit) * 240);
+           transition: top .3s ease, height .3s ease; }
+.root[data-mini] .overart { top: 0; height: 100%; }
+.overclip { position: absolute; inset: 0; transition: clip-path .3s ease;
+            -webkit-clip-path: inset(calc(var(--unit) * 60) 0 calc(var(--unit) * 56) 0); clip-path: inset(calc(var(--unit) * 60) 0 calc(var(--unit) * 56) 0); }
+.root:not(:has(.of)) .overclip { -webkit-clip-path: inset(calc(var(--unit) * 60) 0 calc(var(--unit) * 38) 0); clip-path: inset(calc(var(--unit) * 60) 0 calc(var(--unit) * 38) 0); }
+.root[data-mini] .overclip { -webkit-clip-path: inset(0); clip-path: inset(0); }
 .clear { display: block; width: 100%; height: 100%; }
 /* the visualizer in the Canvas's place, stretched to the area as WMP stretches it to its screen */
 .vis { display: block; width: 100%; height: 100%; background: #000; }
@@ -142,36 +150,44 @@
 }
 
 /* Minimized (NowPlaying.tsx: MINIMIZE_MS without input while it plays): the info band slides up, the
-   mode row and "N of M" fade and the ⋯ with them. The cover moves up under the status row at its own
-   size and crop, and the controls band grows from its foot to the screen's with the cover's mirror
-   image in it (the full view's reflection, dimmed the same way, its crop the cover's); with no cover
-   (the ♪ tile) the band goes and the screen is black. The Canvas and a plain visualizer fill the area
-   as ever, Over Cover's stays on the cover. The menus' Now Playing bar slides up at the foot, clear
-   here (.foot). The lyrics' band is their own box's: they sit at the cover's foot, or on the bar over
-   the Canvas or a plain visualizer. The area is 356 tall; the cover 240 (258 without "N of M"). */
-.info, .more, .foot { transition: transform .3s ease, opacity .3s ease; }
+   mode row and "N of M" fade and the ⋯ with them. The cover, at its own size and crop, is centred in
+   the area (356 tall; the cover 240, 258 without "N of M"), its mirror image above it and below it,
+   each dimmed as the full view's reflection is (.25 over the band's grey) and meeting the cover's edge:
+   below, the controls band; above, .mirror. With no cover (the ♪ tile) neither: black. A visualizer
+   takes the whole area (plain as ever; Over Cover's over the cover and its mirrors too). The menus'
+   Now Playing bar slides up at the foot, clear here (.foot), and the lyrics sit on it. */
+.info, .more, .foot, .mirror { transition: transform .3s ease, opacity .3s ease; }
 .controls { transition: transform .3s ease, opacity .3s ease, height .3s ease; }
 .row, .of { transition: opacity .3s ease; }
-.art, .tap, .overart { transition: top .3s ease; }
+.art, .tap { transition: top .3s ease; }
 .root[data-mini] .info { transform: translateY(-100%); opacity: 0; pointer-events: none; }
 .root[data-mini] .controls { transform: translateY(100%); opacity: 0; pointer-events: none; }
-.root[data-mini]:has(.reflection) .controls { transform: none; opacity: 1; height: calc(var(--unit) * (356 - 240)); }
-.root[data-mini]:has(.reflection):not(:has(.of)) .controls { height: calc(var(--unit) * (356 - 258)); }
+.root[data-mini]:has(.reflection) .controls { transform: none; opacity: 1; height: calc(var(--unit) * (356 - 240) / 2); }
+.root[data-mini]:has(.reflection):not(:has(.of)) .controls { height: calc(var(--unit) * (356 - 258) / 2); }
 .root[data-mini]:not(:has(.of)) .reflection { height: calc(var(--unit) * 258); }
 .root[data-mini] :is(.row, .of) { opacity: 0; }
 .root[data-mini] .more { opacity: 0; pointer-events: none; }
-.root[data-mini] :is(.art, .tap, .overart) { top: 0; }
+.root[data-mini] :is(.art, .tap) { top: calc(var(--unit) * (356 - 240) / 2); }
+.root[data-mini]:not(:has(.of)) :is(.art, .tap) { top: calc(var(--unit) * (356 - 258) / 2); }
+.mirror {
+  position: absolute; top: 0; left: 0; right: 0; height: calc(var(--unit) * (356 - 240) / 2); overflow: hidden;
+  background: linear-gradient(to top, #656565, #262626); opacity: 0; pointer-events: none;
+}
+.root:not(:has(.of)) .mirror { height: calc(var(--unit) * (356 - 258) / 2); }
+.mirror > img {
+  position: absolute; bottom: 0; left: 0; width: calc(var(--unit) * 240); height: calc(var(--unit) * 240);
+  object-fit: cover; transform: scaleY(-1); opacity: .25;
+}
+.root:not(:has(.of)) .mirror > img { height: calc(var(--unit) * 258); }
+.root[data-mini] .mirror { opacity: 1; }
 .root[data-mini] .lyrics { top: 0; bottom: calc(var(--unit) * 45); }
-.root[data-mini]:not([data-canvas]) .lyrics { bottom: calc(var(--unit) * (356 - 240)); }
-.root[data-mini]:not([data-canvas]):not(:has(.of)) .lyrics { bottom: calc(var(--unit) * (356 - 258)); }
 .foot { position: absolute; left: 0; right: 0; bottom: 0; transform: translateY(100%); pointer-events: none; }
 .root[data-mini] .foot { transform: none; pointer-events: auto; }
-/* the bar clear on this page (the menus' own is opaque): a dark translucent shade fading in at its
-   top edge, the picture behind softened; white text with the page's shadow; its thumbnail, button and
-   progress as ever (the track translucent) */
+/* the bar partly see-through on this page (the menus' own is opaque), as the full view's controls band
+   is over the Canvas: a flat dark shade, no blur (an iPod has none), what is behind it showing through;
+   white text with the page's shadow; its thumbnail, button and progress as ever (the track translucent) */
 .foot > div {
-  background: linear-gradient(rgb(0 0 0 / .3), rgb(0 0 0 / .62) calc(var(--unit) * 14));
-  -webkit-backdrop-filter: blur(calc(var(--unit) * 3)); backdrop-filter: blur(calc(var(--unit) * 3));
+  background: linear-gradient(rgb(0 0 0 / .45), rgb(0 0 0 / .7));
   border-top-color: rgb(255 255 255 / .14);
   color: #fff; text-shadow: 0 1px 2px #000;
   --ipod-dim: rgb(255 255 255 / .72); --ipod-bar-bg: rgb(255 255 255 / .3);

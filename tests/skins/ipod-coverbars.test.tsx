@@ -54,10 +54,11 @@ it('Over Cover: the cover stays and the visualization draws over it with the eng
   menu();
   expect(options()[0]!.textContent).toBe('Over CoverOn');
   pick('Alchemy');                                   // another engine: its own colours, still over the cover
-  expect([m.S().vis.kind, ...out(), !!np.querySelector('[class*=overart]')]).toEqual(['alchemy', 'luma', null, true]);
+  // (Alchemy's box is the whole area, clipped to the cover: overclip; Bars and Waves' the cover's: overart)
+  expect([m.S().vis.kind, ...out(), !!np.querySelector('[class*=overclip]')]).toEqual(['alchemy', 'luma', null, true]);
   menu();
   pick('Over CoverOn');                              // off: the visualizer opaque, the whole area
-  expect([...out(), !!np.querySelector('[class*=overart]'), !!np.querySelector('canvas[class*=vis]')]).toEqual(['opaque', null, false, true]);
+  expect([...out(), !!np.querySelector('[class*=overart], [class*=overclip]'), !!np.querySelector('canvas[class*=vis]')]).toEqual(['opaque', null, false, true]);
   menu();
   pick('Over CoverOff');
   menu();
@@ -68,7 +69,7 @@ it('Over Cover: the cover stays and the visualization draws over it with the eng
   await play('spotify:track:b', 'https://i.scdn.co/image/bad');   // a cover that cannot be read: white, logged
   expect([log.mock.calls.at(-1)![0], m.S().vis.tint]).toEqual(['ipod: over cover accent #ffffff (cover not readable: Load failed)', [255, 255, 255]]);
   await play('spotify:track:none');                  // no cover: opaque, the whole area
-  expect([...out(), !!np.querySelector('[class*=overart]'), !!np.querySelector('canvas')]).toEqual(['opaque', null, false, true]);
+  expect([...out(), !!np.querySelector('[class*=overart], [class*=overclip]'), !!np.querySelector('canvas')]).toEqual(['opaque', null, false, true]);
   act(() => { fireEvent.click(np.querySelector('[class*=tap]')!); });   // away from the visualizer
   expect([m.S().vis.kind, m.S().vis.preset, ...out()]).toEqual(['battery', 3, 'opaque', null]);
 });

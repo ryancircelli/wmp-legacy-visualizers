@@ -110,8 +110,9 @@ function NowPlaying() {
   }, []);
 
   // Minimized (MINIMIZE_MS without input while it plays, this screen the top one, no popup, no scrubber or
-  // Radio slider): the bands and the ⋯ go, the cover stays as it is (centred in the room they leave),
-  // and the menus' Now Playing bar comes up at the foot. Any input restores it. A tap on the screen, a
+  // Radio slider): the bands and the ⋯ go, the cover stays as it is, centred with its mirror image above
+  // and below, a visualizer takes the whole area, and the menus' Now Playing bar comes up at the foot
+  // with the lyrics on it. Any input restores it. A tap on the screen, a
   // wheel turn or an arrow key that restores does nothing else (`woke`: the press or key that woke it,
   // its ticks and its click consumed), but for the bar's (its button plays / pauses, a swipe skips, a
   // tap on it restores); the wheel's buttons and their keys act as ever too.
@@ -261,13 +262,15 @@ function NowPlaying() {
     <div ref={root} className={css.root} data-canvas={bg ? '' : undefined} data-mini={mini ? '' : undefined}>
       {vis && !cover ? <Vis /> : canvas?.type === 'video' ? <CanvasVideo src={canvas.url} poster={art || undefined} onError={fail} />
         : canvas ? <img className={css.bg} src={canvas.url} alt="" onError={fail} /> : null}
+      {/* minimized: the cover's mirror image above it too */}
+      {art && !bg && <div className={css.mirror}><img src={art} alt="" /></div>}
       <div className={css.info}>
         <Line className={css.artist} text={t?.artist} />
         <Line className={css.title} text={t?.title} />
         <Line className={css.album} text={t?.album} />
       </div>
       {bg ? null : art ? <img className={css.art} src={art} alt="" /> : <div className={cx(css.art, css.noart)}>♪</div>}
-      {cover && <Vis over tint={bars ? accent : null} />}
+      {cover && <Vis over clip={!bars} tint={bars ? accent : null} />}
       {/* a swipe from here is still MENU (Root suppresses the click that ends one); a tap is the swap's alone */}
       <div className={css.tap} onClick={swap} />
       {p.lyrics && <Lyrics onClick={swap} />}
@@ -379,8 +382,10 @@ function useAccent(url: string): string {
  *  on silence (Alchemy and Battery animate on it, Bars and Waves waits for sound; settings.animate off
  *  stills them). Its canvas is mounted only while this screen is the top one and the page is
  *  visible: the ticker's loop runs only with a canvas attached, so it costs nothing elsewhere. `over`
- *  (Over Cover): over the cover only, the engine's output 'luma' (clear where dark), in `tint` if one. */
-function Vis({ over, tint }: { over?: boolean; tint?: string | null }) {
+ *  (Over Cover): over the cover (and its mirrors, minimized), the engine's output 'luma' (clear where
+ *  dark), in `tint` if one; `clip`: the whole area always, clipped to the cover in the full view (no
+ *  resize when it minimizes: Alchemy and Battery would start over). */
+function Vis({ over, clip, tint }: { over?: boolean; clip?: boolean; tint?: string | null }) {
   const sh = useShell(), ref = useRef<HTMLDivElement>(null), on = useOnScreen(ref);
   // The ticker holds the engine while WMP's view is off Now Playing (vis.hold: a WMP view left on
   // Library sets it again at every Spotify start); here it is the screen, so no hold while shown,
@@ -439,7 +444,7 @@ function Vis({ over, tint }: { over?: boolean; tint?: string | null }) {
     return () => out('opaque', null);
   }, [on, over, tint, sh]);
   return (
-    <div ref={ref} className={over ? css.overart : css.bg}>
+    <div ref={ref} className={!over ? css.bg : clip ? css.overclip : css.overart}>
       {on && <Visualizer className={over ? css.clear : css.vis} />}
     </div>
   );

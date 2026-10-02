@@ -113,17 +113,36 @@ it('a wheel turn or a tap on the screen restores it and does nothing else; the w
   expect([m.mini(), !!m.np().querySelector('[class*=diamond]')]).toEqual([false, true]);
 });
 
-it('minimized with a cover, the cover\'s reflection fills under it (the ♪ tile: none); the bar is the clear one here, the menus\' its own', () => {
+it('minimized with a cover, its mirror image above it and below it (the ♪ tile: none); the bar is the clear one here, the menus\' its own', () => {
   const m = atNowPlaying();
-  const reflection = () => m.np().querySelector('[class*=reflection]');
+  const mirrors = () => [m.np().querySelector('[class*=mirror] > img')?.getAttribute('src') ?? null, m.np().querySelector('[class*=reflection]')?.getAttribute('src') ?? null];
   wait(MINIMIZE_MS);
-  expect([m.mini(), reflection()]).toEqual([true, null]);   // no cover: the ♪ tile, black under it
+  expect([m.mini(), ...mirrors()]).toEqual([true, null, null]);   // no cover: the ♪ tile, black round it
   m.play('spotify:track:a', 'Song', 'playing', 'https://i.scdn.co/image/abc');
-  expect([m.mini(), reflection()?.getAttribute('src')]).toEqual([true, 'https://i.scdn.co/image/abc']);
+  expect([m.mini(), ...mirrors()]).toEqual([true, 'https://i.scdn.co/image/abc', 'https://i.scdn.co/image/abc']);
   // the clear look is the page's own wrapper's (.foot); the menus' bar has none
   expect(m.bar()!.parentElement!.className).toMatch(/foot/);
   key('Escape');                                     // to the main menu: its bar, opaque as ever
   const menuBar = within(m.getByTestId('ipod')).getAllByRole('button', { name: 'Now Playing' }).find((x) => !x.closest('[aria-hidden=true]'))!;
   expect(menuBar.parentElement!.className).not.toMatch(/foot/);
+});
+
+it('Over Cover: Bars and Waves\' box is the cover\'s (the whole area minimized: a resize), Alchemy\'s and Battery\'s the whole area always, clipped to the cover in the full view (never resized)', () => {
+  localStorage.setItem('ipod.visOverCover', 'true');
+  localStorage.setItem('ipod.visualizer', JSON.stringify('alchemy:0'));
+  const m = atNowPlaying();
+  m.play('spotify:track:a', 'Song', 'playing', 'https://i.scdn.co/image/abc');
+  const tap = () => act(() => { fireEvent.click(m.np().querySelector('[class*=tap]')!); });
+  tap();                                             // no Canvas: on to the visualizer, over the cover
+  const box = () => m.np().querySelector('[class*=overclip], [class*=overart]')?.className.match(/overclip|overart/)?.[0];
+  expect(box()).toBe('overclip');
+  wait(MINIMIZE_MS);
+  expect([m.mini(), box()]).toEqual([true, 'overclip']);   // the same box: only its clip changes
+  key('Escape');
+  act(() => { fireEvent.click(m.getByTestId('ipod').querySelector('[aria-label="Now Playing"][role=button]')!); });
+  localStorage.setItem('ipod.visualizer', JSON.stringify('bars:0'));
+  act(() => { window.dispatchEvent(new StorageEvent('storage', { key: 'ipod.visualizer' })); });
+  expect(box()).toBe('overart');
+  tap();                                             // back to the Canvas for the tests after
 });
 
