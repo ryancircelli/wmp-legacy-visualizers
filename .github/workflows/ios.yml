@@ -1,4 +1,5 @@
-# Builds the iPhone app (ios/, ios/README.md) and uploads it to TestFlight on every push to master that touches it.
+# Builds the iPhone app (ios/, ios/README.md) and uploads it to TestFlight on every push to master that touches it;
+# ios/librespot (the Connect speaker, ios/README.md "Librespot") is built first.
 # The Xcode project is generated from ios/project.yml by xcodegen; none is checked in.
 # Signing is Xcode's cloud-managed signing: no certificate or profile is stored anywhere. xcodebuild signs in to
 # App Store Connect with the API key (-allowProvisioningUpdates) and creates or fetches what it needs, so:
@@ -14,18 +15,41 @@
 name: ios
 on:
   push:
-    # master is off until the librespot branch merges: a master build (no speaker) uploaded from here takes a
-    # higher build number than the branch's and TestFlight offers it as the newest (build 28, 2026-10-01).
-    branches: []
+    branches: [master]
     paths: ['ios/**', '!ios/WmpSpotify/observer.js', '!ios/README.md', '.github/workflows/ios.yml'] # the observer reaches the phone from the site (deploy.yml)
   workflow_dispatch:
-concurrency: { group: ios, cancel-in-progress: true }
+concurrency: { group: 'ios-${{ github.ref }}', cancel-in-progress: true }
 jobs:
   testflight:
     runs-on: macos-26
     permissions: { contents: read }
     steps:
       - uses: actions/checkout@v4
+      # The librespot branch's Rust receiver (ios/librespot), linked into the app: skipped where it is absent.
+      # Cargo's downloads and build are cached by Cargo.lock, saved as soon as librespot builds.
+      - uses: actions/cache/restore@v4
+        id: cargo-cache
+        if: hashFiles('ios/librespot/build.sh') != ''
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ios/librespot/target
+          key: librespot-${{ hashFiles('ios/librespot/Cargo.lock') }}
+          restore-keys: librespot-
+      - name: Build librespot
+        if: hashFiles('ios/librespot/build.sh') != ''
+        run: |
+          rustup target add aarch64-apple-ios
+          ios/librespot/build.sh
+      - uses: actions/cache/save@v4
+        if: hashFiles('ios/librespot/build.sh') != '' && steps.cargo-cache.outputs.cache-hit != 'true'
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ios/librespot/target
+          key: librespot-${{ hashFiles('ios/librespot/Cargo.lock') }}
       - run: brew install xcodegen
       - run: xcodegen generate --spec ios/project.yml
       # The key stays out of every command line (printf is a shell builtin). SIGN holds the four flags both

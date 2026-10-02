@@ -30,6 +30,10 @@ targets:
         UILaunchScreen: {}
         UIBackgroundModes: [audio]
         ITSAppUsesNonExemptEncryption: false
+        # librespot's discovery (ios/README.md, "Librespot (branch)"): the app advertised to the Spotify app
+        # through Bonjour, which iOS allows only for the types listed here, after asking the user once.
+        NSBonjourServices: [_spotify-connect._tcp]
+        NSLocalNetworkUsageDescription: WMP Spotify shows itself to the Spotify app on this network as a speaker to play to.
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
           - UIInterfaceOrientationLandscapeLeft
@@ -56,6 +60,12 @@ targets:
         SWIFT_VERSION: "5.9"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         GENERATE_INFOPLIST_FILE: "NO"
+        # librespot (ios/librespot), built by its build.sh before xcodegen runs (.github/workflows/ios.yml),
+        # with what rustc says the library needs besides (build.sh prints native-static-libs; libSystem is
+        # linked anyway).
+        SWIFT_OBJC_BRIDGING_HEADER: WmpSpotify/Bridging.h
+        LIBRARY_SEARCH_PATHS: $(PROJECT_DIR)/librespot/out
+        OTHER_LDFLAGS: -lwmp_librespot -framework CoreFoundation -liconv
   # The broadcast upload extension (ios/README.md): the system's app audio to the app over a Unix socket
   # in the App Group container.
   WmpSpotifyBroadcast:

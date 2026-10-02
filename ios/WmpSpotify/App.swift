@@ -25,6 +25,7 @@ struct WmpSpotifyApp: App {
         try? AVAudioSession.sharedInstance().setActive(true)
         HostLog.shared.log("host: build \(Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "?")")
         AudioServer.shared.start()
+        Librespot.shared.start()
         DeviceState.shared.start()
     }
 
@@ -389,6 +390,7 @@ final class DeviceState {
         pushScene()
         pushKeyboard()
         AudioServer.shared.pushState()
+        Librespot.shared.push()
     }
 }
 
@@ -592,7 +594,7 @@ struct WebView: UIViewRepresentable {
         for name in ["log", "volume", "open", "layout", "showlog", "haptic", "awake", "statusbar", "orientation",
                      "broadcast", "brightness", "share", "homeindicator", "host", "reset", "viewport", "proximity",
                      "hapticpattern", "sound", "routepicker", "audiosession", "notify", "appearance", "clipboard",
-                     "band", "background", "keyboard", "scroll"] {
+                     "band", "background", "keyboard", "scroll", "lstoken", "speaker"] {
             config.userContentController.add(context.coordinator, name: name)
         }
         if let script {
@@ -610,6 +612,7 @@ struct WebView: UIViewRepresentable {
         web.scrollView.isScrollEnabled = false
         web.scrollView.bounces = false
         web.navigationDelegate = context.coordinator  // the viewport, before the first load
+        web.uiDelegate = context.coordinator  // window.prompt as a native alert (the skins have no text field)
         web.load(URLRequest(url: URL(string: "https://open.spotify.com/")!))
         WebHolder.shared.web = web
         return web
@@ -642,7 +645,19 @@ struct WebView: UIViewRepresentable {
     // or "duck"; notify, JSON for notify(_:) or "cancel:<id>"; appearance, "light", "dark" or "auto";
     // clipboard, a text copied; band, "hidden" or "shown"; background, "#rrggbb" or "#rgb"; keyboard,
     // "ignore" or "avoid"; scroll, "on" or "off", the web view's own scrolling and bounce.
-    final class Coordinator: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
+    final class Coordinator: NSObject, WKScriptMessageHandler, WKNavigationDelegate, WKUIDelegate {
+        /// window.prompt(text, default), as the system alert with a text field; nil on Cancel.
+        func webView(_ webView: WKWebView, runJavaScriptTextInputPanelWithPrompt prompt: String, defaultText: String?,
+                     initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping (String?) -> Void) {
+            guard var top = webView.window?.rootViewController else { completionHandler(nil); return }
+            while let p = top.presentedViewController { top = p }
+            let a = UIAlertController(title: prompt, message: nil, preferredStyle: .alert)
+            a.addTextField { $0.text = defaultText }
+            a.addAction(UIAlertAction(title: "Cancel", style: .cancel) { _ in completionHandler(nil) })
+            a.addAction(UIAlertAction(title: "OK", style: .default) { _ in completionHandler(a.textFields?.first?.text) })
+            top.present(a, animated: true)
+        }
+
         // Each navigation in the stored viewport's content mode; the desktop user agent stays either way.
         func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction,
                      preferences: WKWebpagePreferences,
@@ -703,7 +718,13 @@ struct WebView: UIViewRepresentable {
                 guard let s = message.body as? String else { return }
                 switch s {
                 case "picker":
-                    WebHolder.shared.showPicker()
+                    // Paired, the visualizers hear librespot instead: no sheet (the band's button still
+                    // opens it).
+                    if Librespot.shared.paired {
+                        HostLog.shared.log("broadcast: librespot paired, no picker")
+                    } else {
+                        WebHolder.shared.showPicker()
+                    }
                 case "auto", "manual":
                     HostLog.shared.log("broadcast: \(s)", quiet: true)
                     UserDefaults.standard.set(s, forKey: "broadcast.prompt")
@@ -804,6 +825,12 @@ struct WebView: UIViewRepresentable {
                 HostLog.shared.log("scroll: \(s)", quiet: true)
                 scroll.isScrollEnabled = s == "on"
                 scroll.bounces = s == "on"
+            case "lstoken":
+                guard let s = message.body as? String, !s.isEmpty else { return }
+                Librespot.shared.token(s)
+            case "speaker":
+                guard let s = message.body as? String, !s.isEmpty else { return }
+                Librespot.shared.rename(s)
             default:
                 HostLog.shared.log("page: \(message.body)")
             }
@@ -1012,27 +1039,35 @@ final class AudioServer {
     }
 }
 
-// The extension's audio into the page by evaluateJavaScript (WebKit refuses ws:// from Spotify's
-// https page), to the stand-in socket observer.js puts in its place: __wmpAudio.rate(n) when the
-// extension says it, then every 100 ms __wmpAudio.pcm(<base64 interleaved stereo int16 LE>, n) with
-// all that came in since, so evaluateJavaScript runs 10 times a second and not once per buffer (43).
-// The rate rides along for a stand-in opened later (a reload). All state is on `queue`.
+// The audio into the page by evaluateJavaScript (WebKit refuses ws:// from Spotify's https page), to
+// the stand-in socket observer.js puts in its place: __wmpAudio.rate(n) when the source says it, then
+// every 100 ms __wmpAudio.pcm(<base64 interleaved stereo int16 LE>, n) with all that came in since, so
+// evaluateJavaScript runs 10 times a second and not once per buffer (43). The rate rides along for a
+// stand-in opened later (a reload). Two sources: the broadcast extension (AudioServer) and librespot
+// (Librespot); while librespot plays the page gets its audio only, the broadcast's dropped. All state
+// is on `queue`.
 final class Forwarder {
     static let shared = Forwarder()
+    enum Source { case broadcast, librespot }
     private let queue = DispatchQueue(label: "audio-forwarder")
     private var sampleRate = 0
     private var pending = Data()
     private var timer: DispatchSourceTimer?
+    private var live = Source.broadcast  // whose audio the page gets
+    private var rates: [Source: Int] = [:]  // each source's latest rate
 
-    func rate(_ n: Int) {
+    func rate(_ n: Int, from source: Source = .broadcast) {
         queue.async {
+            self.rates[source] = n
+            guard source == self.live else { return }
             self.sampleRate = n
             WebHolder.shared.run("__wmpAudio.rate(\(n))")
         }
     }
 
-    func pcm(_ data: Data) {
+    func pcm(_ data: Data, from source: Source = .broadcast) {
         queue.async {
+            guard source == self.live else { return }
             self.pending.append(data)
             guard self.timer == nil else { return }
             let timer = DispatchSource.makeTimerSource(queue: self.queue)
@@ -1043,11 +1078,12 @@ final class Forwarder {
         }
     }
 
-    /// The broadcast is over: what is left, then 4096 frames of silence so the visualizers go dark
+    /// The source stopped: what is left, then 4096 frames of silence so the visualizers go dark
     /// instead of holding the last spectrum. No __wmpAudio.close(): the page opens its stand-in once,
     /// and the next broadcast carries on in it.
-    func stopped() {
+    func stopped(from source: Source = .broadcast) {
         queue.async {
+            guard source == self.live else { return }
             self.timer?.cancel()
             self.timer = nil
             self.flush()
@@ -1056,9 +1092,246 @@ final class Forwarder {
         }
     }
 
+    /// librespot started or stopped playing: the page takes its audio, or the broadcast's again (at
+    /// the broadcast's rate, when one has said it).
+    func prefer(librespot: Bool) {
+        queue.async {
+            let source: Source = librespot ? .librespot : .broadcast
+            guard source != self.live else { return }
+            self.live = source
+            self.pending.removeAll()
+            guard let n = self.rates[source] else { return }
+            self.sampleRate = n
+            WebHolder.shared.run("__wmpAudio.rate(\(n))")
+        }
+    }
+
     private func flush() {
         defer { pending.removeAll(keepingCapacity: true) }
         guard !pending.isEmpty, sampleRate > 0 else { return }
         WebHolder.shared.run("__wmpAudio.pcm('\(pending.base64EncodedString())', \(sampleRate))")
+    }
+}
+
+// The app as a Spotify Connect receiver (ios/librespot, ios/README.md "Librespot (branch)"): librespot
+// shows the app to the Spotify app on the network as "WMP Spotify", takes the credentials it hands over
+// the first time it is picked (cached in Application Support/librespot, so later launches connect at
+// once), and hands its PCM here on its player thread. That plays through an AVAudioEngine in the app's
+// own .playback session and goes to the page's visualizers through Forwarder, in place of the
+// broadcast's while it plays. The callback blocks while half a second is queued: that is what paces
+// librespot's decoding.
+final class Librespot {
+    static let shared = Librespot()
+    private static let cache = URL.applicationSupportDirectory.appending(path: "librespot")
+    private let engine = AVAudioEngine()
+    private let node = AVAudioPlayerNode()
+    private let format = AVAudioFormat(standardFormatWithSampleRate: 44100, channels: 2)!
+    private let room = NSCondition()  // guards `queued`
+    private var queued = 0            // frames scheduled and not yet played
+    private var playing = false       // on librespot's player thread only
+
+    /// Credentials cached by an earlier pick in the Spotify app.
+    var paired: Bool { FileManager.default.fileExists(atPath: Self.cache.appending(path: "credentials.json").path) }
+
+    private var lastToken = ""  // on the main thread
+    private var deviceId: String?  // on the main thread: librespot's Connect device id while its session is up
+    private var art: (url: String, image: MPMediaItemArtwork?) = ("", nil)  // on the main thread: the last cover
+
+    /// On the main thread (WmpSpotifyApp.init is the first to use `shared`): Control Center's and the lock
+    /// screen's buttons go to librespot's session (wmp_ls_command); the ones it has no command for are off.
+    private init() {
+        let center = MPRemoteCommandCenter.shared()
+        let commands = [(center.playCommand, "play"), (center.pauseCommand, "pause"),
+                        (center.togglePlayPauseCommand, "toggle"), (center.nextTrackCommand, "next"),
+                        (center.previousTrackCommand, "prev")]
+        for (command, name) in commands {
+            command.isEnabled = true
+            command.addTarget { _ in
+                HostLog.shared.log("remote: \(name)", quiet: true)
+                wmp_ls_command(name)
+                return .success
+            }
+        }
+        center.changePlaybackPositionCommand.isEnabled = true
+        center.changePlaybackPositionCommand.addTarget { event in
+            guard let event = event as? MPChangePlaybackPositionCommandEvent else { return .commandFailed }
+            wmp_ls_command("seek:\(Int(event.positionTime * 1000))")
+            return .success
+        }
+        let off: [MPRemoteCommand] = [center.stopCommand, center.skipForwardCommand, center.skipBackwardCommand,
+                                      center.seekForwardCommand, center.seekBackwardCommand,
+                                      center.changeRepeatModeCommand, center.changeShuffleModeCommand,
+                                      center.changePlaybackRateCommand, center.ratingCommand, center.likeCommand,
+                                      center.dislikeCommand, center.bookmarkCommand]
+        for command in off { command.isEnabled = false }
+    }
+
+    /// The speaker's name in Spotify's pickers, the page's to set (alchemySpeakerName). The phone's own
+    /// name is "iPhone" or "iPad" to apps since iOS 16 without an entitlement Apple grants on request.
+    var name: String { UserDefaults.standard.string(forKey: "speaker.name") ?? "WMP Spotify (iOS)" }
+
+    /// window.__wmpSpeaker = {id, name} and 'wmp-speaker', to the page.
+    func push() {
+        WebHolder.shared.push("__wmpSpeaker", "wmp-speaker", ["id": deviceId ?? NSNull(), "name": name] as [String: Any])
+    }
+
+    /// On the main thread: a new name from the page, kept; the receiver restarts under it (its device
+    /// id, from the install, stays).
+    func rename(_ n: String) {
+        guard n != name else { return }
+        UserDefaults.standard.set(n, forKey: "speaker.name")
+        HostLog.shared.log("speaker: renamed to \(n)")
+        deviceId = nil
+        push()
+        wmp_ls_stop()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) { self.start() }
+    }
+
+    /// On the main thread: the web player's access token (the "lstoken" message,
+    /// "<clientId> <clientToken> <token>"), which librespot serves to Spotify's services in place of
+    /// its own, logs in with when it has no session, and keeps for its next reconnect when it has one
+    /// (wmp_librespot.h). Never logged.
+    func token(_ body: String) {
+        guard body != lastToken else { return }  // the page repeats the same token
+        lastToken = body
+        let parts = body.split(separator: " ", maxSplits: 2, omittingEmptySubsequences: false).map(String.init)
+        let (client, clientToken, t) = parts.count == 3 ? (parts[0], parts[1], parts[2]) : ("", "", parts.last ?? body)
+        HostLog.shared.log("librespot: token received (client id \(client.isEmpty ? "none" : client), client token \(clientToken.isEmpty ? "none" : "\(clientToken.count) chars"))")
+        wmp_ls_token(t, client, clientToken)
+    }
+
+    /// On the main thread, once, with the audio session active.
+    func start() {
+        engine.attach(node)
+        engine.connect(node, to: engine.mainMixerNode, format: format)
+        output()
+        Forwarder.shared.rate(44100, from: .librespot)
+        try? FileManager.default.createDirectory(at: Self.cache, withIntermediateDirectories: true)
+        let id = UIDevice.current.identifierForVendor?.uuidString ?? name
+        let started = wmp_ls_start(name, id, Self.cache.path, { _, samples, frames in
+            Librespot.shared.take(samples, frames)
+        }, { _, line in
+            if let line { HostLog.shared.log(String(cString: line)) }
+        }, { _, id in
+            let s = id.map { String(cString: $0) }
+            DispatchQueue.main.async {
+                Librespot.shared.deviceId = s
+                Librespot.shared.push()
+            }
+        }, { _, json in
+            guard let json else { return }
+            let s = String(cString: json)
+            DispatchQueue.main.async { Librespot.shared.nowPlaying(s) }
+        }, nil)
+        if started != 0 { HostLog.shared.log("librespot: not started") }
+    }
+
+    private struct NowPlaying: Decodable {
+        let playing: Bool
+        let position, duration: Double  // ms
+        let title, artist, album, art, uri: String
+    }
+
+    /// On the main thread: librespot's now-playing message (wmp_librespot.h) to Control Center and the
+    /// lock screen; a stop (no uri) clears them. The cover is fetched once per url and added when it lands.
+    private func nowPlaying(_ json: String) {
+        guard let np = try? JSONDecoder().decode(NowPlaying.self, from: Data(json.utf8)) else { return }
+        let center = MPNowPlayingInfoCenter.default()
+        guard !np.uri.isEmpty else {
+            center.nowPlayingInfo = nil
+            return
+        }
+        var info: [String: Any] = [
+            MPMediaItemPropertyTitle: np.title,
+            MPMediaItemPropertyArtist: np.artist,
+            MPMediaItemPropertyAlbumTitle: np.album,
+            MPMediaItemPropertyPlaybackDuration: np.duration / 1000,
+            MPNowPlayingInfoPropertyElapsedPlaybackTime: np.position / 1000,
+            MPNowPlayingInfoPropertyPlaybackRate: np.playing ? 1.0 : 0.0,
+            MPNowPlayingInfoPropertyMediaType: MPNowPlayingInfoMediaType.audio.rawValue,
+        ]
+        if np.art != art.url {
+            art = (np.art, nil)
+            if let url = URL(string: np.art) {
+                URLSession.shared.dataTask(with: url) { data, _, _ in
+                    let artwork = data.flatMap(UIImage.init(data:)).map { image in
+                        MPMediaItemArtwork(boundsSize: image.size) { _ in image }
+                    }
+                    DispatchQueue.main.async {
+                        guard self.art.url == np.art else { return }  // a later cover's
+                        guard let artwork else {
+                            self.art.url = ""  // failed: the next message tries again
+                            return
+                        }
+                        self.art.image = artwork
+                        guard var info = center.nowPlayingInfo else { return }
+                        info[MPMediaItemPropertyArtwork] = artwork
+                        center.nowPlayingInfo = info
+                    }
+                }.resume()
+            }
+        }
+        if let image = art.image { info[MPMediaItemPropertyArtwork] = image }
+        center.nowPlayingInfo = info
+        HostLog.shared.log("nowplaying: \(np.playing ? "playing" : "paused") at \(np.position / 1000) s", quiet: true)
+    }
+
+    // ponytail: the engine runs from launch to the end, rendering silence between songs, which keeps the
+    // app and its Connect session awake in the background at some battery cost; stop it on a long
+    // pause if that matters. Started again here after an interruption or a route change stopped it.
+    private func output() {
+        guard !engine.isRunning else { return }
+        do {
+            try engine.start()
+            node.play()
+        } catch {
+            HostLog.shared.log("librespot: output failed: \(error.localizedDescription)")
+        }
+    }
+
+    // librespot's player thread. No samples: the sink stopped (a pause, a stop), so what is queued is
+    // dropped and the page goes back to the broadcast, dark until one runs.
+    private func take(_ samples: UnsafePointer<Float>?, _ frames: Int) {
+        guard let samples, frames > 0 else {
+            playing = false
+            node.stop()
+            if engine.isRunning { node.play() }
+            Forwarder.shared.stopped(from: .librespot)
+            Forwarder.shared.prefer(librespot: false)
+            return
+        }
+        if !playing {
+            playing = true
+            Forwarder.shared.prefer(librespot: true)
+        }
+        output()
+        guard let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(frames)),
+              let channels = buffer.floatChannelData else { return }
+        buffer.frameLength = AVAudioFrameCount(frames)
+        // The page's int16 the way SampleHandler.stereo makes it: clamped first, so the product fits
+        // (NaN comes out as 1).
+        var pcm = [Int16](repeating: 0, count: frames * 2)
+        for i in 0..<frames {
+            for c in 0..<2 {
+                let f = samples[i * 2 + c]
+                channels[c][i] = f
+                pcm[i * 2 + c] = Int16(max(-1, min(1, f)) * 32767)
+            }
+        }
+        let data = pcm.withUnsafeBufferPointer { Data(buffer: $0) }
+        // Half a second queued at most; a second's wait at most, in case the engine stopped (output()
+        // starts it again at the next packet).
+        room.lock()
+        while queued > 22050, room.wait(until: Date() + 1) {}
+        queued += frames
+        room.unlock()
+        // To the page as it is heard, so the visualizers keep time with the speaker.
+        node.scheduleBuffer(buffer, completionCallbackType: .dataPlayedBack) { _ in
+            Forwarder.shared.pcm(data, from: .librespot)
+            self.room.lock()
+            self.queued -= frames
+            self.room.signal()
+            self.room.unlock()
+        }
     }
 }

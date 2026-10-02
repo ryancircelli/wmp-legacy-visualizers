@@ -107,6 +107,178 @@ timestamped, a `---- launch <date> ----` line at each start). The extension logs
 `broadcast.log` in the same container; the app merges its lines into the host log, prefixed `ext:`,
 when the list opens and 8 s after the broadcast sheet comes up, each line once.
 
+## Librespot (branch)
+
+On the `librespot` branch the app is also a Spotify Connect receiver, through
+[librespot](https://github.com/librespot-org/librespot) 0.8.0. It shows up in Spotify's device list as
+**WMP Spotify** (a speaker); picked, Spotify plays to the app itself, and the app gets the raw audio.
+The music plays out of the app's own audio session, and the visualizers get the same audio with no
+broadcast. The web view stays the control plane exactly as on master (sign-in, library, commands);
+librespot is only the audio sink. The page's own player shows up as "WMP Spotify (This Device)", next to
+librespot's "WMP Spotify".
+
+- `ios/librespot/` is a small Rust crate (`wmp-librespot`, staticlib and cdylib) on librespot-core,
+  -connect, -playback, -metadata and -discovery 0.8.0 with no audio backend, rustls with compiled-in
+  roots, and a sink that hands the app interleaved stereo float32 at 44100 Hz. Its C ABI is
+  `wmp_librespot.h`: `wmp_ls_start(name, id, cache_dir, pcm, log, state, np, ctx)`,
+  `wmp_ls_token(token, client_id, client_token)`, `wmp_ls_command(cmd)` and `wmp_ls_stop()`. `build.sh`
+  builds it for aarch64-apple-ios into `ios/librespot/out/`, which `project.yml` links (with a bridging
+  header). CI runs it before xcodegen, its cargo work cached by Cargo.lock.
+- `Librespot` in App.swift starts it at launch with the cache in Application Support/librespot. Each
+  packet plays through an AVAudioEngine player node and, as it is heard, goes to `Forwarder`, which
+  feeds the page from librespot while it plays and from the broadcast otherwise. The callback blocks
+  while half a second is queued, which paces librespot's decoding. A pause flushes the queue and the
+  visualizers go dark.
+- **Control Center and the lock screen.** The audio no longer goes through WebKit, so the app feeds
+  them itself. librespot's player events (track change, play, pause, seek, end of track, stop) come
+  to `Librespot` as one whole JSON object each (the `np` callback: title, artists joined with ", ",
+  album, the largest cover's url, duration, position, playing), which it puts in
+  `MPNowPlayingInfoCenter`, the cover fetched once per url and added when it lands; a stop clears it.
+  `MPRemoteCommandCenter`'s play, pause, play/pause, next, previous and scrubbing go back through
+  `wmp_ls_command` ("play", "pause", "toggle", "next", "prev", "seek:<ms>") to the live Spirc, as if
+  pressed in the Spotify app; its other commands are off. The session is `.playback` without
+  `.mixWithOthers`, which would keep the app out of Control Center: the page's `audiosession`
+  message set to `"mix"` or `"duck"` (which implies mixing) would do that, and no skin sends it.
+- **Name, id, and which device plays.** The speaker is "WMP Spotify (iOS)": the phone's own name
+  ("Ryan's iPhone") is "iPhone" or "iPad" to apps since iOS 16 without an entitlement Apple grants on
+  request. The page can rename it (`alchemySpeakerName(name)`, the "speaker" message; a rename
+  restarts the receiver under the new name), but no skin offers that: the owner found it confusing
+  (2026-10-01) and the iPod skin's Speaker Name row went. `window.prompt` shows as a system alert
+  (`WKUIDelegate`) should a skin need a text entry. Its Connect device id is the hash of the
+  install's `identifierForVendor`, not of the name (librespot's binary hashes the name, so two
+  devices with one name would be one device to Spotify, and a rename would make a new one). The
+  app tells the page `window.__wmpSpeaker = {id, name}` (`wmp-speaker`; id null while no session is
+  up; the state callback in `wmp_librespot.h`), the Spotify adapter sends its commands to the active
+  device, else to the speaker, else to the page's own player (`target` in
+  src/adapters/spotify/connect.ts), moves playback that lands on the page's own player to the
+  speaker (observers.ts, at most once every 10 s), leaves that player out of its own Play On list
+  (src/ui/Lists.tsx), and observer.js registers it with Connect's `hidden` capability, so only the
+  speaker shows in pickers on the phone and elsewhere. The web player's own entry is what Windows
+  plays through, so nothing hides it there. librespot fills no title, art or duration into the
+  state it reports (only the track uri): the page looks those up itself (state.ts).
+- Discovery goes through iOS's own mDNSResponder (librespot's `with-dns-sd`). librespot's default,
+  libmdns, opens its own multicast socket, which iOS 14 and later allow only with Apple's multicast
+  entitlement. The Bonjour route needs `_spotify-connect._tcp` in `NSBonjourServices`, and iOS asks
+  once to allow the local network (`NSLocalNetworkUsageDescription`).
+- librespot-core is patched by one line (`build.sh` fetches the crate, checks it against crates.io's
+  checksum, and sets `OS` to `"linux"` on iOS). Built for iOS, librespot tells Spotify it is an iPhone,
+  and Spotify's access points turn that away with "Tried too many access points"
+  ([librespot#1477](https://github.com/librespot-org/librespot/issues/1477), open since 2025-03). The
+  same happened on Android, and [librespot#1403](https://github.com/librespot-org/librespot/pull/1403)
+  fixed it by presenting as Linux. On an iPhone's arm64 this is what a Raspberry Pi running librespot
+  sends.
+- Once paired, the page's broadcast prompt is skipped (`broadcast: librespot paired, no picker`). The
+  broadcast still works as the fallback, from the band's button.
+
+**Sign-in: the web player's token first.** There is no second sign-in. Spotify ended username and
+password login for librespot in July 2024
+([librespot#1308](https://github.com/librespot-org/librespot/issues/1308)), and librespot 0.8.0's own
+binary refuses `--password` ("Password authentication no longer supported, use OAuth", src/main.rs).
+What remains is an access token or zeroconf, and the app tries both.
+
+- **Token (first).** The web view is already signed in, and observer.js already reads the web player's
+  access token from its own traffic (the `Authorization` header and open.spotify.com/api/token) and
+  fires `wmp-spotify-token`, and posts each new token, and once at mount, as the `lstoken` message,
+  `"<clientId> <clientToken> <token>"` (the client id from open.spotify.com/api/token's `clientId`, the
+  client token from the web player's `client-token` header). master's observer, which the site serves,
+  is the one that does it. The app hands all three to librespot (`wmp_ls_token`). librespot serves
+  the token and the client token to Spotify's services in place of its own (`core.patch` adds
+  `Login5Manager::set_auth_token` and `SpClient::set_client_token`; `src/lib.rs` sets them before
+  each connect and on each token), so login5 and clienttoken are never asked while they are held.
+  With no session up, librespot logs in at once with
+  `Credentials::with_access_token(token)` (librespot-core 0.8.0, `AUTHENTICATION_SPOTIFY_TOKEN`) and
+  starts the Connect device on that session, as a pick would. With a session up, it keeps the newest
+  token for its next reconnect, used while under 50 min old. The token is never logged. Upstream logs
+  in only briefly with a token, to get reusable credentials, which it caches and uses from then on
+  ([librespot#1377](https://github.com/librespot-org/librespot/issues/1377)). A web player token
+  (open.spotify.com's) logged librespot in where a developer-app token got "Bad credentials"
+  ([librespot#1436](https://github.com/librespot-org/librespot/issues/1436), January 2025).
+  Why not login5: build 22 got past the access point (`Authenticated as ...`) and then
+  `connect failed (token): Invalid state { Login request was denied: INVALID_CREDENTIALS }` from
+  login5, which Spirc asks for its spclient token with the stored credentials the login gave and
+  Keymaster's client id; build 23, asking with the web player's client id, got `BAD_REQUEST` instead
+  (its client token was still Keymaster's). The web player never goes through login5: its token is
+  already what spclient and the dealer take, with its client token. The session's client id is still
+  set to the token's, kept in `client_id` next to the cached credentials. A rejected token is dropped,
+  not retried; the next one the page gets tries again.
+- **Zeroconf (the fallback).** A signed-in Spotify app on the same network finds the device, and when
+  the device is picked it hands over a credentials blob encrypted for it
+  ([docs/authentication.md](https://github.com/librespot-org/librespot/blob/v0.8.0/docs/authentication.md)).
+  On build 20 the log said `librespot: discovery up`, but the Spotify app on the same phone never
+  listed the device.
+
+Either way, librespot caches reusable credentials (`credentials.json`) and connects with them at
+later starts; upstream advises caching ("Credential caching is unavailable, but advisable",
+src/main.rs). Once a session is up, the device should show up in every Spotify app, on any network,
+for as long as the app is running.
+
+**License.** librespot is MIT, as is this crate. Most of the dependencies are permissive (MIT,
+Apache-2.0, ISC, BSD, Zlib, Unicode-3.0; webpki-roots' certificates are CDLA-Permissive-2.0). Two are
+MPL-2.0: Symphonia (the decoder) and priority-queue. MPL-2.0 is file-level copyleft: it asks only
+that changes to those crates' own files be shared, and they are unmodified here. Nothing goes beyond
+the private TestFlight.
+
+**Account risk.** librespot is unofficial and Spotify's terms do not allow it. Lockouts have been
+documented in 2024 and 2025: forced password resets for accounts used with librespot, mostly tied to
+password logins
+([librespot discussion #1311](https://github.com/librespot-org/librespot/discussions/1311)). No bans
+have been documented. This uses cached token credentials, not a password, and reconnects at most 5 times
+in 10 minutes (librespot's own limit) before it waits to be picked again.
+
+**Getting it up.**
+
+1. Open WMP Spotify signed in. The log should say `librespot: token received`, then
+   `librespot: logging in with the token`, and `librespot: session up (token)`, or
+   `librespot: connect failed (token): <librespot's error>`.
+2. Pick **WMP Spotify** (not "WMP Spotify (This Device)") in the skin's Play On or in any Spotify app.
+   The log says `librespot: playing` once the music starts.
+3. Fallback, if the token is refused: allow the local network when iOS asks (`librespot: discovery up`)
+   and pick WMP Spotify in a Spotify app on the same Wi-Fi (`librespot: credentials from discovery`,
+   then `librespot: session up (discovery)`). A computer's Spotify app is the likelier one to list it.
+   Later launches say `librespot: cached credentials` and `librespot: session up (cached)`.
+
+Log lines to look for (the band, or the long-press list): `librespot: discovery up` or
+`librespot: discovery failed: ...` (a refused local network should show as a dns_sd error,
+kDNSServiceErr_PolicyDenied, -65570); `librespot: token received`;
+`librespot: session up (token|discovery|cached)` or `librespot: connect failed (<the same>): ...`
+(a refused token is librespot's "Login failed with reason: Bad credentials", or a login5 error after
+the AP took it); `librespot: playing`,
+`paused`, `stopped`, `unavailable: ...`; `librespot: session ended` and the reconnects;
+`librespot: output failed: ...` (the audio engine); and librespot's own info, warnings and errors,
+all prefixed `librespot:`.
+
+**Seen on a phone (builds 22 and 23, 2026-10-01).** Spotify's access point takes the web player's
+token from librespot presenting as Linux (`Authenticated as '<username>' !`, `Country: "US"`), and
+caches reusable credentials from it that log in the same way. login5 then refused those credentials
+with Keymaster's client id (`INVALID_CREDENTIALS`) and with the web player's (`BAD_REQUEST`); build
+24 bypasses login5 with the web player's own tokens.
+
+**Works (build 24, 2026-10-01).** With the web player's token and client token served in place of
+login5's (the client id is `d8a5ed958d274c2e8ee717e6a4b0971d`), the cached credentials logged in,
+`session up (cached)` followed, spclient resolved, the device showed in the Spotify app's picker on the
+same phone, and picking it loaded and played a track through the app (`Loading <...>`, `playing`),
+with the next one preloaded. No pairing, no prompt.
+
+**Not yet verified.** CI builds, links, archives and uploads it (builds 19, 20, 22, 23 and 24,
+2026-10-01; 24 is the current one), but none of the following has been seen on a phone:
+
+- A launch with no cached credentials at all on build 24 (the token login itself, then the cache).
+- Build 25's hidden page player: whether the cluster still lists it (observer.js reads the page's
+  full device id from the cluster: `registered as` in the log says so), whether commands from it are
+  still taken, and whether the speaker's new device id (from the install id) logs in with the
+  cached credentials or needs the token once.
+- What happens when the web player's token expires (an hour) while the page is in the background:
+  the page refreshes and reposts it while it runs; if it does not, spclient calls fail until it does.
+- Why the iOS Spotify app did not list the zeroconf device on its own phone (build 20).
+- Whether the audio engine, which runs from launch and renders silence between songs, keeps the app and
+  its session alive in the background as intended, and what it costs in battery.
+- How the visualizers keep time with librespot's audio. The page gets each buffer as it is played;
+  the broadcast's latency was never measured either.
+
+**Prior art.** [lufinkey/librespot-swift](https://github.com/lufinkey/librespot-swift) (2025, OAuth
+and rodio, built for aarch64-apple-ios) is the only iOS build of librespot found. Its author opened
+#1477. No iOS Connect receiver built on librespot was found, nor any other open-source one.
+
 ## Building
 
 No Xcode project is checked in. `ios/project.yml` is an [XcodeGen](https://github.com/yonaskolb/XcodeGen)
