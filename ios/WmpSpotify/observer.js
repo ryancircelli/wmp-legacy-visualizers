@@ -116,6 +116,11 @@ window.alchemyOrientation = function (mode) { post('orientation', mode || 'any')
 // 'wmp-broadcast' event on window, whenever it changes.
 window.__wmpBroadcast = { running: false };
 window.alchemyBroadcast = function (cmd) { post('broadcast', cmd || 'state'); };
+// The app's own Spotify Connect speaker (librespot): window.__wmpSpeaker = {id, name}, id its device id
+// while its session is up and null otherwise, with a 'wmp-speaker' event on window at each change; the
+// app sends it with the host report. alchemySpeakerName(name) renames it (kept across launches).
+window.__wmpSpeaker = { id: null, name: '' };
+window.alchemySpeakerName = function (name) { post('speaker', String(name || '').trim()); };
 post('broadcast', 'manual');  // the app never opens the sheet by itself: each skin asks (src/app/mount.tsx does, for the visualizers)
 // What the phone reports, each as a window global with an event of the same name on window when it
 // changes: __wmpVolume (0..100, the buttons too) 'wmp-volume'; __wmpBattery {level 0..100 or -1,
@@ -287,11 +292,15 @@ var ofetch = window.fetch;
 // Our device's name in Spotify Connect (the phone's picker, the cluster's device list): the
 // page registers itself as "Web Player (<browser>)"; the registration bodies are renamed on
 // their way out. Only a body that parses and has the name where it is expected is touched.
+// On the phone the web view's player is also hidden from every picker (Connect's `hidden`
+// capability, the one observer-only clients use): the app's own speaker (librespot) is what plays
+// there, and the page sends its commands to it (src/adapters/spotify/connect.ts, target).
 function renamed(url, body) {
   if (typeof body !== 'string' || !/\/(connect-state\/v1\/devices\/hobs_|track-playback\/v1\/devices)/.test(String(url))) return body;
   try {
     var j = JSON.parse(body), d = j && j.device, hit = false;
     if (d && d.device_info && typeof d.device_info.name === 'string') { d.device_info.name = DEVICE_NAME; hit = true; }
+    if (d && d.device_info && d.device_info.capabilities && typeof d.device_info.capabilities === 'object') d.device_info.capabilities.hidden = true;
     if (d && typeof d.name === 'string') { d.name = DEVICE_NAME; hit = true; }
     return hit ? JSON.stringify(j) : body;
   } catch (e) { return body; }

@@ -7,8 +7,9 @@
 // toggles). Hold center: the nano's popup, Spotify's way (§4.3). Play / next / prev and their holds
 // (fast-forward, rewind: useScan) are the chrome's. A track with a Spotify Canvas shows it behind the
 // whole screen instead of the cover, the two bands made translucent over it; a tap on the cover's area
-// cycles Canvas -> cover -> the app's visualizer (on silence, as the phone has no capture) -> Canvas,
-// remembered (only while the Canvas is chosen is one fetched).
+// cycles Canvas -> cover -> the app's visualizer (on silence, as the phone has no capture; Bars until
+// Settings > Visualizer or the popup's Visualizer… picks another) -> Canvas, remembered (only while the
+// Canvas is chosen is one fetched).
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useStore } from 'zustand';
 import { persist } from 'zustand/middleware';
@@ -20,7 +21,7 @@ import {
   usePlainLyrics, usePosition, useRadioSeeds, useShell, type MenuEntry,
 } from '../../../../ui';
 import type { MenuItem, ScreenEntry } from '../contract';
-import { useVisFit } from '../settings';
+import { useVisFit, useVisualizer, useVisualizerItems, visId } from '../settings';
 import { Bar, MenuScreen, Popup, useNav, useScan, useWheel } from '../../ui';
 import { IDLE_MS, nextMode, ofText, SCRUB_COMMIT_MS, scrubAccel, scrubStep, times, volumeStep, VOLUME_MS, type Mode } from './logic';
 import css from './nowplaying.module.css';
@@ -36,7 +37,7 @@ const canvasPref = createStore<{ show: Show }>()(persist((): { show: Show } => (
   name: 'ipod.canvas', version: 1, migrate: (old) => ({ show: (old as { on?: boolean } | null)?.on === false ? 'cover' : 'video' }),
 }));
 
-type Pop = 'main' | 'playlists' | 'devices';
+type Pop = 'main' | 'playlists' | 'devices' | 'vis';
 /** a wheel scrub: the position shown, then (sent) held until the player reports the seek */
 type Scrub = { uri: string; ms: number; sent?: boolean };
 
@@ -48,7 +49,7 @@ function NowPlaying() {
   const sh = useShell(), nav = useNav(), get = () => sh.store.getState(), c = () => get().commands;
   const p = useApp((s) => ({
     media: s.playback.status !== 'none', track: s.playback.track, canSeek: s.playback.canSeek, shuffle: s.playback.shuffle,
-    spotify: isSpotify(s), lyrics: lyricsShown(s) !== null, max: isSpotify(s) ? 100 : 200, kind: s.vis.kind,
+    spotify: isSpotify(s), lyrics: lyricsShown(s) !== null, max: isSpotify(s) ? 100 : 200,
   }));
   const t = p.track, uri = t?.uri ?? '', d = t?.duration ?? 0;
   const [mode, setMode] = useState<Mode>('default');
@@ -106,9 +107,7 @@ function NowPlaying() {
   const of = p.shuffle ? '' : ofText(col.rows, uri, col.total);
 
   const devices = useDevices(() => '');
-  const show = useStore(canvasPref, (x) => x.show);
-  // the visualizers in WMP's order (Alchemy, Bars and Waves, Battery), one entry each
-  const kinds = sh.presets.filter((x) => x.preset === 0), ki = kinds.findIndex((x) => x.vis === p.kind);
+  const show = useStore(canvasPref, (x) => x.show), visItems = useVisualizerItems();
   /** song radio: the first seed's own station (§4.3) */
   const startRadio = () => {
     const seed = seeds[0];
@@ -127,12 +126,12 @@ function NowPlaying() {
       { id: 'artist', label: 'Browse Artist', disabled: !artistUri,
         onSelect: () => { if (artistUri) nav.push(artistScreen(artistUri, t?.artist ?? '')); } },
       { id: 'device', label: 'Play On…', disabled: !p.spotify, onSelect: () => setPopup('devices') },
-      ...(show === 'vis' && kinds.length ? [{ id: 'vis', label: 'Visualizer', right: kinds[ki]?.group,
-        onSelect: () => get().actions.setVis(kinds[(ki + 1) % kinds.length]!.vis, 0) }] : []),
+      ...(show === 'vis' ? [{ id: 'vis', label: 'Visualizer…', onSelect: () => setPopup('vis') }] : []),
       { id: 'cancel', label: 'Cancel' },
     ],
     playlists: toItems(plMenu.sub ?? []),
     devices: toItems(devices.items()),
+    vis: visItems,
   };
 
   useWheel({
@@ -250,9 +249,9 @@ function CanvasVideo({ src, poster, onError }: { src: string; poster?: string; o
   return <video ref={ref} className={css.bg} src={src} poster={poster} muted autoPlay loop playsInline onError={onError} />;
 }
 
-/** The app's visualizer behind the whole screen as the Canvas is, drawing whatever settings.vis / preset
- *  say on silence (Alchemy and Battery animate on it, Bars and Waves waits for sound; settings.animate
- *  off stills them). Its canvas is mounted only while this screen is the top one and the page is
+/** The app's visualizer behind the whole screen as the Canvas is, drawing the iPod's choice (ipod.visualizer)
+ *  on silence (Alchemy and Battery animate on it, Bars and Waves waits for sound; settings.animate off
+ *  stills them). Its canvas is mounted only while this screen is the top one and the page is
  *  visible: the ticker's loop runs only with a canvas attached, so it costs nothing elsewhere. */
 function Vis() {
   const sh = useShell(), ref = useRef<HTMLDivElement>(null), [on, setOn] = useState(() => !document.hidden);
@@ -287,6 +286,14 @@ function Vis() {
     a.setSettings({ scale: fit === 'stretch' ? 'original' : 'auto' });
     return () => a.setSettings({ scale: prev });
   }, [on, fit, sh]);
+  // the iPod's visualization (ipod.visualizer) onto the shared settings.vis / preset the same way
+  const [vz] = useVisualizer();
+  useEffect(() => {
+    if (!on) return;
+    const a = sh.store.getState().actions, prev = sh.store.getState().vis, x = sh.presets.find((e) => visId(e) === vz);
+    if (x) a.setVis(x.vis, x.preset);
+    return () => a.setVis(prev.kind, prev.preset);
+  }, [on, vz, sh]);
   return <div ref={ref} className={css.bg}>{on && <Visualizer className={css.vis} />}</div>;
 }
 

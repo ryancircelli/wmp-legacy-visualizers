@@ -81,6 +81,11 @@ declare global {
     __wmpVolume?: number;
     __wmpBattery?: { level: number; charging: boolean };
     __wmpRoute?: { name: string; type: string };
+    /** The host's own Spotify Connect speaker (iOS: librespot): its device id while its session is up,
+     *  null otherwise, and its name in pickers. Changes fire 'wmp-speaker' on window. */
+    __wmpSpeaker?: { id: string | null; name: string };
+    /** Renames the host's speaker (kept by the host; it re-registers under the new name). */
+    alchemySpeakerName?: (name: string) => void;
     __wmpBrightness?: number;
     __wmpHost?: { build: string; version: string; ios: string; model: string; scale?: number; fps?: number; voiceOver?: boolean; viewport?: string };
     /** the iOS app, the rest of the phone (ios/README.md) */
