@@ -982,43 +982,92 @@ func keepAtRest(_ scrollView: UIScrollView) {
 // Every change, the hardware buttons' included, goes back to the page as __wmpVolume (DeviceState).
 final class SystemVolume {
     static let shared = SystemVolume()
-    private let view = MPVolumeView(frame: CGRect(x: -1000, y: -1000, width: 1, height: 1))
+    // In the window, off screen and all but invisible: a hidden or fully clear one the system ignores.
+    private let view = MPVolumeView(frame: CGRect(x: -300, y: -300, width: 160, height: 40))
+    private var fresh: MPVolumeView?  // way 3's, kept alive while its slider is set
     private var level: Int?  // the latest asked for
+    /// Which way of setting the system's volume this phone follows: 1...4 once one was seen to work
+    /// (kept), 0 not known yet, -1 none did (this launch). There is no API for it; apps drive
+    /// MPVolumeView's slider, and how it must be driven has changed between systems: build 37's one
+    /// way moved nothing here ("asked 12, the system is at 10" at every set), so each is tried and
+    /// checked against what the system's volume became.
+    private var way = UserDefaults.standard.integer(forKey: "volume.way")
+    private var probing = false
+    private static let ways = 4
 
     /// On the main thread: the system volume to `pct` (0...100).
     func set(_ pct: Int) {
-        if pct != level { HostLog.shared.log("volume: \(pct)", quiet: true) }
         level = pct
-        if view.superview != nil { apply(); return }
-        guard let root = UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene })
-            .first?.keyWindow?.rootViewController?.view else { return }
-        view.alpha = 0.01
-        view.isUserInteractionEnabled = false
-        root.addSubview(view)
+        attach()
+        if way > 0 { drive(way, pct); return }
+        guard way == 0, !probing else { return }
+        probing = true
         // Its slider does not take a value the moment the view joins the window.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { self.apply() }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { self.probe(1) }
     }
 
-    private func apply() {
-        guard let level else { return }
-        // The slider wherever MPVolumeView keeps it (a direct subview once, nested on later systems).
-        func find(_ v: UIView) -> UISlider? {
-            if let s = v as? UISlider { return s }
-            for sub in v.subviews { if let s = find(sub) { return s } }
-            return nil
+    private func attach() {
+        guard view.superview == nil,
+              let root = UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene })
+                .first?.keyWindow?.rootViewController?.view else { return }
+        view.alpha = 0.02
+        root.addSubview(view)
+    }
+
+    private var now: Int { Int((AVAudioSession.sharedInstance().outputVolume * 100).rounded()) }
+
+    /// The slider wherever MPVolumeView keeps it (a direct subview once, nested on later systems).
+    private func slider(in v: UIView) -> UISlider? {
+        if let s = v as? UISlider { return s }
+        for sub in v.subviews { if let s = slider(in: sub) { return s } }
+        return nil
+    }
+
+    private func drive(_ way: Int, _ pct: Int) {
+        let v = Float(pct) / 100
+        switch way {
+        case 1:  // the slider in the window: its value and the action a drag ends in
+            guard let s = slider(in: view) else { return }
+            s.setValue(v, animated: false)
+            s.sendActions(for: .valueChanged)
+        case 2:  // the same slider, as a whole touch: down, moved, up
+            guard let s = slider(in: view) else { return }
+            s.sendActions(for: .touchDown)
+            s.setValue(v, animated: false)
+            s.sendActions(for: .valueChanged)
+            s.sendActions(for: .touchUpInside)
+        case 3:  // a new view in no window, its slider set a moment after it is made
+            let f = MPVolumeView(frame: .zero)
+            fresh = f
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { self.slider(in: f)?.value = v }
+        default:  // the application music player's volume, long out of the headers, where it still answers
+            let player = MPMusicPlayerController.applicationMusicPlayer
+            if player.responds(to: NSSelectorFromString("setVolume:")) { player.setValue(v, forKey: "volume") }
         }
-        guard let slider = find(view) else {
-            HostLog.shared.logOnce("volume: no slider in MPVolumeView: the system volume cannot be set")
+    }
+
+    private func probe(_ w: Int) {
+        guard let asked = level else { probing = false; return }
+        guard w <= Self.ways else {
+            probing = false
+            way = -1  // this launch only: the next one tries again
+            HostLog.shared.log("volume: no way of setting the system volume worked")
+            DeviceState.shared.pushVolume()
             return
         }
-        slider.setValue(Float(level) / 100, animated: false)
-        slider.sendActions(for: .valueChanged)  // a bare assignment moved the knob and not the volume
-        // What the system's volume became: a set that did not take shows here (the wheel then steps
-        // from the same level each time, 13 and 17 for ever, seen 2026-10-02).
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-            guard self.level == level else { return }  // a later set reports for itself
-            let now = Int((AVAudioSession.sharedInstance().outputVolume * 100).rounded())
-            if now != level { HostLog.shared.log("volume: asked \(level), the system is at \(now)", quiet: true) }
+        let before = now
+        guard abs(before - asked) > 1 else { probing = false; return }  // nothing to see: the next set probes
+        if w <= 2, slider(in: view) == nil { HostLog.shared.log("volume: way \(w): no slider in MPVolumeView", quiet: true) }
+        drive(w, asked)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+            let after = self.now
+            HostLog.shared.log("volume: way \(w): asked \(asked), the system went \(before) to \(after)", quiet: true)
+            guard abs(after - asked) <= 2 else { self.probe(w + 1); return }
+            self.way = w
+            self.probing = false
+            UserDefaults.standard.set(w, forKey: "volume.way")
+            HostLog.shared.log("volume: way \(w) sets the system volume")
+            if let latest = self.level, latest != asked { self.drive(w, latest) }
             DeviceState.shared.pushVolume()
         }
     }
