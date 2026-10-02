@@ -102,14 +102,17 @@
 .root[data-canvas] .controls { background: linear-gradient(rgb(101 101 101 / .55), rgb(38 38 38 / .7)); }
 .root[data-canvas] .line, .root[data-canvas] .row, .root[data-canvas] .of { text-shadow: 0 1px 2px #000; }
 
-/* lyrics over the cover: white 14 on black at 70 % */
+/* lyrics over the cover, at its foot just above the mode row: white 14 on black at 70 % */
 .lyrics {
   position: absolute; top: calc(var(--unit) * 60); left: 0; right: 0; height: calc(var(--unit) * 240);
-  display: flex; flex-direction: column; justify-content: center; padding: 0 calc(var(--unit) * 10);
-  background: rgb(0 0 0 / .7); text-align: center;
+  display: flex; flex-direction: column; justify-content: flex-end; padding: 0 calc(var(--unit) * 10) calc(var(--unit) * 10);
+  /* a band behind the lines only, fading out above: the art (the visualizer, the Canvas) stays bright */
+  background: linear-gradient(to top, rgb(0 0 0 / .8), rgb(0 0 0 / .55) 28%, transparent 48%); text-align: center;
+  text-shadow: 0 calc(var(--unit) * 1) calc(var(--unit) * 3) rgb(0 0 0 / .9);
   font-size: calc(var(--unit) * 14); line-height: calc(var(--unit) * 18);
 }
-.plain { height: 100%; overflow: hidden; white-space: pre-line; }
+/* plain lyrics: four lines' window, scrolled with the track */
+.plain { max-height: calc(var(--unit) * 72); overflow: hidden; white-space: pre-line; }
 .cur { font-weight: bold; }
 .next { margin-top: calc(var(--unit) * 8); color: rgb(255 255 255 / .5); }
 /* karaoke: the line's words dim until sung, the current one filling */

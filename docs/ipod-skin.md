@@ -351,7 +351,8 @@ mode returns to the default after **5 s idle (reconstructed)**:
    segment is light grey #d8d8d8 with dark text, the others dark grey with white text [UG p.35].
 5. **Rating.** five bullets that the wheel turns into ★ (blue #2f7ff0 stars) [UG p.36].
 6. **Lyrics.** the lyrics over the art area (white 14 px on black at 70 %), scrolled with the
-   song [UG p.37]. Skipped when there are none.
+   song [UG p.37]. Skipped when there are none. (This player: not a mode; they show by themselves,
+   §4.3.)
 
 **Hold centre** opens the popup over a dimmed screen (screenshot p.38): Start Genius, Add to
 On-The-Go, Browse Album, Browse Artist, Cancel [UG p.39-42]. Audiobooks add a speed choice
@@ -634,7 +635,7 @@ caption (`useWindowControls().onCaptionMouseDown`).
 | Mode 3, **Genius slider → "Radio" slider** | "Radio [⇨] Start" starts **song radio**: `fetchRadio([radioSeeds()[0]])` through the `useRadio` query, then `playItem({ uri: stations[0].uri })`. Shown when `useRadioSeeds()` is non-empty |
 | Mode 4, shuffle slider | **Off \| Songs** (Spotify has no album shuffle; drop "Albums"). Moving it calls `toggleShuffle()` when it differs from `playback.shuffle` |
 | Mode 5, **rating → Like** | §6. Recommended: a heart slider "♡ \| ♥" bound to `useAddTo(playingTrack).saved / toggle` |
-| Mode 6, lyrics | `useLyrics()` (synced: the current line, next line dimmed, karaoke per `settings.karaoke`) or `usePlainLyrics()` plus `useLyricScroll`. Skipped when `settings.lyrics` is off or none exist |
+| Lyrics (not a centre mode) | over the art by themselves, at its foot just above the mode row (plain ones a four-line window), in every mode, whenever `lyricsShown(s)` (`settings.lyrics` on and the track has some); no centre press (the owner's ruling, 2026-10-02: the nano's mode 6 went unfound). `useLyrics()` (synced: the current line, next line dimmed, karaoke per `settings.karaoke`) or `usePlainLyrics()` plus `useLyricScroll` (scrolled by position, never by touch: a tap on them is the art's tap, Canvas -> cover -> visualizer; the ⋯ stays over them). The centre cycles progress -> scrubber -> Radio only |
 | **Hold centre popup** | **Start Radio** · **Add to Playlist…** (a list of `useAddTo(uri).playlistMenu().sub` entries with checkmarks; centre toggles membership through `addTo`) · **Like / Unlike** (`toggle`) · **Browse Album** (push the album page for `track.albumUri`) · **Browse Artist** (`track.artistUris[0]`, then `useArtist`: top tracks, then albums) · **Play On…** (`useDevices`; centre calls `transfer(id)`) · Cancel |
 | Repeat glyph | `playback.repeat`: context = repeat, track = repeat-one |
 
@@ -645,7 +646,7 @@ caption (`useWindowControls().onCaptionMouseDown`).
 | **Connect device picker** (WMP's "Play on") | **Settings > Play On** (checkmark list from `useDevices().items()`; offline ones greyed; ours named "WMP Spotify (This Device)") and the Now Playing **hold-centre > Play On…**. When playing elsewhere, the menu status bar shows a small speaker glyph (reconstructed). Optional on iPhone: a last row "AirPlay…" calls `alchemyRoutePicker()` |
 | **Like / Unlike** | Now Playing mode 5 (§6); hold-centre on Now Playing and on any song row |
 | **Add to playlist** | hold-centre > Add to Playlist… (only `fetchEditablePlaylists` targets; membership via `fetchMembership`; optimistic marks in `store.membership`) |
-| **Lyrics** | Now Playing mode 6. **Settings > Lyrics** On/Off (`actions.setLyricsEnabled`), **Settings > Karaoke** On/Off (`setKaraoke`) |
+| **Lyrics** | over Now Playing's art while on (§4.3). **Lyrics** On/Off (`actions.setLyricsEnabled`) and **Karaoke** On/Off (`setKaraoke`) in Settings, in Now Playing's ⋯ menu and in its hold-centre popup |
 | **Radio from a track** | Now Playing mode 3 slider; hold-centre > Start Radio; main menu **Radio** |
 | **Home / Media Guide shelves** | **Music > Genius Mixes** (§4.2) |
 | **Log out** | **Settings > Log Out** (only when `auth.canLogout`), confirm list, then `commands.logout()` |

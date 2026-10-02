@@ -26,14 +26,13 @@ describe('Now Playing logic', () => {
     expect(volumeStep(1, -1, 100)).toBe(0);
     expect(volumeStep(199, 1, 200)).toBe(200);
   });
-  it('cycles the modes on center in the nano order, skipping what the track lacks', () => {
-    const all = { scrub: true, radio: true, lyrics: true };
+  it('cycles the modes on center in the nano order, skipping what the track lacks (no lyrics mode)', () => {
+    const all = { scrub: true, radio: true };
     const order: Mode[] = ['default'];
-    for (let i = 0; i < 4; i++) order.push(nextMode(order[i]!, all));
-    expect(order).toEqual(['default', 'scrub', 'radio', 'lyrics', 'default']);
-    expect(nextMode('default', { radio: true, lyrics: true })).toBe('radio');
-    expect(nextMode('radio', { radio: true, lyrics: true })).toBe('lyrics');
-    expect(nextMode('scrub', { lyrics: true })).toBe('lyrics');
+    for (let i = 0; i < 3; i++) order.push(nextMode(order[i]!, all));
+    expect(order).toEqual(['default', 'scrub', 'radio', 'default']);
+    expect(nextMode('default', { radio: true })).toBe('radio');
+    expect(nextMode('scrub', {})).toBe('default');
     expect(nextMode('radio', { scrub: true, radio: true })).toBe('default');
     expect(nextMode('default', {})).toBe('default');
   });

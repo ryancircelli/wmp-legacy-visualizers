@@ -2,10 +2,11 @@
 // row: artist / title / album on the dark band, the 240×240 cover, then the controls band with the
 // cover's reflection, the mode row and "N of M". Ticks change the volume (the row becomes a volume bar
 // for 2 s); the center cycles the mode row: scrubber (ticks seek 1 % a detent, accelerated, sent 400 ms
-// after the last or on center; MENU cancels) -> Radio slider (the nano's Genius) -> lyrics over the
-// cover -> back; each but lyrics falls back after 5 s idle (shuffle and Like: the status row's
-// toggles). Hold center: the nano's popup, Spotify's way (§4.3); the ⋯ in the cover's corner opens
-// this page's options (Visualizer…, Lyrics, Karaoke), which the popup has too. Play / next / prev and
+// after the last or on center; MENU cancels) -> Radio slider (the nano's Genius) -> back; each falls
+// back after 5 s idle (shuffle and Like: the status row's toggles). The track's lyrics show over the
+// cover whenever Lyrics is on, no mode of the center's (the owner's ruling, unlike the nano's mode 6).
+// Hold center: the nano's popup, Spotify's way (§4.3); the ⋯ in the cover's corner opens this page's
+// options (Visualizer…, Lyrics, Karaoke), which the popup has too. Play / next / prev and
 // their holds (fast-forward, rewind: useScan) are the chrome's. A track with a Spotify Canvas shows it
 // behind the whole screen instead of the cover, the two bands made translucent over it; a tap on the
 // cover's area cycles Canvas -> cover -> the app's visualizer (on silence, as the phone has no capture;
@@ -62,7 +63,7 @@ function NowPlaying() {
   const lastTick = useRef(0);
   const seeds = useRadioSeeds(), addTo = useAddTo(useApp(playingTrack)), plMenu = addTo.playlistMenu();
   const has: Record<Mode, boolean> = {
-    default: true, scrub: p.media && p.canSeek && d > 0, radio: seeds.length > 0, lyrics: p.lyrics,
+    default: true, scrub: p.media && p.canSeek && d > 0, radio: seeds.length > 0,
   };
   const m: Mode = has[mode] ? mode : 'default';
   const held = scrub?.uri === uri ? scrub.ms : null;
@@ -83,9 +84,9 @@ function NowPlaying() {
     const id = setTimeout(() => setScrub(null), 3000), off = sh.store.subscribe((x) => x.playback.at, () => setScrub(null));
     return () => { clearTimeout(id); off(); };
   }, [scrub, sh]); // eslint-disable-line react-hooks/exhaustive-deps
-  // a mode drops back to the progress bar after IDLE_MS without input; lyrics stay until center
+  // a mode drops back to the progress bar after IDLE_MS without input
   useEffect(() => {
-    if (m === 'default' || m === 'lyrics') return;
+    if (m === 'default') return;
     const id = setTimeout(() => setMode('default'), IDLE_MS);
     return () => clearTimeout(id);
   }, [m, poke]);
@@ -193,9 +194,10 @@ function NowPlaying() {
   const fetched = useCanvas(show === 'video' ? uri : null), canvas = fetched && fetched.url !== failed ? fetched : null;
   const fail = () => setFailed(canvas?.url ?? '');
   const vis = show === 'vis', bg = !!canvas || vis;
-  /** a tap on the cover's area: Canvas -> cover -> visualizer -> Canvas; a track without a Canvas shows
-   *  the cover for it, so from there the tap goes straight on to the visualizer */
-  const swap = () => {
+  /** a tap on the cover's area (the lyrics over it too): Canvas -> cover -> visualizer -> Canvas; a track
+   *  without a Canvas shows the cover for it, so from there the tap goes straight on to the visualizer */
+  const swap = (e: { stopPropagation(): void }) => {
+    e.stopPropagation();
     window.alchemyHaptic?.('light');
     canvasPref.setState({ show: show === 'cover' || (show === 'video' && !canvas) ? 'vis' : vis ? 'video' : 'cover' });
   };
@@ -210,8 +212,8 @@ function NowPlaying() {
       </div>
       {bg ? null : art ? <img className={css.art} src={art} alt="" /> : <div className={cx(css.art, css.noart)}>♪</div>}
       {/* a swipe from here is still MENU (Root suppresses the click that ends one); a tap is the swap's alone */}
-      <div className={css.tap} onClick={(e) => { e.stopPropagation(); swap(); }} />
-      {m === 'lyrics' && <Lyrics />}
+      <div className={css.tap} onClick={swap} />
+      {p.lyrics && <Lyrics onClick={swap} />}
       <span className={css.more} role="button" aria-label="Options"
             onClick={(e) => { e.stopPropagation(); window.alchemyHaptic?.('light'); setPopup('options'); }}>⋯</span>
       <div className={css.controls}>
@@ -344,13 +346,14 @@ function Speaker({ loud }: { loud?: boolean }) {
   );
 }
 
-/** Lyrics over the cover: synced as the current line and the next one dimmed (karaoke per its
- *  setting), plain ones scrolled with the track. */
-function Lyrics() {
+/** Lyrics at the foot of the cover while Lyrics is on and the track has them: synced as the current
+ *  line and the next one dimmed (karaoke per its setting), plain ones a few lines scrolled with the track
+ *  (by its position, never by touch: a tap on them is the cover's, `onClick`). */
+function Lyrics({ onClick }: { onClick: (e: { stopPropagation(): void }) => void }) {
   const plain = usePlainLyrics(), box = useRef<HTMLDivElement>(null);
   useLyricScroll(box, plain !== null);
   return (
-    <div className={css.lyrics}>
+    <div className={css.lyrics} onClick={onClick}>
       {plain !== null ? <div ref={box} className={css.plain}>{plain}</div>
         : <Karaoke className={css.synced} classes={{ cur: css.cur, next: css.next, sung: css.sung, now: css.now }} />}
     </div>

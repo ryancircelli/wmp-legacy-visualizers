@@ -499,3 +499,40 @@ it('the ⋯ over the cover opens this page\'s options: Lyrics and Karaoke toggle
   expect([localStorage.getItem('ipod.visualizer'), m.S().vis.kind, rows()]).toEqual(['"alchemy:0"', 'alchemy', []]);
   act(() => { fireEvent.click(np.querySelector('[class*=tap]')!); });   // back to the Canvas for the tests after
 });
+
+/** a track playing, and its plain lyrics in the store (as the app's lyrics loader puts them) */
+const withLyrics = (m: ReturnType<typeof mountSkinNow>) => act(() => {
+  m.store.setState((s) => ({ playback: { ...s.playback, status: 'playing', canSeek: true,
+                                         track: { uri: 'spotify:track:a', title: 'T', artist: 'A', duration: 100_000 } } }));
+  m.S().actions.setLyrics({ status: 'plain', lines: null, plain: 'la la la', track: null, source: 'spotify' });
+});
+
+it('lyrics show at the cover\'s foot by themselves while Lyrics is on; a tap on them cycles the art as one on the cover does; the ⋯ menu\'s Lyrics hides them', () => {
+  vi.stubGlobal('IntersectionObserver', class { observe() {} disconnect() {} });
+  const nav = createNav(mainMenu(), () => nowPlaying());
+  const m = mountSkinNow('spotify', fakeData(),
+    <NavContext.Provider value={nav}><div data-testid="np">{nowPlaying().render(nav)}</div></NavContext.Provider>);
+  const np = m.getByTestId('np'), lyrics = () => np.querySelector<HTMLElement>('[class*=lyrics]');
+  withLyrics(m);
+  expect(lyrics()?.textContent).toBe('la la la');    // no centre press
+  act(() => { fireEvent.click(lyrics()!); });        // the art's tap: no Canvas, so on to the visualizer
+  expect([!!np.querySelector('canvas'), !!lyrics()]).toEqual([true, true]);
+  act(() => { fireEvent.click(lyrics()!); });        // and on again: the Canvas (none: the cover)
+  expect([!!np.querySelector('canvas'), !!np.querySelector('[class*=noart]')]).toEqual([false, true]);
+  act(() => { fireEvent.click(within(np).getByRole('button', { name: 'Options' })); });
+  act(() => { fireEvent.click([...np.querySelectorAll('[role=option]')].find((x) => x.textContent === 'LyricsOn')!); });
+  expect([m.S().settings.lyrics, lyrics()]).toEqual([false, null]);
+});
+
+it('the centre cycles progress -> scrubber -> back, no lyrics step; the lyrics stay over the cover throughout', async () => {
+  const m = mount();
+  withLyrics(m);
+  act(() => { fireEvent.click(m.row('Now Playing')); });
+  await settle();
+  const at = () => [m.shown('[class*=diamond]').length, m.shown('[class*=lyrics]').length];
+  expect(at()).toEqual([0, 1]);
+  key('Enter');
+  expect(at()).toEqual([1, 1]);                      // the scrubber
+  key('Enter');
+  expect(at()).toEqual([0, 1]);                      // back: no seeds, so no Radio, and no lyrics mode
+});
