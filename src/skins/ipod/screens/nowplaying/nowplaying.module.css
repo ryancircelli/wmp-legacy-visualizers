@@ -155,8 +155,9 @@
   font-size: calc(var(--unit) * 11); line-height: calc(var(--unit) * 12);
 }
 /* plain lyrics: four lines' window, scrolled with the track */
-/* the lines end 6 units above the mode row (the owner: "too much padding above progress bar") */
-.root:not(:has(.of)) .lyrics { padding-bottom: calc(var(--unit) * 34); background: linear-gradient(to top, rgb(0 0 0 / .8), rgb(0 0 0 / .55) calc(var(--unit) * 105), transparent calc(var(--unit) * 158)); }
+/* the last line ends at the cover's foot, where the reflection starts: the band's 38 (the owner: "align the
+   bottom line of the lyrics to the bottom of the album before the reflection") */
+.root:not(:has(.of)) .lyrics { padding-bottom: calc(var(--unit) * 38); background: linear-gradient(to top, rgb(0 0 0 / .8), rgb(0 0 0 / .55) calc(var(--unit) * 105), transparent calc(var(--unit) * 158)); }
 .plain { max-height: calc(var(--unit) * 60); overflow: hidden; white-space: pre-line; }
 .cur { font-weight: bold; }
 .next { margin-top: calc(var(--unit) * 2); color: rgb(255 255 255 / .5); }
