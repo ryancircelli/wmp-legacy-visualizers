@@ -147,12 +147,16 @@
 }
 
 /* Quiet (NowPlaying.tsx: QUIET_MS without input while it plays): nothing moves; the info band's gradient
-   thins to .3 and the controls band's goes altogether (the owner, 2026-10-02: "i want the bottom
-   background to disappear ... and also make title even more transparent"; .55 for both at first), its
-   reflection of the cover staying as it is, so the visualizer and the Canvas show through; the text, the
+   thins to .3 (the owner, 2026-10-02: "make title even more transparent"; .55 at first) and the controls
+   band becomes the Canvas view's (below), so the visualizer and the Canvas show through; the text, the
    progress, "N of M" and the device line whole with a shadow; the ⋯ fades out. (With lyrics showing over the Canvas the controls band keeps its shade: it carries on
    theirs, which they keep.) */
 .more { transition: opacity .3s ease; }
 .root[data-quiet] .info::before { opacity: .3; }
-.root[data-quiet]:not([data-canvas]:has(.lyrics)) .controls::before { opacity: 0; }
+/* quiet, the controls band is the Canvas view's own in both views (the owner: "literally use the same
+   exact bottom bar as the video on the minimize, which has gradient protection room"): the shade that
+   grows from nothing, under lyrics carrying on theirs; no grey, no reflection */
+.root[data-quiet] .controls::before { background: linear-gradient(transparent, rgb(0 0 0 / .75)); }
+.root[data-quiet]:has(.lyrics) .controls::before { background: rgb(0 0 0 / .75); }
+.root[data-quiet] .reflection { opacity: 0; }
 .root[data-quiet] .more { opacity: 0; pointer-events: none; }
