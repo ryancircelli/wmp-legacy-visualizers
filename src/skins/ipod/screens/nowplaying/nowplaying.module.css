@@ -166,8 +166,13 @@
 }
 
 /* Quiet (NowPlaying.tsx: QUIET_MS without input while it plays): nothing moves; the info band's gradient
-   thins to .3 and the ⋯ fades out; the controls band, the album's reflection, the text, the progress,
-   "N of M" and the device line stay as they are. */
+   thins to .3, the controls band's to .4 and the lyrics' gradient to about half, and the ⋯ fades out; the
+   album's reflection, the text, the progress, "N of M" and the device line stay as they are. */
 .more { transition: opacity .3s ease; }
 .root[data-quiet] .info::before { opacity: .3; }
+/* the foot's shade thins too (the owner: "less aggressive in the minimize just like the header does"):
+   the band's to .4, and the lyrics' one gradient to about half its strength */
+.root[data-quiet] .controls::before { opacity: .4; }
+.root[data-quiet] .lyrics { background: linear-gradient(to top, rgb(0 0 0 / .45), rgb(0 0 0 / .3) calc(var(--unit) * 123), transparent calc(var(--unit) * 176)); }
+.root[data-quiet]:not(:has(.of)) .lyrics { background: linear-gradient(to top, rgb(0 0 0 / .45), rgb(0 0 0 / .3) calc(var(--unit) * 105), transparent calc(var(--unit) * 158)); }
 .root[data-quiet] .more { opacity: 0; pointer-events: none; }
