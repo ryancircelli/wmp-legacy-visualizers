@@ -64,7 +64,7 @@ export interface AppState {
     lines: LyricLine[] | null;
     plain: string | null;
     /** the track they belong to (they can race a track change) */
-    track: { title: string; artist: string } | null;
+    track: { title: string; artist: string; uri?: string } | null;
     /** where they came from: Spotify's own (preferred in Spotify mode) or the host's LRCLIB */
     source?: 'spotify' | 'lrclib' | null;
   };

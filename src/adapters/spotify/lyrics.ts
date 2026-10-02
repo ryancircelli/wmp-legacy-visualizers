@@ -41,6 +41,7 @@ export async function fetchLyrics(sp: Sp, trackUri: string, imageUrl?: string | 
   if (!id) return { status: 'none', lines: null, plain: null, track: null, source: 'spotify' };
   const url = BASE + id + (imageUrl ? '/image/' + encodeURIComponent(imageUrl) : '') + '?format=json&vocalRemoval=false&market=from_token';
   const r = await post(sp, url, null, 'GET', { 'app-platform': 'WebPlayer' });
+  if (r.status !== 200) window.alchemyLog?.('spotify: lyrics for ' + id + ': ' + r.status + (r.status === 404 ? ' (none)' : ''));
   if (r.status === 404) return { status: 'none', lines: null, plain: null, track: null, source: 'spotify' };
   if (r.status === 429) throw new RateLimitError(Math.max(1000, sp.blockedUntil - Date.now()));
   if (r.status !== 200) throw new QueryError('lyrics', r.status);
@@ -58,5 +59,5 @@ export function acceptLyrics(sp: Sp, trackUri: string, l: Lyrics): void {
   const { playback, actions } = sp.store.getState();
   const t = playback.track;
   if (!t || t.uri !== trackUri || l.status === 'none') return;
-  actions.setLyrics({ ...l, track: { title: t.title, artist: t.artist }, source: 'spotify' });
+  actions.setLyrics({ ...l, track: { title: t.title, artist: t.artist, uri: t.uri }, source: 'spotify' });
 }

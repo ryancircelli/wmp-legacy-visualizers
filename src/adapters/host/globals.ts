@@ -84,6 +84,9 @@ declare global {
     /** The host's own Spotify Connect speaker (iOS: librespot): its device id while its session is up,
      *  null otherwise, and its name in pickers. Changes fire 'wmp-speaker' on window. */
     __wmpSpeaker?: { id: string | null; name: string };
+    /** What the host's speaker is playing, as its own player reports it ('wmp-speaker-track' on each
+     *  change): librespot tells Spotify the uri alone, so the state has no title, cover or duration. */
+    __wmpSpeakerTrack?: { uri: string; title: string; artist: string; album: string; art: string; duration: number; position: number; playing: boolean };
     /** Renames the host's speaker (kept by the host; it re-registers under the new name). */
     alchemySpeakerName?: (name: string) => void;
     __wmpBrightness?: number;

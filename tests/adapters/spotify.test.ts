@@ -1656,6 +1656,21 @@ describe('26. a device that sends the uri alone (librespot): getTrack names it (
     env.start();
     return Object.assign(env, { asked: () => env.pf().filter((c) => c.body.operationName === 'getTrack').map((c) => c.body.variables.uri) });
   }
+  it('the host\'s speaker names what it plays (CONTRACT __wmpSpeakerTrack): no getTrack, and the state is read again when it does', async () => {
+    const env = setup(bare(A));
+    await settle();
+    env.calls.length = 0;
+    vi.stubGlobal('__wmpSpeakerTrack', { uri: A, title: 'Own Title', artist: 'Own Artist', album: 'Own Album', art: 'https://i.scdn.co/image/own640', duration: 123000, position: 0, playing: true });
+    window.dispatchEvent(new Event('wmp-speaker-track'));
+    await settle();
+    expect(env.S.playback.track).toMatchObject({ uri: A, title: 'Own Title', artist: 'Own Artist', album: 'Own Album', art: 'https://i.scdn.co/image/own640', duration: 123000 });
+    expect(env.asked()).toEqual([]);
+    // another track's facts are not this one's
+    vi.stubGlobal('__wmpSpeakerTrack', { uri: B, title: 'Other', artist: 'x', album: 'x', art: '', duration: 1, position: 0, playing: true });
+    window.dispatchEvent(new Event('wmp-speaker-track'));
+    await settle();
+    expect(env.S.playback.track!.title).not.toBe('Other');
+  });
   it('fetchTrack: getTrack { uri }, the row a list gives plus the cover near 300 px; an episode is not asked', async () => {
     const env = setup(null);
     expect(await Q.fetchTrack(A)).toEqual({ uri: A, title: 'Song A', artist: 'Artist One, Artist Two', album: 'The Album', duration: 200000,

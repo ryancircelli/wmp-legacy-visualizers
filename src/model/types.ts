@@ -186,7 +186,7 @@ export interface Lyrics {
   status: 'synced' | 'plain' | 'none';
   lines: LyricLine[] | null;
   plain: string | null;
-  track: { title: string; artist: string } | null;
+  track: { title: string; artist: string; uri?: string } | null;
   source: 'spotify' | 'lrclib' | null;
 }
 

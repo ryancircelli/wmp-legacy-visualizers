@@ -49,6 +49,8 @@ export function observe(sp: Sp): () => void {
     ['wmp-spotify-auth', (e) => onAuth(sp, (e as CustomEvent<{ loggedIn?: boolean } | null>).detail?.loggedIn)],
     ['wmp-spotify-state', (e) => onState(sp, (e as CustomEvent<PlayerState>).detail)],
     ['wmp-spotify-devices', (e) => onDevices(sp, (e as CustomEvent<unknown>).detail)],
+    // the host's speaker named its track: the state it left bare is read again
+    ['wmp-speaker-track', () => { if (sp.last) onState(sp, sp.last, true); }],
   ];
   show(wasLoggedIn());
   for (const [t, f] of on) window.addEventListener(t, f);

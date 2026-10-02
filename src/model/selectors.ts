@@ -43,7 +43,9 @@ export function mmss(ms: number): string {
 export function lyricsShown(s: AppState): 'synced' | 'plain' | null {
   const l = s.lyrics, t = s.playback.track;
   if (!s.settings.lyrics || s.playback.status === 'none' || !t || l.status === 'none') return null;
-  if (l.track && (l.track.title !== t.title || l.track.artist !== t.artist)) return null;
+  // Spotify's lyrics name their track by uri: a speaker's state gets its title after they arrive (the
+  // adapter's state.ts), and a title compared then would hide them for good. The host's go by title.
+  if (l.track && (l.track.uri ? l.track.uri !== t.uri : l.track.title !== t.title || l.track.artist !== t.artist)) return null;
   return l.status;
 }
 

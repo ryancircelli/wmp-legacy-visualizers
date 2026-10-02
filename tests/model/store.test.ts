@@ -120,6 +120,14 @@ describe('selectors', () => {
     expect(mss(275_000)).toBe('4:35');
     expect(mmss(65_900)).toBe('01:05');
   });
+  it('lyrics stamped with a uri (Spotify\'s) go by it: a title that arrives later (a speaker\'s bare state) does not hide them', () => {
+    const st = createAppStore({ persist: false }), a = st.getState().actions;
+    a.setPlayback({ status: 'playing', track });
+    a.setLyrics({ status: 'synced', lines: [{ t: 4000, text: 'a' }], plain: null, track: { title: '', artist: '', uri: track.uri } });
+    expect(lyricsShown(st.getState())).toBe('synced');
+    a.setLyrics({ status: 'synced', lines: [{ t: 4000, text: 'a' }], plain: null, track: { title: track.title, artist: track.artist, uri: 'spotify:track:other' } });
+    expect(lyricsShown(st.getState())).toBeNull();
+  });
   it('lyrics: shown only on, with a session, for its own track', () => {
     const st = createAppStore({ persist: false }), a = st.getState().actions;
     a.setLyrics({ status: 'synced', lines: [{ t: 4000, text: 'a' }], plain: null, track: { title: 'Windowlicker', artist: 'Aphex Twin' } });

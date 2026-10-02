@@ -90,6 +90,10 @@ export async function query<T = any>(sp: Sp, op: string, variables: object, opts
   }
   if (r.status === 429) throw new RateLimitError(Math.max(1000, sp.blockedUntil - Date.now()));
   const data = (r.json as { data?: T } | null)?.data;
-  if (r.status !== 200 || !data) { if (!opts.quiet) status(sp, 'Spotify: ' + op + ' failed (' + r.status + ')'); throw new QueryError(op, r.status); }
+  if (r.status !== 200 || !data) {
+    window.alchemyLog?.('spotify: query ' + op + ' failed: ' + r.status);   // the host's log, quiet or not
+    if (!opts.quiet) status(sp, 'Spotify: ' + op + ' failed (' + r.status + ')');
+    throw new QueryError(op, r.status);
+  }
   return data;
 }

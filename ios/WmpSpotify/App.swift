@@ -1236,6 +1236,9 @@ final class Librespot {
     /// lock screen; a stop (no uri) clears them. The cover is fetched once per url and added when it lands.
     private func nowPlaying(_ json: String) {
         guard let np = try? JSONDecoder().decode(NowPlaying.self, from: Data(json.utf8)) else { return }
+        // The same facts to the page (window.__wmpSpeakerTrack, 'wmp-speaker-track'): librespot reports only
+        // the track's uri to Spotify, so the page's state has no title, cover or duration of its own.
+        WebHolder.shared.run("window.__wmpSpeakerTrack=\(json);window.dispatchEvent(new Event('wmp-speaker-track'))")
         let center = MPNowPlayingInfoCenter.default()
         guard !np.uri.isEmpty else {
             center.nowPlayingInfo = nil

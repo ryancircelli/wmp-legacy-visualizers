@@ -47,6 +47,12 @@ function artistName(sp: Sp, uri: string | undefined, ctx: string | undefined, md
   return (a && sp.cache.names.get(a)) || '';
 }
 
+/** What the host's own speaker says it is playing (CONTRACT: __wmpSpeakerTrack), when it is this uri. */
+function speakerTrack(uri?: string | null) {
+  const t = window.__wmpSpeakerTrack;
+  return t && uri && t.uri === uri && t.title ? t : null;
+}
+
 /** A track by uri: the web player's getTrack (data.trackUnion: name, duration, albumOfTrack, the
  *  artists as firstArtist + otherArtists), as the row a list gives plus `art`, the cover near 300 px
  *  (the state's image_url); remembered for rowFor. null for an episode or no such track. */
@@ -77,15 +83,17 @@ export function toPlayback(sp: Sp, ps: PlayerState): Partial<Playback> {
   const now = Date.now(), paused = !!ps.is_paused || !W().activeDeviceId, speed = +(ps.playback_speed ?? 1) || 1;
   const pos = (+(ps.position_as_of_timestamp ?? 0) || 0) + (paused ? 0 : (now - (+(ps.timestamp ?? 0) || now)) * speed);
   const row = rowFor(sp, t.uri);   // what librespot leaves out (it sends the uri alone)
-  const dur = +(ps.duration ?? 0) || +(md.duration ?? 0) || row?.duration || 0;
+  const own = speakerTrack(t.uri); // the host's speaker, on what it plays itself
+  const dur = +(ps.duration ?? 0) || +(md.duration ?? 0) || own?.duration || row?.duration || 0;
   const o = ps.options ?? {};
   const ctx = LIKED_CTX.test(ps.context_uri ?? '') ? LIKED : ps.context_uri;   // Liked Songs: its library uri
   return {
     status: !t.uri ? 'stopped' : paused ? 'paused' : 'playing', source: 'spotify', paused, at: now,
     position: Math.max(0, dur ? Math.min(pos, dur) : pos),
-    track: t.uri ? { uri: t.uri, title: md.title || row?.title || '', artist: artistName(sp, t.uri, ctx, md),
-                     album: md.album_title || row?.album || '', duration: dur,
-                     art: img(md.image_url || md.image_large_url) || row?.art || row?.image || null, ctx: ctx ?? null } : null,
+    track: t.uri ? { uri: t.uri, title: md.title || own?.title || row?.title || '',
+                     artist: md.artist_name || own?.artist || artistName(sp, t.uri, ctx, md),
+                     album: md.album_title || own?.album || row?.album || '', duration: dur,
+                     art: img(md.image_url || md.image_large_url) || own?.art || row?.art || row?.image || null, ctx: ctx ?? null } : null,
     canSeek: !!t.uri && none(rs.disallow_seeking_reasons),
     canNext: !!t.uri && none(rs.disallow_skipping_next_reasons),
     canPrev: !!t.uri && none(rs.disallow_skipping_prev_reasons),
@@ -128,7 +136,7 @@ export function onState(sp: Sp, ps: PlayerState | null | undefined, replay = fal
   // A device that sends the uri alone (librespot, the app's own speaker; the web player and Spotify's
   // apps send metadata): getTrack names the track, its cover at full size.
   const uri = p.track?.uri, bare = !!uri && !ps.track?.metadata?.title;
-  if (bare && !rowFor(sp, uri)?.art) want(sp, uri);
+  if (bare && !speakerTrack(uri) && !rowFor(sp, uri)?.art) want(sp, uri);
   // Up Next: the web player sends metadata for the first queued track only, librespot for none; the
   // rest are named from rows the fetches returned (the playing context's first page above), left out
   // until then; a bare device's by getTrack once that page is in (30 asked at most).
