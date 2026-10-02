@@ -42,6 +42,8 @@
 /* no "N of M" under it: the band is the mode row alone (the owner: too much padding under the bar) */
 .root:not(:has(.of)) .controls { height: calc(var(--unit) * 38); }
 .root:not(:has(.of)) .row { top: calc(var(--unit) * 10); }
+/* the cover and its tap area reach down to the shorter band (the cover crops a little at the sides) */
+.root:not(:has(.of)) .art, .root:not(:has(.of)) .tap { height: calc(var(--unit) * 258); }
 .reflection {
   position: absolute; top: 0; left: 0; width: calc(var(--unit) * 240); height: calc(var(--unit) * 240);
   object-fit: cover; transform: scaleY(-1); opacity: .25;
