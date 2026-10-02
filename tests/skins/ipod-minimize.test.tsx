@@ -128,13 +128,10 @@ it('minimized with a cover, its mirror image above it and below it, behind the b
   expect(menuBar.parentElement!.className).not.toMatch(/foot/);
 });
 
-it('Over Cover: Bars and Waves\' box is the cover\'s (the whole area minimized: a resize), Alchemy\'s and Battery\'s the whole area always, clipped to the cover in the full view (never resized)', () => {
-  localStorage.setItem('ipod.visOverCover', 'true');
+it('the overlay over the cover: Bars and Waves\' box is the cover\'s (the whole area minimized: a resize), Alchemy\'s and Battery\'s the whole area always, clipped to the cover in the full view (never resized)', () => {
   localStorage.setItem('ipod.visualizer', JSON.stringify('alchemy:0'));
   const m = atNowPlaying();
-  m.play('spotify:track:a', 'Song', 'playing', 'https://i.scdn.co/image/abc');
-  const tap = () => act(() => { fireEvent.click(m.np().querySelector('[class*=tap]')!); });
-  tap();                                             // no Canvas: on to the visualizer, over the cover
+  m.play('spotify:track:a', 'Song', 'playing', 'https://i.scdn.co/image/abc');   // a cover, no Canvas
   const box = () => m.np().querySelector('[class*=overclip], [class*=overart]')?.className.match(/overclip|overart/)?.[0];
   expect(box()).toBe('overclip');
   wait(MINIMIZE_MS);
@@ -144,6 +141,5 @@ it('Over Cover: Bars and Waves\' box is the cover\'s (the whole area minimized: 
   localStorage.setItem('ipod.visualizer', JSON.stringify('bars:0'));
   act(() => { window.dispatchEvent(new StorageEvent('storage', { key: 'ipod.visualizer' })); });
   expect(box()).toBe('overart');
-  tap();                                             // back to the Canvas for the tests after
 });
 

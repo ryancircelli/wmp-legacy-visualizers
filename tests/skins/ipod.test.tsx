@@ -363,100 +363,105 @@ it('the dark status row\'s Like: dimmed and inert with no track, else the playin
   expect(haptic).toHaveBeenCalledWith('light');
 });
 
-it('a tap on the cover area cycles Canvas -> cover -> visualizer -> Canvas, remembered; a Canvas is fetched only while chosen', async () => {
+/** Now Playing alone over the fake catalogue (its own stack; jsdom has no IntersectionObserver: it is on screen) */
+function nowPlayingAlone() {
   vi.stubGlobal('IntersectionObserver', class { observe() {} disconnect() {} });
-  const haptic = vi.fn();
-  window.alchemyHaptic = haptic;
   const nav = createNav(mainMenu(), () => nowPlaying());
   const m = mountSkinNow('spotify', fakeData(),
     <NavContext.Provider value={nav}><div data-testid="np">{nowPlaying().render(nav)}</div></NavContext.Provider>);
+  return { ...m, np: m.getByTestId('np') };
+}
+
+it('a tap on the cover area swaps the Canvas and the cover, remembered; a Canvas is fetched only while chosen; with none, the tap has nothing to swap', async () => {
+  const haptic = vi.fn();
+  window.alchemyHaptic = haptic;
+  const m = nowPlayingAlone(), np = m.np;
   m.queries.fetchCanvas.mockImplementation((uri) => Promise.resolve(uri.endsWith('none') ? null : { url: uri + '.mp4', type: 'video' }));
   const play = async (uri: string) => {
-    act(() => { m.store.setState((s) => ({ playback: { ...s.playback, status: 'playing', track: { uri, title: 'T', artist: 'A', duration: 100_000 } } })); });
+    act(() => { m.store.setState((s) => ({ playback: { ...s.playback, status: 'playing', track: { uri, title: 'T', artist: 'A', duration: 100_000, art: 'https://i.scdn.co/image/' + uri.slice(-1) } } })); });
     await settle();
   };
-  const np = m.getByTestId('np'), tap = () => act(() => { fireEvent.click(np.querySelector('[class*=tap]')!); });
-  // [the Canvas clip, the cover (no art: the ♪ tile), the visualizer's canvas, the choice saved]
-  const shows = () => [np.querySelector('video')?.getAttribute('src') ?? null, !!np.querySelector('[class*=noart]'), !!np.querySelector('canvas'),
+  const tap = () => act(() => { fireEvent.click(np.querySelector('[class*=tap]')!); });
+  // [the Canvas clip, the cover, the choice saved]
+  const shows = () => [np.querySelector('video')?.getAttribute('src') ?? null, np.querySelector('img[class*=art]')?.getAttribute('src') ?? null,
                        (JSON.parse(localStorage.getItem('ipod.canvas') ?? 'null') as { state?: { show?: string } } | null)?.state?.show];
   await play('spotify:track:a');
-  expect(shows().slice(0, 3)).toEqual(['spotify:track:a.mp4', false, false]);
+  expect(shows().slice(0, 2)).toEqual(['spotify:track:a.mp4', null]);
   tap();
-  expect(shows()).toEqual([null, true, false, 'cover']);
+  expect(shows()).toEqual([null, 'https://i.scdn.co/image/a', 'cover']);
   expect(haptic).toHaveBeenCalledWith('light');
   await play('spotify:track:b');                     // the cover stays chosen: nothing fetched
   expect(m.queries.fetchCanvas).not.toHaveBeenCalledWith('spotify:track:b');
-  act(() => { m.store.setState((s) => ({ vis: { ...s.vis, hold: true } })); });   // WMP's view left on Library
-  tap();                                             // the visualizer: the app's canvas, unheld while shown
-  expect(shows()).toEqual([null, false, true, 'vis']);
-  expect(m.S().vis.hold).toBe(false);
-  expect(m.queries.fetchCanvas).not.toHaveBeenCalledWith('spotify:track:b');
   tap();
   await settle();
-  expect(shows()).toEqual(['spotify:track:b.mp4', false, false, 'video']);
-  expect(m.S().vis.hold).toBe(false);                // the view is Now Playing: no hold put back
-  await play('spotify:track:none');                  // no Canvas: the cover, and a tap goes on to the visualizer
-  expect(shows()).toEqual([null, true, false, 'video']);
+  expect(shows()).toEqual(['spotify:track:b.mp4', null, 'video']);
+  await play('spotify:track:none');                  // no Canvas: the cover, and a tap has nothing to swap
   haptic.mockClear();
   tap();
-  expect(shows()).toEqual([null, false, true, 'vis']);
-  expect(haptic).toHaveBeenCalledWith('light');
-  tap();                                             // back to the default for the tests after
-  expect(shows()).toEqual([null, true, false, 'video']);
+  expect([...shows(), haptic.mock.calls.length]).toEqual([null, 'https://i.scdn.co/image/e', 'video', 0]);
 });
 
-it('the visualizer takes the screen\'s shape (Appearance > Visualizer Fit: Fit) while shown, then the scale WMP had', () => {
-  vi.stubGlobal('IntersectionObserver', class { observe() {} disconnect() {} });
-  const nav = createNav(mainMenu(), () => nowPlaying());
-  const m = mountSkinNow('spotify', fakeData(),
-    <NavContext.Provider value={nav}><div data-testid="np">{nowPlaying().render(nav)}</div></NavContext.Provider>);
-  const tap = () => act(() => { fireEvent.click(m.getByTestId('np').querySelector('[class*=tap]')!); });
-  act(() => m.store.getState().actions.setSettings({ scale: 'original' }));   // WMP's stretched surface
-  tap();                                             // no Canvas: the tap goes on to the visualizer
+it('the visualizer is an overlay, on at first: over the cover\'s rectangle, over the Canvas or the black the whole area; off, none; the engine held off it no longer', async () => {
+  const m = nowPlayingAlone(), np = m.np;
+  m.queries.fetchCanvas.mockImplementation((uri) => Promise.resolve(uri.endsWith('c') ? { url: uri + '.mp4', type: 'video' } : null));
+  const play = async (uri: string, art?: string) => {
+    act(() => { m.store.setState((s) => ({ playback: { ...s.playback, status: 'playing', track: { uri, title: 'T', artist: 'A', duration: 100_000, art } } })); });
+    await settle();
+  };
+  const box = () => np.querySelector('[class*=overart], [class*=overfull], [class*=overclip]')?.className.match(/overart|overfull|overclip/)?.[0] ?? null;
+  await play('spotify:track:a', 'https://i.scdn.co/image/a');   // a cover, no Canvas: over the cover (Bars: its box)
+  expect([box(), !!np.querySelector('canvas'), m.S().vis.alpha]).toEqual(['overart', true, 'luma']);
+  await play('spotify:track:c', 'https://i.scdn.co/image/c');   // a Canvas: over it, the whole area
+  expect([!!np.querySelector('video'), box()]).toEqual([true, 'overfull']);
+  await play('spotify:track:x');                     // neither: over the black, the whole area, no ♪ tile
+  expect([box(), !!np.querySelector('[class*=noart]')]).toEqual(['overfull', false]);
+  act(() => { m.store.setState((s) => ({ vis: { ...s.vis, hold: true } })); });   // WMP's view left on Library: lifted while shown
+  expect(m.S().vis.hold).toBe(false);
+  act(() => writePref('ipod.visOn', false));         // off: no overlay, the ♪ tile, the engine's output opaque again
+  expect([box(), !!np.querySelector('canvas'), !!np.querySelector('[class*=noart]'), m.S().vis.alpha]).toEqual([null, false, true, 'opaque']);
+});
+
+it('the overlay takes the screen\'s shape (Appearance > Visualizer Fit: Fit) while shown, then the scale WMP had', () => {
+  const m = nowPlayingAlone();
+  act(() => writePref('ipod.visOn', false));
+  act(() => m.store.getState().actions.setSettings({ scale: 0.5 }));   // WMP's own choice
+  act(() => writePref('ipod.visOn', true));
   expect(m.S().settings.scale).toBe('auto');         // Fit, the default
   act(() => writePref('ipod.visFit', 'stretch'));   // changed while shown: at once
   expect(m.S().settings.scale).toBe('original');
   act(() => writePref('ipod.visFit', 'fit'));
   expect(m.S().settings.scale).toBe('auto');
-  tap();                                             // away from the visualizer: WMP's own choice back
-  expect(m.S().settings.scale).toBe('original');
+  act(() => writePref('ipod.visOn', false));         // off: WMP's own choice back
+  expect(m.S().settings.scale).toBe(0.5);
 });
 
-it('Now Playing\'s visualizer is Bars (ipod.visualizer) while shown, a change at once, then the visualization WMP had', () => {
-  vi.stubGlobal('IntersectionObserver', class { observe() {} disconnect() {} });
-  const nav = createNav(mainMenu(), () => nowPlaying());
-  const m = mountSkinNow('spotify', fakeData(),
-    <NavContext.Provider value={nav}><div data-testid="np">{nowPlaying().render(nav)}</div></NavContext.Provider>);
-  const tap = () => act(() => { fireEvent.click(m.getByTestId('np').querySelector('[class*=tap]')!); });
+it('Now Playing\'s visualization is Bars (ipod.visualizer) while it shows, a change at once, then the visualization WMP had', () => {
+  const m = nowPlayingAlone();
   const vis = () => [m.S().vis.kind, m.S().vis.preset, m.S().settings.vis, m.S().settings.preset];
+  expect(vis()).toEqual(['bars', 0, 'bars', 0]);     // on at first
+  act(() => writePref('ipod.visOn', false));
   act(() => m.store.getState().actions.setVis('battery', 3));   // the WMP 9 skin's own choice
-  tap();                                             // no Canvas: the tap goes on to the visualizer
+  act(() => writePref('ipod.visOn', true));
   expect(vis()).toEqual(['bars', 0, 'bars', 0]);
   act(() => writePref('ipod.visualizer', 'alchemy:0'));
   expect(vis()).toEqual(['alchemy', 0, 'alchemy', 0]);
-  tap();                                             // away from the visualizer: WMP's own choice back
+  act(() => writePref('ipod.visOn', false));         // off: WMP's own choice back
   expect(vis()).toEqual(['battery', 3, 'battery', 3]);
 });
 
 it('Now Playing draws Bars at a width its bars fill edge to edge (299 for the phone\'s 349), stretched to the area; other presets at the area\'s own', () => {
-  vi.stubGlobal('IntersectionObserver', class { observe() {} disconnect() {} });
   let width = 349;
   vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockImplementation(() => width);
-  const nav = createNav(mainMenu(), () => nowPlaying());
-  const m = mountSkinNow('spotify', fakeData(),
-    <NavContext.Provider value={nav}><div data-testid="np">{nowPlaying().render(nav)}</div></NavContext.Provider>);
-  const tap = () => act(() => { fireEvent.click(m.getByTestId('np').querySelector('[class*=tap]')!); });
+  const m = nowPlayingAlone();
   const frame = () => (m.S().vis.scale === null ? null : Math.round(width * m.S().vis.scale!));
-  expect(m.S().vis.scale).toBeNull();
-  tap();                                             // the visualizer: Bars
-  expect(frame()).toBe(299);
+  expect(frame()).toBe(299);                         // Bars, on at first
   act(() => { width = 280; window.dispatchEvent(new Event('resize')); });
   expect(frame()).toBe(275);
   act(() => writePref('ipod.visualizer', 'bars:1'));   // Ocean Mist: a bar a column, any width
   expect(m.S().vis.scale).toBeNull();
   act(() => writePref('ipod.visualizer', 'bars:0'));
   expect(frame()).toBe(275);
-  tap();                                             // away: settings.scale again
+  act(() => writePref('ipod.visOn', false));         // off: settings.scale again
   expect(m.S().vis.scale).toBeNull();
 });
 
@@ -530,7 +535,7 @@ it('Reset Settings puts back what Settings keeps: the toggles, the click wheel, 
   expect(m.rows()).toEqual(SETTINGS);
 });
 
-it('the ⋯ over the cover opens this page\'s options: Lyrics and Karaoke toggle, Visualizer… picks one by engine, put on screen at once', () => {
+it('the ⋯ over the cover opens this page\'s options: Lyrics and Karaoke toggle, Visualizer… switches the overlay and picks one by engine (a pick turns it on)', () => {
   vi.stubGlobal('IntersectionObserver', class { observe() {} disconnect() {} });
   const haptic = vi.fn();
   window.alchemyHaptic = haptic;
@@ -550,20 +555,20 @@ it('the ⋯ over the cover opens this page\'s options: Lyrics and Karaoke toggle
   pick('KaraokeOn');
   open();
   expect([m.S().settings.karaoke, rows()]).toEqual([false, ['Play On…', 'Visualizer…', 'LyricsOff', 'KaraokeOff', 'Cancel']]);
-  pick('Visualizer…');                               // the engines, then (a second popup) an engine's presets
-  expect(rows()).toEqual(['Over CoverOff', 'Alchemy', 'Bars and WavesBars', 'Battery']);
+  pick('Visualizer…');                               // the switch, Opacity, the engines, then (a second popup) an engine's presets
+  expect(rows()).toEqual(['VisualizerOn', 'Opacity100%', 'Alchemy', 'Bars and WavesBars', 'Battery']);
+  pick('VisualizerOn');                              // off, the list kept open
+  expect([rows().slice(0, 2), !!np.querySelector('canvas')]).toEqual([['VisualizerOff', 'Opacity100%'], false]);
   pick('Bars and WavesBars');
   expect(rows()).toEqual(['Bars✓', 'Ocean Mist', 'Fire Storm', 'Scope']);
-  expect(np.querySelector('canvas')).toBeNull();     // the cover (no Canvas) until one is picked
-  pick('Fire Storm');
-  expect([localStorage.getItem('ipod.visualizer'), !!np.querySelector('canvas'), m.S().vis.kind, m.S().vis.preset, rows()])
-    .toEqual(['"bars:2"', true, 'bars', 2, []]);
+  pick('Fire Storm');                                // a pick turns it on
+  expect([localStorage.getItem('ipod.visualizer'), localStorage.getItem('ipod.visOn'), !!np.querySelector('canvas'), m.S().vis.kind, m.S().vis.preset, rows()])
+    .toEqual(['"bars:2"', 'true', true, 'bars', 2, []]);
   open();
   pick('Visualizer…');
-  expect(rows()).toEqual(['Over CoverOff', 'Alchemy', 'Bars and WavesFire Storm', 'Battery']);
+  expect(rows()).toEqual(['VisualizerOn', 'Opacity100%', 'Alchemy', 'Bars and WavesFire Storm', 'Battery']);
   pick('Alchemy');                                   // its one preset: picked at its row
   expect([localStorage.getItem('ipod.visualizer'), m.S().vis.kind, rows()]).toEqual(['"alchemy:0"', 'alchemy', []]);
-  act(() => { fireEvent.click(np.querySelector('[class*=tap]')!); });   // back to the Canvas for the tests after
 });
 
 /** a track playing, and its plain lyrics in the store (as the app's lyrics loader puts them) */
@@ -573,18 +578,21 @@ const withLyrics = (m: ReturnType<typeof mountSkinNow>) => act(() => {
   m.S().actions.setLyrics({ status: 'plain', lines: null, plain: 'la la la', track: null, source: 'spotify' });
 });
 
-it('lyrics show at the cover\'s foot by themselves while Lyrics is on; a tap on them cycles the art as one on the cover does; the ⋯ menu\'s Lyrics hides them', () => {
+it('lyrics show at the cover\'s foot by themselves while Lyrics is on; a tap on them swaps the art as one on the cover does; the ⋯ menu\'s Lyrics hides them', async () => {
   vi.stubGlobal('IntersectionObserver', class { observe() {} disconnect() {} });
   const nav = createNav(mainMenu(), () => nowPlaying());
   const m = mountSkinNow('spotify', fakeData(),
     <NavContext.Provider value={nav}><div data-testid="np">{nowPlaying().render(nav)}</div></NavContext.Provider>);
+  m.queries.fetchCanvas.mockImplementation((uri) => Promise.resolve({ url: uri + '.mp4', type: 'video' }));
   const np = m.getByTestId('np'), lyrics = () => np.querySelector<HTMLElement>('[class*=lyrics]');
   withLyrics(m);
-  expect(lyrics()?.textContent).toBe('la la la');    // no centre press
-  act(() => { fireEvent.click(lyrics()!); });        // the art's tap: no Canvas, so on to the visualizer
-  expect([!!np.querySelector('canvas'), !!lyrics()]).toEqual([true, true]);
-  act(() => { fireEvent.click(lyrics()!); });        // and on again: the Canvas (none: the cover)
-  expect([!!np.querySelector('canvas'), !!np.querySelector('[class*=noart]')]).toEqual([false, true]);
+  await settle();
+  expect([lyrics()?.textContent, !!np.querySelector('video')]).toEqual(['la la la', true]);   // no centre press; the Canvas
+  act(() => { fireEvent.click(lyrics()!); });        // the art's tap: the cover
+  expect([!!np.querySelector('video'), !!lyrics()]).toEqual([false, true]);
+  act(() => { fireEvent.click(lyrics()!); });        // and back: the Canvas
+  await settle();
+  expect(!!np.querySelector('video')).toBe(true);
   act(() => { fireEvent.click(within(np).getByRole('button', { name: 'Options' })); });
   act(() => { fireEvent.click([...np.querySelectorAll('[role=option]')].find((x) => x.textContent === 'LyricsOn')!); });
   expect([m.S().settings.lyrics, lyrics()]).toEqual([false, null]);

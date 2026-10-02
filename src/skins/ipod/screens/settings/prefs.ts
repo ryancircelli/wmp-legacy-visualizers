@@ -99,31 +99,50 @@ export const useVisFit = () => usePref<VisFit>('ipod.visFit', 'fit');
  *  while it shows, as visFit is, so the WMP 9 skin's own choice is untouched. */
 export const visId = (p: { vis: string; preset: number }) => p.vis + ':' + p.preset;
 export const useVisualizer = () => usePref('ipod.visualizer', 'bars:0');
-/** 'ipod.visOverCover': Visualizer… > Over Cover: with a cover, it shows and the visualization draws
- *  over it, clear where it is dark (the engine's 'luma' output; Bars and Waves in the cover's accent) */
-export const useVisOverCover = () => usePref('ipod.visOverCover', false);
-/** Cover Bars was a value of 'ipod.visualizer' of its own (2026-10-02): it is Bars over the cover now */
+/** 'ipod.visOn': Visualizer… > Visualizer: the visualization drawn over the art (the cover, the Canvas,
+ *  or the black when there is neither), clear where it is dark (the engine's 'luma' output; Bars and
+ *  Waves in the cover's accent). On at first. */
+export const useVisOn = () => usePref('ipod.visOn', true);
+/** 'ipod.visOpacity': Visualizer… > Opacity, in percent: the visualization's while it is on; one of
+ *  VIS_OPACITY, anything else read as 100 */
+export const VIS_OPACITY = [100, 75, 50, 25] as const;
+export function useVisOpacity(): [number, (v: number) => void] {
+  const [v, set] = usePref('ipod.visOpacity', 100);
+  return [(VIS_OPACITY as readonly number[]).includes(v) ? v : 100, set];
+}
+/** What earlier builds stored, as it is now (2026-10-02): Cover Bars (a value of 'ipod.visualizer' of
+ *  its own) is Bars; the tap cycle's visualizer mode ('ipod.canvas' show 'vis') and Over Cover
+ *  ('ipod.visOverCover') are the overlay on, and Over Cover's key goes. (NowPlaying.tsx reads a stored
+ *  show 'vis' as the cover.) Run at import, before Now Playing's own store reads 'ipod.canvas'. */
 export function migrateVisPrefs(): void {
-  if (readPref<string>('ipod.visualizer', 'bars:0') !== 'cover-bars') return;   // readPref caches by key: the hook's own default
-  writePref('ipod.visualizer', 'bars:0');
-  writePref('ipod.visOverCover', true);
+  // readPref caches by key: each read here with the default its hook has, or a key no hook reads
+  if (readPref<string>('ipod.visualizer', 'bars:0') === 'cover-bars') { writePref('ipod.visualizer', 'bars:0'); writePref('ipod.visOn', true); }
+  const was = readPref<{ state?: { show?: string } }>('ipod.canvas', {}).state?.show === 'vis';
+  if (was || readPref('ipod.visOverCover', false)) writePref('ipod.visOn', true);
+  try { localStorage.removeItem('ipod.visOverCover'); } catch { /* blocked storage */ }
+  mem.delete('ipod.visOverCover');
 }
 migrateVisPrefs();
-/** The visualizations for Now Playing's Visualizer… (its ⋯ and hold menus): `engines(open)` is the Over
- *  Cover toggle, then the registry's engines (Alchemy, Bars and Waves, Battery), the one holding the
- *  choice showing its name, each `open`ing its `presets(group)`, the choice checked; an engine of one
- *  preset (Alchemy's Random) is picked at its own row. A pick or the toggle sets its pref, then `then`.
- *  `preset`: the choice; `over`: Over Cover is on. */
-export function useVisualizers(then?: () => void) {
-  const sh = useShell(), [cur, set] = useVisualizer(), [over, setOver] = useVisOverCover(), chosen = sh.presets.find((p) => visId(p) === cur);
+/** The visualizations for Now Playing's Visualizer… (its ⋯ and hold menus): `engines(open)` is the
+ *  Visualizer toggle and Opacity (100 -> 75 -> 50 -> 25 -> 100; dim while it is off), then the registry's
+ *  engines (Alchemy, Bars and Waves, Battery), the one holding the choice showing its name, each
+ *  `open`ing its `presets(group)`, the choice checked; an engine of one preset (Alchemy's Random) is
+ *  picked at its own row. A pick, the toggle or a step sets its pref; a pick turns it on. `preset`: the
+ *  choice; `on`: it is on; `opacity`: its percent. */
+export function useVisualizers() {
+  const sh = useShell(), [cur, set] = useVisualizer(), [on, setOn] = useVisOn(), [opacity, setOpacity] = useVisOpacity();
+  const chosen = sh.presets.find((p) => visId(p) === cur);
   const of = (g: string) => sh.presets.filter((p) => p.group === g);
-  const pick = (id: string, label: string): MenuItem => ({ id, label, right: id === cur ? '✓' : undefined, onSelect: () => { set(id); then?.(); } });
+  const pick = (id: string, label: string): MenuItem => ({ id, label, right: id === cur ? '✓' : undefined, onSelect: () => { set(id); setOn(true); } });
   return {
     preset: cur,
-    over,
+    on,
+    opacity,
     presets: (g: string) => of(g).map((p) => pick(visId(p), p.name)),
     engines: (open: (g: string) => void): MenuItem[] => [
-      { id: 'over', label: 'Over Cover', right: over ? 'On' : 'Off', onSelect: () => { setOver(!over); then?.(); } },
+      { id: 'on', label: 'Visualizer', right: on ? 'On' : 'Off', onSelect: () => setOn(!on) },
+      { id: 'opacity', label: 'Opacity', right: opacity + '%', disabled: !on,
+        onSelect: () => setOpacity(VIS_OPACITY[(VIS_OPACITY.indexOf(opacity as 100) + 1) % VIS_OPACITY.length]!) },
       ...[...new Set(sh.presets.map((p) => p.group))].map((g) => {
         const ps = of(g);
         return ps.length === 1 ? pick(visId(ps[0]!), g)

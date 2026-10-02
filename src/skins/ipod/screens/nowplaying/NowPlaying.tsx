@@ -9,11 +9,13 @@
 // options (Visualizer…, Lyrics, Karaoke), which the popup has too. Play / next / prev and
 // their holds (fast-forward, rewind: useScan) are the chrome's. A track with a Spotify Canvas shows it
 // behind the whole screen instead of the cover, the two bands made translucent over it; a tap on the
-// cover's area cycles Canvas -> cover -> the app's visualizer (on silence, as the phone has no capture;
-// Bars until Settings > Visualizer or Visualizer… picks another) -> Canvas, remembered (only while the
-// Canvas is chosen is one fetched). Visualizer… > Over Cover keeps the cover and draws the visualization
-// over it, clear where it is dark (the engine's 'luma' output), Bars and Waves in the cover's accent
-// (accent.ts). Playing on another device than this one (not this
+// cover's area swaps the Canvas and the cover, remembered (only while the Canvas is chosen is one
+// fetched; a track without one shows the cover, and the tap has nothing to swap). The visualizer is no
+// art of its own but an overlay, on unless Visualizer… > Visualizer turns it off: the app's
+// visualization (Bars until Visualizer… picks another) drawn over the art, clear where it is dark (the
+// engine's 'luma' output), over the cover's rectangle or the whole area (the Canvas, or the black when
+// there is no cover), Bars and Waves in the cover's accent (accent.ts), Visualizer… > Opacity its
+// opacity; on silence it draws as the engines do (Bars and Waves nothing). Playing on another device than this one (not this
 // page's player, nor the iPhone's own speaker): its name, in Spotify's green, on the "N of M" line;
 // a tap on it opens Play On….
 import { Vibrant } from 'node-vibrant/browser';
@@ -39,11 +41,16 @@ export function nowPlaying(): ScreenEntry {
   return { key: 'nowplaying', title: 'Now Playing', render: () => <NowPlaying /> };
 }
 
-/** what the cover's area shows: the Canvas (the cover for a track without one), the cover, or the
- *  visualizer; across tracks and launches, localStorage 'ipod.canvas' (version 0 was { on: boolean }) */
-type Show = 'video' | 'cover' | 'vis';
+/** what the cover's area shows: the Canvas (the cover for a track without one) or the cover; across
+ *  tracks and launches, localStorage 'ipod.canvas' (version 0 was { on: boolean }; version 1 had 'vis',
+ *  the visualizer, which is an overlay now: read as the cover, prefs.ts migrateVisPrefs turning it on) */
+type Show = 'video' | 'cover';
+export function migrateCanvasPref(old: unknown, version: number): { show: Show } {
+  const o = old as { on?: boolean; show?: string } | null;
+  return { show: version === 0 ? (o?.on === false ? 'cover' : 'video') : o?.show === 'video' ? 'video' : 'cover' };
+}
 const canvasPref = createStore<{ show: Show }>()(persist((): { show: Show } => ({ show: 'video' }), {
-  name: 'ipod.canvas', version: 1, migrate: (old) => ({ show: (old as { on?: boolean } | null)?.on === false ? 'cover' : 'video' }),
+  name: 'ipod.canvas', version: 2, migrate: migrateCanvasPref,
 }));
 
 type Pop = 'main' | 'playlists' | 'devices' | 'vis' | 'presets' | 'options';
@@ -163,7 +170,7 @@ function NowPlaying() {
   const active = useApp((s) => s.devices.list.find((x) => x.active && x.id !== s.devices.self));
   const speaker = useHostGlobal('__wmpSpeaker', 'wmp-speaker'), away = active && active.id !== speaker?.id ? deviceName(active) : '';
   const show = useStore(canvasPref, (x) => x.show), [group, setGroup] = useState('');
-  const vz = useVisualizers(() => canvasPref.setState({ show: 'vis' }));
+  const vz = useVisualizers();
   /** song radio: the first seed's own station (§4.3) */
   const startRadio = () => {
     const seed = seeds[0];
@@ -197,7 +204,10 @@ function NowPlaying() {
     playlists: toItems(plMenu.sub ?? []),
     devices: [...toItems(devices.items()),
               ...(window.alchemyRoutePicker ? [{ id: 'airplay', label: 'AirPlay…', onSelect: () => window.alchemyRoutePicker?.() }] : [])],
-    vis: vz.engines((g) => { setGroup(g); setPopup('presets'); }),
+    // Visualizer and Opacity keep the list open (it closes on a choice; it is opened again at once), so
+    // the values can be stepped through while the picture changes behind it
+    vis: vz.engines((g) => { setGroup(g); setPopup('presets'); })
+      .map((x) => (x.id === 'on' || x.id === 'opacity' ? { ...x, onSelect: () => { x.onSelect?.(); setPopup('vis'); } } : x)),
     presets: vz.presets(group),
     options: [...options, cancel],
   };
@@ -248,30 +258,32 @@ function NowPlaying() {
   const [failed, setFailed] = useState('');
   const fetched = useCanvas(show === 'video' ? uri : null), canvas = fetched && fetched.url !== failed ? fetched : null;
   const fail = () => setFailed(canvas?.url ?? '');
-  // Over Cover: the cover as in cover mode with the visualizer over it; with no cover, the visualizer as ever
-  const vis = show === 'vis', cover = vis && vz.over && !!art, bg = !!canvas || (vis && !cover);
-  const bars = vz.preset.startsWith('bars:'), accent = useAccent(cover && bars ? art : '');
-  /** a tap on the cover's area (the lyrics over it too): Canvas -> cover -> visualizer -> Canvas; a track
-   *  without a Canvas shows the cover for it, so from there the tap goes straight on to the visualizer */
+  // The overlay (Visualizer… > Visualizer): over the cover's rectangle, or over the whole area when the
+  // Canvas fills it or there is no cover (the black, the ♪ tile left out then)
+  const overlay = vz.on, full = !!canvas || !art, bg = !!canvas || (overlay && !art);
+  const bars = vz.preset.startsWith('bars:'), accent = useAccent(overlay && bars && art ? art : '');
+  /** a tap on the cover's area (the lyrics over it too): the Canvas <-> the cover; with no Canvas on
+   *  screen to swap from, nothing */
   const swap = (e: { stopPropagation(): void }) => {
     e.stopPropagation();
+    if (show === 'video' && !canvas) return;
     window.alchemyHaptic?.('light');
-    canvasPref.setState({ show: show === 'cover' || (show === 'video' && !canvas) ? 'vis' : vis ? 'video' : 'cover' });
+    canvasPref.setState({ show: show === 'video' ? 'cover' : 'video' });
   };
   return (
     <div ref={root} className={css.root} data-canvas={bg ? '' : undefined} data-mini={mini ? '' : undefined}>
-      {vis && !cover ? <Vis /> : canvas?.type === 'video' ? <CanvasVideo src={canvas.url} poster={art || undefined} onError={fail} />
+      {canvas?.type === 'video' ? <CanvasVideo src={canvas.url} poster={art || undefined} onError={fail} />
         : canvas ? <img className={css.bg} src={canvas.url} alt="" onError={fail} /> : null}
       {/* minimized: the cover's mirror image above it and below it (behind the bar) */}
       {art && !bg && <div className={cx(css.mirror, css.up)}><img src={art} alt="" /></div>}
       {art && !bg && <div className={cx(css.mirror, css.down)}><img src={art} alt="" /></div>}
+      {bg ? null : art ? <img className={css.art} src={art} alt="" /> : <div className={cx(css.art, css.noart)}>♪</div>}
+      {overlay && <Vis full={full} clip={!bars} tint={bars && art ? accent : null} opacity={vz.opacity} />}
       <div className={css.info}>
         <Line className={css.artist} text={t?.artist} />
         <Line className={css.title} text={t?.title} />
         <Line className={css.album} text={t?.album} />
       </div>
-      {bg ? null : art ? <img className={css.art} src={art} alt="" /> : <div className={cx(css.art, css.noart)}>♪</div>}
-      {cover && <Vis over clip={!bars} tint={bars ? accent : null} />}
       {/* a swipe from here is still MENU (Root suppresses the click that ends one); a tap is the swap's alone */}
       <div className={css.tap} onClick={swap} />
       {p.lyrics && <Lyrics onClick={swap} />}
@@ -353,7 +365,7 @@ function CanvasVideo({ src, poster, onError }: { src: string; poster?: string; o
   return <video ref={ref} className={css.bg} src={src} poster={poster} muted autoPlay loop playsInline onError={onError} />;
 }
 
-/** Over Cover's accent for cover `url` ('' = none wanted): the cover fetched again for its pixels (CORS,
+/** The overlay's accent for Bars and Waves, from cover `url` ('' = none wanted): the cover fetched again for its pixels (CORS,
  *  not the displayed copy: WebKit may hand a crossOrigin image its cached non-CORS response, and the
  *  canvas reading it is then tainted), node-vibrant's palette of a 100 px copy, pickAccent; white when
  *  the pixels cannot be had. Once per cover, off the render path; the host's log says which. */
@@ -379,14 +391,15 @@ function useAccent(url: string): string {
   return accents.get(url) ?? '#ffffff';
 }
 
-/** The app's visualizer behind the whole screen as the Canvas is, drawing the iPod's choice (ipod.visualizer)
- *  on silence (Alchemy and Battery animate on it, Bars and Waves waits for sound; settings.animate off
- *  stills them). Its canvas is mounted only while this screen is the top one and the page is
- *  visible: the ticker's loop runs only with a canvas attached, so it costs nothing elsewhere. `over`
- *  (Over Cover): over the cover (and its mirrors, minimized), the engine's output 'luma' (clear where
- *  dark), in `tint` if one; `clip`: the whole area always, clipped to the cover in the full view (no
- *  resize when it minimizes: Alchemy and Battery would start over). */
-function Vis({ over, clip, tint }: { over?: boolean; clip?: boolean; tint?: string | null }) {
+/** The visualizer over the art, the engine's 'luma' output (clear where it is dark, in `tint` if one):
+ *  over the cover's rectangle in the full view, the whole area minimized; `full`: the whole area
+ *  always (over the Canvas, or the black with no cover). `clip` (Alchemy and Battery): the canvas is
+ *  the whole area always, clipped to the cover in the full view, so it is never resized (a resize
+ *  clears their buffers: they would start over); Bars and Waves resizes (its bars are back the next
+ *  frame). `opacity`: percent, Visualizer… > Opacity. Its canvas is mounted only while this screen is
+ *  the top one and the page is visible: the ticker's loop runs only with a canvas attached, so it
+ *  costs nothing elsewhere, and nothing at all while the visualizer is off (not mounted). */
+function Vis({ full, clip, tint, opacity = 100 }: { full: boolean; clip: boolean; tint: string | null; opacity: number }) {
   const sh = useShell(), ref = useRef<HTMLDivElement>(null), on = useOnScreen(ref);
   // The ticker holds the engine while WMP's view is off Now Playing (vis.hold: a WMP view left on
   // Library sets it again at every Spotify start); here it is the screen, so no hold while shown,
@@ -435,18 +448,19 @@ function Vis({ over, clip, tint }: { over?: boolean; clip?: boolean; tint?: stri
     scale(barsFit(cw, 50, 5, 1) / cw);
     return () => scale(null);
   }, [on, preset, cw, sh]);
-  // Over Cover: the engine's output with alpha from brightness while shown (vis.alpha / tint, which the
-  // ticker hands the engine as it does the scale), then opaque again
+  // the engine's output with alpha from brightness while shown (vis.alpha / tint, which the ticker hands
+  // the engine as it does the scale), then opaque again (the WMP 9 skin's)
   useEffect(() => {
-    if (!on || !over) return;
+    if (!on) return;
     const st = sh.store, out = (alpha: 'opaque' | 'luma', t: readonly [number, number, number] | null) =>
       st.setState((s) => ({ vis: { ...s.vis, alpha, tint: t } }));
     out('luma', tint ? (rgbOf(tint) as [number, number, number]) : null);
     return () => out('opaque', null);
-  }, [on, over, tint, sh]);
+  }, [on, tint, sh]);
   return (
-    <div ref={ref} className={!over ? css.bg : clip ? css.overclip : css.overart}>
-      {on && <Visualizer className={over ? css.clear : css.vis} />}
+    <div ref={ref} className={clip ? css.overclip : full ? css.overfull : css.overart} data-full={full || undefined}
+         style={opacity < 100 ? { opacity: opacity / 100 } : undefined}>
+      {on && <Visualizer className={css.clear} />}
     </div>
   );
 }
