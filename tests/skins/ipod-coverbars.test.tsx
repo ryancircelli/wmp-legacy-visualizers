@@ -85,7 +85,7 @@ it('Opacity (dim while the overlay is off) steps 100 -> 75 -> 50 -> 25 -> 100 wi
   m.pick('Opacity');
   expect(readPref('ipod.visOpacity', 100)).toBe(75);
   await m.play('spotify:track:c', 'https://i.scdn.co/image/abc');   // over the Canvas: the same
-  expect([m.box(), m.layer()?.style.opacity]).toEqual(['overlay', '0.75']);
+  expect([m.box(), m.layer()?.style.opacity, m.layer()?.style.filter]).toEqual(['overlay', '0.75', 'saturate(1.75)']);   // thinner, and its colour stronger
   m.pick('Visualizer');                              // off: the row dim, the setting kept
   expect([m.layer(), m.row('Opacity').getAttribute('aria-disabled'), m.row('Opacity').textContent]).toEqual([null, 'true', 'Opacity75%']);
   m.pick('Visualizer');

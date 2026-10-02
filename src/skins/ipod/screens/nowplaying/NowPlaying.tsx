@@ -482,7 +482,10 @@ function Vis({ tint, opacity = 100 }: { tint: string | null; opacity: number }) 
     return () => out('opaque', null);
   }, [on, tint, sh]);
   return (
-    <div ref={ref} className={css.overlay} style={opacity < 100 ? { opacity: opacity / 100 } : undefined}>
+    // the thinner the layer, the more it mixes with the picture behind and pales: its own colour is
+    // made stronger as it thins (saturation 1.75 at 75 %, 2.5 at 50 %, 3.25 at 25 %)
+    <div ref={ref} className={css.overlay}
+         style={opacity < 100 ? { opacity: opacity / 100, filter: `saturate(${1 + (100 - opacity) * 0.03})` } : undefined}>
       {on && <Visualizer className={css.clear} />}
     </div>
   );
