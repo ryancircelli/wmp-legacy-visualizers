@@ -372,7 +372,7 @@ function nowPlayingAlone() {
   return { ...m, np: m.getByTestId('np') };
 }
 
-it('a tap on the cover area swaps the Canvas and the cover, remembered; a Canvas is fetched only while chosen; with none, the tap has nothing to swap', async () => {
+it('a tap on the cover area cycles the Canvas -> the cover -> black -> the Canvas, remembered; a Canvas is fetched only while chosen; with none, cover -> black', async () => {
   const haptic = vi.fn();
   window.alchemyHaptic = haptic;
   const m = nowPlayingAlone(), np = m.np;
@@ -382,23 +382,28 @@ it('a tap on the cover area swaps the Canvas and the cover, remembered; a Canvas
     await settle();
   };
   const tap = () => act(() => { fireEvent.click(np.querySelector('[class*=tap]')!); });
-  // [the Canvas clip, the cover, the choice saved]
+  // [the Canvas clip, the cover, the reflections, the choice saved]
   const shows = () => [np.querySelector('video')?.getAttribute('src') ?? null, np.querySelector('img[class*=art]')?.getAttribute('src') ?? null,
+                       np.querySelectorAll('[class*=reflection]').length,
                        (JSON.parse(localStorage.getItem('ipod.canvas') ?? 'null') as { state?: { show?: string } } | null)?.state?.show];
   await play('spotify:track:a');
-  expect(shows().slice(0, 2)).toEqual(['spotify:track:a.mp4', null]);
+  expect(shows().slice(0, 3)).toEqual(['spotify:track:a.mp4', null, 0]);
   tap();
-  expect(shows()).toEqual([null, 'https://i.scdn.co/image/a', 'cover']);
+  expect(shows()).toEqual([null, 'https://i.scdn.co/image/a', 2, 'cover']);
   expect(haptic).toHaveBeenCalledWith('light');
-  await play('spotify:track:b');                     // the cover stays chosen: nothing fetched
+  tap();                                             // black: no art, no reflection
+  expect(shows()).toEqual([null, null, 0, 'black']);
+  await play('spotify:track:b');                     // black stays chosen: nothing fetched
   expect(m.queries.fetchCanvas).not.toHaveBeenCalledWith('spotify:track:b');
   tap();
   await settle();
-  expect(shows()).toEqual(['spotify:track:b.mp4', null, 'video']);
-  await play('spotify:track:none');                  // no Canvas: the cover, and a tap has nothing to swap
-  haptic.mockClear();
+  expect(shows()).toEqual(['spotify:track:b.mp4', null, 0, 'video']);
+  await play('spotify:track:none');                  // no Canvas: the cover, and a tap goes on to black
+  expect(shows()).toEqual([null, 'https://i.scdn.co/image/e', 2, 'video']);
   tap();
-  expect([...shows(), haptic.mock.calls.length]).toEqual([null, 'https://i.scdn.co/image/e', 'video', 0]);
+  expect(shows()).toEqual([null, null, 0, 'black']);
+  tap();                                             // back to the Canvas (none: the cover) for the tests after
+  expect(shows()).toEqual([null, 'https://i.scdn.co/image/e', 2, 'video']);
 });
 
 it('the visualizer is an overlay, on at first: the whole area over the cover, the Canvas or the black; off, none; the engine held off it no longer', async () => {
@@ -564,10 +569,10 @@ it('the ⋯ over the cover opens this page\'s options: Lyrics and Karaoke toggle
   pick('KaraokeOn');
   open();
   expect([m.S().settings.karaoke, rows()]).toEqual([false, ['Play On…', 'Visualizer…', 'LyricsOff', 'KaraokeOff', 'Cancel']]);
-  pick('Visualizer…');                               // the switch, Background, Opacity, the engines, then (a second popup) an engine's presets
-  expect(rows()).toEqual(['VisualizerOn', 'BackgroundArt', 'Opacity50%', 'Alchemy', 'Bars and WavesBars', 'Battery']);
+  pick('Visualizer…');                               // the switch, Opacity, the engines, then (a second popup) an engine's presets
+  expect(rows()).toEqual(['VisualizerOn', 'Opacity50%', 'Alchemy', 'Bars and WavesBars', 'Battery']);
   pick('VisualizerOn');                              // off, the list kept open
-  expect([rows().slice(0, 2), !!np.querySelector('canvas')]).toEqual([['VisualizerOff', 'BackgroundArt'], false]);
+  expect([rows().slice(0, 2), !!np.querySelector('canvas')]).toEqual([['VisualizerOff', 'Opacity50%'], false]);
   pick('Bars and WavesBars');
   expect(rows()).toEqual(['Bars✓', 'Ocean Mist', 'Fire Storm', 'Scope']);
   pick('Fire Storm');                                // a pick turns it on
@@ -575,7 +580,7 @@ it('the ⋯ over the cover opens this page\'s options: Lyrics and Karaoke toggle
     .toEqual(['"bars:2"', 'true', true, 'bars', 2, []]);
   open();
   pick('Visualizer…');
-  expect(rows()).toEqual(['VisualizerOn', 'BackgroundArt', 'Opacity50%', 'Alchemy', 'Bars and WavesFire Storm', 'Battery']);
+  expect(rows()).toEqual(['VisualizerOn', 'Opacity50%', 'Alchemy', 'Bars and WavesFire Storm', 'Battery']);
   pick('Alchemy');                                   // its one preset: picked at its row
   expect([localStorage.getItem('ipod.visualizer'), m.S().vis.kind, rows()]).toEqual(['"alchemy:0"', 'alchemy', []]);
 });
@@ -587,7 +592,7 @@ const withLyrics = (m: ReturnType<typeof mountSkinNow>) => act(() => {
   m.S().actions.setLyrics({ status: 'plain', lines: null, plain: 'la la la', track: null, source: 'spotify' });
 });
 
-it('lyrics show at the cover\'s foot by themselves while Lyrics is on; a tap on them swaps the art as one on the cover does; the ⋯ menu\'s Lyrics hides them', async () => {
+it('lyrics show at the cover\'s foot by themselves while Lyrics is on; a tap on them cycles the art as one on the cover does; the ⋯ menu\'s Lyrics hides them', async () => {
   vi.stubGlobal('IntersectionObserver', class { observe() {} disconnect() {} });
   const nav = createNav(mainMenu(), () => nowPlaying());
   const m = mountSkinNow('spotify', fakeData(),
@@ -599,6 +604,8 @@ it('lyrics show at the cover\'s foot by themselves while Lyrics is on; a tap on 
   expect([lyrics()?.textContent, !!np.querySelector('video')]).toEqual(['la la la', true]);   // no centre press; the Canvas
   act(() => { fireEvent.click(lyrics()!); });        // the art's tap: the cover
   expect([!!np.querySelector('video'), !!lyrics()]).toEqual([false, true]);
+  act(() => { fireEvent.click(lyrics()!); });        // black
+  expect([!!np.querySelector('video'), !!np.querySelector('img[class*=art]'), !!lyrics()]).toEqual([false, false, true]);
   act(() => { fireEvent.click(lyrics()!); });        // and back: the Canvas
   await settle();
   expect(!!np.querySelector('video')).toBe(true);

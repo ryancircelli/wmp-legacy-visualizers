@@ -92,33 +92,25 @@ it('Opacity (dim while the overlay is off), 50 by default, steps 50 -> 25 -> 100
   expect(m.layer()?.style.opacity).toBe('0.25');
 });
 
-it('Background: Art (the overlay over the art) or Black (WMP\'s own: opaque on black, no art, no reflection, no tint, Opacity dim and not applied); the row keeps the list open; Art again restores it all', async () => {
-  const haptic = vi.fn();
-  window.alchemyHaptic = haptic;
+it('black (the tap\'s third art): WMP\'s own look, no art, no reflection, the visualization opaque, untinted, at full strength (Opacity kept but not applied, not dimmed); the next tap brings the art back as it was', async () => {
   const m = atNowPlaying();
   const ART = 'https://i.scdn.co/image/abc';
   const shown = () => [!!m.np.querySelector('img[class*=art]'), m.np.querySelectorAll('[class*=reflection]').length, !!m.np.querySelector('video'),
                        m.np.firstElementChild!.hasAttribute('data-canvas')];   // the bands' translucent look
-  await m.play('spotify:track:a', ART);              // the cover, Bars in its accent
-  m.menu();
-  expect([m.row('Background').textContent, ...m.out(), ...shown(), m.layer()?.style.opacity, m.layer()?.style.filter])
-    .toEqual(['BackgroundArt', 'luma', [230, 40, 40], true, 2, false, false, '0.5', 'saturate(2.5)']);
-  m.pick('Background');                              // Black, the list kept open
-  expect([m.row('Background').textContent, readPref('ipod.visBackground', 'art'), m.row('Opacity').getAttribute('aria-disabled')])
-    .toEqual(['BackgroundBlack', 'black', 'true']);
+  const tap = () => act(() => { fireEvent.click(m.np.querySelector('[class*=tap]')!); });
+  await m.play('spotify:track:a', ART);              // no Canvas: the cover, Bars in its accent
+  expect([...m.out(), ...shown(), m.layer()?.style.opacity, m.layer()?.style.filter]).toEqual(['luma', [230, 40, 40], true, 2, false, false, '0.5', 'saturate(2.5)']);
+  tap();                                             // black
   expect([...m.out(), ...shown(), m.layer()?.style.opacity, m.layer()?.style.filter, !!m.np.querySelector('canvas')])
     .toEqual(['opaque', null, false, 0, false, true, '', '', true]);
-  await m.play('spotify:track:c', ART);              // a track with a Canvas: none shown either
-  expect([...shown(), m.box()]).toEqual([false, 0, false, true, 'overlay']);
-  act(() => { fireEvent.click(m.np.querySelector('[class*=tap]')!); });   // the swap: of what is hidden, no haptic
-  haptic.mockClear();
-  act(() => { fireEvent.click(m.np.querySelector('[class*=tap]')!); });
-  expect(haptic).not.toHaveBeenCalled();
   m.menu();
-  m.pick('Background');                              // Art again: the Canvas, the tint, the opacity
-  await settle();
-  expect([...m.out(), ...shown(), m.layer()?.style.opacity, m.row('Opacity').getAttribute('aria-disabled')])
-    .toEqual(['luma', [230, 40, 40], false, 0, true, true, '0.5', null]);
+  expect([m.options().map((x) => x.textContent), m.row('Opacity').getAttribute('aria-disabled')])
+    .toEqual([['VisualizerOn', 'Opacity50%', 'Alchemy', 'Bars and WavesBars', 'Battery'], null]);   // no Background row; Opacity as ever
+  m.pick('Opacity');                                 // stepped: kept for the art, not applied here
+  expect([readPref('ipod.visOpacity', 50), m.layer()?.style.opacity]).toEqual([25, '']);
+  act(() => { fireEvent.keyDown(window, { key: 'Escape' }); });
+  tap();                                             // back: the cover (no Canvas), the tint, the opacity
+  expect([...m.out(), ...shown(), m.layer()?.style.opacity]).toEqual(['luma', [230, 40, 40], true, 2, false, false, '0.25']);
 });
 
 it('a stored opacity that is not 100, 75, 50 or 25 reads as 50', () => {

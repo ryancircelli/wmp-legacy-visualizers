@@ -9,13 +9,13 @@
 // options (Visualizer…, Lyrics, Karaoke), which the popup has too. Play / next / prev and
 // their holds (fast-forward, rewind: useScan) are the chrome's. A track with a Spotify Canvas shows it
 // behind the whole screen instead of the cover, the two bands made translucent over it; a tap on the
-// cover's area swaps the Canvas and the cover, remembered (only while the Canvas is chosen is one
-// fetched; a track without one shows the cover, and the tap has nothing to swap). The visualizer is no
-// art of its own but an overlay, on unless Visualizer… > Visualizer turns it off: the app's
-// visualization (Bars until Visualizer… picks another) drawn over the art, clear where it is dark (the
-// engine's 'luma' output), over the cover's rectangle or the whole area (the Canvas, or the black when
-// there is no cover), Bars and Waves in the cover's accent (accent.ts), Visualizer… > Opacity its
-// opacity; on silence it draws as the engines do (Bars and Waves nothing). Playing on another device than this one (not this
+// cover's area cycles the Canvas -> the cover -> black -> the Canvas, remembered (only while the Canvas
+// is chosen is one fetched; a track without one shows the cover for it, so its cycle is cover -> black).
+// The visualizer is an overlay, on unless Visualizer… > Visualizer turns it off: the app's visualization
+// (Bars until Visualizer… picks another) over the art, clear where it is dark (the engine's 'luma'
+// output), Bars and Waves in the cover's accent (accent.ts), Visualizer… > Opacity its opacity; on black
+// it is WMP's own, opaque in its own colours at full strength. On silence it draws as the engines do
+// (Bars and Waves nothing). Playing on another device than this one (not this
 // page's player, nor the iPhone's own speaker): its name, in Spotify's green, on the "N of M" line;
 // a tap on it opens Play On….
 import { Vibrant } from 'node-vibrant/browser';
@@ -42,10 +42,11 @@ export function nowPlaying(): ScreenEntry {
   return { key: 'nowplaying', title: 'Now Playing', render: () => <NowPlaying /> };
 }
 
-/** what the cover's area shows: the Canvas (the cover for a track without one) or the cover; across
- *  tracks and launches, localStorage 'ipod.canvas' (version 0 was { on: boolean }; version 1 had 'vis',
- *  the visualizer, which is an overlay now: read as the cover, prefs.ts migrateVisPrefs turning it on) */
-type Show = 'video' | 'cover';
+/** what the cover's area shows: the Canvas (the cover for a track without one), the cover, or black
+ *  (the visualizer alone, WMP's way); across tracks and launches, localStorage 'ipod.canvas' (version 0
+ *  was { on: boolean }; version 1 had 'vis', the visualizer, which is an overlay now: read as the cover,
+ *  prefs.ts migrateVisPrefs turning it on) */
+type Show = 'video' | 'cover' | 'black';
 export function migrateCanvasPref(old: unknown, version: number): { show: Show } {
   const o = old as { on?: boolean; show?: string } | null;
   return { show: version === 0 ? (o?.on === false ? 'cover' : 'video') : o?.show === 'video' ? 'video' : 'cover' };
@@ -236,7 +237,7 @@ function NowPlaying() {
     // Visualizer and Opacity keep the list open (it closes on a choice; it is opened again at once), so
     // the values can be stepped through while the picture changes behind it
     vis: vz.engines((g) => { setGroup(g); setPopup('presets'); })
-      .map((x) => (x.id === 'on' || x.id === 'background' || x.id === 'opacity' ? { ...x, onSelect: () => { x.onSelect?.(); setPopup('vis'); } } : x)),
+      .map((x) => (x.id === 'on' || x.id === 'opacity' ? { ...x, onSelect: () => { x.onSelect?.(); setPopup('vis'); } } : x)),
     presets: vz.presets(group),
     options: [...options, cancel],
   };
@@ -290,18 +291,17 @@ function NowPlaying() {
   const fetched = useCanvas(show === 'video' ? uri : null), canvas = fetched && fetched.url !== failed ? fetched : null;
   const fail = () => setFailed(canvas?.url ?? '');
   // The overlay (Visualizer… > Visualizer): over the whole area under the status row, the cover and the
-  // black round it, or the Canvas (with no cover, the black: the ♪ tile left out then). Background >
-  // Black: WMP's own look, the visualization opaque on black with no art shown (the bands translucent
-  // over it, as over the Canvas)
-  const overlay = vz.on, black = overlay && vz.background === 'black', bg = !!canvas || (overlay && !art) || black;
+  // black round it, or the Canvas (with no cover, the black: the ♪ tile left out then). Black (the
+  // tap's third art): WMP's own look, no art and no reflection, the visualization opaque in its own
+  // colours at full strength (Opacity not applied), the bands translucent over it as over the Canvas
+  const overlay = vz.on, black = show === 'black', bg = !!canvas || (overlay && !art) || black;
   const bars = vz.preset.startsWith('bars:'), accent = useAccent(overlay && !black && bars && art ? art : '');
-  /** a tap on the cover's area (the lyrics over it too): the Canvas <-> the cover; with no Canvas on
-   *  screen to swap from, nothing; over black the swap is of what is hidden: no haptic for it */
+  /** a tap on the cover's area (the lyrics over it too): the Canvas -> the cover -> black -> the Canvas;
+   *  a track without a Canvas shows the cover for it, so from there the tap goes on to black */
   const swap = (e: { stopPropagation(): void }) => {
     e.stopPropagation();
-    if (show === 'video' && !canvas) return;
-    if (!black) window.alchemyHaptic?.('light');
-    canvasPref.setState({ show: show === 'video' ? 'cover' : 'video' });
+    window.alchemyHaptic?.('light');
+    canvasPref.setState({ show: show === 'video' && canvas ? 'cover' : show === 'black' ? 'video' : 'black' });
   };
   return (
     <div ref={root} className={css.root} data-canvas={bg ? '' : undefined} data-quiet={quiet ? '' : undefined}>
