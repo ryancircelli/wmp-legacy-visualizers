@@ -517,16 +517,16 @@ it('the ⋯ over the cover opens this page\'s options: Lyrics and Karaoke toggle
   const pick = (label: string) => act(() => { fireEvent.click(options().find((x) => x.textContent === label)!); });
   const open = () => act(() => { fireEvent.click(within(np).getByRole('button', { name: 'Options' })); });
   open();
-  expect(rows()).toEqual(['Visualizer…', 'LyricsOn', 'KaraokeOn', 'Cancel']);
+  expect(rows()).toEqual(['Play On…', 'Visualizer…', 'LyricsOn', 'KaraokeOn', 'Cancel']);
   expect(haptic).toHaveBeenCalledWith('light');
   pick('LyricsOn');                                  // a choice closes it
   expect([m.S().settings.lyrics, rows()]).toEqual([false, []]);
   open();
   pick('KaraokeOn');
   open();
-  expect([m.S().settings.karaoke, rows()]).toEqual([false, ['Visualizer…', 'LyricsOff', 'KaraokeOff', 'Cancel']]);
+  expect([m.S().settings.karaoke, rows()]).toEqual([false, ['Play On…', 'Visualizer…', 'LyricsOff', 'KaraokeOff', 'Cancel']]);
   pick('Visualizer…');                               // the engines, then (a second popup) an engine's presets
-  expect(rows()).toEqual(['Alchemy', 'Bars and WavesBars', 'Battery']);
+  expect(rows()).toEqual(['Cover Bars', 'Alchemy', 'Bars and WavesBars', 'Battery']);
   pick('Bars and WavesBars');
   expect(rows()).toEqual(['Bars✓', 'Ocean Mist', 'Fire Storm', 'Scope']);
   expect(np.querySelector('canvas')).toBeNull();     // the cover (no Canvas) until one is picked
@@ -535,7 +535,7 @@ it('the ⋯ over the cover opens this page\'s options: Lyrics and Karaoke toggle
     .toEqual(['"bars:2"', true, 'bars', 2, []]);
   open();
   pick('Visualizer…');
-  expect(rows()).toEqual(['Alchemy', 'Bars and WavesFire Storm', 'Battery']);
+  expect(rows()).toEqual(['Cover Bars', 'Alchemy', 'Bars and WavesFire Storm', 'Battery']);
   pick('Alchemy');                                   // its one preset: picked at its row
   expect([localStorage.getItem('ipod.visualizer'), m.S().vis.kind, rows()]).toEqual(['"alchemy:0"', 'alchemy', []]);
   act(() => { fireEvent.click(np.querySelector('[class*=tap]')!); });   // back to the Canvas for the tests after
@@ -576,4 +576,41 @@ it('the centre cycles progress -> scrubber -> back, no lyrics step; the lyrics s
   expect(at()).toEqual([1, 1]);                      // the scrubber
   key('Enter');
   expect(at()).toEqual([0, 1]);                      // back: no seeds, so no Radio, and no lyrics mode
+});
+
+it('Now Playing names the device it plays on when that is another (a tap, or the ⋯ menu\'s Play On…, opens the devices; a pick transfers); not this page, nor the phone\'s own speaker', () => {
+  vi.stubGlobal('IntersectionObserver', class { observe() {} disconnect() {} });
+  vi.stubGlobal('alchemyRoutePicker', vi.fn());
+  const nav = createNav(mainMenu(), () => nowPlaying());
+  const m = mountSkinNow('spotify', fakeData(),
+    <NavContext.Provider value={nav}><div data-testid="np">{nowPlaying().render(nav)}</div></NavContext.Provider>);
+  const np = m.getByTestId('np'), options = () => [...np.querySelectorAll('[role=option]')];
+  const rows = () => options().map((x) => x.textContent);
+  const pick = (label: string) => act(() => { fireEvent.click(options().find((x) => x.textContent === label)!); });
+  const on = (id: string) => act(() => m.S().actions.setDevices([
+    { id: 'me', name: 'Web Player (Chrome)', type: 'Computer', active: id === 'me' },
+    { id: 'spk', name: 'WMP Spotify (iOS)', type: 'Smartphone', active: id === 'spk' },
+    { id: 'echo', name: "Ryan's Office Echo Dot", type: 'Speaker', active: id === 'echo' },
+    { id: 'tv', name: 'Living Room TV', type: 'TV', active: id === 'tv', offline: true },
+  ], 'me'));
+  const away = () => within(np).queryByRole('button', { name: /^Playing on / })?.textContent ?? null;
+  on('echo');
+  expect(away()).toBe("Ryan's Office Echo Dot");
+  act(() => { fireEvent.click(within(np).getByRole('button', { name: /^Playing on / })); });
+  expect(rows()).toEqual(['WMP Spotify (This Device)', 'WMP Spotify (iOS)', "Ryan's Office Echo Dot✓", 'Living Room TV · offline', 'AirPlay…']);
+  expect(options()[3]!.getAttribute('aria-disabled')).toBe('true');   // offline: greyed
+  pick('WMP Spotify (iOS)');
+  expect([m.cmd.transfer.mock.calls, rows()]).toEqual([[['spk']], []]);   // transferred, closed
+  act(() => { fireEvent.click(within(np).getByRole('button', { name: 'Options' })); });
+  pick('Play On…');                                  // the ⋯ menu's row: the same list
+  expect(rows()[2]).toBe("Ryan's Office Echo Dot✓");
+  pick('AirPlay…');
+  expect(window.alchemyRoutePicker).toHaveBeenCalledOnce();
+  on('me');                                          // this page's player: nothing
+  expect(away()).toBeNull();
+  act(() => { vi.stubGlobal('__wmpSpeaker', { id: 'spk', name: 'WMP Spotify (iOS)' }); window.dispatchEvent(new Event('wmp-speaker')); });
+  on('spk');                                         // the phone's own speaker: nothing
+  expect(away()).toBeNull();
+  on('echo');
+  expect(away()).toBe("Ryan's Office Echo Dot");
 });

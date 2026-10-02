@@ -11,20 +11,27 @@
 // behind the whole screen instead of the cover, the two bands made translucent over it; a tap on the
 // cover's area cycles Canvas -> cover -> the app's visualizer (on silence, as the phone has no capture;
 // Bars until Settings > Visualizer or Visualizer… picks another) -> Canvas, remembered (only while the
-// Canvas is chosen is one fetched).
+// Canvas is chosen is one fetched). Cover Bars (a choice of Visualizer…) keeps the cover and draws
+// Bars over it, in the cover's accent (accent.ts). Playing on another device than this one (not this
+// page's player, nor the iPhone's own speaker): its name, in Spotify's green, on the "N of M" line;
+// a tap on it opens Play On….
+import { Vibrant } from 'node-vibrant/browser';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useStore } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { createStore } from 'zustand/vanilla';
 import { Visualizer } from '../../../../app/Visualizer';
 import { lyricsShown, positionNow, type Track } from '../../../../model';
 import {
-  artOk, cx, isSpotify, Karaoke, playingTrack, useAddTo, useApp, useArtist, useCanvas, useCollection, useDevices, useLyricScroll,
+  artOk, cx, deviceName, isSpotify, Karaoke, playingTrack, useAddTo, useApp, useArtist, useCanvas, useCollection, useDevices, useLyricScroll,
   usePlainLyrics, usePosition, useRadioSeeds, useShell, type MenuEntry,
 } from '../../../../ui';
+import { useHostGlobal } from '../../host';
 import type { MenuItem, ScreenEntry } from '../contract';
-import { useVisFit, useVisualizer, useVisualizers, visId } from '../settings';
+import { useVisFit, useVisualizers, visId } from '../settings';
 import { Bar, MenuScreen, Popup, useNav, useScan, useWheel } from '../../ui';
+import { pickAccent, tintMatrix } from './accent';
 import { IDLE_MS, nextMode, ofText, SCRUB_COMMIT_MS, scrubAccel, scrubStep, times, volumeStep, VOLUME_MS, type Mode } from './logic';
 import css from './nowplaying.module.css';
 
@@ -110,6 +117,9 @@ function NowPlaying() {
   const of = p.shuffle ? '' : ofText(col.rows, uri, col.total);
 
   const devices = useDevices(() => '');
+  // the device it plays on when that is not this one: not this page's player, nor the phone's own speaker
+  const active = useApp((s) => s.devices.list.find((x) => x.active && x.id !== s.devices.self));
+  const speaker = useHostGlobal('__wmpSpeaker', 'wmp-speaker'), away = active && active.id !== speaker?.id ? deviceName(active) : '';
   const show = useStore(canvasPref, (x) => x.show), [group, setGroup] = useState('');
   const vz = useVisualizers(() => canvasPref.setState({ show: 'vis' }));
   /** song radio: the first seed's own station (§4.3) */
@@ -120,10 +130,11 @@ function NowPlaying() {
       if (hit) c().playItem({ uri: hit.uri });
     }, () => {});
   };
-  /** this page's options (the ⋯, and the popup's): Visualizer… lists the engines, an engine its presets
-   *  (a second popup); a pick shows at once, the visualizer put on screen if it was not; Lyrics and
-   *  Karaoke as Settings toggles them */
+  /** this page's options (the ⋯, and the popup's): Play On… the Connect devices (as Settings > Play
+   *  On); Visualizer… lists Cover Bars and the engines, an engine its presets (a second popup); a pick
+   *  shows at once, the visualizer put on screen if it was not; Lyrics and Karaoke as Settings had them */
   const options: MenuItem[] = [
+    { id: 'device', label: 'Play On…', disabled: !p.spotify, onSelect: () => setPopup('devices') },
     { id: 'vis', label: 'Visualizer…', onSelect: () => setPopup('vis') },
     { id: 'lyrics', label: 'Lyrics', right: p.lyricsOn ? 'On' : 'Off', onSelect: () => get().actions.setLyricsEnabled(!p.lyricsOn) },
     { id: 'karaoke', label: 'Karaoke', right: p.karaoke ? 'On' : 'Off', onSelect: () => get().actions.setKaraoke(!p.karaoke) },
@@ -138,12 +149,12 @@ function NowPlaying() {
         onSelect: () => nav.push(albumScreen({ uri: albumUri, artist: artistUri, name: t?.album ?? '' })) },
       { id: 'artist', label: 'Browse Artist', disabled: !artistUri,
         onSelect: () => { if (artistUri) nav.push(artistScreen(artistUri, t?.artist ?? '')); } },
-      { id: 'device', label: 'Play On…', disabled: !p.spotify, onSelect: () => setPopup('devices') },
       ...options,
       cancel,
     ],
     playlists: toItems(plMenu.sub ?? []),
-    devices: toItems(devices.items()),
+    devices: [...toItems(devices.items()),
+              ...(window.alchemyRoutePicker ? [{ id: 'airplay', label: 'AirPlay…', onSelect: () => window.alchemyRoutePicker?.() }] : [])],
     vis: vz.engines((g) => { setGroup(g); setPopup('presets'); }),
     presets: vz.presets(group),
     options: [...options, cancel],
@@ -193,7 +204,9 @@ function NowPlaying() {
   const [failed, setFailed] = useState('');
   const fetched = useCanvas(show === 'video' ? uri : null), canvas = fetched && fetched.url !== failed ? fetched : null;
   const fail = () => setFailed(canvas?.url ?? '');
-  const vis = show === 'vis', bg = !!canvas || vis;
+  // Cover Bars: the cover as in cover mode with the visualizer over it; with no cover, plain Bars
+  const vis = show === 'vis', cover = vis && vz.cover && !!art, bg = !!canvas || (vis && !cover);
+  const accent = useAccent(cover ? art : '');
   /** a tap on the cover's area (the lyrics over it too): Canvas -> cover -> visualizer -> Canvas; a track
    *  without a Canvas shows the cover for it, so from there the tap goes straight on to the visualizer */
   const swap = (e: { stopPropagation(): void }) => {
@@ -203,7 +216,7 @@ function NowPlaying() {
   };
   return (
     <div className={css.root} data-canvas={bg ? '' : undefined}>
-      {vis ? <Vis /> : canvas?.type === 'video' ? <CanvasVideo src={canvas.url} poster={art || undefined} onError={fail} />
+      {vis && !cover ? <Vis /> : canvas?.type === 'video' ? <CanvasVideo src={canvas.url} poster={art || undefined} onError={fail} />
         : canvas ? <img className={css.bg} src={canvas.url} alt="" onError={fail} /> : null}
       <div className={css.info}>
         <Line className={css.artist} text={t?.artist} />
@@ -211,6 +224,7 @@ function NowPlaying() {
         <Line className={css.album} text={t?.album} />
       </div>
       {bg ? null : art ? <img className={css.art} src={art} alt="" /> : <div className={cx(css.art, css.noart)}>♪</div>}
+      {cover && <Vis accent={accent} />}
       {/* a swipe from here is still MENU (Root suppresses the click that ends one); a tap is the swap's alone */}
       <div className={css.tap} onClick={swap} />
       {p.lyrics && <Lyrics onClick={swap} />}
@@ -243,7 +257,13 @@ function NowPlaying() {
             <span className={css.right}>{remaining}</span>
           </div>
         )}
-        {of && <div className={css.of}>{of}</div>}
+        {(of || away) && (
+          <div className={css.of}>
+            {of}{of && away && ' · '}
+            {away && <span className={css.device} role="button" aria-label={'Playing on ' + away}
+                            onClick={(e) => { e.stopPropagation(); setPopup('devices'); }}><Speaker loud className={css.devspk} />{away}</span>}
+          </div>
+        )}
       </div>
       {popup && <Popup items={items[popup]} onClose={() => setPopup((x) => (x === popup ? null : x))} />}
     </div>
@@ -271,7 +291,35 @@ function CanvasVideo({ src, poster, onError }: { src: string; poster?: string; o
  *  on silence (Alchemy and Battery animate on it, Bars and Waves waits for sound; settings.animate off
  *  stills them). Its canvas is mounted only while this screen is the top one and the page is
  *  visible: the ticker's loop runs only with a canvas attached, so it costs nothing elsewhere. */
-function Vis() {
+/** Cover Bars' accent for cover `url` ('' = none wanted): node-vibrant's palette of a 100 px copy, then
+ *  pickAccent; white when its pixels cannot be read (no CORS). Once per cover, off the render path. */
+const accents = new Map<string, string>();
+function useAccent(url: string): string {
+  const [, setGot] = useState('');
+  useEffect(() => {
+    if (!url || accents.has(url)) return;
+    let live = true;
+    Vibrant.from(url).maxDimension(100).getPalette().then(pickAccent, () => '#ffffff').then((c) => {
+      accents.set(url, c);
+      if (live) setGot(url);
+    }, () => {});
+    return () => { live = false; };
+  }, [url]);
+  return accents.get(url) ?? '#ffffff';
+}
+
+/** Cover Bars' tint: the canvas in `accent`, its black transparent (accent.ts tintMatrix) */
+const TINT = 'ipod-cover-bars';
+const tint = (accent: string) => (
+  <svg width="0" height="0" style={{ position: 'absolute' }} aria-hidden="true">
+    <filter id={TINT} colorInterpolationFilters="sRGB"><feColorMatrix type="matrix" values={tintMatrix(accent)} /></filter>
+  </svg>
+);
+
+/** `accent` (Cover Bars): over the cover only, tinted. Chromium finds a filter url(#id) in the shadow
+ *  tree the page is mounted in under Spotify (checked), not in the document; the document holds a copy
+ *  too, for a WebKit that looks there. */
+function Vis({ accent }: { accent?: string }) {
   const sh = useShell(), ref = useRef<HTMLDivElement>(null), [on, setOn] = useState(() => !document.hidden);
   useEffect(() => {
     const el = ref.current;
@@ -304,15 +352,22 @@ function Vis() {
     a.setSettings({ scale: fit === 'stretch' ? 'original' : 'auto' });
     return () => a.setSettings({ scale: prev });
   }, [on, fit, sh]);
-  // the iPod's visualization (ipod.visualizer) onto the shared settings.vis / preset the same way
-  const [vz] = useVisualizer();
+  // the iPod's visualization (ipod.visualizer; Cover Bars: Bars) onto the shared settings.vis / preset the same way
+  const { preset } = useVisualizers();
   useEffect(() => {
     if (!on) return;
-    const a = sh.store.getState().actions, prev = sh.store.getState().vis, x = sh.presets.find((e) => visId(e) === vz);
+    const a = sh.store.getState().actions, prev = sh.store.getState().vis, x = sh.presets.find((e) => visId(e) === preset);
     if (x) a.setVis(x.vis, x.preset);
     return () => a.setVis(prev.kind, prev.preset);
-  }, [on, vz, sh]);
-  return <div ref={ref} className={css.bg}>{on && <Visualizer className={css.vis} />}</div>;
+  }, [on, preset, sh]);
+  return (
+    <>
+      {accent && <>{tint(accent)}{createPortal(tint(accent), document.body)}</>}
+      <div ref={ref} className={accent ? css.overart : css.bg} style={accent ? { filter: `url(#${TINT})` } : undefined}>
+        {on && <Visualizer className={css.vis} />}
+      </div>
+    </>
+  );
 }
 
 /** One info line; a long one marquees as the nano's do (§2.2): after 1 s, at 30 units/s, pausing 1 s at each end. */
@@ -337,9 +392,9 @@ function Line({ className, text }: { className?: string; text?: string }) {
   return <div ref={box} className={cx(css.line, className)}><span>{text}</span></div>;
 }
 
-function Speaker({ loud }: { loud?: boolean }) {
+function Speaker({ loud, className }: { loud?: boolean; className?: string }) {
   return (
-    <svg className={loud ? css.loud : css.spk} viewBox="0 0 12 12" aria-hidden="true">
+    <svg className={className ?? (loud ? css.loud : css.spk)} viewBox="0 0 12 12" aria-hidden="true">
       <path d="M1 4.2h2.4L6.6 1.5v9L3.4 7.8H1z" fill="currentColor" />
       {loud && <path d="M8.3 3.8a3 3 0 0 1 0 4.4M9.8 2.3a5 5 0 0 1 0 7.4" fill="none" stroke="currentColor" strokeWidth="1.1" />}
     </svg>

@@ -2,7 +2,7 @@
 // external store, so every reader (the chrome's status row and main menu included) re-renders on a
 // change. Storage that throws (blocked) falls back to memory for the session.
 import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
-import { useShell, type Preset } from '../../../../ui';
+import { useShell } from '../../../../ui';
 import type { MenuItem } from '../contract';
 import { msUntil, STOPWATCH0, type Stopwatch, type StopwatchLog } from './logic';
 
@@ -96,26 +96,30 @@ export const useShake = () => usePref('ipod.shake', true);
 export type VisFit = 'fit' | 'stretch';
 export const useVisFit = () => usePref<VisFit>('ipod.visFit', 'fit');
 /** 'ipod.visualizer': the visualization Now Playing shows, a registry entry's (shell presets) visId,
- *  Bars and Waves' Bars until another is chosen; applied onto the shared settings.vis / preset only
- *  while it shows, as visFit is, so the WMP 9 skin's own choice is untouched. */
+ *  or COVER_BARS; Bars and Waves' Bars until another is chosen; applied onto the shared settings.vis /
+ *  preset only while it shows, as visFit is, so the WMP 9 skin's own choice is untouched. */
 export const visId = (p: { vis: string; preset: number }) => p.vis + ':' + p.preset;
 export const useVisualizer = () => usePref('ipod.visualizer', 'bars:0');
-/** The registry by engine (Alchemy, Bars and Waves, Battery), for Now Playing's Visualizer… (its ⋯
- *  and hold menus): `engines(open)` the engine rows, the one holding the choice showing its name, each
- *  `open`ing its `presets(group)`, the choice checked; an engine of one preset (Alchemy's Random) is
- *  picked at its own row. A pick sets the pref, then `then`. */
+/** Cover Bars: the skin's own mode, not a preset: Bars and Waves' Bars over the cover, in its accent */
+const COVER_BARS = 'cover-bars';
+/** The visualizations for Now Playing's Visualizer… (its ⋯ and hold menus): `engines(open)` is Cover
+ *  Bars, then the registry's engines (Alchemy, Bars and Waves, Battery), the one holding the choice
+ *  showing its name, each `open`ing its `presets(group)`, the choice checked; an engine of one preset
+ *  (Alchemy's Random) is picked at its own row. A pick sets the pref, then `then`. `cover`: Cover Bars
+ *  is the choice; `preset`: the visId of the engine preset in effect (Cover Bars: Bars). */
 export function useVisualizers(then?: () => void) {
   const sh = useShell(), [cur, set] = useVisualizer(), chosen = sh.presets.find((p) => visId(p) === cur);
   const of = (g: string) => sh.presets.filter((p) => p.group === g);
-  const row = (p: Preset, label = p.name): MenuItem => ({ id: visId(p), label, right: visId(p) === cur ? '✓' : undefined,
-                                                         onSelect: () => { set(visId(p)); then?.(); } });
+  const pick = (id: string, label: string): MenuItem => ({ id, label, right: id === cur ? '✓' : undefined, onSelect: () => { set(id); then?.(); } });
   return {
-    presets: (g: string) => of(g).map((p) => row(p)),
-    engines: (open: (g: string) => void): MenuItem[] => [...new Set(sh.presets.map((p) => p.group))].map((g) => {
+    cover: cur === COVER_BARS,
+    preset: cur === COVER_BARS ? 'bars:0' : cur,
+    presets: (g: string) => of(g).map((p) => pick(visId(p), p.name)),
+    engines: (open: (g: string) => void): MenuItem[] => [pick(COVER_BARS, 'Cover Bars'), ...[...new Set(sh.presets.map((p) => p.group))].map((g) => {
       const ps = of(g);
-      return ps.length === 1 ? row(ps[0]!, g)
+      return ps.length === 1 ? pick(visId(ps[0]!), g)
         : { id: g, label: g, right: chosen?.group === g ? chosen.name : undefined, chevron: true, onSelect: () => open(g) };
-    }),
+    })],
   };
 }
 

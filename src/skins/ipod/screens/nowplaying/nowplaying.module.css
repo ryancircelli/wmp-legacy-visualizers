@@ -43,7 +43,7 @@
 .root:not(:has(.of)) .controls { height: calc(var(--unit) * 38); }
 .root:not(:has(.of)) .row { top: calc(var(--unit) * 10); }
 /* the cover and its tap area reach down to the shorter band (the cover crops a little at the sides) */
-.root:not(:has(.of)) .art, .root:not(:has(.of)) .tap { height: calc(var(--unit) * 258); }
+.root:not(:has(.of)) .art, .root:not(:has(.of)) .tap, .root:not(:has(.of)) .overart { height: calc(var(--unit) * 258); }
 .reflection {
   position: absolute; top: 0; left: 0; width: calc(var(--unit) * 240); height: calc(var(--unit) * 240);
   object-fit: cover; transform: scaleY(-1); opacity: .25;
@@ -89,7 +89,11 @@
 .of {
   position: absolute; top: calc(var(--unit) * 34); left: 0; right: 0; height: calc(var(--unit) * 14);
   line-height: calc(var(--unit) * 14); text-align: center; font-size: calc(var(--unit) * 12); color: #d0d0d0;
+  padding: 0 calc(var(--unit) * 8); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
+/* playing on another device: its name after "N of M", in Spotify's green (reads on the dark band and its shade) */
+.device { color: #1ed760; font-weight: bold; cursor: pointer; }
+.devspk { display: inline-block; width: calc(var(--unit) * 11); height: calc(var(--unit) * 11); vertical-align: calc(var(--unit) * -1.5); margin-right: calc(var(--unit) * 3); }
 
 /* this page's options: ⋯ in the cover's top-right corner, over the swap's tap target and the lyrics */
 .more {
@@ -101,6 +105,8 @@
 
 /* the Canvas: the 9:16 clip (or still) cropped to the whole area, the bands translucent over it */
 .bg { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+/* Cover Bars: the visualizer over the cover only (its tint: NowPlaying.tsx Vis) */
+.overart { position: absolute; top: calc(var(--unit) * 60); left: 0; width: calc(var(--unit) * 240); height: calc(var(--unit) * 240); }
 /* the visualizer in the Canvas's place, stretched to the area as WMP stretches it to its screen */
 .vis { display: block; width: 100%; height: 100%; background: #000; }
 .root[data-canvas] .info { background: linear-gradient(rgb(66 66 66 / .6), rgb(1 1 1 / .6)); }
