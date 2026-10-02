@@ -3,13 +3,11 @@
 // - useMenuVisibility(): Menus > Main Menu / Library Filters, {main, music} each Record<id, boolean>
 //   ('ipod.menus'; main.previewpanel is the Preview Panel); MAIN_MENU / LIBRARY_FILTERS list the ids.
 // - useLibraryFilter(): the Library's chosen chip, [id, set] ('ipod.libraryFilter'; Playlists first).
-// - useClockPrefs(): Date & Time, {twentyFourHour, timeInTitle} ('ipod.clock').
-// - useDisplayPrefs(): Appearance > Backlight (s, 0 = Always On), Brightness (off the iPhone, for the
-//   LCD) and Energy Saver ('ipod.display'); the chrome does the dimming.
+// - useClockPrefs(): Appearance > Time in Title, {timeInTitle} ('ipod.clock'); 12 / 24 hours are the device's.
 // - useLibraryView(): Menus > Library View, ['grid' | 'list', set] ('ipod.view'; grid first): how
 //   the lists with covers draw (GridScreen or MenuScreen).
 // - useSleepTimer(): Alarms > Sleep Timer, [{at, mins}] ('ipod.sleep'; at null = off), for the moon.
-// - useVisFit(): Playback > Visualizer Fit, ['fit' | 'stretch', set] ('ipod.visFit'; fit first): the
+// - useVisFit(): Appearance > Visualizer Fit, ['fit' | 'stretch', set] ('ipod.visFit'; fit first): the
 //   settings.scale Now Playing applies while its visualizer shows ('auto' / 'original').
 // - useVisualizer(): Now Playing's Visualizer…, [visId, set] ('ipod.visualizer'; Bars first): the
 //   settings.vis / preset Now Playing applies while its visualizer shows; useVisualizers() lists them by engine.
@@ -18,7 +16,7 @@
 export { settings } from './Settings';
 export { alarms, extras } from './Extras';
 export {
-  LIBRARY_FILTERS, MAIN_MENU, useClockPrefs, useDisplayPrefs, useLibraryFilter, useLibraryView, useMenuVisibility, useSettingsEffects, useSleepTimer,
+  LIBRARY_FILTERS, MAIN_MENU, useClockPrefs, useLibraryFilter, useLibraryView, useMenuVisibility, useSettingsEffects, useSleepTimer,
   useVisFit, useVisualizer, useVisualizers, useVolumeLimit, visId,
-  type ClockPrefs, type DisplayPrefs, type LibraryView, type MenuVisibility, type SleepTimer, type VisFit,
+  type ClockPrefs, type LibraryView, type MenuVisibility, type SleepTimer, type VisFit,
 } from './prefs';

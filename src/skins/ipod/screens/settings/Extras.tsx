@@ -7,10 +7,10 @@ import { useState, type CSSProperties, type ReactNode } from 'react';
 import { MenuScreen, Popup, useNav, useWheel } from '../../ui';
 import type { MenuItem, Nav, ScreenEntry } from '../contract';
 import {
-  cityOf, elapsed, fmtClock, fmtLeft, fmtStopwatch, lapStats, lapTimes, logOf, markLap, monthGrid, startStop, STOPWATCH0, zoneTime, type StopwatchLog,
+  cityOf, elapsed, fmtClock, fmtLeft, fmtStopwatch, h24, lapStats, lapTimes, logOf, markLap, monthGrid, startStop, STOPWATCH0, zoneTime, type StopwatchLog,
 } from './logic';
 import { BLUE, check, DIM, menu, nothing, onOff, page, SEL_BG, TEXT, TextPage, u, useNow } from './parts';
-import { SLEEP0, useAlarm, useClockPrefs, useClocks, useLockCode, useSleepTimer, useStopwatch, useStopwatchLogs } from './prefs';
+import { SLEEP0, useAlarm, useClocks, useLockCode, useSleepTimer, useStopwatch, useStopwatchLogs } from './prefs';
 
 const FILL: CSSProperties = { display: 'flex', flexDirection: 'column', alignItems: 'center', height: '100%', color: TEXT, fontSize: u(14) };
 const mono: CSSProperties = { fontVariantNumeric: 'tabular-nums' };
@@ -19,7 +19,7 @@ const mono: CSSProperties = { fontVariantNumeric: 'tabular-nums' };
 /** Alarms [UG p.78]: one alarm that plays at a time each day, and the Sleep Timer that pauses (both
  *  run from useSettingsEffects, so they keep time on any screen). */
 function AlarmsMenu() {
-  const nav = useNav(), [alarm] = useAlarm(), [sleep] = useSleepTimer(), { twentyFourHour } = useClockPrefs();
+  const nav = useNav(), [alarm] = useAlarm(), [sleep] = useSleepTimer(), twentyFourHour = h24();
   const now = useNow(1000, sleep.at != null);
   return <MenuScreen items={[
     { id: 'alarm', label: 'Alarm', right: alarm.on ? fmtClock(alarm.h, alarm.m, twentyFourHour) : 'Off', chevron: true,
@@ -30,7 +30,7 @@ function AlarmsMenu() {
 }
 
 function Alarm() {
-  const nav = useNav(), [a, set] = useAlarm(), { twentyFourHour } = useClockPrefs();
+  const nav = useNav(), [a, set] = useAlarm(), twentyFourHour = h24();
   return <MenuScreen items={[
     { id: 'on', label: 'Alarm', right: onOff(a.on), onSelect: () => set({ ...a, on: !a.on }) },
     { id: 'time', label: 'Time', right: fmtClock(a.h, a.m, twentyFourHour), chevron: true, onSelect: () => nav.push(page('extras/alarms/time', 'Time', AlarmTime)) },
@@ -40,7 +40,7 @@ function Alarm() {
 /** The hour then the minute, each turned by the wheel; ⏮⏭ move between them; centre on the minute
  *  sets the alarm (and turns it on). */
 function AlarmTime() {
-  const nav = useNav(), [a, set] = useAlarm(), { twentyFourHour } = useClockPrefs();
+  const nav = useNav(), [a, set] = useAlarm(), twentyFourHour = h24();
   const [hm, setHm] = useState([a.h, a.m] as const), [at, setAt] = useState(0), [h, m] = hm;
   useWheel({
     onTick: (d) => setHm(at ? [h, (m + d + 60) % 60] : [(h + d + 24) % 24, m]),
@@ -103,7 +103,7 @@ function Face({ h, m, s, night }: { h: number; m: number; s: number; night: bool
 
 /** The cities, each with its time at the right; a city opens its face. */
 function Clocks() {
-  const nav = useNav(), [zones] = useClocks(), { twentyFourHour } = useClockPrefs(), now = new Date(useNow(1000));
+  const nav = useNav(), [zones] = useClocks(), twentyFourHour = h24(), now = new Date(useNow(1000));
   return <MenuScreen items={zones.map((tz): MenuItem => {
     const t = zoneTime(now, tz);
     return { id: tz || 'local', label: city(tz), right: fmtClock(t.h, t.m, twentyFourHour), chevron: true,
@@ -113,7 +113,7 @@ function Clocks() {
 
 /** One city's face; centre offers Add (a region, then a city) and Delete (not this device's own). */
 function ClockFace({ tz }: { tz: string }) {
-  const nav = useNav(), [zones, setZones] = useClocks(), { twentyFourHour } = useClockPrefs(), [pop, setPop] = useState(false);
+  const nav = useNav(), [zones, setZones] = useClocks(), twentyFourHour = h24(), [pop, setPop] = useState(false);
   const t = zoneTime(new Date(useNow(1000)), tz);
   useWheel({ onCenter: () => setPop(true) });
   const items: MenuItem[] = [

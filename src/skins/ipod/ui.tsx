@@ -63,7 +63,8 @@ function useList({ items, selected, onSelectedChange, loading, empty, lead = 0 }
   // a list waiting on Spotify says why: still signing in, signed out, or really loading
   const signedIn = useApp((x) => x.auth.loggedIn);
   const wait = signedIn === null ? 'Signing in…' : signedIn === false ? 'Not signed in' : 'Loading…';
-  const sel = Math.max(0, Math.min(selected ?? own, items.length - 1));
+  let sel = Math.max(0, Math.min(selected ?? own, items.length - 1));
+  while (items[sel]?.header && sel < items.length - 1) sel++;   // a header is never selected: the row under it
   // several ticks can land in one pointer event, before a re-render: they count from here
   const at = useRef(sel);
   useLayoutEffect(() => { at.current = sel; });
@@ -72,8 +73,10 @@ function useList({ items, selected, onSelectedChange, loading, empty, lead = 0 }
   const pick = (i: number) => { at.current = i; setOwn(i); onSelectedChange?.(i); };
   useWheel({
     onTick: (d) => {
-      const from = at.current, i = Math.max(0, Math.min(items.length - 1, from + d * strideNow(speed.current, items.length)));
-      if (loading || i === from) return false;          // nothing moved: no click (§3.3)
+      const from = at.current;
+      let i = Math.max(0, Math.min(items.length - 1, from + d * strideNow(speed.current, items.length)));
+      while (items[i]?.header && items[i + d]) i += d;  // headers are passed over
+      if (loading || i === from || items[i]?.header) return false;   // nothing moved: no click (§3.3)
       pick(i);
     },
     onCenter: () => live?.onSelect?.(),
@@ -82,7 +85,7 @@ function useList({ items, selected, onSelectedChange, loading, empty, lead = 0 }
   });
   const tap = (i: number) => {
     const it = items[i];
-    if (loading || !it) return;
+    if (loading || !it || it.header) return;
     if (i !== sel) pick(i);
     if (it.disabled) return;
     window.alchemyHaptic?.('light');
@@ -100,6 +103,8 @@ function useList({ items, selected, onSelectedChange, loading, empty, lead = 0 }
   useLayoutEffect(() => {
     const l = list.current, el = l?.querySelector<HTMLElement>('[aria-selected=true]');
     if (!l || !el) return;
+    const h = el.previousElementSibling as HTMLElement | null;
+    if (h?.dataset.header != null) reveal(l, h);         // a section's first row brings its header into view
     reveal(l, el.closest<HTMLElement>('[data-head]') ?? el);
     placeThumb(l, thumb.current);
   }, [sel, items.length]);
@@ -113,7 +118,7 @@ function useList({ items, selected, onSelectedChange, loading, empty, lead = 0 }
 const HeadContext = createContext<{ sel: number; tap: (i: number) => void }>({ sel: -1, tap: () => {} });
 
 /** The list the wheel scrolls (§2.2): useList's rows. A row with `chevron: true` shows it on the
- *  selected row only (the 5G's rule). The screen is a touch screen too: a drag scrolls the list
+ *  selected row only (the 5G's rule); a `header` item is a section's band, passed over. The screen is a touch screen too: a drag scrolls the list
  *  (natively, with momentum; the selection stays). The selected row's label marquees when it does not fit.
  *  `head` leads the rows and scrolls away with them, its buttons the first `lead` items; `tall` rows
  *  are two lines, the art at the left. */
@@ -136,7 +141,9 @@ export const MenuScreen: Chrome['MenuScreen'] = ({ items, selected, onSelectedCh
       <div className={cx(preview != null ? s.split : 'flex-auto min-h-0', s.list)} data-tall={tall || undefined}>
         <div ref={list} className={s.scroll} role="listbox" aria-busy={loading || undefined} onScroll={onScroll}>
           {head && <HeadContext.Provider value={{ sel: loading ? -1 : sel, tap }}>{head}</HeadContext.Provider>}
-          {note ?? items.slice(lead).map((it, k) => { const i = k + lead; return (
+          {note ?? items.slice(lead).map((it, k) => { const i = k + lead; return it.header ? (
+            <div key={it.id} className={s.section} data-header="">{it.label}</div>
+          ) : (
             <div key={it.id} className={s.row} role="option" aria-selected={i === sel} aria-disabled={it.disabled || undefined}
                  data-sel={i === sel || undefined} data-disabled={it.disabled || undefined} onClick={() => tap(i)}>
               {tall && <Art src={it.art} className={s.pic} />}
@@ -317,17 +324,18 @@ export const FilterChips: Chrome['FilterChips'] = ({ chips, active }) => {
 };
 
 /** The time now, as the iPod writes it, re-rendered on the minute. */
-export function useTime(h24: boolean): string {
+/** the time now, as the device writes it (its own 12 / 24 hours), re-read on the minute */
+export function useTime(): string {
   const [now, setNow] = useState(Date.now);
   useEffect(() => {
     const t = setTimeout(() => setNow(Date.now()), 60_000 - (now % 60_000));
     return () => clearTimeout(t);
   }, [now]);
-  return new Date(now).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', hour12: !h24 });
+  return new Date(now).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
 }
 
 /** The status bar (§2.2, §2.4). Over menus (light): the title at the left, or the time with Settings >
- *  Date & Time > Time in Title. Over Now Playing and the media pages (`dark`): shuffle and repeat at
+ *  Time in Title. Over Now Playing and the media pages (`dark`): shuffle and repeat at
  *  the left (Spotify only), the time centred. At the right always: ▶ playing / ❚❚ paused (the spinner
  *  while the screen loads), then the battery (the phone's, when the iOS app reports it). Shuffle,
  *  repeat and Like are toggles: a tap flips shuffle (dimmed when off), steps repeat Off -> All -> One
@@ -337,7 +345,7 @@ export const StatusRow = ({ title, dark, busy: loading }: { title: string; dark?
   const st = useApp((x) => ({ media: hasMedia(x), playing: isPlaying(x), paused: x.playback.status === 'paused',
                                shuffle: x.playback.shuffle, repeat: x.playback.repeat, spotify: isSpotify(x) }));
   const tap = (e: MouseEvent, act: () => void) => { e.stopPropagation(); window.alchemyHaptic?.('light'); act(); };
-  const prefs = useClockPrefs(), time = useTime(prefs.twentyFourHour);
+  const prefs = useClockPrefs(), time = useTime();
   const bat = useHostGlobal('__wmpBattery', 'wmp-battery');
   const level = bat && bat.level >= 0 ? bat.level / 100 : 1;
   const text = dark || prefs.timeInTitle ? time : title;

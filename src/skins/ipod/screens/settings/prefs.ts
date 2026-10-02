@@ -81,14 +81,7 @@ export function setMenuItem(menu: keyof MenuVisibility, id: string, on: boolean)
 /** Library Filters > Reset Filters: the chips as they ship */
 export const resetMenu = (menu: keyof MenuVisibility) => writePref('ipod.menus', { ...readPref('ipod.menus', CHOSEN0), [menu]: {} });
 
-// ---- General, Playback -------------------------------------------------------------------------------
-/** 'ipod.display', for the chrome (useDisplayPrefs): Appearance > Backlight (seconds idle before the
- *  LCD goes dark, 0 = Always On), Appearance > Brightness off the iPhone (0.2..1; the chrome dims the LCD
- *  by it; on the iPhone it is the phone's own), Appearance > Energy Saver (off: the clock screen, not black). */
-export interface DisplayPrefs { backlight: number; brightness: number; energySaver: boolean }
-export const DISPLAY0: DisplayPrefs = { backlight: 10, brightness: 1, energySaver: true };
-export const useDisplay = () => usePref('ipod.display', DISPLAY0);
-export const useDisplayPrefs = (): DisplayPrefs => useDisplay()[0];
+// ---- Playback, Appearance, Menus ---------------------------------------------------------------------
 /** 'ipod.view': Menus > Library View: the library's lists (Home's shelves, Playlists, Albums,
  *  Artists, Search's artists, albums and playlists) as a grid of covers, or as rows; songs are always rows */
 export type LibraryView = 'grid' | 'list';
@@ -97,7 +90,7 @@ export const useLibraryView = () => usePref<LibraryView>('ipod.view', 'grid');
 export const useLibraryFilter = () => usePref('ipod.libraryFilter', 'playlists');
 /** 'ipod.shake': Playback > Shake (iPhone): a shake skips to the next song */
 export const useShake = () => usePref('ipod.shake', true);
-/** 'ipod.visFit': Playback > Visualizer Fit: Fit draws it at the screen's own shape (settings.scale 'auto'),
+/** 'ipod.visFit': Appearance > Visualizer Fit: Fit draws it at the screen's own shape (settings.scale 'auto'),
  *  Stretch is WMP's native surface stretched to the screen ('original'); Now Playing applies it while
  *  the visualizer shows. Anything but 'stretch' reads as Fit. */
 export type VisFit = 'fit' | 'stretch';
@@ -126,11 +119,12 @@ export function useVisualizers(then?: () => void) {
   };
 }
 
-// ---- Date & Time -----------------------------------------------------------------------------------
-/** 'ipod.clock': Settings > General > Date & Time's 24 Hour Clock and Time in Title (the status row shows the
- *  time instead of the screen's title). fmtClock(h, m, twentyFourHour) writes it. */
-export interface ClockPrefs { twentyFourHour: boolean; timeInTitle: boolean }
-export const CLOCK0: ClockPrefs = { twentyFourHour: false, timeInTitle: false };
+// ---- Time in Title ---------------------------------------------------------------------------------
+/** 'ipod.clock': Appearance > Time in Title (the status row over the menus shows the time instead of
+ *  the screen's title). The clock's 12 / 24 hours are the device's (logic.ts h24); an old stored
+ *  twentyFourHour is ignored, and dropped at the next write. */
+export interface ClockPrefs { timeInTitle: boolean }
+export const CLOCK0: ClockPrefs = { timeInTitle: false };
 export const useClockPrefs = (): ClockPrefs => usePref('ipod.clock', CLOCK0)[0];
 
 // ---- Volume Limit ----------------------------------------------------------------------------------
@@ -145,7 +139,7 @@ export const useStopwatch = () => usePref<Stopwatch>('ipod.stopwatch', STOPWATCH
 export const useStopwatchLogs = () => usePref<StopwatchLog[]>('ipod.stopwatch.logs', []);
 /** 'ipod.lock': the Screen Lock combination, four digits; '' = none set yet */
 export const useLockCode = () => usePref('ipod.lock', '');
-/** 'ipod.appearance': what Settings > Appearance > Theme last asked the host for */
+/** 'ipod.appearance': what Settings' Theme last asked the host for */
 export const useAppearance = () => usePref<'light' | 'dark' | 'auto'>('ipod.appearance', 'auto');
 /** 'ipod.sleep': Alarms > Sleep Timer, for the chrome's moon too: `at` the Date.now() it pauses at
  *  (null = off), `mins` the choice */

@@ -402,7 +402,7 @@ it('a tap on the cover area cycles Canvas -> cover -> visualizer -> Canvas, reme
   expect(shows()).toEqual([null, true, false, 'video']);
 });
 
-it('the visualizer takes the screen\'s shape (Playback > Visualizer: Fit) while shown, then the scale WMP had', () => {
+it('the visualizer takes the screen\'s shape (Appearance > Visualizer Fit: Fit) while shown, then the scale WMP had', () => {
   vi.stubGlobal('IntersectionObserver', class { observe() {} disconnect() {} });
   const nav = createNav(mainMenu(), () => nowPlaying());
   const m = mountSkinNow('spotify', fakeData(),
@@ -435,35 +435,74 @@ it('Now Playing\'s visualizer is Bars (ipod.visualizer) while shown, a change at
   expect(vis()).toEqual(['battery', 3, 'battery', 3]);
 });
 
-/** the iPod at Settings: `click` a row, `page` the rows a row opens (then back) */
+/** the iPod at Settings: `click` a row by its text; `headers` the section bands shown; `title` the status row's */
 function atSettings() {
   const m = mount(), click = (label: string) => act(() => { fireEvent.click(m.row(label)); });
-  const page = (label: string) => { click(label); const r = m.rows(); key('Escape'); return r; };
   click('Settings');
-  return { ...m, page };
+  return { ...m, click, headers: () => m.shown('[data-header]').map((x) => x.textContent),
+           title: () => m.shown('[class*=status] [class*=title]')[0]?.textContent };
 }
+const SETTINGS = [
+  'Play On', 'Volume LimitOff',
+  'SkiniPod', 'Color', 'Click WheelWhite', 'ClickerOn', 'Visualizer FitFit', 'Time in TitleOff',
+  'Main Menu', 'Library Filters', 'Library ViewGrid',
+  'About', 'Check for Updates', 'Reset Settings', 'Legal',
+  'Source Code', 'Report a Problem',
+];
 
-it('Settings: a root of sections, each a page of its rows; what Now Playing controls (Shuffle, Repeat, Lyrics, Karaoke, Visualizer) is not there', () => {
+it('Settings: one list under section headers, without what Now Playing or the device controls; the wheel and taps pass over the headers', () => {
   const m = atSettings();
-  expect(m.rows()).toEqual(['Playback', 'Appearance', 'Menus', 'General', 'Support']);
-  expect(m.page('Playback')).toEqual(['Play On', 'Volume LimitOff', 'Visualizer FitFit']);
-  expect(m.page('Appearance')).toEqual(['SkiniPod', 'Color', 'Click WheelWhite', 'ClickerOn', 'Brightness', 'Backlight10 Seconds', 'Energy SaverOn']);
-  expect(m.page('Menus')).toEqual(['Main Menu', 'Library Filters', 'Library ViewGrid']);
-  expect(m.page('General')).toEqual(['About', 'Date & Time', 'Check for Updates', 'Reset Settings', 'Legal']);
-  expect(m.page('Support')).toEqual(['Source Code', 'Report a Problem']);
-  expect(m.rows()).toEqual(['Playback', 'Appearance', 'Menus', 'General', 'Support']);
+  expect(m.headers()).toEqual(['Playback', 'Appearance', 'Menus', 'General', 'Support']);   // no Account: no Log Out here
+  expect(m.rows()).toEqual(SETTINGS);
+  expect(m.sel()).toEqual(['Play On']);              // the first row, under the first header
+  key('ArrowUp');                                    // the header above it is no position
+  expect(m.sel()).toEqual(['Play On']);
+  key('ArrowDown');
+  key('ArrowDown');                                  // over the Appearance header
+  expect(m.sel()).toEqual(['SkiniPod']);
+  key('ArrowUp');
+  expect(m.sel()).toEqual(['Volume LimitOff']);
+  act(() => { fireEvent.click(m.shown('[data-header]')[1]!); });   // a tap on a header does nothing
+  expect([m.sel(), m.title()]).toEqual([['Volume LimitOff'], 'Settings']);
+  // the rows that are a real choice open their page
+  m.cmd.checkForUpdates.mockResolvedValue({ state: 'latest' });
+  for (const [row, title] of [['Play On', 'Play On'], ['Volume LimitOff', 'Volume Limit'], ['SkiniPod', 'Skin'], ['Color', 'Color'],
+    ['Main Menu', 'Main Menu'], ['Library Filters', 'Library Filters'], ['About', 'About'], ['Check for Updates', 'Check for Updates'],
+    ['Reset Settings', 'Reset Settings'], ['Legal', 'Legal']]) {
+    m.click(row!);
+    expect(m.title()).toBe(title);
+    key('Escape');
+  }
+  m.click('Time in TitleOff');                       // the status row over the menus: the time, not "Settings"
+  expect(m.rows()).toContain('Time in TitleOn');
+  expect(m.title()).toMatch(/\d:\d\d/);
 });
 
-it('Settings\' host-gated rows show only with their host: Shake, Theme, Refresh Player, Host Log, and Log Out at the root', () => {
+it('Settings\' host-gated rows show only with their host: Shake, Theme, Refresh Player, Host Log, and Log Out under Account', () => {
   window.alchemyHaptic = vi.fn();
   for (const k of ['alchemyAppearance', 'alchemyRestart', 'alchemyShowLog']) vi.stubGlobal(k, vi.fn());
   const m = atSettings();
   act(() => m.S().actions.setAuth({ canLogout: true }));
-  expect(m.rows()).toEqual(['Playback', 'Appearance', 'Menus', 'General', 'Support', 'Log Out']);
-  expect(m.page('Playback')).toEqual(['Play On', 'Volume LimitOff', 'ShakeShuffle', 'Visualizer FitFit']);
-  expect(m.page('Appearance')).toContain('ThemeAutomatic');
-  expect(m.page('General')).toContain('Refresh Player');
-  expect(m.page('Support')).toEqual(['Source Code', 'Report a Problem', 'Host Log']);
+  expect(m.headers()).toEqual(['Playback', 'Appearance', 'Menus', 'General', 'Support', 'Account']);
+  expect(m.rows()).toEqual([
+    'Play On', 'Volume LimitOff', 'ShakeShuffle',
+    'SkiniPod', 'Color', 'Click WheelWhite', 'ClickerOn', 'ThemeAutomatic', 'Visualizer FitFit', 'Time in TitleOff',
+    'Main Menu', 'Library Filters', 'Library ViewGrid',
+    'About', 'Check for Updates', 'Refresh Player', 'Reset Settings', 'Legal',
+    'Source Code', 'Report a Problem', 'Host Log',
+    'Log Out',
+  ]);
+});
+
+it('Reset Settings puts back what Settings keeps: the toggles, the click wheel, the library view, the visualizer fit', () => {
+  const m = atSettings();
+  act(() => localStorage.setItem('ipod.clock', JSON.stringify({ twentyFourHour: true, timeInTitle: false })));   // an old 24-hour choice: ignored
+  for (const r of ['ClickerOn', 'Click WheelWhite', 'Visualizer FitFit', 'Time in TitleOff', 'Library ViewGrid']) m.click(r);
+  expect(m.rows()).toEqual(expect.arrayContaining(['ClickerOff', 'Click WheelBlack', 'Visualizer FitStretch', 'Time in TitleOn', 'Library ViewList']));
+  expect(JSON.parse(localStorage.getItem('ipod.clock')!)).toEqual({ timeInTitle: true });   // the 24-hour field gone
+  m.click('Reset Settings');
+  act(() => { fireEvent.click(m.shown('div').find((x) => x.textContent === 'Reset' && !x.children.length)!); });
+  expect(m.rows()).toEqual(SETTINGS);
 });
 
 it('the ⋯ over the cover opens this page\'s options: Lyrics and Karaoke toggle, Visualizer… picks one by engine, put on screen at once', () => {

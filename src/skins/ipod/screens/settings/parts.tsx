@@ -72,14 +72,6 @@ export function BarPage({ value, onTick, caption, lo, hi }: {
   );
 }
 
-/** Brightness's glyph, `n` nano pixels across */
-export const Sun = ({ n }: { n: number }) => (
-  <svg viewBox="0 0 12 12" fill="currentColor" stroke="currentColor" strokeWidth="1.2" style={{ flex: 'none', width: u(n), height: u(n) }} aria-hidden="true">
-    <circle cx="6" cy="6" r="2.5" stroke="none" />
-    <path d="M6 .3v1.9M6 9.8v1.9M.3 6h1.9M9.8 6h1.9M2 2l1.3 1.3M8.7 8.7 10 10M2 10l1.3-1.3M8.7 3.3 10 2" />
-  </svg>
-);
-
 /** Date.now(), re-read every `ms` while `on`. */
 export function useNow(ms: number, on = true): number {
   const [now, setNow] = useState(Date.now);

@@ -21,7 +21,7 @@ the end.
 
 ---
 
-> **Status (2026-10-01).** Built: `src/skins/ipod/` (View > Skin in WMP 9; Settings > Appearance > Skin on the
+> **Status (2026-10-01).** Built: `src/skins/ipod/` (View > Skin in WMP 9; Settings > Skin on the
 > iPod). Since this spec was written the adapter gained the three things §4.6 and §6 (items 1, 3, 7)
 > call impossible: Liked Songs as a playback context (`spotify:user:<name>:collection`), followed
 > artists (`libraryV3` filtered to Artists) and add-to-queue (`add_to_queue`), so Songs, Shuffle
@@ -367,6 +367,8 @@ On-The-Go, Browse Album, Browse Artist, Cancel [UG p.39-42]. Audiobooks add a sp
   (screenshot p.17): big thin time about 70 px, a progress bar, a play/pause box and a battery.
 - On the phone, `alchemyAwake(true)` while Backlight is "Always On" or while the clock screen is
   wanted; otherwise let the phone sleep.
+- **This player** (the owner's ruling, 2026-10-02): no Backlight, Brightness or Energy Saver of its
+  own; the device's screen does that.
 
 #### Search (UG p.44–45; layout reconstructed, the guide has no screenshot)
 
@@ -451,12 +453,14 @@ microphone path).
 
 #### Settings pages
 
-- **Value lists** (Backlight, Sleep Timer, Color, Play On, Theme) are a list with a checkmark on the
+- **Value lists** (Sleep Timer, Color, Play On, Theme, Skin) are a list with a checkmark on the
   current choice.
-- **Toggles** (Clicker, Time in Title, 24 Hour Clock, Energy Saver) flip in place on centre and show
-  On/Off in blue.
-- This player's root is a short list of sections, each a page (§4.4, "This player's Settings tree").
-- **Brightness** is a full-width slider page: the same bar as the volume, with sun glyphs.
+- **Toggles** (Clicker, Click Wheel, Visualizer Fit, Time in Title, Library View) flip in place on
+  centre and show their value in blue.
+- This player's Settings is **one list under section headers** (§4.4, "This player's Settings
+  tree"): a header is the iPod OS grouped list's short grey band with its name in bold white
+  (`MenuItem.header`, ui.tsx MenuScreen); the wheel, the keys and a tap pass over it, and a section's
+  first row brings its header into view.
 - **About** cycles screens on centre [UG p.12]: "iPod" big; Songs / Playlists / Albums counts;
   Version; Playing On.
 - **Reset Settings** and **Log Out** are 2-row confirm lists (Reset/Cancel, Log Out/Cancel) with
@@ -650,33 +654,35 @@ caption (`useWindowControls().onCaptionMouseDown`).
 
 | Thing | Place in the iPod UI |
 |---|---|
-| **Connect device picker** (WMP's "Play on") | **Settings > Playback > Play On** (checkmark list from `useDevices().items()`; offline ones greyed; ours named "WMP Spotify (This Device)") and the Now Playing **hold-centre > Play On…**. When playing elsewhere, the menu status bar shows a small speaker glyph (reconstructed). Optional on iPhone: a last row "AirPlay…" calls `alchemyRoutePicker()` |
+| **Connect device picker** (WMP's "Play on") | **Settings > Play On** (under Playback) (checkmark list from `useDevices().items()`; offline ones greyed; ours named "WMP Spotify (This Device)") and the Now Playing **hold-centre > Play On…**. When playing elsewhere, the menu status bar shows a small speaker glyph (reconstructed). Optional on iPhone: a last row "AirPlay…" calls `alchemyRoutePicker()` |
 | **Like / Unlike** | Now Playing mode 5 (§6); hold-centre on Now Playing and on any song row |
 | **Add to playlist** | hold-centre > Add to Playlist… (only `fetchEditablePlaylists` targets; membership via `fetchMembership`; optimistic marks in `store.membership`) |
 | **Lyrics** | over Now Playing's art while on (§4.3). **Lyrics** On/Off (`actions.setLyricsEnabled`) and **Karaoke** On/Off (`setKaraoke`) in Now Playing's ⋯ menu and its hold-centre popup (not in Settings) |
 | **Radio from a track** | Now Playing mode 3 slider; hold-centre > Start Radio; main menu **Radio** |
 | **Home / Media Guide shelves** | **Music > Genius Mixes** (§4.2) |
-| **Log out** | **Settings > Log Out**, the root's last row (only when `auth.canLogout`), confirm list, then `commands.logout()` |
-| **Skin switch** | **Settings > Appearance > Skin**: "iPod ✓" / "Windows Media Player 9" sets `actions.setSettings({ skin: 'wmp9' })`. WMP 9's way here is its View > Skin submenu (already in `src/skins/menus.ts`) |
-| **Colour** | **Settings > Appearance > Color**: the nine names (§1.2) plus **Custom** (a page with a hue strip; the wheel turns `--h` 5° per detent with a live preview; centre saves). Plus **Appearance > Click Wheel**: White / Black ring |
+| **Log out** | **Settings > Log Out**, the last row, under Account (only when `auth.canLogout`), confirm list, then `commands.logout()` |
+| **Skin switch** | **Settings > Skin** (under Appearance): "iPod ✓" / "Windows Media Player 9" sets `actions.setSettings({ skin: 'wmp9' })`. WMP 9's way here is its View > Skin submenu (already in `src/skins/menus.ts`) |
+| **Colour** | **Settings > Color** (under Appearance): the nine names (§1.2) plus **Custom** (a page with a hue strip; the wheel turns `--h` 5° per detent with a live preview; centre saves). Plus **Click Wheel**: White / Black ring |
 | **Shuffle / Repeat** | the Now Playing status row's toggles only (not in Settings) |
-| **Visualizer** | Now Playing's ⋯ menu and hold-centre popup: **Visualizer…**, the engines, then an engine's presets (not in Settings). **Settings > Playback > Visualizer Fit**: Fit / Stretch |
-| **Shake** (iPhone only) | **Settings > Playback > Shake**: Shuffle / Off. On `wmp-shake`, `commands.next()` (with shuffle on, Spotify's next is random; the iPod's shake also leaves the shuffle setting alone [UG p.43]) |
-| **Brightness** | iPhone: `alchemyBrightness(v)` (the phone's real brightness; read back with `alchemyBrightness()` and `wmp-brightness`). Elsewhere: `filter: brightness()` on the LCD only |
+| **Visualizer** | Now Playing's ⋯ menu and hold-centre popup: **Visualizer…**, the engines, then an engine's presets (not in Settings). **Settings > Visualizer Fit** (under Appearance): Fit / Stretch |
+| **Shake** (iPhone only) | **Settings > Shake** (under Playback): Shuffle / Off. On `wmp-shake`, `commands.next()` (with shuffle on, Spotify's next is random; the iPod's shake also leaves the shuffle setting alone [UG p.43]) |
+| **Brightness, backlight, date and time** | not the skin's (the owner's ruling, 2026-10-02: "we are not the OS"): the device's own. The clocks follow the device's 12 / 24 hours (the platform's locale default, `logic.ts h24`, `ui.tsx useTime`) |
 | **Battery** in the status bar | iPhone: `window.__wmpBattery` / `wmp-battery` (`useHostGlobal`). Windows / Chromium: `navigator.getBattery()` when present. Otherwise draw it full |
 | **About** | Songs = `useCollection(LIKED).total`; Playlists and Albums = `useLibraryList` counts; Version = `__wmpHost.version (build)` on iPhone; Playing On = the active device; **Check for Updates** = `commands.checkForUpdates()` answered in a 1-row page |
 
-**This player's Settings tree** (2026-10-02, the owner's ruling: what Now Playing controls is not
-repeated here, and the rest is grouped into sections; *gated* rows show only with their host):
+**This player's Settings tree** (2026-10-02, the owner's rulings: what Now Playing controls is not
+repeated here, nor what the device does (brightness, backlight, energy saver, date and time, the 24-hour
+clock), and the rest is **one screen** under section headers; a row marked › opens its page; *gated*
+rows show only with their host, and a header with no row shown under it is not shown):
 
-| Root row | Its page |
+| Header | Its rows, in order |
 |---|---|
-| **Playback** | Play On ›, Volume Limit ›, Shake (*iPhone*), Visualizer Fit (Fit / Stretch) |
-| **Appearance** | Skin ›, Color ›, Click Wheel, Clicker, Theme › (Light / Dark / Automatic, *`alchemyAppearance`*), Brightness ›, Backlight ›, Energy Saver |
+| **Playback** | Play On ›, Volume Limit ›, Shake (*iPhone*: Shuffle / Off) |
+| **Appearance** | Skin ›, Color ›, Click Wheel (White / Black), Clicker (On / Off), Theme › (Light / Dark / Automatic, *`alchemyAppearance`*), Visualizer Fit (Fit / Stretch), Time in Title (On / Off) |
 | **Menus** | Main Menu ›, Library Filters ›, Library View (Grid / List) |
-| **General** | About ›, Date & Time › (Date, Time, Time Zone, 24 Hour Clock, Time in Title), Check for Updates ›, Refresh Player (*`alchemyRestart`*), Reset Settings ›, Legal › |
+| **General** | About ›, Check for Updates ›, Refresh Player (*`alchemyRestart`*), Reset Settings ›, Legal › |
 | **Support** | Source Code, Report a Problem, Host Log (*`alchemyShowLog`*) |
-| **Log Out** (*`auth.canLogout`*) | the confirm list |
+| **Account** | Log Out › (*`auth.canLogout`*: the confirm list) |
 
 **Settings that have no Spotify meaning: hidden.** Language, Radio Regions, Rotate, Sort Contacts,
 Spoken Menus, EQ, Sound Check, Audio Crossfade, Audiobooks speed, Mono Audio, Font Size (stretch),
@@ -685,8 +691,7 @@ and Volume Limit (stretch: a skin-local cap on `setVolume`).
 **Kept and skin-local** (in `ipod.settings`, `src/skins/ipod/settings.ts`):
 
 - Main Menu checklist plus Preview Panel, and the Music Menu checklist
-- Backlight, Energy Saver, Clicker, Shake
-- Date & Time: 24 Hour Clock, Time in Title
+- Clicker, Shake, Time in Title
 - Color, Click Wheel, Sleep Timer
 - Reset Settings (resets `ipod.settings` only, never the app's)
 

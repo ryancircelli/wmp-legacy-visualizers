@@ -55,7 +55,10 @@ export function fmtStopwatch(ms: number): string {
   return (h ? h + ':' : '') + p2(m % 60) + ':' + p2(s % 60) + '.' + p2(cs % 100);
 }
 
-/** The status row's and the clocks' time: 1:05 PM, or 13:05 on the 24-hour clock. */
+/** whether the device's clock is 24-hour: the platform's locale default (the iPod keeps no setting of its own) */
+export const h24 = (): boolean => new Intl.DateTimeFormat([], { hour: 'numeric' }).resolvedOptions().hour12 === false;
+
+/** The clocks' and the alarm's time: 1:05 PM, or 13:05 on the 24-hour clock (h24()). */
 export const fmtClock = (h: number, m: number, h24: boolean): string =>
   h24 ? h + ':' + p2(m) : ((h % 12) || 12) + ':' + p2(m) + (h < 12 ? ' AM' : ' PM');
 

@@ -313,6 +313,21 @@
   box-shadow: inset 0 var(--unit) #97C4E3, inset 0 calc(var(--unit) * -1) #1855A6;
 }
 .row[data-disabled], .row[data-loading] { color: var(--ipod-dim); }
+/* a section's header in a list (Settings): the iPod OS grouped list's short grey band, its name bold white */
+.section {
+  height: calc(var(--unit) * 18);
+  line-height: calc(var(--unit) * 18);
+  padding: 0 calc(var(--unit) * 10);
+  background: linear-gradient(#A5B1BA, #8F9CA6);
+  border-top: var(--unit) solid #98A3AC;
+  color: #FFFFFF;
+  font-size: calc(var(--unit) * 13);
+  font-weight: bold;
+  text-shadow: 0 var(--unit) 0 rgb(0 0 0 / .3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .value {
   flex: none;
   margin-right: calc(var(--unit) * 2);

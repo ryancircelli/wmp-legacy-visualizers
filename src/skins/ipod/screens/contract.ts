@@ -53,6 +53,8 @@ export interface MenuItem {
   disabled?: boolean;
   onSelect?: () => void;
   onHold?: () => void;
+  /** a section's header (`label` its name): never selected, the wheel and a tap pass over it */
+  header?: boolean;
 }
 
 /** A tile of GridScreen: `art` square on top (a grey ♪ tile when none), `label` under it, `sub` (its

@@ -1,9 +1,11 @@
-// Settings: this player's tree in the nano's look (docs/ipod-skin.md §4.4): a short root of sections,
-// each a page (Playback, Appearance, Menus, General, Support), then Log Out. What Now Playing controls
-// itself is not here (Shuffle and Repeat: the status row; Lyrics, Karaoke, Visualizer: its ⋯ and hold
-// menus), nor what has no meaning on Spotify (§4.4: Radio Regions, Language, Font Size, Rotate, Sort
-// Contacts, Spoken Menus, Sound Check, EQ, Audio Crossfade, Audiobooks, Mono Audio). A value shows at
-// its row's right; a value list checks the current choice; a toggle flips in place (§2.4).
+// Settings: this player's tree in the nano's look (docs/ipod-skin.md §4.4), one list in sections under
+// headers (Playback, Appearance, Menus, General, Support, Account); a row that is a real choice opens
+// its page. What Now Playing controls itself is not here (Shuffle and Repeat: the status row; Lyrics,
+// Karaoke, Visualizer: its ⋯ and hold menus), nor what the device does (brightness, backlight, the date
+// and time, the clock's 24 hours), nor what has no meaning on Spotify (§4.4: Radio Regions, Language,
+// Font Size, Rotate, Sort Contacts, Spoken Menus, Sound Check, EQ, Audio Crossfade, Audiobooks, Mono
+// Audio). A value shows at its row's right; a value list checks the current choice; a toggle flips in
+// place (§2.4).
 import { useEffect, useState, type CSSProperties } from 'react';
 import { LIKED, type UpdateCheck } from '../../../../model';
 import { appDownload, isAlbum, LINKS, openLink, restartApp, useApp, useCollection, useDevices, useLibraryList, useShell } from '../../../../ui';
@@ -11,10 +13,10 @@ import { useHostGlobal } from '../../host';
 import { COLORS } from '../../settings';
 import { MenuScreen, Spinner, useIpodSettings, useNav, useWheel } from '../../ui';
 import type { IpodSettings, MenuItem, ScreenEntry } from '../contract';
-import { cityOf, fmtClock, stepHue, zoneTime } from './logic';
-import { BarPage, check, confirm, DIM, menu, onOff, page, Row, Sun, TEXT, TextPage, u, useNow } from './parts';
+import { stepHue } from './logic';
+import { BarPage, check, confirm, DIM, menu, onOff, page, Row, TEXT, TextPage, u } from './parts';
 import {
-  CLOCK0, LIBRARY_FILTERS, MAIN_MENU, resetMenu, resetPrefs, setMenuItem, useAppearance, useDisplay, useLibraryView, useMenuVisibility, usePref, useShake,
+  CLOCK0, LIBRARY_FILTERS, MAIN_MENU, resetMenu, resetPrefs, setMenuItem, useAppearance, useLibraryView, useMenuVisibility, usePref, useShake,
   useVisFit, useVolumeLimitPref,
 } from './prefs';
 
@@ -26,45 +28,24 @@ const IPOD0: IpodSettings = { color: 'green', hue: 0, sat: 0, clicker: true, whe
 const FILL: CSSProperties = { display: 'flex', flexDirection: 'column', height: '100%', color: TEXT };
 const GROW: CSSProperties = { flex: 1, minHeight: 0 };
 const to = (nav: ReturnType<typeof useNav>, e: ScreenEntry) => () => nav.push(e);
-const shown = (items: (MenuItem | false)[]) => items.filter((x): x is MenuItem => !!x);
+const header = (label: string): MenuItem => ({ id: 'h:' + label, label, header: true });
+/** the rows shown: the gated ones dropped, then a header left with no row under it */
+const shown = (items: (MenuItem | false)[]) => items.filter((x): x is MenuItem => !!x)
+  .filter((x, i, a) => !x.header || (i + 1 < a.length && !a[i + 1]!.header));
 
 function SettingsMenu() {
   const nav = useNav(), sh = useShell(), canLogout = useApp((s) => s.auth.canLogout);
+  const [ip, patch] = useIpodSettings(), [theme] = useAppearance(), [clock, setClock] = usePref('ipod.clock', CLOCK0);
+  const [shake, setShake] = useShake(), [limit] = useVolumeLimitPref(), [fit, setFit] = useVisFit(), [view, setView] = useLibraryView();
+  const stretch = fit === 'stretch';
   return <MenuScreen items={shown([
-    { id: 'playback', label: 'Playback', chevron: true, onSelect: to(nav, page('settings/playback', 'Playback', Playback)) },
-    { id: 'appearance', label: 'Appearance', chevron: true, onSelect: to(nav, page('settings/appearance', 'Appearance', Appearance)) },
-    { id: 'menus', label: 'Menus', chevron: true, onSelect: to(nav, page('settings/menus', 'Menus', Menus)) },
-    { id: 'general', label: 'General', chevron: true, onSelect: to(nav, page('settings/general', 'General', General)) },
-    { id: 'support', label: 'Support', chevron: true, onSelect: to(nav, menu('settings/support', 'Support', () => [
-      { id: 'repo', label: 'Source Code', onSelect: () => openLink(LINKS.repo) },
-      { id: 'issues', label: 'Report a Problem', onSelect: () => openLink(LINKS.repo + '/issues') },
-      // the iOS app's log sheet (the band that opens it is hidden under this skin)
-      ...(window.alchemyShowLog ? [{ id: 'log', label: 'Host Log', onSelect: () => window.alchemyShowLog?.() }] : [])])) },
-    canLogout && { id: 'logout', label: 'Log Out', chevron: true,
-                   onSelect: to(nav, confirm('settings/logout', 'Log Out', 'Log Out', (n) => { n.home(); void sh.store.getState().commands.logout(); })) },
-  ])} />;
-}
-
-// ---- the sections ----------------------------------------------------------------------------------
-function Playback() {
-  const nav = useNav(), [shake, setShake] = useShake(), [limit] = useVolumeLimitPref();
-  const [fit, setFit] = useVisFit(), stretch = fit === 'stretch';
-  return <MenuScreen items={shown([
+    header('Playback'),
     { id: 'playon', label: 'Play On', chevron: true, onSelect: to(nav, page('settings/playon', 'Play On', PlayOn)) },
     { id: 'volume', label: 'Volume Limit', right: limit < 100 ? limit + '%' : 'Off', chevron: true, onSelect: to(nav, page('settings/volume', 'Volume Limit', VolumeLimit)) },
     // the iPhone's shake; nothing else reports one
     !!window.alchemyHaptic && { id: 'shake', label: 'Shake', right: shake ? 'Shuffle' : 'Off', onSelect: () => setShake(!shake) },
-    // Now Playing's visualizer: the screen's real shape, or WMP's native surface stretched to it
-    { id: 'visfit', label: 'Visualizer Fit', right: stretch ? 'Stretch' : 'Fit', onSelect: () => setFit(stretch ? 'fit' : 'stretch') },
-  ])} />;
-}
 
-const BACKLIGHT = [2, 5, 10, 15, 20, 30, 0];
-const seconds = (n: number) => (n ? n + ' Seconds' : 'Always On');
-
-function Appearance() {
-  const nav = useNav(), sh = useShell(), [ip, patch] = useIpodSettings(), [d, set] = useDisplay(), [theme] = useAppearance();
-  return <MenuScreen items={shown([
+    header('Appearance'),
     { id: 'skin', label: 'Skin', right: 'iPod', chevron: true, onSelect: to(nav, menu('settings/skin', 'Skin', () => [
       { id: 'ipod', label: 'iPod', right: '✓' },
       { id: 'wmp9', label: 'Windows Media Player 9', onSelect: () => sh.store.getState().actions.setSettings({ skin: 'wmp9' }) }])) },
@@ -74,32 +55,34 @@ function Appearance() {
     // the host's light / dark (the iOS app's)
     !!window.alchemyAppearance && { id: 'theme', label: 'Theme', right: MODES.find(([m]) => m === theme)?.[1], chevron: true,
                                     onSelect: to(nav, page('settings/theme', 'Theme', Theme)) },
-    { id: 'brightness', label: 'Brightness', chevron: true, onSelect: to(nav, page('settings/brightness', 'Brightness', Brightness)) },
-    { id: 'backlight', label: 'Backlight', right: seconds(d.backlight), chevron: true, onSelect: to(nav, page('settings/backlight', 'Backlight', Backlight)) },
-    { id: 'energy', label: 'Energy Saver', right: onOff(d.energySaver), onSelect: () => set({ ...d, energySaver: !d.energySaver }) },
-  ])} />;
-}
+    // Now Playing's visualizer: the screen's real shape, or WMP's native surface stretched to it
+    { id: 'visfit', label: 'Visualizer Fit', right: stretch ? 'Stretch' : 'Fit', onSelect: () => setFit(stretch ? 'fit' : 'stretch') },
+    // the status row over the menus shows the time instead of the screen's title
+    { id: 'title', label: 'Time in Title', right: onOff(clock.timeInTitle), onSelect: () => setClock({ timeInTitle: !clock.timeInTitle }) },
 
-function Menus() {
-  const nav = useNav(), [view, setView] = useLibraryView();
-  return <MenuScreen items={[
+    header('Menus'),
     { id: 'main', label: 'Main Menu', chevron: true, onSelect: to(nav, page('settings/main', 'Main Menu', MainMenu)) },
     { id: 'music', label: 'Library Filters', chevron: true, onSelect: to(nav, page('settings/music', 'Library Filters', LibraryFilters)) },
     { id: 'view', label: 'Library View', right: view === 'list' ? 'List' : 'Grid', onSelect: () => setView(view === 'list' ? 'grid' : 'list') },
-  ]} />;
-}
 
-function General() {
-  const nav = useNav(), [, patch] = useIpodSettings();
-  return <MenuScreen items={shown([
+    header('General'),
     { id: 'about', label: 'About', chevron: true, onSelect: to(nav, page('settings/about', 'About', About)) },
-    { id: 'clock', label: 'Date & Time', chevron: true, onSelect: to(nav, page('settings/clock', 'Date & Time', DateTime)) },
     { id: 'updates', label: 'Check for Updates', chevron: true, onSelect: to(nav, page('settings/updates', 'Check for Updates', Updates)) },
     // The newest player from the site, in place: the music goes on (ios/WmpSpotify/observer.js alchemyRestart)
     !!window.alchemyRestart && { id: 'refresh', label: 'Refresh Player', onSelect: restartApp },
     { id: 'reset', label: 'Reset Settings', chevron: true,
       onSelect: to(nav, confirm('settings/reset', 'Reset Settings', 'Reset', (n) => { resetPrefs(); patch(IPOD0); n.pop(); })) },
     { id: 'legal', label: 'Legal', chevron: true, onSelect: to(nav, page('settings/legal', 'Legal', Legal)) },
+
+    header('Support'),
+    { id: 'repo', label: 'Source Code', onSelect: () => openLink(LINKS.repo) },
+    { id: 'issues', label: 'Report a Problem', onSelect: () => openLink(LINKS.repo + '/issues') },
+    // the iOS app's log sheet (the band that opens it is hidden under this skin)
+    !!window.alchemyShowLog && { id: 'log', label: 'Host Log', onSelect: () => window.alchemyShowLog?.() },
+
+    header('Account'),
+    canLogout && { id: 'logout', label: 'Log Out', chevron: true,
+                   onSelect: to(nav, confirm('settings/logout', 'Log Out', 'Log Out', (n) => { n.home(); void sh.store.getState().commands.logout(); })) },
   ])} />;
 }
 
@@ -130,7 +113,7 @@ function About() {
   );
 }
 
-// ---- Menus, Appearance's pages -----------------------------------------------------------------------
+// ---- Main Menu, Library Filters -----------------------------------------------------------------------
 /** Main Menu and Library Filters: a checklist of the rows or chips (✓ shows it), then Reset Filters. */
 function MainMenu() {
   const vis = useMenuVisibility().main;
@@ -146,25 +129,7 @@ function LibraryFilters() {
   ]} />;
 }
 
-function Backlight() {
-  const [d, set] = useDisplay();
-  return <MenuScreen items={BACKLIGHT.map((n) => ({ id: String(n), label: seconds(n), right: check(d.backlight === n), onSelect: () => set({ ...d, backlight: n }) }))} />;
-}
-
-/** The phone's own brightness on the iPhone; elsewhere the LCD's (0.2 at the least, so it stays readable). */
-function Brightness() {
-  const host = useHostGlobal('__wmpBrightness', 'wmp-brightness'), [mine, setMine] = useState<number | null>(null), [d, set] = useDisplay();
-  const phone = !!window.alchemyBrightness;
-  useEffect(() => { window.alchemyBrightness?.(); }, []);
-  const v = phone ? mine ?? host ?? 0.5 : d.brightness;
-  return <BarPage value={v} caption="Brightness" lo={<Sun n={9} />} hi={<Sun n={14} />} onTick={(dir) => {
-    const x = Math.max(phone ? 0 : 0.2, Math.min(1, Math.round(v * 20 + dir) / 20));
-    if (x === v) return false;
-    if (phone) { setMine(x); window.alchemyBrightness?.(x); } else set({ ...d, brightness: x });
-  }} />;
-}
-
-// ---- Playback's pages ------------------------------------------------------------------------------
+// ---- Volume Limit ------------------------------------------------------------------------------------
 /** Root's useSettingsEffects holds the volume under it everywhere. */
 function VolumeLimit() {
   const [limit, set] = useVolumeLimitPref();
@@ -173,19 +138,6 @@ function VolumeLimit() {
     if (x === limit) return false;
     set(x);
   }} />;
-}
-
-// ---- Date & Time ---------------------------------------------------------------------------------------
-/** Date, Time and Time Zone are this device's; the two toggles are the iPod's. */
-function DateTime() {
-  const [p, set] = usePref('ipod.clock', CLOCK0), now = new Date(useNow(1000)), t = zoneTime(now, '');
-  return <MenuScreen items={[
-    { id: 'date', label: 'Date', right: now.toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' }) },
-    { id: 'time', label: 'Time', right: fmtClock(t.h, t.m, p.twentyFourHour) },
-    { id: 'zone', label: 'Time Zone', right: cityOf('') },
-    { id: 'h24', label: '24 Hour Clock', right: onOff(p.twentyFourHour), onSelect: () => set({ ...p, twentyFourHour: !p.twentyFourHour }) },
-    { id: 'title', label: 'Time in Title', right: onOff(p.timeInTitle), onSelect: () => set({ ...p, timeInTitle: !p.timeInTitle }) },
-  ]} />;
 }
 
 const Legal = () => (
