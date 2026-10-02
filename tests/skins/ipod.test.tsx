@@ -435,33 +435,35 @@ it('Now Playing\'s visualizer is Bars (ipod.visualizer) while shown, a change at
   expect(vis()).toEqual(['battery', 3, 'battery', 3]);
 });
 
-it('Settings > Visualizer: the engines, the chosen one\'s showing its preset, each a page of its presets (Alchemy picked at its row); Now Playing shows a choice at once', () => {
-  vi.stubGlobal('IntersectionObserver', class { observe() {} disconnect() {} });
-  const nav = createNav(mainMenu(), () => nowPlaying());
-  const m = mount(fakeData(), <NavContext.Provider value={nav}><div data-testid="np">{nowPlaying().render(nav)}</div></NavContext.Provider>);
-  const tap = () => act(() => { fireEvent.click(m.getByTestId('np').querySelector('[class*=tap]')!); });
-  const click = (label: string) => act(() => { fireEvent.click(m.row(label)); });
-  const now = () => [localStorage.getItem('ipod.visualizer'), m.S().vis.kind, m.S().vis.preset];
-  act(() => m.store.getState().actions.setVis('battery', 3));   // the WMP 9 skin's own choice
-  tap();                                             // Now Playing on its visualizer
+/** the iPod at Settings: `click` a row, `page` the rows a row opens (then back) */
+function atSettings() {
+  const m = mount(), click = (label: string) => act(() => { fireEvent.click(m.row(label)); });
+  const page = (label: string) => { click(label); const r = m.rows(); key('Escape'); return r; };
   click('Settings');
-  click('VisualizerBars');
-  expect(m.rows()).toEqual(['Alchemy', 'Bars and WavesBars', 'Battery']);
-  click('Bars and WavesBars');
-  expect(m.rows()).toEqual(['Bars✓', 'Ocean Mist', 'Fire Storm', 'Scope']);
-  click('Ocean Mist');
-  expect([now(), m.rows()]).toEqual([['"bars:1"', 'bars', 1], ['Bars', 'Ocean Mist✓', 'Fire Storm', 'Scope']]);
-  key('Escape');
-  expect(m.rows()).toEqual(['Alchemy', 'Bars and WavesOcean Mist', 'Battery']);
-  click('Battery');
-  expect(m.rows()).toEqual(m.sh.presets.filter((p) => p.group === 'Battery').map((p) => p.name));
-  key('Escape');
-  click('Alchemy');                                  // its one preset: picked here, no page
-  expect([now(), m.rows()]).toEqual([['"alchemy:0"', 'alchemy', 0], ['Alchemy✓', 'Bars and Waves', 'Battery']]);
-  key('Escape');
-  expect(m.rows()).toContain('VisualizerAlchemy');
-  tap();                                             // back to the Canvas for the tests after
-  expect([m.S().vis.kind, m.S().vis.preset]).toEqual(['battery', 3]);   // WMP's own choice, untouched
+  return { ...m, page };
+}
+
+it('Settings: a root of sections, each a page of its rows; what Now Playing controls (Shuffle, Repeat, Lyrics, Karaoke, Visualizer) is not there', () => {
+  const m = atSettings();
+  expect(m.rows()).toEqual(['Playback', 'Appearance', 'Menus', 'General', 'Support']);
+  expect(m.page('Playback')).toEqual(['Play On', 'Volume LimitOff', 'Visualizer FitFit']);
+  expect(m.page('Appearance')).toEqual(['SkiniPod', 'Color', 'Click WheelWhite', 'ClickerOn', 'Brightness', 'Backlight10 Seconds', 'Energy SaverOn']);
+  expect(m.page('Menus')).toEqual(['Main Menu', 'Library Filters', 'Library ViewGrid']);
+  expect(m.page('General')).toEqual(['About', 'Date & Time', 'Check for Updates', 'Reset Settings', 'Legal']);
+  expect(m.page('Support')).toEqual(['Source Code', 'Report a Problem']);
+  expect(m.rows()).toEqual(['Playback', 'Appearance', 'Menus', 'General', 'Support']);
+});
+
+it('Settings\' host-gated rows show only with their host: Shake, Theme, Refresh Player, Host Log, and Log Out at the root', () => {
+  window.alchemyHaptic = vi.fn();
+  for (const k of ['alchemyAppearance', 'alchemyRestart', 'alchemyShowLog']) vi.stubGlobal(k, vi.fn());
+  const m = atSettings();
+  act(() => m.S().actions.setAuth({ canLogout: true }));
+  expect(m.rows()).toEqual(['Playback', 'Appearance', 'Menus', 'General', 'Support', 'Log Out']);
+  expect(m.page('Playback')).toEqual(['Play On', 'Volume LimitOff', 'ShakeShuffle', 'Visualizer FitFit']);
+  expect(m.page('Appearance')).toContain('ThemeAutomatic');
+  expect(m.page('General')).toContain('Refresh Player');
+  expect(m.page('Support')).toEqual(['Source Code', 'Report a Problem', 'Host Log']);
 });
 
 it('the ⋯ over the cover opens this page\'s options: Lyrics and Karaoke toggle, Visualizer… picks one by engine, put on screen at once', () => {

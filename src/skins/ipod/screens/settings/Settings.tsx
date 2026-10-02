@@ -1,11 +1,11 @@
-// Settings: the nano 5G's tree in its order and words (docs/ipod-skin.md §2.3: About, Shuffle,
-// Repeat, General, Playback, Date & Time, Legal, Reset Settings), less what has no meaning on Spotify
-// (§4.4: Radio Regions, Language, Font Size, Rotate, Sort Contacts, Spoken Menus, Sound Check, EQ,
-// Audio Crossfade, Audiobooks, Mono Audio), then this player's own rows (§4.4): Play On, Lyrics,
-// Karaoke, Visualizer, Color, Click Wheel, Skin, Appearance, Check for Updates, Support, Log Out. A value shows
-// at its row's right; a value list checks the current choice; a toggle flips in place (§2.4).
+// Settings: this player's tree in the nano's look (docs/ipod-skin.md §4.4): a short root of sections,
+// each a page (Playback, Appearance, Menus, General, Support), then Log Out. What Now Playing controls
+// itself is not here (Shuffle and Repeat: the status row; Lyrics, Karaoke, Visualizer: its ⋯ and hold
+// menus), nor what has no meaning on Spotify (§4.4: Radio Regions, Language, Font Size, Rotate, Sort
+// Contacts, Spoken Menus, Sound Check, EQ, Audio Crossfade, Audiobooks, Mono Audio). A value shows at
+// its row's right; a value list checks the current choice; a toggle flips in place (§2.4).
 import { useEffect, useState, type CSSProperties } from 'react';
-import { LIKED, type RepeatMode, type UpdateCheck } from '../../../../model';
+import { LIKED, type UpdateCheck } from '../../../../model';
 import { appDownload, isAlbum, LINKS, openLink, restartApp, useApp, useCollection, useDevices, useLibraryList, useShell } from '../../../../ui';
 import { useHostGlobal } from '../../host';
 import { COLORS } from '../../settings';
@@ -15,7 +15,7 @@ import { cityOf, fmtClock, stepHue, zoneTime } from './logic';
 import { BarPage, check, confirm, DIM, menu, onOff, page, Row, Sun, TEXT, TextPage, u, useNow } from './parts';
 import {
   CLOCK0, LIBRARY_FILTERS, MAIN_MENU, resetMenu, resetPrefs, setMenuItem, useAppearance, useDisplay, useLibraryView, useMenuVisibility, usePref, useShake,
-  useVisFit, useVisualizers, useVolumeLimitPref,
+  useVisFit, useVolumeLimitPref,
 } from './prefs';
 
 declare const __PAGE_BUILD__: string | undefined;
@@ -23,50 +23,84 @@ const BUILD = typeof __PAGE_BUILD__ === 'string' ? __PAGE_BUILD__ : 'dev';
 /** the chrome's defaults (src/skins/ipod/settings.ts), for Reset Settings */
 const IPOD0: IpodSettings = { color: 'green', hue: 0, sat: 0, clicker: true, wheel: 'white' };
 
-const REPEAT: [RepeatMode, string][] = [['off', 'Off'], ['track', 'One'], ['context', 'All']];
 const FILL: CSSProperties = { display: 'flex', flexDirection: 'column', height: '100%', color: TEXT };
 const GROW: CSSProperties = { flex: 1, minHeight: 0 };
 const to = (nav: ReturnType<typeof useNav>, e: ScreenEntry) => () => nav.push(e);
+const shown = (items: (MenuItem | false)[]) => items.filter((x): x is MenuItem => !!x);
 
 function SettingsMenu() {
-  const nav = useNav(), sh = useShell(), [ip, patch] = useIpodSettings(), vis = useVisualizers().name;
-  const st = useApp((s) => ({ shuffle: s.playback.shuffle, repeat: s.playback.repeat, canLogout: s.auth.canLogout,
-                              lyrics: s.settings.lyrics, karaoke: s.settings.karaoke }));
-  const a = () => sh.store.getState().actions, c = () => sh.store.getState().commands;
-  const items: (MenuItem | false)[] = [
-    { id: 'about', label: 'About', chevron: true, onSelect: to(nav, page('settings/about', 'About', About)) },
-    { id: 'shuffle', label: 'Shuffle', right: st.shuffle ? 'Songs' : 'Off', chevron: true, onSelect: to(nav, page('settings/shuffle', 'Shuffle', Shuffle)) },
-    { id: 'repeat', label: 'Repeat', right: REPEAT.find(([m]) => m === st.repeat)?.[1], chevron: true, onSelect: to(nav, page('settings/repeat', 'Repeat', Repeat)) },
-    { id: 'general', label: 'General', chevron: true, onSelect: to(nav, page('settings/general', 'General', General)) },
+  const nav = useNav(), sh = useShell(), canLogout = useApp((s) => s.auth.canLogout);
+  return <MenuScreen items={shown([
     { id: 'playback', label: 'Playback', chevron: true, onSelect: to(nav, page('settings/playback', 'Playback', Playback)) },
-    { id: 'clock', label: 'Date & Time', chevron: true, onSelect: to(nav, page('settings/clock', 'Date & Time', DateTime)) },
-    { id: 'legal', label: 'Legal', chevron: true, onSelect: to(nav, page('settings/legal', 'Legal', Legal)) },
-    { id: 'reset', label: 'Reset Settings', chevron: true,
-      onSelect: to(nav, confirm('settings/reset', 'Reset Settings', 'Reset', (n) => { resetPrefs(); patch(IPOD0); n.pop(); })) },
-    // this player's
-    { id: 'playon', label: 'Play On', chevron: true, onSelect: to(nav, page('settings/playon', 'Play On', PlayOn)) },
-    { id: 'lyrics', label: 'Lyrics', right: onOff(st.lyrics), onSelect: () => a().setLyricsEnabled(!st.lyrics) },
-    { id: 'karaoke', label: 'Karaoke', right: onOff(st.karaoke), onSelect: () => a().setKaraoke(!st.karaoke) },
-    { id: 'vis', label: 'Visualizer', right: vis, chevron: true,
-      onSelect: to(nav, page('settings/visualizer', 'Visualizer', Visualizer)) },
-    { id: 'color', label: 'Color', right: <Swatch bg={swatch(ip)} />, chevron: true, onSelect: to(nav, page('settings/color', 'Color', Color)) },
-    { id: 'wheel', label: 'Click Wheel', right: ip.wheel === 'black' ? 'Black' : 'White', onSelect: () => patch({ wheel: ip.wheel === 'black' ? 'white' : 'black' }) },
-    { id: 'skin', label: 'Skin', right: 'iPod', chevron: true, onSelect: to(nav, menu('settings/skin', 'Skin', () => [
-      { id: 'ipod', label: 'iPod', right: '✓' },
-      { id: 'wmp9', label: 'Windows Media Player 9', onSelect: () => a().setSettings({ skin: 'wmp9' }) }])) },
-    !!window.alchemyAppearance && { id: 'appearance', label: 'Appearance', chevron: true, onSelect: to(nav, page('settings/appearance', 'Appearance', Appearance)) },
-    { id: 'updates', label: 'Check for Updates', chevron: true, onSelect: to(nav, page('settings/updates', 'Check for Updates', Updates)) },
-    // The newest player from the site, in place: the music goes on (ios/WmpSpotify/observer.js alchemyRestart)
-    !!window.alchemyRestart && { id: 'refresh', label: 'Refresh Player', onSelect: restartApp },
+    { id: 'appearance', label: 'Appearance', chevron: true, onSelect: to(nav, page('settings/appearance', 'Appearance', Appearance)) },
+    { id: 'menus', label: 'Menus', chevron: true, onSelect: to(nav, page('settings/menus', 'Menus', Menus)) },
+    { id: 'general', label: 'General', chevron: true, onSelect: to(nav, page('settings/general', 'General', General)) },
     { id: 'support', label: 'Support', chevron: true, onSelect: to(nav, menu('settings/support', 'Support', () => [
       { id: 'repo', label: 'Source Code', onSelect: () => openLink(LINKS.repo) },
       { id: 'issues', label: 'Report a Problem', onSelect: () => openLink(LINKS.repo + '/issues') },
       // the iOS app's log sheet (the band that opens it is hidden under this skin)
       ...(window.alchemyShowLog ? [{ id: 'log', label: 'Host Log', onSelect: () => window.alchemyShowLog?.() }] : [])])) },
-    st.canLogout && { id: 'logout', label: 'Log Out', chevron: true,
-                      onSelect: to(nav, confirm('settings/logout', 'Log Out', 'Log Out', (n) => { n.home(); c().logout(); })) },
-  ];
-  return <MenuScreen items={items.filter((x): x is MenuItem => !!x)} />;
+    canLogout && { id: 'logout', label: 'Log Out', chevron: true,
+                   onSelect: to(nav, confirm('settings/logout', 'Log Out', 'Log Out', (n) => { n.home(); void sh.store.getState().commands.logout(); })) },
+  ])} />;
+}
+
+// ---- the sections ----------------------------------------------------------------------------------
+function Playback() {
+  const nav = useNav(), [shake, setShake] = useShake(), [limit] = useVolumeLimitPref();
+  const [fit, setFit] = useVisFit(), stretch = fit === 'stretch';
+  return <MenuScreen items={shown([
+    { id: 'playon', label: 'Play On', chevron: true, onSelect: to(nav, page('settings/playon', 'Play On', PlayOn)) },
+    { id: 'volume', label: 'Volume Limit', right: limit < 100 ? limit + '%' : 'Off', chevron: true, onSelect: to(nav, page('settings/volume', 'Volume Limit', VolumeLimit)) },
+    // the iPhone's shake; nothing else reports one
+    !!window.alchemyHaptic && { id: 'shake', label: 'Shake', right: shake ? 'Shuffle' : 'Off', onSelect: () => setShake(!shake) },
+    // Now Playing's visualizer: the screen's real shape, or WMP's native surface stretched to it
+    { id: 'visfit', label: 'Visualizer Fit', right: stretch ? 'Stretch' : 'Fit', onSelect: () => setFit(stretch ? 'fit' : 'stretch') },
+  ])} />;
+}
+
+const BACKLIGHT = [2, 5, 10, 15, 20, 30, 0];
+const seconds = (n: number) => (n ? n + ' Seconds' : 'Always On');
+
+function Appearance() {
+  const nav = useNav(), sh = useShell(), [ip, patch] = useIpodSettings(), [d, set] = useDisplay(), [theme] = useAppearance();
+  return <MenuScreen items={shown([
+    { id: 'skin', label: 'Skin', right: 'iPod', chevron: true, onSelect: to(nav, menu('settings/skin', 'Skin', () => [
+      { id: 'ipod', label: 'iPod', right: '✓' },
+      { id: 'wmp9', label: 'Windows Media Player 9', onSelect: () => sh.store.getState().actions.setSettings({ skin: 'wmp9' }) }])) },
+    { id: 'color', label: 'Color', right: <Swatch bg={swatch(ip)} />, chevron: true, onSelect: to(nav, page('settings/color', 'Color', Color)) },
+    { id: 'wheel', label: 'Click Wheel', right: ip.wheel === 'black' ? 'Black' : 'White', onSelect: () => patch({ wheel: ip.wheel === 'black' ? 'white' : 'black' }) },
+    { id: 'clicker', label: 'Clicker', right: onOff(ip.clicker), onSelect: () => patch({ clicker: !ip.clicker }) },
+    // the host's light / dark (the iOS app's)
+    !!window.alchemyAppearance && { id: 'theme', label: 'Theme', right: MODES.find(([m]) => m === theme)?.[1], chevron: true,
+                                    onSelect: to(nav, page('settings/theme', 'Theme', Theme)) },
+    { id: 'brightness', label: 'Brightness', chevron: true, onSelect: to(nav, page('settings/brightness', 'Brightness', Brightness)) },
+    { id: 'backlight', label: 'Backlight', right: seconds(d.backlight), chevron: true, onSelect: to(nav, page('settings/backlight', 'Backlight', Backlight)) },
+    { id: 'energy', label: 'Energy Saver', right: onOff(d.energySaver), onSelect: () => set({ ...d, energySaver: !d.energySaver }) },
+  ])} />;
+}
+
+function Menus() {
+  const nav = useNav(), [view, setView] = useLibraryView();
+  return <MenuScreen items={[
+    { id: 'main', label: 'Main Menu', chevron: true, onSelect: to(nav, page('settings/main', 'Main Menu', MainMenu)) },
+    { id: 'music', label: 'Library Filters', chevron: true, onSelect: to(nav, page('settings/music', 'Library Filters', LibraryFilters)) },
+    { id: 'view', label: 'Library View', right: view === 'list' ? 'List' : 'Grid', onSelect: () => setView(view === 'list' ? 'grid' : 'list') },
+  ]} />;
+}
+
+function General() {
+  const nav = useNav(), [, patch] = useIpodSettings();
+  return <MenuScreen items={shown([
+    { id: 'about', label: 'About', chevron: true, onSelect: to(nav, page('settings/about', 'About', About)) },
+    { id: 'clock', label: 'Date & Time', chevron: true, onSelect: to(nav, page('settings/clock', 'Date & Time', DateTime)) },
+    { id: 'updates', label: 'Check for Updates', chevron: true, onSelect: to(nav, page('settings/updates', 'Check for Updates', Updates)) },
+    // The newest player from the site, in place: the music goes on (ios/WmpSpotify/observer.js alchemyRestart)
+    !!window.alchemyRestart && { id: 'refresh', label: 'Refresh Player', onSelect: restartApp },
+    { id: 'reset', label: 'Reset Settings', chevron: true,
+      onSelect: to(nav, confirm('settings/reset', 'Reset Settings', 'Reset', (n) => { resetPrefs(); patch(IPOD0); n.pop(); })) },
+    { id: 'legal', label: 'Legal', chevron: true, onSelect: to(nav, page('settings/legal', 'Legal', Legal)) },
+  ])} />;
 }
 
 /** The nano's About [UG p.12]: center cycles its screens: the player and its counts, the versions,
@@ -96,34 +130,7 @@ function About() {
   );
 }
 
-/** Shuffle: Off / Songs (Spotify has no album shuffle; §4.4). */
-function Shuffle() {
-  const sh = useShell(), on = useApp((s) => s.playback.shuffle);
-  return <MenuScreen items={([['off', 'Off', false], ['songs', 'Songs', true]] as const).map(([id, label, v]) => ({
-    id, label, right: check(on === v), onSelect: () => { if (on !== v) sh.store.getState().commands.toggleShuffle(); } }))} />;
-}
-
-function Repeat() {
-  const sh = useShell(), mode = useApp((s) => s.playback.repeat);
-  return <MenuScreen items={REPEAT.map(([m, label]) => ({ id: m, label, right: check(mode === m), onSelect: () => sh.store.getState().commands.setRepeat(m) }))} />;
-}
-
-// ---- General -----------------------------------------------------------------------------------------
-const BACKLIGHT = [2, 5, 10, 15, 20, 30, 0];
-const seconds = (n: number) => (n ? n + ' Seconds' : 'Always On');
-
-function General() {
-  const nav = useNav(), [ip, patch] = useIpodSettings(), [d] = useDisplay(), [view, setView] = useLibraryView();
-  return <MenuScreen items={[
-    { id: 'main', label: 'Main Menu', chevron: true, onSelect: to(nav, page('settings/main', 'Main Menu', MainMenu)) },
-    { id: 'music', label: 'Library Filters', chevron: true, onSelect: to(nav, page('settings/music', 'Library Filters', LibraryFilters)) },
-    { id: 'view', label: 'Library View', right: view === 'list' ? 'List' : 'Grid', onSelect: () => setView(view === 'list' ? 'grid' : 'list') },
-    { id: 'backlight', label: 'Backlight', right: seconds(d.backlight), chevron: true, onSelect: to(nav, page('settings/backlight', 'Backlight', Backlight)) },
-    { id: 'brightness', label: 'Brightness', chevron: true, onSelect: to(nav, page('settings/brightness', 'Brightness', Brightness)) },
-    { id: 'clicker', label: 'Clicker', right: onOff(ip.clicker), onSelect: () => patch({ clicker: !ip.clicker }) },
-  ]} />;
-}
-
+// ---- Menus, Appearance's pages -----------------------------------------------------------------------
 /** Main Menu and Library Filters: a checklist of the rows or chips (✓ shows it), then Reset Filters. */
 function MainMenu() {
   const vis = useMenuVisibility().main;
@@ -157,29 +164,7 @@ function Brightness() {
   }} />;
 }
 
-// ---- Playback ----------------------------------------------------------------------------------------
-function Playback() {
-  const nav = useNav(), [shake, setShake] = useShake(), [d, set] = useDisplay(), [limit] = useVolumeLimitPref()
-  const [fit, setFit] = useVisFit(), stretch = fit === 'stretch';
-  const items: (MenuItem | false)[] = [
-    // the iPhone's shake; nothing else reports one
-    !!window.alchemyHaptic && { id: 'shake', label: 'Shake', right: shake ? 'Shuffle' : 'Off', onSelect: () => setShake(!shake) },
-    { id: 'volume', label: 'Volume Limit', right: limit < 100 ? limit + '%' : 'Off', chevron: true, onSelect: to(nav, page('settings/volume', 'Volume Limit', VolumeLimit)) },
-    { id: 'energy', label: 'Energy Saver', right: onOff(d.energySaver), onSelect: () => set({ ...d, energySaver: !d.energySaver }) },
-    // Now Playing's visualizer: the screen's real shape, or WMP's native surface stretched to it
-    { id: 'visfit', label: 'Visualizer', right: stretch ? 'Stretch' : 'Fit', onSelect: () => setFit(stretch ? 'fit' : 'stretch') },
-  ];
-  return <MenuScreen items={items.filter((x): x is MenuItem => !!x)} />;
-}
-
-/** Now Playing's visualization (ipod.visualizer) by engine, each engine's presets a page of their own;
- *  shown at once when its visualizer is on screen. */
-function Visualizer() {
-  const nav = useNav(), open = (g: string) => nav.push({ key: 'settings/visualizer/' + g, title: g, render: () => <Presets group={g} /> });
-  return <MenuScreen items={useVisualizers().engines(open)} />;
-}
-const Presets = ({ group }: { group: string }) => <MenuScreen items={useVisualizers().presets(group)} />;
-
+// ---- Playback's pages ------------------------------------------------------------------------------
 /** Root's useSettingsEffects holds the volume under it everywhere. */
 function VolumeLimit() {
   const [limit, set] = useVolumeLimitPref();
@@ -256,7 +241,7 @@ function CustomColor({ prev }: { prev: Partial<IpodSettings> }) {
   );
 }
 
-// ---- Play On, Appearance, Check for Updates -----------------------------------------------------------
+// ---- Play On, Theme, Check for Updates ---------------------------------------------------------------
 /** The Connect devices (§4.4), the playing one checked, offline ones greyed; AirPlay is the iOS app's picker. */
 function PlayOn() {
   const d = useDevices(() => ''), entries = d.items();
@@ -269,7 +254,7 @@ function PlayOn() {
 }
 
 const MODES = [['light', 'Light'], ['dark', 'Dark'], ['auto', 'Automatic']] as const;
-function Appearance() {
+function Theme() {
   const [mode, set] = useAppearance();
   return <MenuScreen items={MODES.map(([m, label]) => ({ id: m, label, right: check(mode === m),
                                                          onSelect: () => { set(m); window.alchemyAppearance?.(m); } }))} />;
