@@ -16,7 +16,7 @@ export const keys = {
   artist: (uri: string) => ['local', 'artist', uri] as const,
   album: (uri: string) => ['local', 'album', uri] as const,
   lyrics: (trackId: string) => ['local', 'lyrics', trackId] as const,
-  lrclib: (trackId: string) => ['local', 'lrclib', trackId] as const,
+  lyricsFallback: (trackId: string) => ['local', 'lyricsFallback', trackId] as const,
   saved: (uris: readonly string[]) => ['local', 'saved', ...uris] as const,
   followedArtists: () => ['local', 'library', 'artists'] as const,
   canvas: (trackUri: string) => ['local', 'canvas', trackUri] as const,
@@ -36,7 +36,7 @@ export const fetchRadio = (): Promise<Station[]> => Promise.resolve([]);
 export const fetchArtist = (uri: string): Promise<ArtistPage> => Promise.resolve({ meta: { kind: 'artist', name: uri, total: 0 }, tracks: [], albums: [] });
 export const fetchAlbumMeta = (uri: string): Promise<CollectionMeta> => Promise.resolve({ kind: 'album', name: uri, total: 0 });
 export const fetchLyrics = (): Promise<Lyrics> => Promise.resolve({ status: 'none', lines: null, plain: null, track: null, source: null });
-export const fetchLrclib = fetchLyrics;
+export const fetchLyricsFallback = fetchLyrics;
 export const acceptLyrics = (): void => {};
 export const fetchCanvas = (): Promise<null> => Promise.resolve(null);
 export const fetchTrack = (): Promise<null> => Promise.resolve(null);

@@ -11,7 +11,7 @@ import { fetchHome as home } from './home';
 import { fetchCollectionPage as page, fetchFollowedArtists as followed, fetchLibraryList as list, remember as rememberIn } from './library';
 import { fetchRadio as radio, radioSeeds as seeds } from './radio';
 import { fetchSearch as search } from './search';
-import { acceptLyrics as accept, fetchLrclib as lrclib, fetchLyrics as lyrics } from './lyrics';
+import { acceptLyrics as accept, fetchLyrics as lyrics, fetchLyricsFallback as fallback } from './lyrics';
 import { applyMembership as applyM, fetchEditablePlaylists as editable, fetchMembership as membership, fetchSaved as saved, setInvalidator } from './saved';
 import { query } from './pathfinder';
 import { fetchTrack as track } from './state';
@@ -41,7 +41,7 @@ export const keys = {
   artist: (uri: string) => ['spotify', 'artist', uri] as const,
   album: (uri: string) => ['spotify', 'album', uri] as const,
   lyrics: (trackId: string) => ['spotify', 'lyrics', trackId] as const,
-  lrclib: (trackId: string) => ['spotify', 'lrclib', trackId] as const,
+  lyricsFallback: (trackId: string) => ['spotify', 'lyricsFallback', trackId] as const,
   /** a batch of saved flags (the UI batches per visible list) */
   saved: (uris: readonly string[]) => ['spotify', 'saved', ...uris] as const,
   canvas: (trackUri: string) => ['spotify', 'canvas', trackUri] as const,
@@ -73,9 +73,10 @@ export const fetchAlbumMeta = (uri: string): Promise<CollectionMeta> => albumMet
 /** Spotify's lyrics for a track (keys.lyrics(trackId), trackId = the uri's last part); 404 -> status
  *  'none'; 401/403 throw QueryError (keep the host's LRCLIB lyrics). The hook then calls acceptLyrics. */
 export const fetchLyrics = (trackUri: string, imageUrl?: string | null): Promise<Lyrics> => lyrics(bound(), trackUri, imageUrl);
-/** LRCLIB's lyrics for the playing track (keys.lrclib(trackId)), asked when fetchLyrics said none and
- *  the track is named; none without asking on the desktop host (it sends its own). Then acceptLyrics. */
-export const fetchLrclib = (trackUri: string): Promise<Lyrics> => lrclib(bound(), trackUri);
+/** When fetchLyrics said none and the playing track is named (keys.lyricsFallback(trackId)): Spotify's
+ *  lyrics under the uri the app's speaker plays, else LRCLIB's (not on the desktop host, which sends
+ *  its own). Then acceptLyrics. */
+export const fetchLyricsFallback = (trackUri: string): Promise<Lyrics> => fallback(bound(), trackUri);
 /** A track's Canvas: the looping clip (or still) Spotify's apps show behind Now Playing. */
 export interface Canvas { url: string; type: 'video' | 'image' }
 /** The track's Canvas, null when it has none. The web player's own route: its persisted `canvas`
@@ -96,7 +97,7 @@ export async function fetchCanvas(trackUri: string): Promise<Canvas | null> {
 /** A track by uri (getTrack): the row a list gives plus `art`, the cover near 300 px; null for an
  *  episode or no such track. The player's state asks it for tracks it names by uri alone (librespot). */
 export const fetchTrack = (uri: string): Promise<Track | null> => track(bound(), uri);
-/** Put a fetchLyrics / fetchLrclib result into the lyrics slice if it is still the playing track's and not 'none'. */
+/** Put a fetchLyrics / fetchLyricsFallback result into the lyrics slice if it is still the playing track's and not 'none'. */
 export const acceptLyrics = (trackUri: string, l: Lyrics): void => accept(bound(), trackUri, l);
 /** Saved (Liked) flags by uri: Liked Songs rows and our own changes known without a call, the rest
  *  by areEntitiesInLibrary, 50 per call. Show `store.saved[uri] ?? data[uri]`. */

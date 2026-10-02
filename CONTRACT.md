@@ -344,8 +344,10 @@ to the active device, else to that speaker, else to the page's own player (src/a
 `target`), and on the phone the page's own player is hidden from every picker (observer.js). The app fetches
 observer.js itself from the site too, as dist/ios-observer.js (tools/postbuild.js), with its bundled
 copy as the fallback: a change to the page or to the observer reaches the phone at its next launch. No audio
-socket, no lyrics from a host (for a track Spotify has none for, the page asks LRCLIB itself, naming itself in an
-`Lrclib-Client` header: src/adapters/spotify/lyrics.ts `fetchLrclib`), no window bindings, no page-update
+socket, no lyrics from a host (for a track Spotify has none for, the page asks Spotify again under the uri
+`__wmpSpeakerTrack` reports when it is the same song under another id, as librespot's alternative to a track it
+cannot play, then LRCLIB itself, `get` only unless it finds nothing and naming itself in an `Lrclib-Client`
+header: src/adapters/spotify/lyrics.ts `fetchLyricsFallback`), no window bindings, no page-update
 signature (the site is trusted as the bundle's source). Built on GitHub's macOS runners, signed with
 Xcode's cloud-managed certificates through an App Store Connect API key, uploaded to TestFlight.
 

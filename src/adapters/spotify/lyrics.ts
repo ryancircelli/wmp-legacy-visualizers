@@ -1,11 +1,12 @@
 /* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-argument */
 // Spotify's own lyrics (the web player's color-lyrics endpoint): line-synced and, for some tracks,
 // syllable-synced, so better karaoke timing than LRCLIB. Tried first in Spotify mode; when a track
-// has none (404) LRCLIB is asked (fetchLrclib below, or the desktop host's own), and when the account
+// has none (404), again under the uri the app's speaker plays, then LRCLIB (fetchLyricsFallback below;
+// on the desktop the host's own LRCLIB lyrics), and when the account
 // may not have them (401/403) the host's LRCLIB lyrics stay.
 // ponytail: response shape as reported for the web player, unverified against a live capture;
 // read defensively, and with settings.debug the raw keys of the first answer go to the console.
-import type { LyricLine, Lyrics } from '../../model';
+import type { LyricLine, Lyrics, Track } from '../../model';
 import { QueryError, RateLimitError, post, type Sp } from './sp';
 
 const BASE = 'https://spclient.wg.spotify.com/color-lyrics/v2/track/';
@@ -56,7 +57,7 @@ export async function fetchLyrics(sp: Sp, trackUri: string, imageUrl?: string | 
   return out;
 }
 
-/** A fetchLyrics / fetchLrclib result for trackUri -> the lyrics slice, when it is still the playing
+/** A fetchLyrics / fetchLyricsFallback result for trackUri -> the lyrics slice, when it is still the playing
  *  track and has lyrics; 'none' leaves whatever the host's LRCLIB sent. */
 export function acceptLyrics(sp: Sp, trackUri: string, l: Lyrics): void {
   const { playback, actions } = sp.store.getState();
@@ -76,7 +77,7 @@ const LRCLIB = 'https://lrclib.net/api/';
 // LRCLIB requires clients to name themselves; a browser cannot set User-Agent, so the header its docs
 // name for that (its preflight allows lrclib-client). The desktop host's User-Agent, verbatim.
 const CLIENT = { 'Lrclib-Client': 'WmpLegacyVisualizers/1.0 (github.com/ryancircelli/wmp-legacy-visualizers)' };
-interface Hit { duration?: number; instrumental?: boolean; plainLyrics?: string | null; syncedLyrics?: string | null }
+interface Hit { trackName?: string; artistName?: string; duration?: number; instrumental?: boolean; plainLyrics?: string | null; syncedLyrics?: string | null }
 
 /** LRC `[mm:ss.xx] text` -> lines in ms, one per stamp (a line may carry several), in time order;
  *  tag lines ([ar:...]) skipped. ponytail: enhanced `<mm:ss.xx>` word stamps would stay in the text
@@ -92,18 +93,35 @@ export function parseLrc(lrc: string): LyricLine[] {
   return out.sort((a, b) => a.t - b.t);
 }
 
-/** LRCLIB's lyrics for the playing track, once Spotify said it has none: `get` with its title, first
- *  artist, album and length, else the `search` hit within 2 s of that length (a synced one first).
- *  404, instrumental or no hit = none; 429 throws RateLimitError (LRCLIB's Retry-After), other
- *  failures QueryError. Nothing is asked on the desktop host, or for a track not playing or not
- *  yet named (the hook waits for its title, artist and length). */
-export async function fetchLrclib(sp: Sp, trackUri: string): Promise<Lyrics> {
-  const none: Lyrics = { status: 'none', lines: null, plain: null, track: null, source: 'lrclib' };
+/** When Spotify had none for the playing track's uri: Spotify's own again under the uri the app's
+ *  speaker reports playing, if that differs and is the same song (librespot plays an available
+ *  alternative of a track it cannot play, and the lyrics may hang on that one), then LRCLIB. Asked
+ *  once the track is named (the hook waits for its title, artist and length); nothing for a track
+ *  not playing. Errors as fetchLyrics / LRCLIB's. */
+export async function fetchLyricsFallback(sp: Sp, trackUri: string): Promise<Lyrics> {
   const t = sp.store.getState().playback.track, id = /^spotify:track:([A-Za-z0-9]+)$/.exec(trackUri)?.[1];
-  if (window.__TAURI__ || !id || !t || t.uri !== trackUri || !t.title || !t.artist || !(t.duration > 0)) return none;
+  if (!id || !t || t.uri !== trackUri || !t.title || !t.artist || !(t.duration > 0)) return { status: 'none', lines: null, plain: null, track: null, source: 'lrclib' };
+  // The speaker's report can lag a track change: only the same title is the same song.
+  const s = window.__wmpSpeakerTrack, alt = s?.uri.startsWith('spotify:track:') && s.uri !== trackUri && s.title.toLowerCase() === t.title.toLowerCase() ? s.uri : '';
+  if (alt) {
+    window.alchemyLog?.('spotify: lyrics for ' + id + ': 404 (none), trying ' + alt.slice(14) + ' (the speaker\'s)');
+    const l = await fetchLyrics(sp, alt, t.art);
+    if (l.status !== 'none') return l;
+  }
+  return fetchLrclib(t, id);
+}
+
+/** LRCLIB's lyrics for a named track: `get` with its exact title, first artist, album and length;
+ *  only when that finds nothing, a `search` hit within 1 s with the same title and artist (any case),
+ *  a synced one first. Plain lyrics when there are no synced ones. 404, instrumental or no hit =
+ *  none; 429 throws RateLimitError (LRCLIB's Retry-After), other failures QueryError. Never on the
+ *  desktop host (it sends its own). */
+async function fetchLrclib(t: Track, id: string): Promise<Lyrics> {
+  const none: Lyrics = { status: 'none', lines: null, plain: null, track: null, source: 'lrclib' };
+  if (window.__TAURI__) return none;
   const say = (m: string) => window.alchemyLog?.('spotify: lyrics for ' + id + ': none on Spotify, LRCLIB: ' + m);
-  // ponytail: rows join their artists with ', ', so "Tyler, The Creator" asks as "Tyler" (then the search)
-  const sec = t.duration / 1000, q = { track_name: t.title, artist_name: t.artist.split(', ')[0]! };
+  // ponytail: rows join their artists with ', ', so "Tyler, The Creator" asks as "Tyler" and finds nothing
+  const sec = t.duration / 1000, artist = t.artist.split(', ')[0]!, q = { track_name: t.title, artist_name: artist };
   const ask = async (path: string, params: Record<string, string>): Promise<unknown> => {
     const r = await fetch(LRCLIB + path + '?' + new URLSearchParams(params).toString(), { headers: CLIENT })
       .catch((e: unknown) => { say('failed (network)'); throw e; });
@@ -113,16 +131,20 @@ export async function fetchLrclib(sp: Sp, trackUri: string): Promise<Lyrics> {
     if (r.status === 429) throw new RateLimitError((parseInt(r.headers.get('Retry-After') ?? '', 10) || 1) * 1000);
     throw new QueryError('lrclib', r.status);
   };
+  const same = (a: string | undefined, b: string) => a?.toLowerCase() === b.toLowerCase();
   let hit = (await ask('get', { ...q, album_name: t.album ?? '', duration: String(Math.round(sec)) })) as Hit | null;
   if (!hit) {
-    const near = (((await ask('search', q)) ?? []) as Hit[]).filter((h) => h.duration != null && Math.abs(h.duration - sec) <= 2);
+    const near = (((await ask('search', q)) ?? []) as Hit[])
+      .filter((h) => h.duration != null && Math.abs(h.duration - sec) <= 1 && same(h.trackName, t.title) && same(h.artistName, artist));
     hit = near.find((h) => h.syncedLyrics) ?? near[0] ?? null;
   }
   const lines = hit?.syncedLyrics && !hit.instrumental ? parseLrc(hit.syncedLyrics) : [];
   const plain = hit?.plainLyrics && !hit.instrumental ? hit.plainLyrics.trim() : '';
-  const track = { title: t.title, artist: t.artist, uri: trackUri };
+  const track = { title: t.title, artist: t.artist, uri: t.uri };
   const out: Lyrics = lines.length ? { status: 'synced', lines, plain: null, track, source: 'lrclib' }
     : plain ? { status: 'plain', lines: null, plain, track, source: 'lrclib' } : none;
-  say(out.status + (lines.length ? ', ' + lines.length + ' lines' : ''));
+  // a synced match names its length beside the track's: a mismatch is a misaligned version
+  const s1 = (x: number) => String(Math.round(x * 10) / 10);
+  say(out.status + (lines.length ? ', ' + lines.length + ' lines, ' + s1(hit!.duration ?? 0) + ' s for a ' + s1(sec) + ' s track' : ''));
   return out;
 }

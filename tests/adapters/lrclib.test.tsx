@@ -1,5 +1,6 @@
-// useLyricsFor's LRCLIB step over the fake catalogue (tests/skins/harness): asked only when Spotify
-// has none, only once the playing track is named, once per track, never while lyrics are off.
+// useLyricsFor's fallback step (Spotify under the speaker's uri, then LRCLIB) over the fake catalogue
+// (tests/skins/harness): asked only when Spotify has none, only once the playing track is named, once
+// per track, never while lyrics are off.
 import { act, cleanup } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { Lyrics, Track } from '../../src/model';
@@ -22,20 +23,20 @@ afterEach(cleanup);
 
 describe('LRCLIB when Spotify has none', () => {
   it('asked once the track is named, once per track, and its answer goes to acceptLyrics', async () => {
-    const h = await mountSkin('spotify', fakeData({ lrclib: { [T1.uri]: LRC } }), <Loader />);
+    const h = await mountSkin('spotify', fakeData({ fallback: { [T1.uri]: LRC } }), <Loader />);
     act(() => h.S().actions.setPlayback({ status: 'playing', track: { ...T1, title: '' }, position: 0, at: Date.now() }));   // a bare speaker state
     await h.settle();
     expect(h.queries.fetchLyrics).toHaveBeenCalledTimes(1);
-    expect(h.queries.fetchLrclib).not.toHaveBeenCalled();                                      // no title yet
+    expect(h.queries.fetchLyricsFallback).not.toHaveBeenCalled();                                      // no title yet
     act(() => h.S().actions.setPlayback({ track: T1 }));
     await h.settle();
-    expect(h.queries.fetchLrclib.mock.calls).toEqual([[T1.uri]]);
+    expect(h.queries.fetchLyricsFallback.mock.calls).toEqual([[T1.uri]]);
     expect(h.queries.acceptLyrics).toHaveBeenLastCalledWith(T1.uri, LRC);
     act(() => h.S().actions.setPlayback({ track: T2 }));
     await h.settle();
     act(() => h.S().actions.setPlayback({ track: T1 }));
     await h.settle();
-    expect(h.queries.fetchLrclib.mock.calls.map((c) => c[0])).toEqual([T1.uri, T2.uri]);        // T1 again from the cache
+    expect(h.queries.fetchLyricsFallback.mock.calls.map((c) => c[0])).toEqual([T1.uri, T2.uri]);        // T1 again from the cache
     expect(h.queries.acceptLyrics).toHaveBeenLastCalledWith(T1.uri, LRC);
   });
 
@@ -47,6 +48,6 @@ describe('LRCLIB when Spotify has none', () => {
     act(() => h.S().actions.setLyricsEnabled(false));
     act(() => h.S().actions.setPlayback({ track: T2 }));
     await h.settle();
-    expect(h.queries.fetchLrclib).not.toHaveBeenCalled();
+    expect(h.queries.fetchLyricsFallback).not.toHaveBeenCalled();
   });
 });
