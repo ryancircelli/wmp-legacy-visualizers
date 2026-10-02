@@ -341,7 +341,11 @@ used or not: `alchemyViewport`, `alchemyHapticPattern`, `alchemySound`, `alchemy
 `alchemyAudioSession`, `alchemyNotify`, `alchemyAppearance`, `alchemyClipboard`, with the reports
 `__wmpProximity`, `__wmpLowPower`, `__wmpThermal`, `__wmpScene`, `__wmpKeyboard` and `wmp-memory`,
 and the last fixed choices made the page's: `alchemyBand(hidden)`, `alchemyBackground(hex)`,
-`alchemyKeyboard(avoid)`, `alchemyScroll(on)` (ios/README.md lists each). The app fetches
+`alchemyKeyboard(avoid)`, `alchemyScroll(on)` (ios/README.md lists each); and the host's own Spotify
+Connect speaker, where it has one: `__wmpSpeaker = {id, name}` (`wmp-speaker`; `id` its device id while
+its session is up, else null) and `alchemySpeakerName(name)`. The Spotify adapter sends its commands
+to the active device, else to that speaker, else to the page's own player (src/adapters/spotify/connect.ts,
+`target`), and on the phone the page's own player is hidden from every picker (observer.js). The app fetches
 observer.js itself from the site too, as dist/ios-observer.js (tools/postbuild.js), with its bundled
 copy as the fallback: a change to the page or to the observer reaches the phone at its next launch. No audio
 socket, no lyrics from a host (LRCLIB is fetched by the page), no window bindings, no page-update

@@ -3,6 +3,8 @@
 // change. Storage that throws (blocked) falls back to memory for the session.
 import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import { useShell } from '../../../../ui';
+import { useHostGlobal } from '../../host';
+import type { MenuItem } from '../contract';
 import { msUntil, STOPWATCH0, type Stopwatch, type StopwatchLog } from './logic';
 
 const subs = new Set<() => void>();
@@ -101,6 +103,21 @@ export const useShake = () => usePref('ipod.shake', true);
  *  the visualizer shows. Anything but 'stretch' reads as Fit. */
 export type VisFit = 'fit' | 'stretch';
 export const useVisFit = () => usePref<VisFit>('ipod.visFit', 'fit');
+/** 'ipod.visualizer': the visualization Now Playing shows, a registry entry's (shell presets) visId,
+ *  Bars and Waves' Bars until another is chosen; applied onto the shared settings.vis / preset only
+ *  while it shows, as visFit is, so the WMP 9 skin's own choice is untouched. */
+export const visId = (p: { vis: string; preset: number }) => p.vis + ':' + p.preset;
+export const useVisualizer = () => usePref('ipod.visualizer', 'bars:0');
+/** Every visualization in the registry by its name, the chosen one checked; a choice sets the pref
+ *  (Settings > Visualizer, Now Playing's hold menu). */
+export function useVisualizerItems(): MenuItem[] {
+  const sh = useShell(), [cur, set] = useVisualizer();
+  return sh.presets.map((p) => ({ id: visId(p), label: p.name, right: visId(p) === cur ? '✓' : undefined, onSelect: () => set(visId(p)) }));
+}
+
+// ---- Play On -----------------------------------------------------------------------------------------
+/** The iPhone's own Connect speaker (window.__wmpSpeaker), re-read on 'wmp-speaker'; undefined off the iPhone. */
+export const useSpeaker = () => useHostGlobal('__wmpSpeaker', 'wmp-speaker');
 
 // ---- Date & Time -----------------------------------------------------------------------------------
 /** 'ipod.clock': Settings > Date & Time's 24 Hour Clock and Time in Title (the status row shows the

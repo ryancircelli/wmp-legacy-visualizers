@@ -25,8 +25,16 @@ export function spclient(): string {
 export type Cmd = { endpoint: string; value?: unknown } & Record<string, unknown>;
 
 /** true when the player took it (2xx); false after the fallback ran (refused, offline, no device). */
+/** Where a command goes: the active device, else the host's own speaker (iOS's librespot, while its
+ *  session is up: the web view's player is hidden there and heard by nothing), else this page's player.
+ *  An active device that is this page counts as none, for the same reason. */
+export function target(w: ReturnType<typeof W>): string | null | undefined {
+  const active = w.activeDeviceId && w.activeDeviceId !== w.deviceId ? w.activeDeviceId : '';
+  return active || window.__wmpSpeaker?.id || w.deviceId;
+}
+
 export async function command(sp: Sp, cmd: Cmd, orElse?: (() => void) | null, retried = false): Promise<boolean> {
-  const w = W(), to = w.activeDeviceId || w.deviceId;
+  const w = W(), to = target(w);
   // The host's log (a no-op on the website): what a command was sent as, and how it went.
   const log = (how: string) => window.alchemyLog?.('spotify: ' + cmd.endpoint + ' from ' + (w.deviceId || '-').slice(0, 8)
     + ' to ' + (to || '-').slice(0, 8) + ': ' + how);
@@ -79,7 +87,7 @@ export function stop(sp: Sp): Promise<void> {
  *  ponytail: one-way — a change made in another Spotify client is not read back into the slider
  *  (the cluster's devices[id].volume has it). */
 export function volume(sp: Sp, pct: number): boolean {
-  const w = W(), to = w.activeDeviceId || w.deviceId;
+  const w = W(), to = target(w);
   if (!sp.hasState || !authed() || !w.deviceId || !to) return false;
   // This device, on a host whose page cannot set its own volume (iOS): the host sets the system's.
   if (to === w.deviceId) window.alchemySetVolume?.(Math.max(0, Math.min(100, +pct || 0)));

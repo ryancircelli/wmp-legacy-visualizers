@@ -22,8 +22,8 @@ const key = (k: string) => act(() => { window.dispatchEvent(new KeyboardEvent('k
 
 /** the iPod skin mounted over the fake catalogue; `shown` reads the screen on top (the ones under it
  *  are mounted, hidden) */
-function mountIpod(data = fakeData()) {
-  const m = mountSkinNow('spotify', data, <div data-testid="ipod"><Root /></div>);
+function mountIpod(data = fakeData(), extra?: ReactNode) {
+  const m = mountSkinNow('spotify', data, <><div data-testid="ipod"><Root /></div>{extra}</>);
   const ipod = m.getByTestId('ipod'), shown = (q: string) => [...ipod.querySelectorAll(q)].filter((x) => !x.closest('[hidden]'));
   return {
     ...m, shown,
@@ -417,4 +417,66 @@ it('the visualizer takes the screen\'s shape (Playback > Visualizer: Fit) while 
   expect(m.S().settings.scale).toBe('auto');
   tap();                                             // away from the visualizer: WMP's own choice back
   expect(m.S().settings.scale).toBe('original');
+});
+
+it('Now Playing\'s visualizer is Bars (ipod.visualizer) while shown, a change at once, then the visualization WMP had', () => {
+  vi.stubGlobal('IntersectionObserver', class { observe() {} disconnect() {} });
+  const nav = createNav(mainMenu(), () => nowPlaying());
+  const m = mountSkinNow('spotify', fakeData(),
+    <NavContext.Provider value={nav}><div data-testid="np">{nowPlaying().render(nav)}</div></NavContext.Provider>);
+  const tap = () => act(() => { fireEvent.click(m.getByTestId('np').querySelector('[class*=tap]')!); });
+  const vis = () => [m.S().vis.kind, m.S().vis.preset, m.S().settings.vis, m.S().settings.preset];
+  act(() => m.store.getState().actions.setVis('battery', 3));   // the WMP 9 skin's own choice
+  tap();                                             // no Canvas: the tap goes on to the visualizer
+  expect(vis()).toEqual(['bars', 0, 'bars', 0]);
+  act(() => writePref('ipod.visualizer', 'alchemy:0'));
+  expect(vis()).toEqual(['alchemy', 0, 'alchemy', 0]);
+  tap();                                             // away from the visualizer: WMP's own choice back
+  expect(vis()).toEqual(['battery', 3, 'battery', 3]);
+});
+
+it('Settings > Visualizer lists every visualization by name, Bars checked; a choice is stored and Now Playing shows it at once', () => {
+  vi.stubGlobal('IntersectionObserver', class { observe() {} disconnect() {} });
+  const nav = createNav(mainMenu(), () => nowPlaying());
+  const m = mount(fakeData(), <NavContext.Provider value={nav}><div data-testid="np">{nowPlaying().render(nav)}</div></NavContext.Provider>);
+  const tap = () => act(() => { fireEvent.click(m.getByTestId('np').querySelector('[class*=tap]')!); });
+  tap();                                             // Now Playing on its visualizer
+  act(() => { fireEvent.click(m.row('Settings')); });
+  act(() => { fireEvent.click(m.row('VisualizerBars')); });
+  expect(m.rows()).toEqual(m.sh.presets.map((p) => p.name + (p.vis === 'bars' && p.preset === 0 ? '✓' : '')));
+  act(() => { fireEvent.click(m.row('Ocean Mist')); });
+  expect([localStorage.getItem('ipod.visualizer'), m.S().vis.kind, m.S().vis.preset]).toEqual(['"bars:1"', 'bars', 1]);
+  expect(m.rows().filter((r) => r?.endsWith('✓'))).toEqual(['Ocean Mist✓']);
+  key('Escape');
+  expect(m.rows()).toContain('VisualizerOcean Mist');
+  tap();                                             // back to the Canvas for the tests after
+  expect(m.S().vis.kind).toBe('alchemy');            // WMP's default, untouched
+});
+
+it('Speaker Name (the iPhone\'s Connect speaker): after Play On and at Play On\'s end, (off) while its session is down; the prompt renames it', () => {
+  const rename = vi.fn(), ask = vi.fn(() => "Ryan's iPhone");
+  vi.stubGlobal('alchemySpeakerName', rename);
+  vi.stubGlobal('__wmpSpeaker', { id: 'abc', name: 'Kitchen' });
+  vi.stubGlobal('prompt', ask);
+  const m = mount();
+  act(() => { fireEvent.click(m.row('Settings')); });
+  const rows = m.rows(), at = rows.indexOf('Play On');
+  expect(rows.slice(at, at + 2)).toEqual(['Play On', 'Speaker NameKitchen']);
+  act(() => { vi.stubGlobal('__wmpSpeaker', { id: null, name: 'Kitchen' }); window.dispatchEvent(new Event('wmp-speaker')); });
+  ask.mockReturnValueOnce(' Kitchen ');              // unchanged: nothing
+  act(() => { fireEvent.click(m.row('Speaker NameKitchen (off)')); });
+  expect([ask.mock.calls[0], rename.mock.calls.length]).toEqual([['Speaker Name', 'Kitchen'], 0]);
+  act(() => { fireEvent.click(m.row('Speaker NameKitchen (off)')); });
+  expect(rename).toHaveBeenCalledExactlyOnceWith("Ryan's iPhone");
+  act(() => { fireEvent.click(m.row('Play On')); });
+  expect(m.rows().at(-1)).toBe('Speaker NameKitchen (off)');
+});
+
+it('no speaker binding (the website, Windows): no Speaker Name', () => {
+  vi.stubGlobal('__wmpSpeaker', { id: 'abc', name: 'Kitchen' });
+  const m = mount();
+  act(() => { fireEvent.click(m.row('Settings')); });
+  expect(m.rows().filter((r) => r?.startsWith('Speaker Name'))).toEqual([]);
+  act(() => { fireEvent.click(m.row('Play On')); });
+  expect(m.rows().filter((r) => r?.startsWith('Speaker Name'))).toEqual([]);
 });
