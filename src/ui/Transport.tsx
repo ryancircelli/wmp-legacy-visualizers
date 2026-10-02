@@ -207,7 +207,7 @@ export function Karaoke({ className, id, classes, ids }: {
         {synced && !synced.karaoke ? synced.text : synced?.words.map((w, j) => (
           <Fragment key={j}>
             {j ? ' ' : ''}
-            <span className={w.state === 'sung' ? classes.sung : w.state === 'now' ? classes.now : undefined} data-k={w.state}
+            <span className={w.state === 'sung' ? classes.sung : w.state === 'now' ? classes.now : undefined} data-k={w.state} data-w={w.text}
                   style={w.state === 'now' ? ({ '--f': synced.fill * 100 + '%' } as CSSProperties) : undefined}>{w.text}</span>
           </Fragment>
         ))}

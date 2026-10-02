@@ -150,19 +150,23 @@
   /* a band behind the lines only, fading out above: the art (the visualizer, the Canvas) stays bright */
   background: linear-gradient(to top, rgb(0 0 0 / .8), rgb(0 0 0 / .55) calc(var(--unit) * 123), transparent calc(var(--unit) * 176)); text-align: center;
   text-shadow: 0 calc(var(--unit) * 1) calc(var(--unit) * 3) rgb(0 0 0 / .9);
-  font-size: calc(var(--unit) * 11.5); line-height: calc(var(--unit) * 15);
+  /* 9 (the owner, 2026-10-02: "80% smaller lyric font rounded to nearest common font size", from 11.5) */
+  font-size: calc(var(--unit) * 9); line-height: calc(var(--unit) * 12);
 }
 /* plain lyrics: four lines' window, scrolled with the track */
 .root:not(:has(.of)) .lyrics { padding-bottom: calc(var(--unit) * 44); background: linear-gradient(to top, rgb(0 0 0 / .8), rgb(0 0 0 / .55) calc(var(--unit) * 105), transparent calc(var(--unit) * 158)); }
 .plain { max-height: calc(var(--unit) * 60); overflow: hidden; white-space: pre-line; }
 .cur { font-weight: bold; }
 .next { margin-top: calc(var(--unit) * 8); color: rgb(255 255 255 / .5); }
-/* karaoke: the line's words dim until sung, the current one filling */
+/* karaoke: the line's words dim until sung, the current one filling. The fill is a white copy of the
+   word (its text in data-w) clipped to --f over the dim one, both with the box's shadow: a gradient
+   through background-clip: text let WebKit paint the shadow over the letters ("messed up"). */
 .synced[data-karaoke] .cur { color: rgb(255 255 255 / .5); }
 .sung { color: #fff; }
-.now {
-  color: transparent; -webkit-background-clip: text; background-clip: text;
-  background-image: linear-gradient(90deg, #fff var(--f, 0%), rgb(255 255 255 / .5) var(--f, 0%));
+.now { position: relative; }
+.now::after {
+  content: attr(data-w); position: absolute; left: 0; top: 0; color: #fff;
+  clip-path: inset(0 calc(100% - var(--f, 0%)) 0 0);
 }
 
 /* Quiet (NowPlaying.tsx: QUIET_MS without input while it plays): nothing moves; the info band's gradient
