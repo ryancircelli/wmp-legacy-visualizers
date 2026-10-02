@@ -112,9 +112,10 @@
 
 /* the Canvas: the 9:16 clip (or still) cropped to the whole area, the bands translucent over it */
 .bg { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
-/* the visualizer over the art, no backdrop of its own (its dark is clear: the engine's 'luma' output),
-   over the whole area under the status row whatever the art, behind the bands: one size always */
-.overlay { position: absolute; inset: 0; }
+/* the visualizer over the art, no backdrop of its own (its dark is clear: the engine's 'luma' output):
+   from the info band's foot (never behind the header: the owner, 2026-10-02) down to the bottom of the
+   area, behind the controls band, whatever the art: one size always */
+.overlay { position: absolute; inset: calc(var(--unit) * 60) 0 0 0; }
 .clear { display: block; width: 100%; height: 100%; }
 /* over the Canvas (or the visualizer over the black) the bands are translucent; the controls band a
    shade that grows from nothing (no edge on a bright picture), under the lyrics carrying on theirs */
