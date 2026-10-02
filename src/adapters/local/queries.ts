@@ -37,6 +37,7 @@ export const fetchAlbumMeta = (uri: string): Promise<CollectionMeta> => Promise.
 export const fetchLyrics = (): Promise<Lyrics> => Promise.resolve({ status: 'none', lines: null, plain: null, track: null, source: null });
 export const acceptLyrics = (): void => {};
 export const fetchCanvas = (): Promise<null> => Promise.resolve(null);
+export const fetchTrack = (): Promise<null> => Promise.resolve(null);
 export const fetchSaved = (): Promise<Record<string, boolean>> => Promise.resolve({});
 export const fetchFollowedArtists = (): Promise<never[]> => Promise.resolve([]);
 export const setInvalidator = (): void => {};

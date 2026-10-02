@@ -3,7 +3,6 @@
 // change. Storage that throws (blocked) falls back to memory for the session.
 import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import { useShell } from '../../../../ui';
-import { useHostGlobal } from '../../host';
 import type { MenuItem } from '../contract';
 import { msUntil, STOPWATCH0, type Stopwatch, type StopwatchLog } from './logic';
 
@@ -114,10 +113,6 @@ export function useVisualizerItems(): MenuItem[] {
   const sh = useShell(), [cur, set] = useVisualizer();
   return sh.presets.map((p) => ({ id: visId(p), label: p.name, right: visId(p) === cur ? '✓' : undefined, onSelect: () => set(visId(p)) }));
 }
-
-// ---- Play On -----------------------------------------------------------------------------------------
-/** The iPhone's own Connect speaker (window.__wmpSpeaker), re-read on 'wmp-speaker'; undefined off the iPhone. */
-export const useSpeaker = () => useHostGlobal('__wmpSpeaker', 'wmp-speaker');
 
 // ---- Date & Time -----------------------------------------------------------------------------------
 /** 'ipod.clock': Settings > Date & Time's 24 Hour Clock and Time in Title (the status row shows the
