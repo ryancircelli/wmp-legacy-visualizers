@@ -8,8 +8,17 @@
   font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
 }
 
-/* artist / title / album, centred, pitch 17, the first centred at screen y 32.5 */
-.info { position: absolute; top: 0; left: 0; right: 0; height: calc(var(--unit) * 60); background: linear-gradient(#424242, #010101); }
+/* artist / title / album, centred, pitch 17, the first centred at screen y 32.5. The band is translucent
+   over the art and the visualizer, the cover's view as the Canvas's (the owner, 2026-10-02: one design);
+   its background is a layer of its own (::before) so the quiet state can fade it away */
+.info { position: absolute; top: 0; left: 0; right: 0; height: calc(var(--unit) * 60); isolation: isolate; }
+.info::before, .controls::before, .info::after, .controls::after {
+  content: ""; position: absolute; inset: 0; z-index: -1; transition: opacity .3s ease;
+}
+.info::before { background: linear-gradient(rgb(66 66 66 / .6), rgb(1 1 1 / .6)); }
+/* quiet, a light shade instead, from nothing (white text on a bright picture needs one) */
+.info::after { background: linear-gradient(rgb(0 0 0 / .45), transparent); opacity: 0; }
+.controls::after { background: linear-gradient(transparent, rgb(0 0 0 / .6)); opacity: 0; }
 .line {
   position: absolute; left: calc(var(--unit) * 8); right: calc(var(--unit) * 8);
   height: calc(var(--unit) * 17); line-height: calc(var(--unit) * 17);
@@ -33,20 +42,23 @@
   color: #fff; font-size: calc(var(--unit) * 120);
 }
 
-/* the controls band: the dark gradient, the cover's mirror image at .25, the mode row centred at
-   screen y 345, "N of M" centred at y 361 */
+/* the controls band: a shade that grows from nothing over the art and the visualizer (no edge on a bright
+   picture), the cover's mirror image at .25 over the cover's view, the mode row centred at screen y 345,
+   "N of M" centred at y 361; under the lyrics it carries on their band's shade */
 .controls {
   position: absolute; bottom: 0; left: 0; right: 0; height: calc(var(--unit) * 56);
-  overflow: hidden; background: linear-gradient(#656565, #262626);
+  overflow: hidden; isolation: isolate;
 }
+.controls::before { background: linear-gradient(transparent, rgb(0 0 0 / .75)); }
+.root:has(.lyrics) .controls::before { background: rgb(0 0 0 / .75); }
 /* no "N of M" under it: the band is the mode row alone (the owner: too much padding under the bar) */
 .root:not(:has(.of)) .controls { height: calc(var(--unit) * 38); }
 .root:not(:has(.of)) .row { top: calc(var(--unit) * 10); }
 /* the cover and its tap area reach down to the shorter band (the cover crops a little at the sides) */
-.root:not(:has(.of)) .art, .root:not(:has(.of)) .tap, .root:not(:has(.of)):not([data-mini]) .overart { height: calc(var(--unit) * 258); }
+.root:not(:has(.of)) .art, .root:not(:has(.of)) .tap { height: calc(var(--unit) * 258); }
 .reflection {
   position: absolute; top: 0; left: 0; width: calc(var(--unit) * 240); height: calc(var(--unit) * 240);
-  object-fit: cover; transform: scaleY(-1); opacity: .25;
+  object-fit: cover; transform: scaleY(-1); opacity: .25; z-index: -1; transition: opacity .3s ease;
 }
 .row {
   position: absolute; top: calc(var(--unit) * 16); left: 0; right: 0; height: calc(var(--unit) * 18);
@@ -105,33 +117,17 @@
 
 /* the Canvas: the 9:16 clip (or still) cropped to the whole area, the bands translucent over it */
 .bg { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
-/* the visualizer over the art, no backdrop of its own (its dark is clear: the engine's 'luma' output).
-   Bars and Waves' box is the cover's, the whole area minimized (a resize: its bars are back on the next
-   frame), or the whole area always over the Canvas or the black (.overfull); Alchemy's and Battery's is
-   the whole area always, clipped to the cover in the full view and not over the Canvas (data-full), so
-   they are never resized (a resize clears their buffers: a restart) */
-.overart { position: absolute; top: calc(var(--unit) * 60); left: 0; width: calc(var(--unit) * 240); height: calc(var(--unit) * 240);
-           transition: top .3s ease, height .3s ease; }
-.root[data-mini] .overart { top: 0; height: 100%; }
-.overclip { position: absolute; inset: 0; transition: clip-path .3s ease;
-            -webkit-clip-path: inset(calc(var(--unit) * 60) 0 calc(var(--unit) * 56) 0); clip-path: inset(calc(var(--unit) * 60) 0 calc(var(--unit) * 56) 0); }
-.root:not(:has(.of)) .overclip { -webkit-clip-path: inset(calc(var(--unit) * 60) 0 calc(var(--unit) * 38) 0); clip-path: inset(calc(var(--unit) * 60) 0 calc(var(--unit) * 38) 0); }
-.root[data-mini] .overclip, .root .overclip[data-full] { -webkit-clip-path: inset(0); clip-path: inset(0); }
-.overfull { position: absolute; inset: 0; }
+/* the visualizer over the art, no backdrop of its own (its dark is clear: the engine's 'luma' output),
+   over the whole area under the status row whatever the art, behind the bands: one size always */
+.overlay { position: absolute; inset: 0; }
 .clear { display: block; width: 100%; height: 100%; }
-.root[data-canvas] .info { background: linear-gradient(rgb(66 66 66 / .6), rgb(1 1 1 / .6)); }
-/* over the Canvas or the visualizer the band is a shade that grows from nothing, so no edge shows on
-   a bright picture; under the lyrics it carries on their band's shade */
-.root[data-canvas] .controls { background: linear-gradient(transparent, rgb(0 0 0 / .75)); }
-.root[data-canvas]:has(.lyrics) .controls { background: rgb(0 0 0 / .75); }
-.root[data-canvas] .line, .root[data-canvas] .row, .root[data-canvas] .of { text-shadow: 0 1px 2px #000; }
+.line, .row, .of { text-shadow: 0 1px 2px #000; }
 
 /* lyrics over the cover, at its foot just above the mode row: white 14 on black at 70 % */
 .lyrics {
   position: absolute; top: calc(var(--unit) * 60); left: 0; right: 0; bottom: calc(var(--unit) * 56);
   display: flex; flex-direction: column; justify-content: flex-end; padding: 0 calc(var(--unit) * 10) calc(var(--unit) * 6);
   /* a band behind the lines only, fading out above: the art (the visualizer, the Canvas) stays bright */
-  /* in units, not percent: the same band whatever the box's height (minimized, it is taller) */
   background: linear-gradient(to top, rgb(0 0 0 / .75), rgb(0 0 0 / .5) calc(var(--unit) * 67), transparent calc(var(--unit) * 120)); text-align: center;
   text-shadow: 0 calc(var(--unit) * 1) calc(var(--unit) * 3) rgb(0 0 0 / .9);
   font-size: calc(var(--unit) * 11.5); line-height: calc(var(--unit) * 15);
@@ -149,55 +145,12 @@
   background-image: linear-gradient(90deg, #fff var(--f, 0%), rgb(255 255 255 / .5) var(--f, 0%));
 }
 
-/* Minimized (NowPlaying.tsx: MINIMIZE_MS without input while it plays): the info band slides up, the
-   controls band slides down, the ⋯ fades. The cover, at its own size and crop, rests on the Now Playing
-   bar (the area 356 tall, the bar 44; the cover 240, 258 without "N of M"). Its mirror image runs up
-   from its top edge to the status row and down from its bottom edge behind the bar (.mirror .up,
-   .down): the cover flipped on the screen's black through a mask, .8 where it meets the cover to .4
-   at the top (.5 at the foot, behind the bar), so it is always darker than the cover and black on a
-   black cover; no grey, no blur. (The owner, 2026-10-02: a first .45-to-nothing was too dark, and the
-   bar over it too light.) With no cover (the ♪ tile) no mirror: black. A visualizer takes the whole
-   area (plain as ever; Over Cover's over the cover and its mirrors too). The bar slides up at the foot,
-   a flat shade here (.foot, .68 to .85), and the lyrics sit on it. */
-.info, .controls, .more, .foot, .mirror { transition: transform .3s ease, opacity .3s ease; }
-.row, .of { transition: opacity .3s ease; }
-.art, .tap { transition: top .3s ease; }
-.root[data-mini] .info { transform: translateY(-100%); opacity: 0; pointer-events: none; }
-.root[data-mini] .controls { transform: translateY(100%); opacity: 0; pointer-events: none; }
-.root[data-mini] .more { opacity: 0; pointer-events: none; }
-.root[data-mini] :is(.art, .tap) { top: calc(var(--unit) * (312 - 240)); }
-.root[data-mini]:not(:has(.of)) :is(.art, .tap) { top: calc(var(--unit) * (312 - 258)); }
-.mirror { position: absolute; left: 0; right: 0; overflow: hidden; opacity: 0; pointer-events: none; }
-.mirror > img {
-  position: absolute; left: 0; width: calc(var(--unit) * 240); height: calc(var(--unit) * 240);
-  object-fit: cover; transform: scaleY(-1);
-}
-.root:not(:has(.of)) .mirror > img { height: calc(var(--unit) * 258); }
-.up { top: 0; height: calc(var(--unit) * (312 - 240)); }
-.root:not(:has(.of)) .up { height: calc(var(--unit) * (312 - 258)); }
-.up > img {
-  bottom: 0;
-  /* the mask is the image's own, flipped with it: its top edge meets the cover */
-  -webkit-mask-image: linear-gradient(rgb(0 0 0 / .8), rgb(0 0 0 / .4) calc(var(--unit) * 70));
-  mask-image: linear-gradient(rgb(0 0 0 / .8), rgb(0 0 0 / .4) calc(var(--unit) * 70));
-}
-.down { top: calc(var(--unit) * 312); bottom: 0; }
-.down > img {
-  top: 0;
-  -webkit-mask-image: linear-gradient(to top, rgb(0 0 0 / .8), rgb(0 0 0 / .5) calc(var(--unit) * 44));
-  mask-image: linear-gradient(to top, rgb(0 0 0 / .8), rgb(0 0 0 / .5) calc(var(--unit) * 44));
-}
-.root[data-mini] .mirror { opacity: 1; }
-.root[data-mini] .lyrics { top: 0; bottom: calc(var(--unit) * 44); }
-.foot { position: absolute; left: 0; right: 0; bottom: 0; transform: translateY(100%); pointer-events: none; }
-.root[data-mini] .foot { transform: none; pointer-events: auto; }
-/* the bar partly see-through on this page (the menus' own is opaque), as the full view's controls band
-   is over the Canvas: a flat dark shade, no blur (an iPod has none), what is behind it showing through;
-   white text with the page's shadow; its thumbnail, button and progress as ever (the track translucent) */
-.foot > div {
-  background: linear-gradient(rgb(0 0 0 / .68), rgb(0 0 0 / .85));
-  border-top-color: rgb(255 255 255 / .14);
-  color: #fff; text-shadow: 0 1px 2px #000;
-  --ipod-dim: rgb(255 255 255 / .72); --ipod-bar-bg: rgb(255 255 255 / .3);
-}
-.foot > div > [role=button] { color: #fff; }
+/* Quiet (NowPlaying.tsx: QUIET_MS without input while it plays): nothing moves; the bands' backgrounds
+   (and the cover's reflection with the controls band's) fade away and the ⋯ fades out, the text, the
+   progress, "N of M" and the device line staying with their shadow over the picture, on a light shade
+   from nothing at the top and at the foot (::after: bare, white text did not read over a bright Canvas) */
+.more { transition: opacity .3s ease; }
+/* (with lyrics showing the controls band keeps its shade: it carries on theirs, which they keep) */
+.root[data-quiet] .info::before, .root[data-quiet]:not(:has(.lyrics)) .controls::before, .root[data-quiet] .reflection { opacity: 0; }
+.root[data-quiet] .info::after, .root[data-quiet]:not(:has(.lyrics)) .controls::after { opacity: 1; }
+.root[data-quiet] .more { opacity: 0; pointer-events: none; }

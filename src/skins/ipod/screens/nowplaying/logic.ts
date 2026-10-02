@@ -11,8 +11,9 @@ export const MODES: readonly Mode[] = ['default', 'scrub', 'radio'];
 /** ms: a scrub seeks this long after its last detent (§3.1); a mode falls back to the progress bar
  *  after IDLE without input (§2.4, 5 s reconstructed); the volume bar goes VOLUME after its last tick */
 export const SCRUB_COMMIT_MS = 400, IDLE_MS = 5000, VOLUME_MS = 2000;
-/** ms without input while it plays before Now Playing minimizes to the art and one line (the owner's ask, 2026-10-02) */
-export const MINIMIZE_MS = 5000;
+/** ms without input while it plays before Now Playing goes quiet: the bands' backgrounds and the ⋯ fade
+ *  away, the picture left bare under the text (the owner's ask, 2026-10-02: "do what the video does") */
+export const QUIET_MS = 5000;
 
 /** m:ss (h:mm:ss past an hour), whole seconds as the iPod counts them */
 export function clock(sec: number): string {
@@ -33,9 +34,14 @@ export const scrubStep = (ms: number, dir: 1 | -1, d: number, accel = 1): number
 /** the scrub's acceleration from the gap since the last detent: x2 from 6 detents/s, x4 from 10 (§3.2's rates) */
 export const scrubAccel = (gapMs: number): 1 | 2 | 4 => (gapMs < 100 ? 4 : gapMs < 1000 / 6 ? 2 : 1);
 
-/** one volume detent: 2 % of the range (Spotify 0..100, the capture's sensitivity 0..200) */
-export const volumeStep = (vol: number, dir: 1 | -1, max: number): number =>
-  Math.min(max, Math.max(0, Math.round(vol + (dir * max) / 50)));
+/** The wheel's volume, in percent of the range (Spotify's 0..100, the capture's sensitivity 0..200): a
+ *  turn of the ring moves it continuously, VOLUME_TURN % a full turn (shown and sent to 1 %); a key or a
+ *  mouse-wheel tick VOLUME_TICK %; what is sent goes at most every VOLUME_SEND_MS. */
+export const VOLUME_TURN = 65, VOLUME_TICK = 2, VOLUME_SEND_MS = 50;
+/** `pct` moved by `d` percent, within 0..100 */
+export const volumeBy = (pct: number, d: number): number => Math.min(100, Math.max(0, pct + d));
+/** degrees of the ring as percent of the volume */
+export const turnPct = (deg: number): number => (deg * VOLUME_TURN) / 360;
 
 /** Bars and Waves' bars at a fixed width (src/engine/bars.ts drawBars): `bars` at most, each `barW`
  *  wide with `gap` after it, centred, so a frame wider than they span keeps a margin either side. The

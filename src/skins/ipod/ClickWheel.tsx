@@ -9,6 +9,7 @@
 import { useEffect, useLayoutEffect, useRef, type PointerEvent as RPointerEvent } from 'react';
 import { cx } from '../../ui';
 import s from './ipod.module.css';
+import { offerTurn } from './wheel';
 
 /** degrees per tick: 24 a turn as on the real wheel (Rockbox: 96 positions, 4 per item). A tuning
  *  knob, 12 to 18; try 12 on a phone, where the wheel is about 1.5 times the real 27 mm */
@@ -84,6 +85,8 @@ export function ClickWheel(props: WheelProps) {
     if (Math.hypot(x, y) < g.r * 0.15) return;          // atan2 is noise near the middle
     const a = (Math.atan2(y, x) * 180) / Math.PI, detent = p.current.detent ?? DETENT;
     if (!g.turned && Math.abs(wrap(a - g.start)) > detent / 2) { g.turned = true; clearTimeout(g.timer); }
+    // a screen following the turn itself (wheel.ts useTurn: Now Playing's volume) takes it whole: no detents
+    if (g.turned && offerTurn(wrap(a - g.anchor))) { g.anchor = a; return; }
     const n = ticksFor(g.anchor, a, detent);
     if (!n) return;
     g.anchor = (g.anchor + n * detent) % 360;

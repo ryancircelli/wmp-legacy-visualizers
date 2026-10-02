@@ -32,9 +32,10 @@ import {
 import { useHostGlobal } from '../../host';
 import type { MenuItem, ScreenEntry } from '../contract';
 import { useVisFit, useVisualizers, visId } from '../settings';
-import { Bar, MenuScreen, NowPlayingBar, Popup, useNav, useScan, useWheel } from '../../ui';
+import { Bar, MenuScreen, Popup, useNav, useScan, useWheel } from '../../ui';
+import { useTurn } from '../../wheel';
 import { pickAccent, rgbOf } from './accent';
-import { barsFit, IDLE_MS, MINIMIZE_MS, nextMode, ofText, SCRUB_COMMIT_MS, scrubAccel, scrubStep, times, volumeStep, VOLUME_MS, type Mode } from './logic';
+import { barsFit, IDLE_MS, nextMode, ofText, QUIET_MS, SCRUB_COMMIT_MS, scrubAccel, scrubStep, times, turnPct, volumeBy, VOLUME_MS, VOLUME_SEND_MS, VOLUME_TICK, type Mode } from './logic';
 import css from './nowplaying.module.css';
 
 export function nowPlaying(): ScreenEntry {
@@ -109,37 +110,65 @@ function NowPlaying() {
     const id = setTimeout(() => setVol(null), VOLUME_MS);
     return () => clearTimeout(id);
   }, [vol]);
-  // the phone's volume buttons (the iOS app's wmp-volume, 0..100) flash the volume bar too
+  // The wheel's volume (the progress mode) is a gesture's own running value in percent: from the level
+  // reported when it starts (the phone's, else the setting; a gesture ends VOLUME_MS after its last
+  // input) and moved by the wheel only, so a report that lags behind (the phone's, while the wheel
+  // turns) cannot pull it back. Shown at once; sent at most every VOLUME_SEND_MS, the last value always.
+  const gesture = useRef({ pct: 0, at: 0, sent: -1, timer: 0 });
+  const volLive = () => Date.now() - gesture.current.at < VOLUME_MS;
+  /** move the volume by `d` percent; whether the shown value moved */
+  const volumeTo = (d: number): boolean => {
+    const G = gesture.current, s = get();
+    if (!volLive()) {
+      const hv = window.__wmpVolume;
+      G.pct = typeof hv === 'number' && hv >= 0 && hv <= 100 ? hv : ((s.settings.muted ? 0 : s.settings.volume) * 100) / p.max;
+    }
+    const was = G.pct;
+    G.pct = volumeBy(was, d);
+    G.at = Date.now();
+    if (G.pct !== was && (G.pct === 0 || G.pct === 100)) window.alchemyHaptic?.('light');   // the ends: one light haptic
+    setVol({ v: Math.round(G.pct) / 100 });
+    if (!G.timer) {
+      const go = () => {
+        const v = Math.round((Math.round(G.pct) * p.max) / 100);
+        if (v === G.sent) { G.timer = 0; return; }
+        G.sent = v;
+        get().actions.setVolume(v);
+        G.timer = window.setTimeout(go, VOLUME_SEND_MS);
+      };
+      go();
+    }
+    return Math.round(G.pct) !== Math.round(was);
+  };
+  useEffect(() => () => clearTimeout(gesture.current.timer), []);
+  // the phone's volume buttons (the iOS app's wmp-volume, 0..100) flash the volume bar too, but for
+  // while the wheel's own gesture is on
   useEffect(() => {
-    const on = () => { const v = window.__wmpVolume ?? -1; if (v >= 0) setVol({ v: v / 100 }); };
+    const on = () => { const v = window.__wmpVolume ?? -1; if (v >= 0 && !volLive()) setVol({ v: v / 100 }); };
     window.addEventListener('wmp-volume', on);
     return () => window.removeEventListener('wmp-volume', on);
   }, []);
 
-  // Minimized (MINIMIZE_MS without input while it plays, this screen the top one, no popup, no scrubber or
-  // Radio slider): the bands and the ⋯ go, the cover stays as it is, set on the menus' Now Playing bar
-  // that comes up at the foot, its mirror image above it and below it (behind the bar), a visualizer
-  // takes the whole area, and the lyrics sit on the bar. Any input restores it. A tap on the screen, a
-  // wheel turn or an arrow key that restores does nothing else (`woke`: the press or key that woke it,
-  // its ticks and its click consumed), but for the bar's (its button plays / pauses, a swipe skips, a
-  // tap on it restores); the wheel's buttons and their keys act as ever too.
-  const foot = useRef<HTMLDivElement>(null);
+  // Quiet (QUIET_MS without input while it plays, this screen the top one, no popup, no scrubber or
+  // Radio slider): nothing moves; the bands' backgrounds and the ⋯ fade away, the text, the progress and
+  // "N of M" staying over the picture, as over the Canvas. Any input wakes it. A tap on the screen, a
+  // wheel turn or an arrow key that wakes it does nothing else (`woke`: the press or key that woke it,
+  // its ticks and its click consumed); the wheel's buttons and their keys act as ever too.
   const root = useRef<HTMLDivElement>(null), seen = useOnScreen(root), playing = useApp(isPlaying);
-  const [mini, setMini] = useState(false), [wasIdle, setWasIdle] = useState(false);
+  const [quiet, setQuiet] = useState(false), [wasIdle, setWasIdle] = useState(false);
   const idle = seen && playing && !popup && m === 'default';
-  // paused, a popup, a mode, off screen: restored, and kept so until it is idle again and the time passes
-  if (idle !== wasIdle) { setWasIdle(idle); if (!idle) setMini(false); }
-  const live = useRef({ mini, idle, woke: false, timer: 0 });
-  useLayoutEffect(() => { live.current.mini = mini; live.current.idle = idle; });
+  // paused, a popup, a mode, off screen: awake, and kept so until it is idle again and the time passes
+  if (idle !== wasIdle) { setWasIdle(idle); if (!idle) setQuiet(false); }
+  const live = useRef({ quiet, idle, woke: false, timer: 0 });
+  useLayoutEffect(() => { live.current.quiet = quiet; live.current.idle = idle; });
   useEffect(() => {
     const L = live.current;
-    const arm = () => { clearTimeout(L.timer); if (L.idle) L.timer = window.setTimeout(() => setMini(true), MINIMIZE_MS); };
+    const arm = () => { clearTimeout(L.timer); if (L.idle) L.timer = window.setTimeout(() => setQuiet(true), QUIET_MS); };
     // the ref first, so the same input's other listeners (the wheel's, whichever runs first) see it awake
-    const input = () => { L.woke = L.mini; if (L.mini) { L.mini = false; setMini(false); } arm(); };
+    const input = () => { L.woke = L.quiet; if (L.quiet) { L.quiet = false; setQuiet(false); } arm(); };
     const click = (e: Event) => {
       if (!L.woke) return;
       L.woke = false;
-      if (foot.current && e.composedPath().includes(foot.current)) return;   // the bar's own
       e.stopPropagation();
       e.preventDefault();
     };
@@ -216,7 +245,7 @@ function NowPlaying() {
     // an open Popup registers after this screen, so it takes the ticks, center and MENU while open
     onTick: (dir) => {
       const L = live.current;
-      if (L.mini || L.woke) { L.mini = false; setMini(false); return false; }   // it only wakes the screen
+      if (L.quiet || L.woke) { L.quiet = false; setQuiet(false); return false; }   // it only wakes the screen
       setPoke((n) => n + 1);
       const s = get();
       if (m === 'scrub') {
@@ -225,13 +254,7 @@ function NowPlaying() {
         setScrub((x) => ({ uri, ms: scrubStep(x?.uri === uri ? x.ms : positionNow(s), dir, d, a) }));
       } else if (m === 'radio') {
         if (dir > 0) { startRadio(); setMode('default'); }
-      } else {
-        // The phone's own level when it reports one (its buttons move it too), else the setting.
-        const hv = window.__wmpVolume, base = typeof hv === 'number' && hv >= 0 && hv <= 100 ? hv : s.settings.muted ? 0 : s.settings.volume;
-        const v = volumeStep(base, dir, p.max);
-        s.actions.setVolume(v);
-        setVol({ v: v / p.max });
-      }
+      } else if (!volumeTo(dir * VOLUME_TICK)) return false;   // a key or a mouse-wheel tick; at an end, no click
     },
     onCenter: () => {
       if (!p.media) return;
@@ -248,6 +271,14 @@ function NowPlaying() {
       return true;
     },
   });
+  // A turn of the ring in the progress mode is the volume's, continuously (no detents: no clicks, no
+  // per-tick haptics; wheel.ts useTurn); a turn that wakes the quiet screen does nothing else.
+  useTurn(seen && m === 'default' && !popup ? (deg) => {
+    const L = live.current;
+    if (L.quiet || L.woke) { L.quiet = false; setQuiet(false); return true; }
+    volumeTo(turnPct(deg));
+    return true;
+  } : null);
 
   // fast-forward / rewind (hold ⏭ / ⏮): the chrome's scan, sought once on release; shown here meanwhile
   const scan = useScan();
@@ -258,9 +289,9 @@ function NowPlaying() {
   const [failed, setFailed] = useState('');
   const fetched = useCanvas(show === 'video' ? uri : null), canvas = fetched && fetched.url !== failed ? fetched : null;
   const fail = () => setFailed(canvas?.url ?? '');
-  // The overlay (Visualizer… > Visualizer): over the cover's rectangle, or over the whole area when the
-  // Canvas fills it or there is no cover (the black, the ♪ tile left out then)
-  const overlay = vz.on, full = !!canvas || !art, bg = !!canvas || (overlay && !art);
+  // The overlay (Visualizer… > Visualizer): over the whole area under the status row, the cover and the
+  // black round it, or the Canvas (with no cover, the black: the ♪ tile left out then)
+  const overlay = vz.on, bg = !!canvas || (overlay && !art);
   const bars = vz.preset.startsWith('bars:'), accent = useAccent(overlay && bars && art ? art : '');
   /** a tap on the cover's area (the lyrics over it too): the Canvas <-> the cover; with no Canvas on
    *  screen to swap from, nothing */
@@ -271,14 +302,11 @@ function NowPlaying() {
     canvasPref.setState({ show: show === 'video' ? 'cover' : 'video' });
   };
   return (
-    <div ref={root} className={css.root} data-canvas={bg ? '' : undefined} data-mini={mini ? '' : undefined}>
+    <div ref={root} className={css.root} data-quiet={quiet ? '' : undefined}>
       {canvas?.type === 'video' ? <CanvasVideo src={canvas.url} poster={art || undefined} onError={fail} />
         : canvas ? <img className={css.bg} src={canvas.url} alt="" onError={fail} /> : null}
-      {/* minimized: the cover's mirror image above it and below it (behind the bar) */}
-      {art && !bg && <div className={cx(css.mirror, css.up)}><img src={art} alt="" /></div>}
-      {art && !bg && <div className={cx(css.mirror, css.down)}><img src={art} alt="" /></div>}
       {bg ? null : art ? <img className={css.art} src={art} alt="" /> : <div className={cx(css.art, css.noart)}>♪</div>}
-      {overlay && <Vis full={full} clip={!bars} tint={bars && art ? accent : null} opacity={vz.opacity} />}
+      {overlay && <Vis tint={bars && art ? accent : null} opacity={vz.opacity} />}
       <div className={css.info}>
         <Line className={css.artist} text={t?.artist} />
         <Line className={css.title} text={t?.title} />
@@ -324,8 +352,6 @@ function NowPlaying() {
           </div>
         )}
       </div>
-      {/* minimized: the menus' Now Playing bar at the foot; a tap on it restores (it is already here) */}
-      <div ref={foot} className={css.foot} aria-hidden={!mini}><NowPlayingBar onOpen={() => setMini(false)} /></div>
       {popup && <Popup items={items[popup]} onClose={() => setPopup((x) => (x === popup ? null : x))} />}
     </div>
   );
@@ -391,15 +417,13 @@ function useAccent(url: string): string {
   return accents.get(url) ?? '#ffffff';
 }
 
-/** The visualizer over the art, the engine's 'luma' output (clear where it is dark, in `tint` if one):
- *  over the cover's rectangle in the full view, the whole area minimized; `full`: the whole area
- *  always (over the Canvas, or the black with no cover). `clip` (Alchemy and Battery): the canvas is
- *  the whole area always, clipped to the cover in the full view, so it is never resized (a resize
- *  clears their buffers: they would start over); Bars and Waves resizes (its bars are back the next
- *  frame). `opacity`: percent, Visualizer… > Opacity. Its canvas is mounted only while this screen is
+/** The visualizer over the art, the engine's 'luma' output (clear where it is dark, in `tint` if one),
+ *  over the whole area under the status row whatever the art, so its size never changes (a resize
+ *  clears Alchemy's and Battery's buffers: they would start over). `opacity`: percent, Visualizer… >
+ *  Opacity. Its canvas is mounted only while this screen is
  *  the top one and the page is visible: the ticker's loop runs only with a canvas attached, so it
  *  costs nothing elsewhere, and nothing at all while the visualizer is off (not mounted). */
-function Vis({ full, clip, tint, opacity = 100 }: { full: boolean; clip: boolean; tint: string | null; opacity: number }) {
+function Vis({ tint, opacity = 100 }: { tint: string | null; opacity: number }) {
   const sh = useShell(), ref = useRef<HTMLDivElement>(null), on = useOnScreen(ref);
   // The ticker holds the engine while WMP's view is off Now Playing (vis.hold: a WMP view left on
   // Library sets it again at every Spotify start); here it is the screen, so no hold while shown,
@@ -458,8 +482,7 @@ function Vis({ full, clip, tint, opacity = 100 }: { full: boolean; clip: boolean
     return () => out('opaque', null);
   }, [on, tint, sh]);
   return (
-    <div ref={ref} className={clip ? css.overclip : full ? css.overfull : css.overart} data-full={full || undefined}
-         style={opacity < 100 ? { opacity: opacity / 100 } : undefined}>
+    <div ref={ref} className={css.overlay} style={opacity < 100 ? { opacity: opacity / 100 } : undefined}>
       {on && <Visualizer className={css.clear} />}
     </div>
   );

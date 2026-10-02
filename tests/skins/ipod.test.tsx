@@ -401,20 +401,20 @@ it('a tap on the cover area swaps the Canvas and the cover, remembered; a Canvas
   expect([...shows(), haptic.mock.calls.length]).toEqual([null, 'https://i.scdn.co/image/e', 'video', 0]);
 });
 
-it('the visualizer is an overlay, on at first: over the cover\'s rectangle, over the Canvas or the black the whole area; off, none; the engine held off it no longer', async () => {
+it('the visualizer is an overlay, on at first: the whole area over the cover, the Canvas or the black; off, none; the engine held off it no longer', async () => {
   const m = nowPlayingAlone(), np = m.np;
   m.queries.fetchCanvas.mockImplementation((uri) => Promise.resolve(uri.endsWith('c') ? { url: uri + '.mp4', type: 'video' } : null));
   const play = async (uri: string, art?: string) => {
     act(() => { m.store.setState((s) => ({ playback: { ...s.playback, status: 'playing', track: { uri, title: 'T', artist: 'A', duration: 100_000, art } } })); });
     await settle();
   };
-  const box = () => np.querySelector('[class*=overart], [class*=overfull], [class*=overclip]')?.className.match(/overart|overfull|overclip/)?.[0] ?? null;
-  await play('spotify:track:a', 'https://i.scdn.co/image/a');   // a cover, no Canvas: over the cover (Bars: its box)
-  expect([box(), !!np.querySelector('canvas'), m.S().vis.alpha]).toEqual(['overart', true, 'luma']);
+  const box = () => np.querySelector('[class*=overlay]')?.className.match(/overlay/)?.[0] ?? null;
+  await play('spotify:track:a', 'https://i.scdn.co/image/a');   // a cover, no Canvas: over it and the black round it
+  expect([box(), !!np.querySelector('canvas'), m.S().vis.alpha]).toEqual(['overlay', true, 'luma']);
   await play('spotify:track:c', 'https://i.scdn.co/image/c');   // a Canvas: over it, the whole area
-  expect([!!np.querySelector('video'), box()]).toEqual([true, 'overfull']);
+  expect([!!np.querySelector('video'), box()]).toEqual([true, 'overlay']);
   await play('spotify:track:x');                     // neither: over the black, the whole area, no ♪ tile
-  expect([box(), !!np.querySelector('[class*=noart]')]).toEqual(['overfull', false]);
+  expect([box(), !!np.querySelector('[class*=noart]')]).toEqual(['overlay', false]);
   act(() => { m.store.setState((s) => ({ vis: { ...s.vis, hold: true } })); });   // WMP's view left on Library: lifted while shown
   expect(m.S().vis.hold).toBe(false);
   act(() => writePref('ipod.visOn', false));         // off: no overlay, the ♪ tile, the engine's output opaque again

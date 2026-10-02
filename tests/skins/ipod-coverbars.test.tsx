@@ -1,8 +1,8 @@
 // The iPod's Now Playing visualizer, an overlay over the art (Visualizer… > Visualizer, on at first):
-// the engine's 'luma' output (vis.alpha / vis.tint, which the ticker hands the engine) over the cover's
-// rectangle, or the whole area over the Canvas or the black; Bars and Waves in the cover's accent over
-// either, Alchemy and Battery in their own colours; Opacity its layer's. What earlier builds stored, read
-// as it is now. node-vibrant and fetch are stand-ins here.
+// the engine's 'luma' output (vis.alpha / vis.tint, which the ticker hands the engine) over the whole
+// area under the status row, over the cover, the Canvas or the black; Bars and Waves in the cover's
+// accent over either, Alchemy and Battery in their own colours; Opacity its layer's. What earlier builds
+// stored, read as it is now. node-vibrant and fetch are stand-ins here.
 import { act, cleanup, fireEvent, within } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
 import { mainMenu } from '../../src/skins/ipod/menus';
@@ -42,9 +42,9 @@ function atNowPlaying() {
       act(() => { m.store.setState((s) => ({ playback: { ...s.playback, status: 'playing', track: { uri, title: 'T', artist: 'A', duration: 100_000, art } } })); });
       await settle();
     },
-    /** the overlay's box: the cover's (overart), the whole area (overfull), or the whole area clipped (overclip) */
-    box: () => np.querySelector('[class*=overart], [class*=overfull], [class*=overclip]')?.className.match(/overart|overfull|overclip/)?.[0] ?? null,
-    layer: () => np.querySelector<HTMLElement>('[class*=overart], [class*=overfull], [class*=overclip]'),
+    /** the overlay's box: the whole area under the status row, whatever the art */
+    box: () => np.querySelector('[class*=overlay]')?.className.match(/overlay/)?.[0] ?? null,
+    layer: () => np.querySelector<HTMLElement>('[class*=overlay]'),
     out: () => [m.S().vis.alpha, m.S().vis.tint],
   };
 }
@@ -53,20 +53,20 @@ it('the overlay: over the cover and over the Canvas, Bars in the cover\'s accent
   const m = atNowPlaying();
   const ART = 'https://i.scdn.co/image/abc';
   await m.play('spotify:track:a', ART);              // a cover, no Canvas: over the cover's rectangle
-  expect([m.np.querySelector('img[class*=art]')?.getAttribute('src'), m.box(), ...m.out()]).toEqual([ART, 'overart', 'luma', [230, 40, 40]]);
+  expect([m.np.querySelector('img[class*=art]')?.getAttribute('src'), m.box(), ...m.out()]).toEqual([ART, 'overlay', 'luma', [230, 40, 40]]);
   expect([vi.mocked(fetch).mock.calls[0]![0], from.mock.calls[0]![0]]).toEqual([ART, 'blob:cover']);
   expect(m.log).toHaveBeenCalledWith('ipod: over cover accent #e62828 (Vibrant)');
   await m.play('spotify:track:c', ART);              // a Canvas: over it, the whole area, the accent still the cover's
-  expect([!!m.np.querySelector('video'), m.box(), ...m.out()]).toEqual([true, 'overfull', 'luma', [230, 40, 40]]);
+  expect([!!m.np.querySelector('video'), m.box(), ...m.out()]).toEqual([true, 'overlay', 'luma', [230, 40, 40]]);
   m.menu();
   m.pick('Alchemy');                                 // Alchemy: its own colours; its canvas the whole area always
-  expect([m.S().vis.kind, m.box(), ...m.out()]).toEqual(['alchemy', 'overclip', 'luma', null]);
+  expect([m.S().vis.kind, m.box(), ...m.out()]).toEqual(['alchemy', 'overlay', 'luma', null]);
   await m.play('spotify:track:x');                   // neither: over the black, the whole area, no ♪ tile
-  expect([!!m.np.querySelector('[class*=noart]'), m.box(), ...m.out()]).toEqual([false, 'overclip', 'luma', null]);
+  expect([!!m.np.querySelector('[class*=noart]'), m.box(), ...m.out()]).toEqual([false, 'overlay', 'luma', null]);
   m.menu();
   m.pick('Bars and Waves');
   m.pick('Bars');
-  expect([m.box(), ...m.out()]).toEqual(['overfull', 'luma', null]);   // Bars over the black: its own green
+  expect([m.box(), ...m.out()]).toEqual(['overlay', 'luma', null]);   // Bars over the black: its own green
   await m.play('spotify:track:b', 'https://i.scdn.co/image/bad');     // a cover that cannot be read: white, logged
   expect([m.log.mock.calls.at(-1)![0], m.S().vis.tint]).toEqual(['ipod: over cover accent #ffffff (cover not readable: Load failed)', [255, 255, 255]]);
   m.menu();
@@ -85,7 +85,7 @@ it('Opacity (dim while the overlay is off) steps 100 -> 75 -> 50 -> 25 -> 100 wi
   m.pick('Opacity');
   expect(readPref('ipod.visOpacity', 100)).toBe(75);
   await m.play('spotify:track:c', 'https://i.scdn.co/image/abc');   // over the Canvas: the same
-  expect([m.box(), m.layer()?.style.opacity]).toEqual(['overfull', '0.75']);
+  expect([m.box(), m.layer()?.style.opacity]).toEqual(['overlay', '0.75']);
   m.pick('Visualizer');                              // off: the row dim, the setting kept
   expect([m.layer(), m.row('Opacity').getAttribute('aria-disabled'), m.row('Opacity').textContent]).toEqual([null, 'true', 'Opacity75%']);
   m.pick('Visualizer');

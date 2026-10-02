@@ -42,3 +42,22 @@ export function useNav(): Nav {
   useStore(nav.store, (s) => s.stack.length);
   return nav;
 }
+
+/** The wheel's rotation as it happens, for a screen that follows the turn itself rather than its
+ *  detents (Now Playing's volume): ClickWheel offers each pointer move's degrees (clockwise positive)
+ *  once a press turns; a handler that takes them (returns true) means no detent ticks, so no clicks and
+ *  no per-tick haptics, for that move. One handler at a time: the screen registers it only while it is
+ *  the top one and wants it. Keys and the mouse wheel still tick. */
+let turnHandler: ((deg: number) => boolean) | null = null;
+export const offerTurn = (deg: number): boolean => !!turnHandler?.(deg);
+export function useTurn(f: ((deg: number) => boolean) | null): void {
+  const ref = useRef(f), on = !!f;
+  useLayoutEffect(() => { ref.current = f; });
+  useLayoutEffect(() => {
+    if (!on) return;
+    const h = (deg: number) => ref.current?.(deg) ?? false;
+    turnHandler = h;
+    return () => { if (turnHandler === h) turnHandler = null; };
+  }, [on]);
+}
+

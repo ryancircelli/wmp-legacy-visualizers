@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { A } from '../../../../engine';
-import { barsFit, clock, nextMode, ofText, scrubAccel, scrubStep, times, volumeStep, type Mode } from './logic';
+import { barsFit, clock, nextMode, ofText, scrubAccel, scrubStep, times, turnPct, volumeBy, VOLUME_TURN, type Mode } from './logic';
 
 describe('Now Playing logic', () => {
   it('formats the clock as the iPod does', () => {
@@ -23,9 +23,9 @@ describe('Now Playing logic', () => {
     expect(scrubAccel(80)).toBe(4);
   });
   it('steps the volume within its range', () => {
-    expect(volumeStep(50, 1, 100)).toBe(52);
-    expect(volumeStep(1, -1, 100)).toBe(0);
-    expect(volumeStep(199, 1, 200)).toBe(200);
+    expect([volumeBy(50, 2), volumeBy(1, -2), volumeBy(99.5, 2), volumeBy(0, -10)]).toEqual([52, 0, 100, 0]);
+    // a full turn of the ring is 65 % of the range; 1 % is about 5.5 degrees
+    expect([VOLUME_TURN, turnPct(360), turnPct(-360 / 65 * 10)]).toEqual([65, 65, -10]);
   });
   it('cycles the modes on center in the nano order, skipping what the track lacks (no lyrics mode)', () => {
     const all = { scrub: true, radio: true };
