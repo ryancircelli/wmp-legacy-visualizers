@@ -139,3 +139,20 @@ it('what earlier builds stored: Cover Bars is Bars with the overlay on; the tap 
   migrateVisPrefs();
   expect([readPref('ipod.visOn', true), localStorage.getItem('ipod.visOverCover')]).toEqual([true, null]);
 });
+
+it('two buttons over the art: ♪ (top-left) opens the track\'s menu, without the page options, with Playlist… when a playlist plays (its own Browse and Start Radio); ⋯ (top-right) the page options', async () => {
+  const m = atNowPlaying();
+  m.data.collections['spotify:playlist:pl'] = { meta: { name: 'Lawn', uri: 'spotify:playlist:pl' } as never, tracks: [] };
+  act(() => { m.store.setState((s) => ({ playback: { ...s.playback, status: 'playing',
+    track: { uri: 'spotify:track:x', title: 'T', artist: 'A', duration: 100_000, ctx: 'spotify:playlist:pl', albumUri: 'spotify:album:al' } } })); });
+  await settle();
+  act(() => { fireEvent.click(within(m.np).getByRole('button', { name: 'Track' })); });
+  expect(m.options().map((x) => x.textContent)).toEqual(['Start Radio', 'Add to Playlist…', 'Like', 'Browse Album', 'Browse Artist', 'Playlist…', 'Cancel']);
+  m.pick('Playlist…');
+  expect(m.options().map((x) => x.textContent)).toEqual(['Browse Playlist', 'Start Radio', 'Cancel']);
+  m.pick('Browse Playlist');
+  await settle();
+  expect(m.np.querySelector('[role=listbox]')).toBeNull();      // the popup closed; the playlist's screen was pushed
+  act(() => { fireEvent.click(within(m.np).getByRole('button', { name: 'Options' })); });
+  expect(m.options().map((x) => x.textContent)).toEqual(['Play On…', 'Visualizer…', 'LyricsOn', 'KaraokeOn', 'Cancel']);
+});

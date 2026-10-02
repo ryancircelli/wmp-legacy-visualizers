@@ -32,6 +32,7 @@ import {
 import { useHostGlobal } from '../../host';
 import type { MenuItem, ScreenEntry } from '../contract';
 import { useVisualizers, visId } from '../settings';
+import { collection, startRadio as radioFrom } from '../lists';
 import { Bar, MenuScreen, Popup, useNav, useScan, useWheel } from '../../ui';
 import { useTurn } from '../../wheel';
 import { pickAccent, rgbOf } from './accent';
@@ -55,7 +56,7 @@ const canvasPref = createStore<{ show: Show }>()(persist((): { show: Show } => (
   name: 'ipod.canvas', version: 2, migrate: migrateCanvasPref,
 }));
 
-type Pop = 'main' | 'playlists' | 'devices' | 'vis' | 'presets' | 'options';
+type Pop = 'main' | 'playlist' | 'playlists' | 'devices' | 'vis' | 'presets' | 'options';
 /** a wheel scrub: the position shown, then (sent) held until the player reports the seek */
 type Scrub = { uri: string; ms: number; sent?: boolean };
 
@@ -227,7 +228,14 @@ function NowPlaying() {
         onSelect: () => nav.push(albumScreen({ uri: albumUri, artist: artistUri, name: t?.album ?? '' })) },
       { id: 'artist', label: 'Browse Artist', disabled: !artistUri,
         onSelect: () => { if (artistUri) nav.push(artistScreen(artistUri, t?.artist ?? '')); } },
-      ...options,
+      // the playing playlist's own menu (the owner: "how can i get to the active playlist quickly", "split
+      // the current song menu and current playlist menu"): a second popup
+      ...(t?.ctx?.startsWith('spotify:playlist:') ? [{ id: 'playlist', label: 'Playlist…', onSelect: () => setPopup('playlist') }] : []),
+      cancel,   /* no page options here (the owner: "remove the visualizer stuff from that menu"): the ⋯ has them */
+    ],
+    playlist: [
+      { id: 'browse', label: 'Browse Playlist', onSelect: () => { if (t?.ctx) nav.push(collection(t.ctx, col.meta?.name ?? 'Playlist')); } },
+      { id: 'radio', label: 'Start Radio', onSelect: () => { if (t?.ctx) void radioFrom(sh, nav, t.ctx, col.meta?.name ?? 'Playlist'); } },
       cancel,
     ],
     playlists: toItems(plMenu.sub ?? []),
@@ -321,6 +329,9 @@ function NowPlaying() {
       {/* a swipe from here is still MENU (Root suppresses the click that ends one); a tap is the swap's alone */}
       <div className={css.tap} onClick={swap} />
       {p.lyrics && <Lyrics onClick={swap} />}
+      {/* the track's menu (the hold-centre one) at the top-left, the page's options at the top-right */}
+      <span className={cx(css.more, css.track)} role="button" aria-label="Track"
+            onClick={(e) => { e.stopPropagation(); window.alchemyHaptic?.('light'); setPopup('main'); }}>♪</span>
       <span className={css.more} role="button" aria-label="Options"
             onClick={(e) => { e.stopPropagation(); window.alchemyHaptic?.('light'); setPopup('options'); }}>⋯</span>
       <div className={css.controls}>

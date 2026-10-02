@@ -152,7 +152,7 @@ export const collection = (uri: string, title: string) =>
 
 /** Radio from a song or collection: the station seeded from it, played, then Now Playing; the status
  *  line says when there is none. */
-async function startRadio(sh: Shell, nav: Nav, uri: string, title: string, sub = ''): Promise<void> {
+export async function startRadio(sh: Shell, nav: Nav, uri: string, title: string, sub = ''): Promise<void> {
   const name = title + ' Radio';
   const st = (await sh.queries.fetchRadio([{ seed: uri, name, sub }]).catch(() => [])).find((x) => x.name === name);
   const s = sh.store.getState();
