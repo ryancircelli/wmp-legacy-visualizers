@@ -273,6 +273,22 @@ describe('3. transport: connect-state commands', () => {
     env.S.actions.setVolume(50); await settle();
     expect(env.calls.some((c) => /connect\/volume/.test(c.url))).toBe(false);
   });
+  it('the host\'s own speaker (CONTRACT __wmpSpeaker), not yet active, is transferred to before a resume', async () => {
+    vi.stubGlobal('__wmpSpeaker', { id: 'spk1', name: 'WMP Spotify (iOS)' });
+    const env = boot({ loggedIn: true, state: FX.playerState, activeDeviceId: '' });
+    env.resources.push({ name: 'https://gew4-spclient.spotify.com/connect-state/v1/devices/hobs_x', initiatorType: 'fetch' });
+    env.route(/connect\/transfer/, { status: 200, json: {} });
+    env.route(/player\/command/, { status: 200, json: { ack_id: 'a' } });
+    env.start();
+    await settle();
+    void env.C.playPause();  // paused (no active device): a resume
+    await settle();
+    const t = env.calls.find((x) => /connect\/transfer/.test(x.url))!, c = env.calls.filter((x) => /player\/command/.test(x.url)).pop()!;
+    expect(t.url).toMatch(new RegExp('/connect/transfer/from/' + ME + '/to/spk1$'));
+    expect(c.url).toMatch(new RegExp('/player/command/from/' + ME + '/to/spk1$'));
+    expect(env.calls.indexOf(t)).toBeLessThan(env.calls.indexOf(c));
+    expect(JSON.stringify(c.body)).toBe('{"command":{"endpoint":"resume"}}');
+  });
 });
 
 describe('3b. the playing context names Now Playing and Up Next', () => {

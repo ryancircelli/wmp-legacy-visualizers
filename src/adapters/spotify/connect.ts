@@ -39,6 +39,14 @@ export async function command(sp: Sp, cmd: Cmd, orElse?: (() => void) | null, re
   const log = (how: string) => window.alchemyLog?.('spotify: ' + cmd.endpoint + ' from ' + (w.deviceId || '-').slice(0, 8)
     + ' to ' + (to || '-').slice(0, 8) + ': ' + how);
   if (!authed() || !w.deviceId || !to) { log(!authed() ? 'no token' : 'no device'); orElse?.(); return false; }
+  // The host's speaker, not yet the active device, has no session to act on: a resume there is taken
+  // (200) and does nothing (librespot: "context is not available"). A transfer hands it Spotify's
+  // remembered session first, as a pick in a device list does; a play carries its own context.
+  if (to === window.__wmpSpeaker?.id && to !== w.activeDeviceId && cmd.endpoint !== 'play' && !retried) {
+    log('speaker idle: transferring first');
+    await transfer(sp, to);
+    return command(sp, cmd, orElse, true);
+  }
   const url = 'https://' + spclient() + '/connect-state/v1/player/command/from/' + w.deviceId + '/to/' + to;
   try {
     const r = await post(sp, url, { command: cmd });
