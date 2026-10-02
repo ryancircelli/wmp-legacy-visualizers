@@ -426,15 +426,13 @@ it('the visualizer is an overlay, on at first: the whole area over the cover, th
   expect([box(), !!np.querySelector('canvas'), !!np.querySelector('[class*=noart]'), m.S().vis.alpha]).toEqual([null, false, true, 'opaque']);
 });
 
-it('the overlay takes the screen\'s shape (Appearance > Visualizer Fit: Fit) while shown, then the scale WMP had', () => {
+it('the overlay takes the screen\'s shape (scale auto, always: no Visualizer Fit setting) while shown, then the scale WMP had', () => {
   const m = nowPlayingAlone();
   act(() => writePref('ipod.visOn', false));
   act(() => m.store.getState().actions.setSettings({ scale: 0.5 }));   // WMP's own choice
   act(() => writePref('ipod.visOn', true));
-  expect(m.S().settings.scale).toBe('auto');         // Fit, the default
-  act(() => writePref('ipod.visFit', 'stretch'));   // changed while shown: at once
-  expect(m.S().settings.scale).toBe('original');
-  act(() => writePref('ipod.visFit', 'fit'));
+  expect(m.S().settings.scale).toBe('auto');
+  act(() => writePref('ipod.visFit', 'stretch'));   // an earlier build's pref: read by nothing
   expect(m.S().settings.scale).toBe('auto');
   act(() => writePref('ipod.visOn', false));         // off: WMP's own choice back
   expect(m.S().settings.scale).toBe(0.5);
@@ -478,7 +476,7 @@ function atSettings() {
            title: () => m.shown('[class*=status] [class*=title]')[0]?.textContent };
 }
 const SETTINGS = [
-  'SkiniPod', 'Color', 'Click WheelWhite', 'ClickerOn', 'Visualizer FitFit',
+  'SkiniPod', 'Color', 'Click WheelWhite', 'ClickerOn',
   'Main Menu', 'Library Filters', 'Library ViewGrid',
   'About', 'Check for Updates', 'Reset Settings', 'Legal',
   'Source Code', 'Report a Problem',
@@ -491,12 +489,12 @@ it('Settings: one list under section headers, without what Now Playing or the de
   expect(m.sel()).toEqual(['SkiniPod']);             // the first row, under the first header
   key('ArrowUp');                                    // the header above it is no position
   expect(m.sel()).toEqual(['SkiniPod']);
-  for (let k = 0; k < 5; k++) key('ArrowDown');      // over the Menus header
+  for (let k = 0; k < 4; k++) key('ArrowDown');      // over the Menus header
   expect(m.sel()).toEqual(['Main Menu']);
   key('ArrowUp');
-  expect(m.sel()).toEqual(['Visualizer FitFit']);
+  expect(m.sel()).toEqual(['ClickerOn']);
   act(() => { fireEvent.click(m.shown('[data-header]')[1]!); });   // a tap on a header does nothing
-  expect([m.sel(), m.title()]).toEqual([['Visualizer FitFit'], 'Settings']);
+  expect([m.sel(), m.title()]).toEqual([['ClickerOn'], 'Settings']);
   // the rows that are a real choice open their page
   m.cmd.checkForUpdates.mockResolvedValue({ state: 'latest' });
   for (const [row, title] of [['SkiniPod', 'Skin'], ['Color', 'Color'], ['Main Menu', 'Main Menu'], ['Library Filters', 'Library Filters'],
@@ -528,7 +526,7 @@ it('Settings\' host-gated rows show only with their host: Theme, Refresh Player,
   act(() => m.S().actions.setAuth({ canLogout: true }));
   expect(m.headers()).toEqual(['Appearance', 'Menus', 'General', 'Support', 'Account']);
   expect(m.rows()).toEqual([
-    'SkiniPod', 'Color', 'Click WheelWhite', 'ClickerOn', 'ThemeAutomatic', 'Visualizer FitFit',
+    'SkiniPod', 'Color', 'Click WheelWhite', 'ClickerOn', 'ThemeAutomatic',
     'Main Menu', 'Library Filters', 'Library ViewGrid',
     'About', 'Check for Updates', 'Refresh Player', 'Reset Settings', 'Legal',
     'Source Code', 'Report a Problem', 'Host Log',
@@ -536,12 +534,12 @@ it('Settings\' host-gated rows show only with their host: Theme, Refresh Player,
   ]);
 });
 
-it('Reset Settings puts back what Settings keeps: the toggles, the click wheel, the library view, the visualizer fit; the volume as it was', () => {
+it('Reset Settings puts back what Settings keeps: the toggles, the click wheel, the library view; the volume as it was', () => {
   const m = atSettings();
   act(() => { for (const k of ['ipod.volumeLimit', 'ipod.shake', 'ipod.clock']) localStorage.setItem(k, '50'); });   // earlier builds': read by nothing
   act(() => m.store.getState().actions.setSettings({ volume: 80 }));
-  for (const r of ['ClickerOn', 'Click WheelWhite', 'Visualizer FitFit', 'Library ViewGrid']) m.click(r);
-  expect(m.rows()).toEqual(expect.arrayContaining(['ClickerOff', 'Click WheelBlack', 'Visualizer FitStretch', 'Library ViewList']));
+  for (const r of ['ClickerOn', 'Click WheelWhite', 'Library ViewGrid']) m.click(r);
+  expect(m.rows()).toEqual(expect.arrayContaining(['ClickerOff', 'Click WheelBlack', 'Library ViewList']));
   expect(m.S().settings.volume).toBe(80);            // no limit holds it any more
   m.click('Reset Settings');
   act(() => { fireEvent.click(m.shown('div').find((x) => x.textContent === 'Reset' && !x.children.length)!); });

@@ -88,14 +88,9 @@ export type LibraryView = 'grid' | 'list';
 export const useLibraryView = () => usePref<LibraryView>('ipod.view', 'grid');
 /** 'ipod.libraryFilter': the Library's chosen chip (a LIBRARY_FILTERS id) */
 export const useLibraryFilter = () => usePref('ipod.libraryFilter', 'playlists');
-/** 'ipod.visFit': Appearance > Visualizer Fit: Fit draws it at the screen's own shape (settings.scale 'auto'),
- *  Stretch is WMP's native surface stretched to the screen ('original'); Now Playing applies it while
- *  the visualizer shows. Anything but 'stretch' reads as Fit. */
-export type VisFit = 'fit' | 'stretch';
-export const useVisFit = () => usePref<VisFit>('ipod.visFit', 'fit');
 /** 'ipod.visualizer': the visualization Now Playing shows, a registry entry's (shell presets) visId,
  *  Bars and Waves' Bars until another is chosen; applied onto the shared settings.vis / preset only
- *  while it shows, as visFit is, so the WMP 9 skin's own choice is untouched. */
+ *  while it shows (with settings.scale 'auto'), so the WMP 9 skin's own choice is untouched. */
 export const visId = (p: { vis: string; preset: number }) => p.vis + ':' + p.preset;
 export const useVisualizer = () => usePref('ipod.visualizer', 'bars:0');
 /** 'ipod.visOn': Visualizer… > Visualizer: the visualization drawn over the art (the cover, the Canvas,

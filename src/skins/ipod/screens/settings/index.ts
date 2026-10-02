@@ -5,13 +5,11 @@
 // - useLibraryFilter(): the Library's chosen chip, [id, set] ('ipod.libraryFilter'; Playlists first).
 // - useLibraryView(): Menus > Library View, ['grid' | 'list', set] ('ipod.view'; grid first): how
 //   the lists with covers draw (GridScreen or MenuScreen).
-// - useVisFit(): Appearance > Visualizer Fit, ['fit' | 'stretch', set] ('ipod.visFit'; fit first): the
-//   settings.scale Now Playing applies while its visualizer shows ('auto' / 'original').
 // - useVisualizer(): Now Playing's Visualizer…, [visId, set] ('ipod.visualizer'; Bars first): the
 //   settings.vis / preset Now Playing applies while its visualizer shows; useVisualizers() lists them by engine.
 export { settings } from './Settings';
 export {
   LIBRARY_FILTERS, MAIN_MENU, useLibraryFilter, useLibraryView, useMenuVisibility,
-  useVisFit, useVisualizer, useVisualizers, visId,
-  type LibraryView, type MenuVisibility, type VisFit,
+  useVisualizer, useVisualizers, visId,
+  type LibraryView, type MenuVisibility,
 } from './prefs';

@@ -16,7 +16,8 @@ export const COLORS: Record<Preset, readonly [number, number, number]> = {
   yellow: [52, 89, 49], orange: [30, 85, 50], red: [357, 62, 47], pink: [331, 70, 62],
   // the owner's two (2026-10-02): a greyed tan and a deep brown, set darker and greyer than they read,
   // since the cylinder's lights (below) lift a muted colour more than a vivid one (his: "a little too bright")
-  mocha: [30, 28, 50], espresso: [22, 36, 17],
+  // Mocha again (the owner: "not mocha enough and too pale", "too orangish"): the hue toward brown, darker, a touch richer
+  mocha: [24, 32, 40], espresso: [22, 36, 17],
 };
 /** Custom's lightness range: the body's lights top out at 72 % (ipod.module.css --hi), so past 75 the
  *  cylinder goes flat (its centre as bright as its bands); under 15 its edge and shade go black */

@@ -31,7 +31,7 @@ import {
 } from '../../../../ui';
 import { useHostGlobal } from '../../host';
 import type { MenuItem, ScreenEntry } from '../contract';
-import { useVisFit, useVisualizers, visId } from '../settings';
+import { useVisualizers, visId } from '../settings';
 import { Bar, MenuScreen, Popup, useNav, useScan, useWheel } from '../../ui';
 import { useTurn } from '../../wheel';
 import { pickAccent, rgbOf } from './accent';
@@ -440,16 +440,15 @@ function Vis({ tint, opacity = 100, opaque = false }: { tint: string | null; opa
     const off = st.subscribe(lift);
     return () => { off(); hold(st.getState().ui.view !== 'now'); };
   }, [on, sh]);
-  // Playback > Visualizer onto the shared settings.scale while shown (Fit: the screen's own shape,
-  // 'auto'; Stretch: WMP's native surface, 'original'), then the scale there was before, so the WMP
-  // skin's own choice is untouched; a change of the pref meanwhile goes through the same restore and apply.
-  const [fit] = useVisFit();
+  // The shared settings.scale is 'auto' while shown: drawn at the screen's own shape, at its size (the
+  // owner, 2026-10-02: "always fit, remove option, render at the size we need"; Appearance > Visualizer
+  // Fit's Stretch is gone); then the scale there was before, so the WMP skin's own choice is untouched.
   useEffect(() => {
     if (!on) return;
     const a = sh.store.getState().actions, prev = sh.store.getState().settings.scale;
-    a.setSettings({ scale: fit === 'stretch' ? 'original' : 'auto' });
+    a.setSettings({ scale: 'auto' });
     return () => a.setSettings({ scale: prev });
-  }, [on, fit, sh]);
+  }, [on, sh]);
   // the iPod's visualization (ipod.visualizer) onto the shared settings.vis / preset the same way
   const { preset } = useVisualizers();
   useEffect(() => {

@@ -99,7 +99,7 @@ in the render are duller than real photos, so the suggested values are saturated
 | Orange (owner's) | #e59a1f | `30 85% 50%` | #933917 | #efe9dc | white / #8e8e93 |
 | Pink | #e25c9d | `331 70% 62%` | #9b2952 | #eebed7 | white / #8e8e93 |
 | (PRODUCT) RED | #c8333a | `357 62% 47%` | #ab2e2a | #ed8fa2 | white / #8e8e93 |
-| Mocha Tan (owner's, not Apple's; darkened 2026-10-02, "a little too bright") | — | `30 28% 50%` | — | — | white / #8e8e93 |
+| Mocha Tan (owner's, not Apple's; darkened 2026-10-02, "a little too bright"; browner and darker again the same day, "not mocha enough and too pale… too orangish") | — | `24 32% 40%` | — | — | white / #8e8e93 |
 | Espresso Brown (owner's, not Apple's; darkened 2026-10-02) | — | `22 36% 17%` | — | — | white / #8e8e93 |
 
 ### 1.3 The aluminium in CSS: one hue knob
@@ -457,7 +457,7 @@ Contacts, Fitness, Voice Memos (§2.3).
 
 - **Value lists** (Color, Theme, Skin) are a list with a checkmark on the
   current choice.
-- **Toggles** (Clicker, Click Wheel, Visualizer Fit, Library View) flip in place on
+- **Toggles** (Clicker, Click Wheel, Library View) flip in place on
   centre and show their value in blue.
 - This player's Settings is **one list under section headers** (§4.4, "This player's Settings
   tree"): a header is the iPod OS grouped list's short grey band with its name in bold white
@@ -673,7 +673,7 @@ caption (`useWindowControls().onCaptionMouseDown`).
 | **Skin switch** | **Settings > Skin** (under Appearance): "iPod ✓" / "Windows Media Player 9" sets `actions.setSettings({ skin: 'wmp9' })`. WMP 9's way here is its View > Skin submenu (already in `src/skins/menus.ts`) |
 | **Colour** | **Settings > Color** (under Appearance): the nine names (§1.2), the owner's **Mocha Tan** and **Espresso Brown** (2026-10-02), plus **Custom** (`screens/settings/CustomColor.tsx`, the owner's 2026-10-02 "needs a y axis… only controlled by wheel which i don't like"): a field the finger drags in (hue across, lightness down, light at the top, the rainbow shaded at the current saturation) with a ring at the colour, a saturation slider (grey to full) under it, and a readout of the three. The wheel turns the focused one (hue 5°, lightness 1 %, saturation 2 % a detent); centre moves the focus hue → lightness → saturation → hue (the ring or the thumb, and the readout's name, in blue); a touch on a control focuses it; MENU leaves. Custom's base is the picked colour taken down by 1.15 (`settings.ts` LOOK), since the cylinder's lights lift the body above its base. Every change shows on the body at once and is kept (`ipod.settings` v1: `light` added; a v0 blob loads as lightness 50, its saturation 0 as 85). Plus **Click Wheel**: White / Black ring |
 | **Shuffle / Repeat** | the Now Playing status row's toggles only (not in Settings) |
-| **Visualizer** | Now Playing's ⋯ menu and hold-centre popup: **Visualizer…**: **Visualizer** On / Off (the overlay, §4.3), **Opacity**, then the engines, then an engine's presets; picking one while it is off turns it on (not in Settings). **Settings > Visualizer Fit** (under Appearance): Fit / Stretch, which still shapes Alchemy's and Battery's frame (the screen's shape, or their native surface stretched) |
+| **Visualizer** | Now Playing's ⋯ menu and hold-centre popup: **Visualizer…**: **Visualizer** On / Off (the overlay, §4.3), **Opacity**, then the engines, then an engine's presets; picking one while it is off turns it on (not in Settings). No Visualizer Fit setting (gone 2026-10-02, the owner: "always fit remove option, render at the size we need"): the overlay is always drawn at the screen's own shape and size (`settings.scale` 'auto' while shown); an old `ipod.visFit` is read by nothing |
 | **Shake** (iPhone only) | none (2026-10-02, the owner): the setting and the skin's response to `wmp-shake` are gone; the host still reports the shake (CONTRACT) |
 | **Brightness, backlight, date and time** | not the skin's (the owner's ruling, 2026-10-02: "we are not the OS"): the device's own. The status row's clock follows the device's 12 / 24 hours (the platform's locale default, `ui.tsx useTime`) |
 | **Battery** in the status bar | iPhone: `window.__wmpBattery` / `wmp-battery` (`useHostGlobal`). Windows / Chromium: `navigator.getBattery()` when present. Otherwise draw it full |
@@ -686,7 +686,7 @@ rows show only with their host, and a header with no row shown under it is not s
 
 | Header | Its rows, in order |
 |---|---|
-| **Appearance** | Skin ›, Color ›, Click Wheel (White / Black), Clicker (On / Off), Theme › (Light / Dark / Automatic, *`alchemyAppearance`*), Visualizer Fit (Fit / Stretch) |
+| **Appearance** | Skin ›, Color ›, Click Wheel (White / Black), Clicker (On / Off), Theme › (Light / Dark / Automatic, *`alchemyAppearance`*) |
 | **Menus** | Main Menu ›, Library Filters ›, Library View (Grid / List) |
 | **General** | About ›, Check for Updates ›, Refresh Player (*`alchemyRestart`*), Reset Settings ›, Legal › |
 | **Support** | Source Code, Report a Problem, Host Log (*`alchemyShowLog`*) |

@@ -16,7 +16,7 @@ import type { IpodSettings, MenuItem, ScreenEntry } from '../contract';
 import { CustomColor } from './CustomColor';
 import { check, confirm, DIM, menu, onOff, page, Row, TEXT, TextPage, u } from './parts';
 import {
-  LIBRARY_FILTERS, MAIN_MENU, resetMenu, resetPrefs, setMenuItem, useAppearance, useLibraryView, useMenuVisibility, useVisFit,
+  LIBRARY_FILTERS, MAIN_MENU, resetMenu, resetPrefs, setMenuItem, useAppearance, useLibraryView, useMenuVisibility,
 } from './prefs';
 
 declare const __PAGE_BUILD__: string | undefined;
@@ -32,8 +32,7 @@ const shown = (items: (MenuItem | false)[]) => items.filter((x): x is MenuItem =
 
 function SettingsMenu() {
   const nav = useNav(), sh = useShell(), canLogout = useApp((s) => s.auth.canLogout);
-  const [ip, patch] = useIpodSettings(), [theme] = useAppearance(), [fit, setFit] = useVisFit(), [view, setView] = useLibraryView();
-  const stretch = fit === 'stretch';
+  const [ip, patch] = useIpodSettings(), [theme] = useAppearance(), [view, setView] = useLibraryView();
   return <MenuScreen items={shown([
     header('Appearance'),
     { id: 'skin', label: 'Skin', right: 'iPod', chevron: true, onSelect: to(nav, menu('settings/skin', 'Skin', () => [
@@ -45,8 +44,6 @@ function SettingsMenu() {
     // the host's light / dark (the iOS app's)
     !!window.alchemyAppearance && { id: 'theme', label: 'Theme', right: MODES.find(([m]) => m === theme)?.[1], chevron: true,
                                     onSelect: to(nav, page('settings/theme', 'Theme', Theme)) },
-    // Now Playing's visualizer: the screen's real shape, or WMP's native surface stretched to it
-    { id: 'visfit', label: 'Visualizer Fit', right: stretch ? 'Stretch' : 'Fit', onSelect: () => setFit(stretch ? 'fit' : 'stretch') },
 
     header('Menus'),
     { id: 'main', label: 'Main Menu', chevron: true, onSelect: to(nav, page('settings/main', 'Main Menu', MainMenu)) },

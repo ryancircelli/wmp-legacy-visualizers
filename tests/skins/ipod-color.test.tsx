@@ -53,7 +53,7 @@ it('lists the nine colours, Mocha Tan and Espresso Brown, then Custom; a preset 
     'Mocha Tan', 'Espresso Brown', 'Custom']);
   expect(m.hsl()).toEqual(['140', '70%', '34%']);
   m.click('Mocha Tan');
-  expect(m.hsl()).toEqual(['30', '28%', '50%']);
+  expect(m.hsl()).toEqual(['24', '32%', '40%']);
   expect(m.rows()).toContain('Mocha Tan✓ ');
   m.click('Espresso Brown');
   expect(m.hsl()).toEqual(['22', '36%', '17%']);
