@@ -4,11 +4,12 @@
 // for 2 s); the center cycles the mode row: scrubber (ticks seek 1 % a detent, accelerated, sent 400 ms
 // after the last or on center; MENU cancels) -> Radio slider (the nano's Genius) -> lyrics over the
 // cover -> back; each but lyrics falls back after 5 s idle (shuffle and Like: the status row's
-// toggles). Hold center: the nano's popup, Spotify's way (§4.3). Play / next / prev and their holds
-// (fast-forward, rewind: useScan) are the chrome's. A track with a Spotify Canvas shows it behind the
-// whole screen instead of the cover, the two bands made translucent over it; a tap on the cover's area
-// cycles Canvas -> cover -> the app's visualizer (on silence, as the phone has no capture; Bars until
-// Settings > Visualizer or the popup's Visualizer… picks another) -> Canvas, remembered (only while the
+// toggles). Hold center: the nano's popup, Spotify's way (§4.3); the ⋯ in the cover's corner opens
+// this page's options (Visualizer…, Lyrics, Karaoke), which the popup has too. Play / next / prev and
+// their holds (fast-forward, rewind: useScan) are the chrome's. A track with a Spotify Canvas shows it
+// behind the whole screen instead of the cover, the two bands made translucent over it; a tap on the
+// cover's area cycles Canvas -> cover -> the app's visualizer (on silence, as the phone has no capture;
+// Bars until Settings > Visualizer or Visualizer… picks another) -> Canvas, remembered (only while the
 // Canvas is chosen is one fetched).
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useStore } from 'zustand';
@@ -37,7 +38,7 @@ const canvasPref = createStore<{ show: Show }>()(persist((): { show: Show } => (
   name: 'ipod.canvas', version: 1, migrate: (old) => ({ show: (old as { on?: boolean } | null)?.on === false ? 'cover' : 'video' }),
 }));
 
-type Pop = 'main' | 'playlists' | 'devices' | 'vis';
+type Pop = 'main' | 'playlists' | 'devices' | 'vis' | 'options';
 /** a wheel scrub: the position shown, then (sent) held until the player reports the seek */
 type Scrub = { uri: string; ms: number; sent?: boolean };
 
@@ -50,6 +51,7 @@ function NowPlaying() {
   const p = useApp((s) => ({
     media: s.playback.status !== 'none', track: s.playback.track, canSeek: s.playback.canSeek, shuffle: s.playback.shuffle,
     spotify: isSpotify(s), lyrics: lyricsShown(s) !== null, max: isSpotify(s) ? 100 : 200,
+    lyricsOn: s.settings.lyrics, karaoke: s.settings.karaoke,
   }));
   const t = p.track, uri = t?.uri ?? '', d = t?.duration ?? 0;
   const [mode, setMode] = useState<Mode>('default');
@@ -116,6 +118,14 @@ function NowPlaying() {
       if (hit) c().playItem({ uri: hit.uri });
     }, () => {});
   };
+  /** this page's options (the ⋯, and the popup's): a visualization picked shows at once, the
+   *  visualizer put on screen if it was not; Lyrics and Karaoke as Settings toggles them */
+  const options: MenuItem[] = [
+    { id: 'vis', label: 'Visualizer…', onSelect: () => setPopup('vis') },
+    { id: 'lyrics', label: 'Lyrics', right: p.lyricsOn ? 'On' : 'Off', onSelect: () => get().actions.setLyricsEnabled(!p.lyricsOn) },
+    { id: 'karaoke', label: 'Karaoke', right: p.karaoke ? 'On' : 'Off', onSelect: () => get().actions.setKaraoke(!p.karaoke) },
+  ];
+  const cancel: MenuItem = { id: 'cancel', label: 'Cancel' };
   const items: Record<Pop, MenuItem[]> = {
     main: [
       { id: 'radio', label: 'Start Radio', disabled: !seeds.length, onSelect: startRadio },
@@ -126,12 +136,13 @@ function NowPlaying() {
       { id: 'artist', label: 'Browse Artist', disabled: !artistUri,
         onSelect: () => { if (artistUri) nav.push(artistScreen(artistUri, t?.artist ?? '')); } },
       { id: 'device', label: 'Play On…', disabled: !p.spotify, onSelect: () => setPopup('devices') },
-      ...(show === 'vis' ? [{ id: 'vis', label: 'Visualizer…', onSelect: () => setPopup('vis') }] : []),
-      { id: 'cancel', label: 'Cancel' },
+      ...options,
+      cancel,
     ],
     playlists: toItems(plMenu.sub ?? []),
     devices: toItems(devices.items()),
-    vis: visItems,
+    vis: visItems.map((x) => ({ ...x, onSelect: () => { x.onSelect?.(); canvasPref.setState({ show: 'vis' }); } })),
+    options: [...options, cancel],
   };
 
   useWheel({
@@ -198,6 +209,8 @@ function NowPlaying() {
       {/* a swipe from here is still MENU (Root suppresses the click that ends one); a tap is the swap's alone */}
       <div className={css.tap} onClick={(e) => { e.stopPropagation(); swap(); }} />
       {m === 'lyrics' && <Lyrics />}
+      <span className={css.more} role="button" aria-label="Options"
+            onClick={(e) => { e.stopPropagation(); window.alchemyHaptic?.('light'); setPopup('options'); }}>⋯</span>
       <div className={css.controls}>
         {art && !bg && <img className={css.reflection} src={art} alt="" />}
         {vol ? (
