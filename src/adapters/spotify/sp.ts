@@ -46,7 +46,8 @@ export interface Sp {
   sentVolume: { value: number; at: number }[];
   /** true while a device-reported volume is written to the settings (no PUT back) */
   fromDevice: boolean;
-  /** internal fetches in flight (the playing context, album names), by uri */
+  /** internal fetches by uri: the playing context and album names while in flight; a track asked for
+   *  (a speaker's bare state, state.ts) stays, as the record that it was asked once */
   loading: Record<string, Promise<unknown>>;
   /** what the fetches have taught us, for naming the player's state (see cache.ts) */
   cache: Cache;

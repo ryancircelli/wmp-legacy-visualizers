@@ -1,7 +1,7 @@
 // Settings: the nano 5G's tree in its order and words (docs/ipod-skin.md §2.3: About, Shuffle,
 // Repeat, General, Playback, Date & Time, Legal, Reset Settings), less what has no meaning on Spotify
 // (§4.4: Radio Regions, Language, Font Size, Rotate, Sort Contacts, Spoken Menus, Sound Check, EQ,
-// Audio Crossfade, Audiobooks, Mono Audio), then this player's own rows (§4.4): Play On, Speaker Name (iPhone), Lyrics,
+// Audio Crossfade, Audiobooks, Mono Audio), then this player's own rows (§4.4): Play On, Lyrics,
 // Karaoke, Visualizer, Color, Click Wheel, Skin, Appearance, Check for Updates, Support, Log Out. A value shows
 // at its row's right; a value list checks the current choice; a toggle flips in place (§2.4).
 import { useEffect, useState, type CSSProperties } from 'react';
@@ -15,7 +15,7 @@ import { cityOf, fmtClock, stepHue, zoneTime } from './logic';
 import { BarPage, check, confirm, DIM, menu, onOff, page, Row, Sun, TEXT, TextPage, u, useNow } from './parts';
 import {
   CLOCK0, LIBRARY_FILTERS, MAIN_MENU, resetMenu, resetPrefs, setMenuItem, useAppearance, useDisplay, useLibraryView, useMenuVisibility, usePref, useShake,
-  useSpeaker, useVisFit, useVisualizer, useVisualizerItems, useVolumeLimitPref, visId,
+  useVisFit, useVisualizer, useVisualizerItems, useVolumeLimitPref, visId,
 } from './prefs';
 
 declare const __PAGE_BUILD__: string | undefined;
@@ -29,7 +29,7 @@ const GROW: CSSProperties = { flex: 1, minHeight: 0 };
 const to = (nav: ReturnType<typeof useNav>, e: ScreenEntry) => () => nav.push(e);
 
 function SettingsMenu() {
-  const nav = useNav(), sh = useShell(), [ip, patch] = useIpodSettings(), sp = useSpeaker(), [vis] = useVisualizer();
+  const nav = useNav(), sh = useShell(), [ip, patch] = useIpodSettings(), [vis] = useVisualizer();
   const st = useApp((s) => ({ shuffle: s.playback.shuffle, repeat: s.playback.repeat, canLogout: s.auth.canLogout,
                               lyrics: s.settings.lyrics, karaoke: s.settings.karaoke }));
   const a = () => sh.store.getState().actions, c = () => sh.store.getState().commands;
@@ -45,7 +45,6 @@ function SettingsMenu() {
       onSelect: to(nav, confirm('settings/reset', 'Reset Settings', 'Reset', (n) => { resetPrefs(); patch(IPOD0); n.pop(); })) },
     // this player's
     { id: 'playon', label: 'Play On', chevron: true, onSelect: to(nav, page('settings/playon', 'Play On', PlayOn)) },
-    !!window.alchemySpeakerName && speakerItem(sp),
     { id: 'lyrics', label: 'Lyrics', right: onOff(st.lyrics), onSelect: () => a().setLyricsEnabled(!st.lyrics) },
     { id: 'karaoke', label: 'Karaoke', right: onOff(st.karaoke), onSelect: () => a().setKaraoke(!st.karaoke) },
     { id: 'vis', label: 'Visualizer', right: sh.presets.find((p) => visId(p) === vis)?.name, chevron: true,
@@ -253,22 +252,11 @@ function CustomColor({ prev }: { prev: Partial<IpodSettings> }) {
 // ---- Play On, Appearance, Check for Updates -----------------------------------------------------------
 /** The Connect devices (§4.4), the playing one checked, offline ones greyed; AirPlay is the iOS app's picker. */
 function PlayOn() {
-  const d = useDevices(() => ''), sp = useSpeaker();
+  const d = useDevices(() => '');
   const items: MenuItem[] = d.items().flatMap((e, i) => ('label' in e
     ? [{ id: 'd' + i, label: e.label, right: check(!!e.check), disabled: e.disabled, onSelect: e.act }] : []));
   if (window.alchemyRoutePicker) items.push({ id: 'airplay', label: 'AirPlay…', onSelect: () => window.alchemyRoutePicker?.() });
-  if (window.alchemySpeakerName) items.push(speakerItem(sp));
   return <MenuScreen items={items} empty="No Devices" />;
-}
-
-/** The iPhone's own Connect speaker (librespot): its name in Spotify's pickers, (off) while its session
- *  is down; renamed in the platform's own text entry (the skin has none). */
-function speakerItem(sp: Window['__wmpSpeaker']): MenuItem {
-  const name = sp?.name ?? '';
-  return { id: 'speaker', label: 'Speaker Name', right: (name || '—') + (sp?.id ? '' : ' (off)'), onSelect: () => {
-    const v = window.prompt('Speaker Name', name)?.trim();
-    if (v && v !== name) window.alchemySpeakerName?.(v);
-  } };
 }
 
 const MODES = [['light', 'Light'], ['dark', 'Dark'], ['auto', 'Automatic']] as const;

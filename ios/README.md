@@ -128,19 +128,23 @@ librespot's "WMP Spotify".
   feeds the page from librespot while it plays and from the broadcast otherwise. The callback blocks
   while half a second is queued, which paces librespot's decoding. A pause flushes the queue and the
   visualizers go dark.
-- **Name, id, and which device plays.** The speaker is "WMP Spotify (iOS)" until renamed from the
-  page (`alchemySpeakerName(name)`, the "speaker" message; the iPod skin's Settings > Speaker Name, a
-  `window.prompt` the app shows as a system alert, `WKUIDelegate`): the phone's own name ("Ryan's
-  iPhone") is "iPhone" or "iPad" to apps since iOS 16 without an entitlement Apple grants on request.
-  A rename restarts the receiver under the new name. Its Connect device id is the hash of the
+- **Name, id, and which device plays.** The speaker is "WMP Spotify (iOS)": the phone's own name
+  ("Ryan's iPhone") is "iPhone" or "iPad" to apps since iOS 16 without an entitlement Apple grants on
+  request. The page can rename it (`alchemySpeakerName(name)`, the "speaker" message; a rename
+  restarts the receiver under the new name), but no skin offers that: the owner found it confusing
+  (2026-10-01) and the iPod skin's Speaker Name row went. `window.prompt` shows as a system alert
+  (`WKUIDelegate`) should a skin need a text entry. Its Connect device id is the hash of the
   install's `identifierForVendor`, not of the name (librespot's binary hashes the name, so two
   devices with one name would be one device to Spotify, and a rename would make a new one). The
   app tells the page `window.__wmpSpeaker = {id, name}` (`wmp-speaker`; id null while no session is
   up; the state callback in `wmp_librespot.h`), the Spotify adapter sends its commands to the active
   device, else to the speaker, else to the page's own player (`target` in
-  src/adapters/spotify/connect.ts), and observer.js registers the page's own player with Connect's
-  `hidden` capability, so only the speaker shows in pickers on the phone and elsewhere. The web
-  player's own entry is what Windows plays through, so nothing hides it there.
+  src/adapters/spotify/connect.ts), moves playback that lands on the page's own player to the
+  speaker (observers.ts, at most once every 10 s), leaves that player out of its own Play On list
+  (src/ui/Lists.tsx), and observer.js registers it with Connect's `hidden` capability, so only the
+  speaker shows in pickers on the phone and elsewhere. The web player's own entry is what Windows
+  plays through, so nothing hides it there. librespot fills no title, art or duration into the
+  state it reports (only the track uri): the page looks those up itself (state.ts).
 - Discovery goes through iOS's own mDNSResponder (librespot's `with-dns-sd`). librespot's default,
   libmdns, opens its own multicast socket, which iOS 14 and later allow only with Apple's multicast
   entitlement. The Bonjour route needs `_spotify-connect._tcp` in `NSBonjourServices`, and iOS asks

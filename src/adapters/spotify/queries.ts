@@ -14,6 +14,7 @@ import { fetchSearch as search } from './search';
 import { acceptLyrics as accept, fetchLyrics as lyrics } from './lyrics';
 import { applyMembership as applyM, fetchEditablePlaylists as editable, fetchMembership as membership, fetchSaved as saved, setInvalidator } from './saved';
 import { query } from './pathfinder';
+import { fetchTrack as track } from './state';
 import { QueryError, RateLimitError, type Sp } from './sp';
 
 export { QueryError, RateLimitError };
@@ -88,6 +89,9 @@ export async function fetchCanvas(trackUri: string): Promise<Canvas | null> {
   if (!url?.startsWith('https://')) return null;
   return { url, type: /VIDEO/.test(c?.type ?? '') || /\.mp4(?:[?#]|$)/i.test(url) ? 'video' : 'image' };
 }
+/** A track by uri (getTrack): the row a list gives plus `art`, the cover near 300 px; null for an
+ *  episode or no such track. The player's state asks it for tracks it names by uri alone (librespot). */
+export const fetchTrack = (uri: string): Promise<Track | null> => track(bound(), uri);
 /** Put a fetchLyrics result into the lyrics slice if it is still the playing track's and not 'none'. */
 export const acceptLyrics = (trackUri: string, l: Lyrics): void => accept(bound(), trackUri, l);
 /** Saved (Liked) flags by uri: Liked Songs rows and our own changes known without a call, the rest

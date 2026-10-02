@@ -2,7 +2,7 @@
 // this runs later: read what window.__wmpSpotify already has, then follow its events.
 import type { Device } from '../../model';
 import { onState } from './state';
-import { deviceVolume } from './connect';
+import { deviceVolume, transfer } from './connect';
 import { W, type PlayerState, type Sp } from './sp';
 import { transport } from './transport';
 
@@ -32,7 +32,17 @@ export function onDevices(sp: Sp, list: unknown): void {
   // The slider follows the device the volume PUTs go to: the active one, else this web player.
   const to = W().activeDeviceId || W().deviceId, d = devs.find((x) => x.id === to);
   if (d && typeof d.volume === 'number') deviceVolume(sp, d.volume);
+  // On a phone with its own speaker (CONTRACT: __wmpSpeaker), playback that lands on this page's
+  // player (hidden, heard by nothing) moves to the speaker: at most once every 10 s, so a refused
+  // move does not loop.
+  const spk = window.__wmpSpeaker?.id;
+  if (spk && W().activeDeviceId && to === W().deviceId && devs.some((x) => x.id === spk) && Date.now() - movedAt > 10_000) {
+    movedAt = Date.now();
+    window.alchemyLog?.('spotify: playing on this page: moving to the speaker');
+    void transfer(sp, spk);
+  }
 }
+let movedAt = 0;
 
 export function observe(sp: Sp): () => void {
   const on: [string, (e: Event) => void][] = [

@@ -1617,3 +1617,90 @@ describe('25. Canvas: the web player\'s persisted canvas query (responses synthe
     expect(L.keys.canvas(V)).toEqual(['local', 'canvas', V]);
   });
 });
+
+describe('26. a device that sends the uri alone (librespot): getTrack names it (responses synthetic, shaped as the web player\'s getTrack)', () => {
+  const A = 'spotify:track:AAAAAAAAAAAAAAAAAAAAAA', B = 'spotify:track:BBBBBBBBBBBBBBBBBBBBBB', C = 'spotify:track:CCCCCCCCCCCCCCCCCCCCCC';
+  const MISSING = 'spotify:track:MMMMMMMMMMMMMMMMMMMMMM', EP = 'spotify:episode:EEEEEEEEEEEEEEEEEEEEEE';
+  const union = (uri: string) => ({ __typename: 'Track', uri, name: 'Song ' + uri.slice(14, 15), duration: { totalMilliseconds: 200000 },
+    albumOfTrack: { uri: 'spotify:album:AL', name: 'The Album', coverArt: { sources: [
+      { url: 'https://i.scdn.co/image/c64', width: 64, height: 64 }, { url: 'https://i.scdn.co/image/c300', width: 300, height: 300 },
+      { url: 'https://i.scdn.co/image/c640', width: 640, height: 640 }] } },
+    firstArtist: { items: [{ uri: 'spotify:artist:A1', profile: { name: 'Artist One' } }] },
+    otherArtists: { items: [{ uri: 'spotify:artist:A2', profile: { name: 'Artist Two' } }] } });
+  /** librespot's state: the uri and context bits, no title, image, album, artist or duration */
+  const bare = (uri: string, next: string[] = [], ctx = 'spotify:artist:A1') => ({ timestamp: String(T0 - 5000), context_uri: ctx,
+    is_paused: false, position_as_of_timestamp: '1000', track: { uri, metadata: { context_uri: ctx } }, next_tracks: next.map((u) => ({ uri: u })) });
+  function setup(state: unknown, gate?: Promise<unknown>) {
+    const env = boot({ loggedIn: true, state, hashes: { getTrack: 'g'.repeat(64) } });
+    env.route(/pathfinder/, (_u, init) => {
+      const b = JSON.parse(init.body), u = b.variables.uri;
+      if (b.operationName !== 'getTrack') return { status: 200, json: { data: {} } };
+      return { status: 200, json: { data: { trackUnion: u === MISSING ? { __typename: 'NotFound' } : union(u) } }, ...(gate ? { delay: gate } : {}) };
+    });
+    env.start();
+    return Object.assign(env, { asked: () => env.pf().filter((c) => c.body.operationName === 'getTrack').map((c) => c.body.variables.uri) });
+  }
+  it('fetchTrack: getTrack { uri }, the row a list gives plus the cover near 300 px; an episode is not asked', async () => {
+    const env = setup(null);
+    expect(await Q.fetchTrack(A)).toEqual({ uri: A, title: 'Song A', artist: 'Artist One, Artist Two', album: 'The Album', duration: 200000,
+      ctx: 'spotify:album:AL', image: 'https://i.scdn.co/image/c64', art: 'https://i.scdn.co/image/c300', albumUri: 'spotify:album:AL',
+      artistUris: ['spotify:artist:A1', 'spotify:artist:A2'] });
+    expect(env.pf().pop()!.body).toEqual({ variables: { uri: A }, operationName: 'getTrack', extensions: { persistedQuery: { version: 1, sha256Hash: 'g'.repeat(64) } } });
+    expect(await Q.fetchTrack(MISSING)).toBeNull();
+    expect(await Q.fetchTrack(EP)).toBeNull();
+    expect(env.asked()).toEqual([A, MISSING]);
+    const L = await import('../../src/adapters/local/queries');
+    expect(await L.fetchTrack()).toBeNull();
+  });
+  it('a bare state shows title, artist, album, cover and duration once getTrack lands; Up Next too', async () => {
+    let release!: (v?: unknown) => void;
+    const env = setup(bare(A, [B, EP, C]), new Promise((r) => { release = r; }));
+    await settle();
+    expect(env.S.playback.track).toMatchObject({ uri: A, title: '', duration: 0, art: null });
+    expect(env.S.queue.next).toEqual([]);
+    release();
+    await settle();
+    expect(env.S.playback.track).toMatchObject({ uri: A, title: 'Song A', artist: 'Artist One, Artist Two', album: 'The Album',
+                                                 duration: 200000, art: 'https://i.scdn.co/image/c300' });
+    expect(env.S.playback.position).toBe(1000 + 5000);
+    expect(env.S.ui.status).toContain('Song A');
+    expect(env.S.queue.next.map(trackLabel)).toEqual(['Song B – Artist One, Artist Two', 'Song C – Artist One, Artist Two']);
+    expect(env.asked()).toEqual([A, B, C]);
+  });
+  it('each uri is asked once: the same state again, the queued track playing, a track Spotify cannot name', async () => {
+    const env = setup(bare(A, [B, MISSING]));
+    await settle();
+    env.fire('wmp-spotify-state', bare(A, [B, MISSING]));
+    env.fire('wmp-spotify-state', bare(B, [MISSING]));
+    await settle();
+    expect(env.S.playback.track).toMatchObject({ uri: B, title: 'Song B', duration: 200000 });
+    env.fire('wmp-spotify-state', bare(MISSING));
+    await settle();
+    expect(env.S.playback.track).toMatchObject({ uri: MISSING, title: '' });
+    expect(env.asked()).toEqual([A, B, MISSING]);
+  });
+  it('Up Next waits for the playing playlist\'s first page, then asks only what it does not name', async () => {
+    let release!: (v?: unknown) => void;
+    const gate = new Promise((r) => { release = r; });
+    const env = setup(bare(A, [B, C], PL));
+    env.route(/pathfinder/, (_u, init) => {
+      const b = JSON.parse(init.body);
+      if (b.operationName === 'fetchPlaylist') return { status: 200, delay: gate, json: { data: { playlistV2: { name: 'Road Trip', content: { items: [
+        { itemV2: { data: { uri: B, name: 'Listed B', artists: { items: [{ profile: { name: 'Lister' } }] } } } }] } } } } };
+      return { status: 200, json: { data: { trackUnion: union(b.variables.uri) } } };
+    });
+    await settle();
+    expect(env.asked()).toEqual([A]);                                   // the playing track at once
+    release();
+    await settle();
+    expect(env.asked()).toEqual([A, C]);
+    expect(env.S.queue.next.map(trackLabel)).toEqual(['Listed B – Lister', 'Song C – Artist One, Artist Two']);
+  });
+  it('the web player\'s state (full metadata) asks nothing and reads as before', async () => {
+    const env = setup(FX.playerState);
+    await settle();
+    expect(env.asked()).toEqual([]);
+    expect(env.S.playback.track).toMatchObject({ title: 'Wish I Knew You', artist: 'The Revivalists', album: 'Men Amongst Mountains',
+      duration: 274140, art: 'https://i.scdn.co/image/ab67616d00001e02c5214ee5d4300598a8a95264' });
+  });
+});

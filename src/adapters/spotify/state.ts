@@ -2,7 +2,8 @@
 // stays true while paused, so is_paused is the one to read (SPIKE2.md §3).
 import { LIKED, type Playback, type Track } from '../../model';
 import { setSession } from '../host/media';
-import { fetchCollectionPage } from './library';
+import { fetchCollectionPage, midImage, remember, trackRow } from './library';
+import { query } from './pathfinder';
 import { LIKED_CTX, W, cap, kindOf, type PlayerState, type Sp } from './sp';
 
 export function img(u: string | undefined): string | null {
@@ -46,21 +47,45 @@ function artistName(sp: Sp, uri: string | undefined, ctx: string | undefined, md
   return (a && sp.cache.names.get(a)) || '';
 }
 
+/** A track by uri: the web player's getTrack (data.trackUnion: name, duration, albumOfTrack, the
+ *  artists as firstArtist + otherArtists), as the row a list gives plus `art`, the cover near 300 px
+ *  (the state's image_url); remembered for rowFor. null for an episode or no such track. */
+export async function fetchTrack(sp: Sp, uri: string): Promise<Track | null> {
+  if (!/^spotify:track:[A-Za-z0-9]+$/.test(uri)) return null;
+  type Artists = { items?: unknown[] };
+  type D = { trackUnion?: { artists?: Artists; firstArtist?: Artists; otherArtists?: Artists; albumOfTrack?: { coverArt?: { sources?: unknown[] } } } | null };
+  const u = (await query<D>(sp, 'getTrack', { uri }, { quiet: true })).trackUnion;
+  const row = u && trackRow({ ...u, artists: u.artists ?? { items: [...(u.firstArtist?.items ?? []), ...(u.otherArtists?.items ?? [])] } }, null, uri);
+  if (!row) return null;
+  const t: Track = { ...row, art: midImage(u.albumOfTrack?.coverArt?.sources) ?? null };
+  remember(sp, [t]);
+  return t;
+}
+/** fetchTrack once per uri for a track the state names by uri alone (librespot sends no metadata),
+ *  the state re-read when it lands. The uri stays in sp.loading after: a track Spotify could not name
+ *  is not asked again; a failed request is, with the next state. */
+function want(sp: Sp, uri: string): void {
+  if (uri in sp.loading) return;
+  sp.loading[uri] = fetchTrack(sp, uri).then((t) => { if (t && sp.last) onState(sp, sp.last, true); },
+                                             () => { delete sp.loading[uri]; });
+}
+
 /** The playback slice for a state. A state with no active device is Spotify's memory of the
  *  last session, not something playing anywhere: shown paused, the clock standing still. */
 export function toPlayback(sp: Sp, ps: PlayerState): Partial<Playback> {
   const t = ps.track ?? {}, md = t.metadata ?? {}, rs = ps.restrictions ?? {};
   const now = Date.now(), paused = !!ps.is_paused || !W().activeDeviceId, speed = +(ps.playback_speed ?? 1) || 1;
   const pos = (+(ps.position_as_of_timestamp ?? 0) || 0) + (paused ? 0 : (now - (+(ps.timestamp ?? 0) || now)) * speed);
-  const dur = +(ps.duration ?? 0) || +(md.duration ?? 0) || 0;
+  const row = rowFor(sp, t.uri);   // what librespot leaves out (it sends the uri alone)
+  const dur = +(ps.duration ?? 0) || +(md.duration ?? 0) || row?.duration || 0;
   const o = ps.options ?? {};
   const ctx = LIKED_CTX.test(ps.context_uri ?? '') ? LIKED : ps.context_uri;   // Liked Songs: its library uri
   return {
     status: !t.uri ? 'stopped' : paused ? 'paused' : 'playing', source: 'spotify', paused, at: now,
     position: Math.max(0, dur ? Math.min(pos, dur) : pos),
-    track: t.uri ? { uri: t.uri, title: md.title || '', artist: artistName(sp, t.uri, ctx, md),
-                     album: md.album_title || rowFor(sp, t.uri)?.album || '',
-                     duration: dur, art: img(md.image_url || md.image_large_url), ctx: ctx ?? null } : null,
+    track: t.uri ? { uri: t.uri, title: md.title || row?.title || '', artist: artistName(sp, t.uri, ctx, md),
+                     album: md.album_title || row?.album || '', duration: dur,
+                     art: img(md.image_url || md.image_large_url) || row?.art || row?.image || null, ctx: ctx ?? null } : null,
     canSeek: !!t.uri && none(rs.disallow_seeking_reasons),
     canNext: !!t.uri && none(rs.disallow_skipping_next_reasons),
     canPrev: !!t.uri && none(rs.disallow_skipping_prev_reasons),
@@ -74,7 +99,7 @@ export function toPlayback(sp: Sp, ps: PlayerState): Partial<Playback> {
 }
 
 /** A player state: it wins over any optimistic change. `replay` = the last state again, re-read
- *  because a name arrived (a context's tracks, an artist): an optimistic change still pending keeps
+ *  because a name arrived (a context's tracks, an artist, a track): an optimistic change still pending keeps
  *  its fields then, it is not an answer from the player. */
 export function onState(sp: Sp, ps: PlayerState | null | undefined, replay = false): void {
   if (!ps) return;
@@ -100,14 +125,21 @@ export function onState(sp: Sp, ps: PlayerState | null | undefined, replay = fal
   if (ctx && /^spotify:(playlist|album):/.test(ctx) && !sp.cache.lists.has(ctx) && !sp.loading[ctx]) {
     sp.loading[ctx] = fetchCollectionPage(sp, ctx, 0, true).catch(() => {}).finally(() => { delete sp.loading[ctx]; });
   }
-  // Up Next: the web player sends metadata for the first queued track only; the rest are named
-  // from rows the fetches returned (the playing context's first page above), left out until then.
-  const next: Track[] = [];
+  // A device that sends the uri alone (librespot, the app's own speaker; the web player and Spotify's
+  // apps send metadata): getTrack names the track, its cover at full size.
+  const uri = p.track?.uri, bare = !!uri && !ps.track?.metadata?.title;
+  if (bare && !rowFor(sp, uri)?.art) want(sp, uri);
+  // Up Next: the web player sends metadata for the first queued track only, librespot for none; the
+  // rest are named from rows the fetches returned (the playing context's first page above), left out
+  // until then; a bare device's by getTrack once that page is in (30 asked at most).
+  const next: Track[] = [], ask = bare && !(ctx && sp.loading[ctx] && !sp.cache.lists.has(ctx));
+  let n = 30;
   for (const t of ps.next_tracks ?? []) {
     if (!t?.uri || !/^spotify:(track|episode):/.test(t.uri)) continue;
     const m = t.metadata ?? {}, k = rowFor(sp, t.uri);
     if (m.title) next.push({ uri: t.uri, title: m.title, artist: artistName(sp, t.uri, ctx, m), album: m.album_title || k?.album || '', duration: 0, ctx: ctx ?? null });
     else if (k) next.push({ ...k, ctx: ctx ?? null });
+    else if (ask && n-- > 0) want(sp, t.uri);
     if (next.length === 30) break;
   }
   sp.store.getState().actions.setQueue(next);

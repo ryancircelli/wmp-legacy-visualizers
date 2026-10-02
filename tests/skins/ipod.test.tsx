@@ -481,31 +481,3 @@ it('the ⋯ over the cover opens this page\'s options: Lyrics and Karaoke toggle
     .toEqual(['"bars:2"', true, 'bars', 2]);
   act(() => { fireEvent.click(np.querySelector('[class*=tap]')!); });   // back to the Canvas for the tests after
 });
-
-it('Speaker Name (the iPhone\'s Connect speaker): after Play On and at Play On\'s end, (off) while its session is down; the prompt renames it', () => {
-  const rename = vi.fn(), ask = vi.fn(() => "Ryan's iPhone");
-  vi.stubGlobal('alchemySpeakerName', rename);
-  vi.stubGlobal('__wmpSpeaker', { id: 'abc', name: 'Kitchen' });
-  vi.stubGlobal('prompt', ask);
-  const m = mount();
-  act(() => { fireEvent.click(m.row('Settings')); });
-  const rows = m.rows(), at = rows.indexOf('Play On');
-  expect(rows.slice(at, at + 2)).toEqual(['Play On', 'Speaker NameKitchen']);
-  act(() => { vi.stubGlobal('__wmpSpeaker', { id: null, name: 'Kitchen' }); window.dispatchEvent(new Event('wmp-speaker')); });
-  ask.mockReturnValueOnce(' Kitchen ');              // unchanged: nothing
-  act(() => { fireEvent.click(m.row('Speaker NameKitchen (off)')); });
-  expect([ask.mock.calls[0], rename.mock.calls.length]).toEqual([['Speaker Name', 'Kitchen'], 0]);
-  act(() => { fireEvent.click(m.row('Speaker NameKitchen (off)')); });
-  expect(rename).toHaveBeenCalledExactlyOnceWith("Ryan's iPhone");
-  act(() => { fireEvent.click(m.row('Play On')); });
-  expect(m.rows().at(-1)).toBe('Speaker NameKitchen (off)');
-});
-
-it('no speaker binding (the website, Windows): no Speaker Name', () => {
-  vi.stubGlobal('__wmpSpeaker', { id: 'abc', name: 'Kitchen' });
-  const m = mount();
-  act(() => { fireEvent.click(m.row('Settings')); });
-  expect(m.rows().filter((r) => r?.startsWith('Speaker Name'))).toEqual([]);
-  act(() => { fireEvent.click(m.row('Play On')); });
-  expect(m.rows().filter((r) => r?.startsWith('Speaker Name'))).toEqual([]);
-});

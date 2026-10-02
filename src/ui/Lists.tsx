@@ -223,7 +223,10 @@ export const OWN_DEVICE = 'WMP Spotify (This Device)';
  *  active one checked, offline ones disabled, ours "WMP Spotify (This Device)"; choosing one moves playback
  *  there. `icon(kind)` is the skin's class for a device kind. */
 export function useDevices(icon: (k: DeviceKind) => string) {
-  const sh = useShell(), { list, self } = useApp((s) => s.devices);
+  const sh = useShell(), { list: all, self } = useApp((s) => s.devices);
+  // On a phone with its own speaker (CONTRACT: __wmpSpeaker) this page's player is hidden from every
+  // picker and heard by nothing: it is not offered here either.
+  const list = window.__wmpSpeaker?.id ? all.filter((d) => d.id !== self) : all;
   const active = list.find((d) => d.active);
   // our own device goes by the app's name, never its registered one ("Web Player (Microsoft Edge)")
   const name = (d: Device) => (d.id === self ? OWN_DEVICE : deviceName(d));
