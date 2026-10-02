@@ -42,7 +42,7 @@
   color: #fff; font-size: calc(var(--unit) * 120);
 }
 
-/* the controls band: the dark gradient (::before), the cover's mirror image at .25, the mode row
+/* the controls band: the dark gradient (::before), the cover's mirror image carrying on from its foot, the mode row
    centred at screen y 345, "N of M" centred at y 361 */
 .controls {
   position: absolute; bottom: 0; left: 0; right: 0; height: calc(var(--unit) * 56);
@@ -58,7 +58,12 @@
 .root:not(:has(.of)) .art, .root:not(:has(.of)) .tap { height: calc(var(--unit) * 258); }
 .reflection {
   position: absolute; top: 0; left: 0; width: calc(var(--unit) * 240); height: calc(var(--unit) * 240);
-  object-fit: cover; transform: scaleY(-1); opacity: .25; z-index: -1; transition: opacity .3s ease;
+  object-fit: cover; transform: scaleY(-1); z-index: -1;
+  /* the picture carrying on under the band, as the Canvas does: whole at the seam with the cover (a
+     dimmer mirror made a step there, "some kind of bar"), fading down the band (the mask is flipped
+     with the image: its bottom is the seam) */
+  -webkit-mask-image: linear-gradient(rgb(0 0 0 / .12), rgb(0 0 0 / .95));
+  mask-image: linear-gradient(rgb(0 0 0 / .12), rgb(0 0 0 / .95));
 }
 .row {
   position: absolute; top: calc(var(--unit) * 16); left: 0; right: 0; height: calc(var(--unit) * 18);
