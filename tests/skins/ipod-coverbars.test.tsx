@@ -9,7 +9,7 @@ import { mainMenu } from '../../src/skins/ipod/menus';
 import { createNav } from '../../src/skins/ipod/nav';
 import { nowPlaying } from '../../src/skins/ipod/screens';
 import { migrateCanvasPref } from '../../src/skins/ipod/screens/nowplaying/NowPlaying';
-import { migrateVisPrefs, readPref } from '../../src/skins/ipod/screens/settings/prefs';
+import { migrateVisPrefs, readPref, writePref } from '../../src/skins/ipod/screens/settings/prefs';
 import { NavContext } from '../../src/skins/ipod/wheel';
 import { fakeData, mountSkinNow, settle } from './harness';
 
@@ -155,4 +155,15 @@ it('two buttons over the art: ♪ (top-left) opens the track\'s menu, without th
   expect(m.np.querySelector('[role=listbox]')).toBeNull();      // the popup closed; the playlist's screen was pushed
   act(() => { fireEvent.click(within(m.np).getByRole('button', { name: 'Options' })); });
   expect(m.options().map((x) => x.textContent)).toEqual(['Play On…', 'Visualizer…', 'LyricsOn', 'KaraokeOn', 'Cancel']);
+});
+
+it('Bars, Ocean Mist and Fire Storm start under the info band (their peaks mid-screen); Scope and the engines fill the area', async () => {
+  const m = atNowPlaying();
+  await m.play('spotify:track:x');
+  const rising = () => /rising/.test(m.layer()?.className ?? '');
+  expect(rising()).toBe(true);                       // Bars, the default
+  for (const [id, want] of [['bars:1', true], ['bars:2', true], ['bars:3', false], ['alchemy:0', false], ['battery:0', false]] as const) {
+    act(() => writePref('ipod.visualizer', id));
+    expect([id, rising()]).toEqual([id, want]);
+  }
 });

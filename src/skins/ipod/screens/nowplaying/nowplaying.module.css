@@ -139,6 +139,9 @@
    the whole area, up behind the info band and down behind the controls band, whatever the art (the
    owner, 2026-10-02, having seen it on black: "make it full screen for all view types") */
 .overlay { position: absolute; inset: 0; }
+/* the presets that rise from the bottom (Bars, Ocean Mist, Fire Storm) start under the info band, their
+   peaks mid-screen and not behind the header (the owner, 2026-10-02); Scope and the engines fill it */
+.overlay.rising { top: calc(var(--unit) * 60); }
 .clear { display: block; width: 100%; height: 100%; }
 .line, .row, .of { text-shadow: 0 1px 2px #000; }
 

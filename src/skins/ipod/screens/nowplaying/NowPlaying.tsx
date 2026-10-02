@@ -303,6 +303,9 @@ function NowPlaying() {
   // colours at full strength (Opacity not applied), the bands translucent over it as over the Canvas
   const overlay = vz.on, black = show === 'black', bg = !!canvas || (overlay && !art) || black;
   const bars = vz.preset.startsWith('bars:'), accent = useAccent(overlay && !black && bars && art ? art : '');
+  // Bars, Ocean Mist and Fire Storm rise from the bottom: their box stops at the info band, so the peaks
+  // land mid-screen, not behind the header (the owner, 2026-10-02); Scope and the engines, centred, fill it
+  const rising = /^bars:[012]$/.test(vz.preset);
   /** a tap on the cover's area (the lyrics over it too): the Canvas -> the cover -> black -> the Canvas;
    *  a track without a Canvas shows the cover for it, so from there the tap goes on to black */
   const swap = (e: { stopPropagation(): void }) => {
@@ -320,7 +323,7 @@ function NowPlaying() {
       {/* and upward behind the info band: the picture is behind that band too, as the Canvas is (over
           black it went darker as the band thinned) */}
       {art && !bg && <div className={css.above}><img className={css.reflection} src={art} alt="" /></div>}
-      {overlay && <Vis tint={!black && bars && art ? accent : null} opacity={black ? 100 : vz.opacity} opaque={black} />}
+      {overlay && <Vis tint={!black && bars && art ? accent : null} opacity={black ? 100 : vz.opacity} opaque={black} rising={rising} />}
       <div className={css.info}>
         <Line className={css.artist} text={t?.artist} />
         <Line className={css.title} text={t?.title} />
@@ -438,7 +441,7 @@ function useAccent(url: string): string {
  *  Opacity. Its canvas is mounted only while this screen is
  *  the top one and the page is visible: the ticker's loop runs only with a canvas attached, so it
  *  costs nothing elsewhere, and nothing at all while the visualizer is off (not mounted). */
-function Vis({ tint, opacity = 100, opaque = false }: { tint: string | null; opacity: number; opaque?: boolean }) {
+function Vis({ tint, opacity = 100, opaque = false, rising = false }: { tint: string | null; opacity: number; opaque?: boolean; rising?: boolean }) {
   const sh = useShell(), ref = useRef<HTMLDivElement>(null), on = useOnScreen(ref);
   // The ticker holds the engine while WMP's view is off Now Playing (vis.hold: a WMP view left on
   // Library sets it again at every Spotify start); here it is the screen, so no hold while shown,
@@ -499,7 +502,7 @@ function Vis({ tint, opacity = 100, opaque = false }: { tint: string | null; opa
   return (
     // the thinner the layer, the more it mixes with the picture behind and pales: its own colour is
     // made stronger as it thins (saturation 1.75 at 75 %, 2.5 at 50 %, 3.25 at 25 %)
-    <div ref={ref} className={css.overlay}
+    <div ref={ref} className={cx(css.overlay, rising && css.rising)}
          style={opacity < 100 ? { opacity: opacity / 100, filter: `saturate(${1 + (100 - opacity) * 0.03})` } : undefined}>
       {on && <Visualizer className={css.clear} />}
     </div>
