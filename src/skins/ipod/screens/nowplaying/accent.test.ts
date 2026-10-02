@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { contrast, pickAccent, tintMatrix } from './accent';
+import { contrast, pickAccent, rgbOf, tint } from './accent';
 
 const sw = (rgb: number[], population: number) => ({ rgb, population });
 
@@ -10,22 +10,25 @@ describe('Cover Bars accent', () => {
     expect(contrast([118, 118, 118], [255, 255, 255])).toBeCloseTo(4.54, 2);
   });
   it('takes the Vibrant swatch when it stands 3:1 off the dominant colour', () => {
-    expect(pickAccent({ Vibrant: sw([230, 40, 40], 50), DarkMuted: sw([20, 20, 30], 900), LightVibrant: sw([250, 200, 200], 10) })).toBe('#e62828');
+    expect(pickAccent({ Vibrant: sw([230, 40, 40], 50), DarkMuted: sw([20, 20, 30], 900), LightVibrant: sw([250, 200, 200], 10) }))
+      .toEqual({ color: '#e62828', from: 'Vibrant' });
   });
   it('passes over one too close to the dominant colour, to the next in order', () => {
     // a red cover: Vibrant is the dominant red itself; LightVibrant stands off it
-    expect(pickAccent({ Vibrant: sw([200, 30, 30], 800), LightVibrant: sw([255, 220, 220], 20), DarkVibrant: sw([60, 0, 0], 40) })).toBe('#ffdcdc');
-    expect(pickAccent({ Vibrant: sw([200, 30, 30], 800), LightVibrant: sw([220, 60, 60], 20), DarkVibrant: sw([40, 0, 0], 40) })).toBe('#280000');
+    expect(pickAccent({ Vibrant: sw([200, 30, 30], 800), LightVibrant: sw([255, 220, 220], 20), DarkVibrant: sw([60, 0, 0], 40) }))
+      .toEqual({ color: '#ffdcdc', from: 'LightVibrant' });
+    expect(pickAccent({ Vibrant: sw([200, 30, 30], 800), LightVibrant: sw([220, 60, 60], 20), DarkVibrant: sw([40, 0, 0], 40) }))
+      .toEqual({ color: '#280000', from: 'DarkVibrant' });
   });
   it('with nothing standing off: white or black, whichever contrasts more; no swatches: white', () => {
-    expect(pickAccent({ Vibrant: sw([30, 30, 40], 500), DarkMuted: sw([20, 20, 25], 900) })).toBe('#ffffff');
-    expect(pickAccent({ Vibrant: sw([240, 240, 230], 500), LightMuted: sw([250, 250, 250], 900) })).toBe('#000000');
-    expect(pickAccent({})).toBe('#ffffff');
+    expect(pickAccent({ Vibrant: sw([30, 30, 40], 500), DarkMuted: sw([20, 20, 25], 900) })).toEqual({ color: '#ffffff', from: 'white: no swatch at 3:1' });
+    expect(pickAccent({ Vibrant: sw([240, 240, 230], 500), LightMuted: sw([250, 250, 250], 900) })).toEqual({ color: '#000000', from: 'black: no swatch at 3:1' });
+    expect(pickAccent({})).toEqual({ color: '#ffffff', from: 'no swatches' });
   });
-  it('paints in the accent with alpha from luminance', () => {
-    const rows = tintMatrix('#ff8000').split('  ').map((r) => r.split(' ').map(Number));
-    expect(rows.slice(0, 3)).toEqual([[0, 0, 0, 0, 1], [0, 0, 0, 0, 128 / 255], [0, 0, 0, 0, 0]]);
-    expect(rows[3]!.slice(3)).toEqual([0, 0]);
-    expect(rows[3]![0]! + rows[3]![1]! + rows[3]![2]!).toBeCloseTo(1.25, 5);
+  it('paints each pixel the accent, the engine\'s black transparent and a lit bar opaque', () => {
+    // black, Bars' green, a white peak, a dim antialiased edge
+    const px = new Uint8ClampedArray([0, 0, 0, 255, 0xa4, 0xeb, 0x0c, 255, 223, 234, 247, 255, 40, 60, 20, 255]);
+    tint(px, rgbOf('#ff8000'));
+    expect([...px]).toEqual([255, 128, 0, 0, 255, 128, 0, 255, 255, 128, 0, 255, 255, 128, 0, 75]);
   });
 });

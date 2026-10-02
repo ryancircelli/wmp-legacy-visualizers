@@ -16,8 +16,7 @@
 // page's player, nor the iPhone's own speaker): its name, in Spotify's green, on the "N of M" line;
 // a tap on it opens Play On….
 import { Vibrant } from 'node-vibrant/browser';
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
+import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from 'react';
 import { useStore } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { createStore } from 'zustand/vanilla';
@@ -31,7 +30,7 @@ import { useHostGlobal } from '../../host';
 import type { MenuItem, ScreenEntry } from '../contract';
 import { useVisFit, useVisualizers, visId } from '../settings';
 import { Bar, MenuScreen, Popup, useNav, useScan, useWheel } from '../../ui';
-import { pickAccent, tintMatrix } from './accent';
+import { pickAccent, rgbOf, tint } from './accent';
 import { IDLE_MS, nextMode, ofText, SCRUB_COMMIT_MS, scrubAccel, scrubStep, times, volumeStep, VOLUME_MS, type Mode } from './logic';
 import css from './nowplaying.module.css';
 
@@ -287,38 +286,64 @@ function CanvasVideo({ src, poster, onError }: { src: string; poster?: string; o
   return <video ref={ref} className={css.bg} src={src} poster={poster} muted autoPlay loop playsInline onError={onError} />;
 }
 
-/** The app's visualizer behind the whole screen as the Canvas is, drawing the iPod's choice (ipod.visualizer)
- *  on silence (Alchemy and Battery animate on it, Bars and Waves waits for sound; settings.animate off
- *  stills them). Its canvas is mounted only while this screen is the top one and the page is
- *  visible: the ticker's loop runs only with a canvas attached, so it costs nothing elsewhere. */
-/** Cover Bars' accent for cover `url` ('' = none wanted): node-vibrant's palette of a 100 px copy, then
- *  pickAccent; white when its pixels cannot be read (no CORS). Once per cover, off the render path. */
+/** Cover Bars' accent for cover `url` ('' = none wanted): the cover fetched again for its pixels (CORS,
+ *  not the displayed copy: WebKit may hand a crossOrigin image its cached non-CORS response, and the
+ *  canvas reading it is then tainted), node-vibrant's palette of a 100 px copy, pickAccent; white when
+ *  the pixels cannot be had. Once per cover, off the render path; the host's log says which. */
 const accents = new Map<string, string>();
 function useAccent(url: string): string {
   const [, setGot] = useState('');
   useEffect(() => {
     if (!url || accents.has(url)) return;
-    let live = true;
-    Vibrant.from(url).maxDimension(100).getPalette().then(pickAccent, () => '#ffffff').then((c) => {
-      accents.set(url, c);
-      if (live) setGot(url);
-    }, () => {});
+    let live = true, blob = '';
+    void fetch(url, { mode: 'cors', cache: 'no-store' })
+      .then((r) => (r.ok ? r.blob() : Promise.reject(new Error('HTTP ' + r.status))))
+      .then((b) => Vibrant.from((blob = URL.createObjectURL(b))).maxDimension(100).getPalette())
+      .then((p) => { const a = pickAccent(p); return { color: a.color, why: a.from }; },
+            (e: unknown) => ({ color: '#ffffff', why: 'cover not readable: ' + (e instanceof Error ? e.message : String(e)) }))
+      .then(({ color, why }) => {
+        if (blob) URL.revokeObjectURL(blob);
+        accents.set(url, color);
+        window.alchemyLog?.('ipod: cover bars accent ' + color + ' (' + why + ')');
+        if (live) setGot(url);
+      });
     return () => { live = false; };
   }, [url]);
   return accents.get(url) ?? '#ffffff';
 }
 
-/** Cover Bars' tint: the canvas in `accent`, its black transparent (accent.ts tintMatrix) */
-const TINT = 'ipod-cover-bars';
-const tint = (accent: string) => (
-  <svg width="0" height="0" style={{ position: 'absolute' }} aria-hidden="true">
-    <filter id={TINT} colorInterpolationFilters="sRGB"><feColorMatrix type="matrix" values={tintMatrix(accent)} /></filter>
-  </svg>
-);
+/** Cover Bars' picture: the engine's canvas (the first in `from`, hidden, still drawing) copied every
+ *  frame into a buffer of its own size (at most 480 wide: a Bars bar stays whole), each pixel then the
+ *  accent with its brightness as alpha (accent.ts tint), scaled to the cover area by CSS, pixelated. */
+function Tinted({ from, accent }: { from: RefObject<HTMLDivElement | null>; accent: string }) {
+  const ref = useRef<HTMLCanvasElement>(null);
+  useEffect(() => {
+    const out = ref.current, src = from.current?.querySelector('canvas'), ctx = out?.getContext('2d', { willReadFrequently: true });
+    if (!out || !src || !ctx) return;
+    const rgb = rgbOf(accent);
+    let raf = 0;
+    const frame = () => {
+      raf = requestAnimationFrame(frame);
+      const w = Math.min(src.width, 480), h = Math.round((w * src.height) / (src.width || 1));
+      if (!w || !h) return;
+      if (out.width !== w || out.height !== h) { out.width = w; out.height = h; }
+      ctx.clearRect(0, 0, w, h);
+      ctx.drawImage(src, 0, 0, w, h);
+      const img = ctx.getImageData(0, 0, w, h);
+      tint(img.data, rgb);
+      ctx.putImageData(img, 0, 0);
+    };
+    raf = requestAnimationFrame(frame);
+    return () => cancelAnimationFrame(raf);
+  }, [from, accent]);
+  return <canvas ref={ref} className={css.tinted} />;
+}
 
-/** `accent` (Cover Bars): over the cover only, tinted. Chromium finds a filter url(#id) in the shadow
- *  tree the page is mounted in under Spotify (checked), not in the document; the document holds a copy
- *  too, for a WebKit that looks there. */
+/** The app's visualizer behind the whole screen as the Canvas is, drawing the iPod's choice (ipod.visualizer)
+ *  on silence (Alchemy and Battery animate on it, Bars and Waves waits for sound; settings.animate off
+ *  stills them). Its canvas is mounted only while this screen is the top one and the page is
+ *  visible: the ticker's loop runs only with a canvas attached, so it costs nothing elsewhere (and
+ *  Cover Bars' copy loop with it). `accent` (Cover Bars): over the cover only, its tinted copy shown. */
 function Vis({ accent }: { accent?: string }) {
   const sh = useShell(), ref = useRef<HTMLDivElement>(null), [on, setOn] = useState(() => !document.hidden);
   useEffect(() => {
@@ -360,13 +385,15 @@ function Vis({ accent }: { accent?: string }) {
     if (x) a.setVis(x.vis, x.preset);
     return () => a.setVis(prev.kind, prev.preset);
   }, [on, preset, sh]);
+  // Cover Bars copies the engine's canvas every frame (Tinted): it is claimed for the engine's own 2D
+  // path before the ticker attaches (a layout effect runs before the Visualizer's passive one), since
+  // a WebGL canvas without preserveDrawingBuffer reads back empty once composited
+  useLayoutEffect(() => { if (accent && on) ref.current?.querySelector('canvas')?.getContext('2d'); }, [accent, on]);
   return (
-    <>
-      {accent && <>{tint(accent)}{createPortal(tint(accent), document.body)}</>}
-      <div ref={ref} className={accent ? css.overart : css.bg} style={accent ? { filter: `url(#${TINT})` } : undefined}>
-        {on && <Visualizer className={css.vis} />}
-      </div>
-    </>
+    <div ref={ref} className={accent ? css.overart : css.bg}>
+      {on && <Visualizer className={accent ? css.source : css.vis} />}
+      {on && accent && <Tinted from={ref} accent={accent} />}
+    </div>
   );
 }
 

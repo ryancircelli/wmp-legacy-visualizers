@@ -1,6 +1,6 @@
 // Cover Bars' colour: the cover's accent by Android's Palette method (node-vibrant's swatches), held to
-// a WCAG contrast of 3:1 against the cover's dominant colour so the bars read over it; and the
-// feColorMatrix that paints the visualizer's canvas in it.
+// a WCAG contrast of 3:1 against the cover's dominant colour so the bars read over it; and the pixel
+// mapping that paints a copy of the visualizer's canvas in it.
 
 export interface SwatchLike { rgb: readonly number[]; population: number }
 export type PaletteLike = Partial<Record<string, SwatchLike | null>>;
@@ -22,22 +22,30 @@ export const ACCENT_ORDER = ['Vibrant', 'LightVibrant', 'DarkVibrant', 'LightMut
 const WHITE = [255, 255, 255], BLACK = [0, 0, 0];
 const hex = (c: readonly number[]) => '#' + c.map((x) => Math.round(x).toString(16).padStart(2, '0')).join('');
 
-/** The accent as '#rrggbb': the first swatch of ACCENT_ORDER at 3:1 or more against the dominant one
- *  (the largest population), else white or black, whichever contrasts more; no swatches: white. */
-export function pickAccent(p: PaletteLike): string {
+/** The accent, '#rrggbb', and where it came from: the first swatch of ACCENT_ORDER at 3:1 or more
+ *  against the dominant one (the largest population), else white or black, whichever contrasts
+ *  more; no swatches: white. */
+export function pickAccent(p: PaletteLike): { color: string; from: string } {
   const all = Object.values(p).filter((s): s is SwatchLike => !!s);
   const dom = all.reduce<SwatchLike | null>((m, s) => (!m || s.population > m.population ? s : m), null);
-  if (!dom) return hex(WHITE);
-  const hit = ACCENT_ORDER.map((k) => p[k]).find((s) => s && contrast(s.rgb, dom.rgb) >= 3);
-  return hex(hit?.rgb ?? (contrast(WHITE, dom.rgb) >= contrast(BLACK, dom.rgb) ? WHITE : BLACK));
+  if (!dom) return { color: hex(WHITE), from: 'no swatches' };
+  const hit = ACCENT_ORDER.find((k) => { const s = p[k]; return s && contrast(s.rgb, dom.rgb) >= 3; });
+  if (hit) return { color: hex(p[hit]!.rgb), from: hit };
+  const white = contrast(WHITE, dom.rgb) >= contrast(BLACK, dom.rgb);
+  return { color: hex(white ? WHITE : BLACK), from: (white ? 'white' : 'black') + ': no swatch at 3:1' };
 }
 
-/** alpha's gain: Bars' own green (#A4EB0C, luminance about .8) comes out opaque */
+/** alpha's gain on a pixel's brightness: Bars' own green (#A4EB0C, brightest channel 235) comes out opaque */
 export const GAIN = 1.25;
 
-/** feColorMatrix values (sRGB) painting a canvas in `accent`: RGB the accent, alpha the source's
- *  luminance (so the engine's black is transparent and its bars and peaks are the accent) */
-export function tintMatrix(accent: string): string {
-  const [r, g, b] = [1, 3, 5].map((i) => parseInt(accent.slice(i, i + 2), 16) / 255);
-  return [`0 0 0 0 ${r}`, `0 0 0 0 ${g}`, `0 0 0 0 ${b}`, `${0.2126 * GAIN} ${0.7152 * GAIN} ${0.0722 * GAIN} 0 0`].join('  ');
+/** Cover Bars' pixels (RGBA, in place): each the accent `rgb`, its alpha the source pixel's brightness
+ *  (its brightest channel) times GAIN, so the engine's black is transparent and a lit bar opaque */
+export function tint(px: Uint8ClampedArray, [r = 255, g = 255, b = 255]: readonly number[]): void {
+  for (let i = 0; i < px.length; i += 4) {
+    const a = Math.max(px[i]!, px[i + 1]!, px[i + 2]!) * GAIN;
+    px[i] = r; px[i + 1] = g; px[i + 2] = b; px[i + 3] = a;   // the array clamps it to 255
+  }
 }
+
+/** '#rrggbb' as [r, g, b] */
+export const rgbOf = (c: string): number[] => [1, 3, 5].map((i) => parseInt(c.slice(i, i + 2), 16));
