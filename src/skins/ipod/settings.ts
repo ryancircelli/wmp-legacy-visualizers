@@ -1,6 +1,7 @@
 // The iPod skin's own options (screens/contract.ts IpodSettings), apart from the app's settings and
 // persisted in localStorage under 'ipod.settings'. The body colours are the nano 5G's nine, as HSL
-// (docs/ipod-skin.md §1.2: sampled from Apple's render, saturated to match photos).
+// (docs/ipod-skin.md §1.2: sampled from Apple's render, saturated to match photos), then the owner's
+// Mocha Tan and Espresso Brown.
 import type { CSSProperties } from 'react';
 import { useStore } from 'zustand';
 import { persist } from 'zustand/middleware';
@@ -13,8 +14,13 @@ type Preset = Exclude<IpodSettings['color'], 'custom'>;
 export const COLORS: Record<Preset, readonly [number, number, number]> = {
   silver: [0, 0, 66], black: [0, 0, 19], purple: [268, 42, 44], blue: [196, 89, 44], green: [140, 70, 34],
   yellow: [52, 89, 49], orange: [30, 85, 50], red: [357, 62, 47], pink: [331, 70, 62],
+  // the owner's two (2026-10-02): a greyed tan, lights capped as Silver's; a deep brown, its band still lit
+  mocha: [30, 34, 60], espresso: [24, 45, 25],
 };
-export const DEFAULTS: IpodSettings = { color: 'green', hue: 0, sat: 0, clicker: true, wheel: 'white' };
+/** Custom's lightness range: the body's lights top out at 72 % (ipod.module.css --hi), so past 75 the
+ *  cylinder goes flat (its centre as bright as its bands); under 15 its edge and shade go black */
+export const LIGHT = [15, 75] as const;
+export const DEFAULTS: IpodSettings = { color: 'green', hue: 0, sat: 85, light: 50, clicker: true, wheel: 'white' };
 
 const clamp = (v: unknown, lo: number, hi: number, d: number) => (typeof v === 'number' && v >= lo && v <= hi ? v : d);
 /** Whatever localStorage held (an older or hand-edited blob) as valid settings. */
@@ -23,6 +29,7 @@ function normalize(p: Partial<IpodSettings>): IpodSettings {
     color: p.color === 'custom' || (p.color && p.color in COLORS) ? p.color : DEFAULTS.color,
     hue: clamp(p.hue, 0, 360, DEFAULTS.hue),
     sat: clamp(p.sat, 0, 100, DEFAULTS.sat),
+    light: clamp(p.light, LIGHT[0], LIGHT[1], DEFAULTS.light),
     clicker: typeof p.clicker === 'boolean' ? p.clicker : DEFAULTS.clicker,
     wheel: p.wheel === 'black' ? 'black' : 'white',
   };
@@ -30,9 +37,16 @@ function normalize(p: Partial<IpodSettings>): IpodSettings {
 
 const store = createStore<IpodSettings>()(persist(() => DEFAULTS, {
   name: 'ipod.settings',
+  // version 0 had no lightness (Custom was 50) and its saturation 0 meant the spec's 85
+  version: 1,
+  migrate: (old) => ({ ...(old as Partial<IpodSettings>), sat: (old as Partial<IpodSettings>).sat || DEFAULTS.sat }),
   merge: (saved, cur) => normalize({ ...cur, ...(saved as Partial<IpodSettings>) }),
 }));
-const set = (p: Partial<IpodSettings>) => store.setState(normalize({ ...store.getState(), ...p }));
+/** a patch that changes nothing writes nothing (a drag reports every move) */
+const set = (p: Partial<IpodSettings>) => {
+  const cur = store.getState(), next = normalize({ ...cur, ...p });
+  if ((Object.keys(next) as (keyof IpodSettings)[]).some((k) => next[k] !== cur[k])) store.setState(next);
+};
 
 export function useIpodSettings(): [IpodSettings, (patch: Partial<IpodSettings>) => void] {
   return [useStore(store), set];
@@ -40,10 +54,13 @@ export function useIpodSettings(): [IpodSettings, (patch: Partial<IpodSettings>)
 /** For what runs outside render (the wheel's clicker). */
 export const ipodSettings = () => store.getState();
 
+/** A body colour (the one chosen, by default) as [hue, saturation %, lightness %]: a preset's, or Custom's three. */
+export const bodyHsl = (s: IpodSettings, color = s.color): readonly [number, number, number] =>
+  color === 'custom' ? [s.hue, s.sat, s.light] : COLORS[color];
+
 /** The body colour as the one hue knob the module's .body reads (§1.3: --h --s --l; the highlight,
- *  shadow and centre button derive from it). 'custom' is a hue at the spec's saturation and lightness
- *  unless a saturation was set. */
+ *  shadow and centre button derive from it). */
 export function bodyVars(s: IpodSettings): CSSProperties {
-  const [h, sat, l] = s.color === 'custom' ? [s.hue, s.sat || 85, 50] : COLORS[s.color];
+  const [h, sat, l] = bodyHsl(s);
   return { '--h': h, '--s': sat + '%', '--l': l + '%' } as CSSProperties;
 }

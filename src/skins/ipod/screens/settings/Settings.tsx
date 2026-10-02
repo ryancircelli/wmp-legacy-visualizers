@@ -10,10 +10,10 @@ import { useEffect, useState, type CSSProperties } from 'react';
 import { LIKED, type UpdateCheck } from '../../../../model';
 import { appDownload, isAlbum, LINKS, openLink, restartApp, useApp, useCollection, useDevices, useLibraryList, useShell } from '../../../../ui';
 import { useHostGlobal } from '../../host';
-import { COLORS } from '../../settings';
+import { bodyHsl, DEFAULTS } from '../../settings';
 import { MenuScreen, Spinner, useIpodSettings, useNav, useWheel } from '../../ui';
 import type { IpodSettings, MenuItem, ScreenEntry } from '../contract';
-import { stepHue } from './logic';
+import { CustomColor } from './CustomColor';
 import { BarPage, check, confirm, DIM, menu, onOff, page, Row, TEXT, TextPage, u } from './parts';
 import {
   CLOCK0, LIBRARY_FILTERS, MAIN_MENU, resetMenu, resetPrefs, setMenuItem, useAppearance, useLibraryView, useMenuVisibility, usePref, useShake,
@@ -22,8 +22,6 @@ import {
 
 declare const __PAGE_BUILD__: string | undefined;
 const BUILD = typeof __PAGE_BUILD__ === 'string' ? __PAGE_BUILD__ : 'dev';
-/** the chrome's defaults (src/skins/ipod/settings.ts), for Reset Settings */
-const IPOD0: IpodSettings = { color: 'green', hue: 0, sat: 0, clicker: true, wheel: 'white' };
 
 const FILL: CSSProperties = { display: 'flex', flexDirection: 'column', height: '100%', color: TEXT };
 const GROW: CSSProperties = { flex: 1, minHeight: 0 };
@@ -71,7 +69,7 @@ function SettingsMenu() {
     // The newest player from the site, in place: the music goes on (ios/WmpSpotify/observer.js alchemyRestart)
     !!window.alchemyRestart && { id: 'refresh', label: 'Refresh Player', onSelect: restartApp },
     { id: 'reset', label: 'Reset Settings', chevron: true,
-      onSelect: to(nav, confirm('settings/reset', 'Reset Settings', 'Reset', (n) => { resetPrefs(); patch(IPOD0); n.pop(); })) },
+      onSelect: to(nav, confirm('settings/reset', 'Reset Settings', 'Reset', (n) => { resetPrefs(); patch(DEFAULTS); n.pop(); })) },
     { id: 'legal', label: 'Legal', chevron: true, onSelect: to(nav, page('settings/legal', 'Legal', Legal)) },
 
     header('Support'),
@@ -149,12 +147,13 @@ const Legal = () => (
 );
 
 // ---- Color --------------------------------------------------------------------------------------
-/** the nine 5G colours in Apple's order (§1.2), then Custom */
+/** the nine 5G colours in Apple's order (§1.2), the owner's two, then Custom */
 const COLOR_ROWS: readonly (readonly [IpodSettings['color'], string])[] = [['silver', 'Silver'], ['black', 'Black'], ['purple', 'Purple'],
-  ['blue', 'Blue'], ['green', 'Green'], ['yellow', 'Yellow'], ['orange', 'Orange'], ['pink', 'Pink'], ['red', '(PRODUCT) RED'], ['custom', 'Custom']];
-/** a body colour as CSS, as the chrome's bodyVars draws it (Custom with no saturation set: 85%) */
+  ['blue', 'Blue'], ['green', 'Green'], ['yellow', 'Yellow'], ['orange', 'Orange'], ['pink', 'Pink'], ['red', '(PRODUCT) RED'],
+  ['mocha', 'Mocha Tan'], ['espresso', 'Espresso Brown'], ['custom', 'Custom']];
+/** a body colour as CSS, as the chrome's bodyVars draws it */
 function swatch(s: IpodSettings, color = s.color): string {
-  const [h, sat, l] = color === 'custom' ? [s.hue, s.sat || 85, 50] : COLORS[color];
+  const [h, sat, l] = bodyHsl(s, color);
   return `hsl(${h} ${sat}% ${l}%)`;
 }
 const Swatch = ({ bg }: { bg: string }) => (
@@ -167,30 +166,8 @@ function Color() {
   return <MenuScreen items={COLOR_ROWS.map(([id, label]) => ({
     id, label, chevron: id === 'custom',
     right: <>{id === ip.color && '✓ '}<Swatch bg={swatch(ip, id)} /></>,
-    onSelect: id !== 'custom' ? () => patch({ color: id }) : () => {
-      const prev = { color: ip.color, hue: ip.hue, sat: ip.sat };
-      patch({ color: 'custom' });
-      nav.push({ key: 'settings/color/custom', title: 'Custom', render: () => <CustomColor prev={prev} /> });
-    },
+    onSelect: () => { patch({ color: id }); if (id === 'custom') nav.push(page('settings/color/custom', 'Custom', CustomColor)); },
   }))} />;
-}
-
-/** The wheel turns the hue live, 5° a detent (§4.4); centre keeps it, MENU puts the old colour back. */
-function CustomColor({ prev }: { prev: Partial<IpodSettings> }) {
-  const nav = useNav(), [ip, patch] = useIpodSettings();
-  useWheel({ onTick: (d) => patch({ hue: stepHue(ip.hue, d) }), onCenter: () => nav.pop(), onMenu: () => { patch(prev); } });
-  const stops = [0, 60, 120, 180, 240, 300, 360].map((h) => `hsl(${h} 80% 50%)`).join();
-  return (
-    <div style={{ ...FILL, alignItems: 'center', justifyContent: 'center', gap: u(12), fontSize: u(14) }}>
-      <div style={{ width: u(70), height: u(70), borderRadius: '50%', background: swatch(ip), boxShadow: 'inset 0 0 0 1px rgba(0,0,0,.3)' }} />
-      <div style={{ position: 'relative', width: '80%', height: u(10), borderRadius: u(5), background: `linear-gradient(to right, ${stops})` }}>
-        <div style={{ position: 'absolute', top: u(-3), bottom: u(-3), left: `${(ip.hue / 360) * 100}%`, width: u(3), marginLeft: u(-1.5),
-                      background: TEXT, borderRadius: u(1) }} />
-      </div>
-      <div>{ip.hue}°</div>
-      <div style={{ color: DIM, fontSize: u(12) }}>Press the center button to keep it</div>
-    </div>
-  );
 }
 
 // ---- Play On, Theme, Check for Updates ---------------------------------------------------------------
