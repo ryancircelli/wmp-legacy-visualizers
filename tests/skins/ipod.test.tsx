@@ -453,6 +453,35 @@ it('Settings > Visualizer lists every visualization by name, Bars checked; a cho
   expect(m.S().vis.kind).toBe('alchemy');            // WMP's default, untouched
 });
 
+it('the ⋯ over the cover opens this page\'s options: Lyrics and Karaoke toggle, Visualizer… picks one, put on screen at once', () => {
+  vi.stubGlobal('IntersectionObserver', class { observe() {} disconnect() {} });
+  const haptic = vi.fn();
+  window.alchemyHaptic = haptic;
+  const nav = createNav(mainMenu(), () => nowPlaying());
+  const m = mountSkinNow('spotify', fakeData(),
+    <NavContext.Provider value={nav}><div data-testid="np">{nowPlaying().render(nav)}</div></NavContext.Provider>);
+  const np = m.getByTestId('np'), options = () => [...np.querySelectorAll('[role=option]')];
+  const rows = () => options().map((x) => x.textContent);
+  const pick = (label: string) => act(() => { fireEvent.click(options().find((x) => x.textContent === label)!); });
+  const open = () => act(() => { fireEvent.click(within(np).getByRole('button', { name: 'Options' })); });
+  open();
+  expect(rows()).toEqual(['Visualizer…', 'LyricsOn', 'KaraokeOn', 'Cancel']);
+  expect(haptic).toHaveBeenCalledWith('light');
+  pick('LyricsOn');                                  // a choice closes it
+  expect([m.S().settings.lyrics, rows()]).toEqual([false, []]);
+  open();
+  pick('KaraokeOn');
+  open();
+  expect([m.S().settings.karaoke, rows()]).toEqual([false, ['Visualizer…', 'LyricsOff', 'KaraokeOff', 'Cancel']]);
+  pick('Visualizer…');
+  expect(rows()).toEqual(m.sh.presets.map((p) => p.name + (p.vis === 'bars' && p.preset === 0 ? '✓' : '')));
+  expect(np.querySelector('canvas')).toBeNull();     // the cover (no Canvas) until one is picked
+  pick('Fire Storm');
+  expect([localStorage.getItem('ipod.visualizer'), !!np.querySelector('canvas'), m.S().vis.kind, m.S().vis.preset])
+    .toEqual(['"bars:2"', true, 'bars', 2]);
+  act(() => { fireEvent.click(np.querySelector('[class*=tap]')!); });   // back to the Canvas for the tests after
+});
+
 it('Speaker Name (the iPhone\'s Connect speaker): after Play On and at Play On\'s end, (off) while its session is down; the prompt renames it', () => {
   const rename = vi.fn(), ask = vi.fn(() => "Ryan's iPhone");
   vi.stubGlobal('alchemySpeakerName', rename);
