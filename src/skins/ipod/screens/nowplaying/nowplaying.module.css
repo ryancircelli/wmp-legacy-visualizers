@@ -126,7 +126,7 @@
   /* a band behind the lines only, fading out above: the art (the visualizer, the Canvas) stays bright */
   background: linear-gradient(to top, rgb(0 0 0 / .75), rgb(0 0 0 / .5) 28%, transparent 50%); text-align: center;
   text-shadow: 0 calc(var(--unit) * 1) calc(var(--unit) * 3) rgb(0 0 0 / .9);
-  font-size: calc(var(--unit) * 14); line-height: calc(var(--unit) * 18);
+  font-size: calc(var(--unit) * 11.5); line-height: calc(var(--unit) * 15);
 }
 /* plain lyrics: four lines' window, scrolled with the track */
 .root:not(:has(.of)) .lyrics { bottom: calc(var(--unit) * 38); }
