@@ -319,8 +319,9 @@ async fn run(
             session_config.client_id = c.trim().to_owned();
         }
     }
-    // Credentials and volume only: no audio cache.
-    let cache = Cache::new(Some(&dir), Some(&dir), None, None)
+    // Credentials only: a kept volume would bring back a level some client once turned the speaker down
+    // to, and the speaker plays at full (the phone's volume is the one to turn).
+    let cache = Cache::new(Some(&dir), None, None, None)
         .map_err(|e| say(&format!("librespot: no cache: {e}")))
         .ok();
     // A session up saves its reusable credentials in the cache, whatever it logged in with.
@@ -384,6 +385,7 @@ async fn run(
         name,
         device_type: DeviceType::Speaker,
         initial_volume: u16::MAX,
+        disable_volume: true, // no slider for it in Spotify's clients: nothing turns it down
         ..ConnectConfig::default()
     };
 

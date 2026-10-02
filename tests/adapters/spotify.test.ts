@@ -172,6 +172,28 @@ describe('3. transport: connect-state commands', () => {
     expect(env.S.playback.position).toBe(60_500);
     expect(env.S.playback.pending).toBeNull();
   });
+  it('volume with the host\'s speaker playing: the system\'s volume alone, no Connect volume to the speaker; a speaker found turned down is put back to full', async () => {
+    vi.stubGlobal('__wmpSpeaker', { id: 'spk1', name: 'WMP Spotify (iOS)' });
+    const got: number[] = [];
+    window.alchemySetVolume = (pct) => { got.push(pct); };
+    const env = boot({ loggedIn: true, state: FX.playerState, activeDeviceId: 'spk1' });
+    env.resources.push({ name: 'https://gew4-spclient.spotify.com/connect-state/v1/devices/hobs_x', initiatorType: 'fetch' });
+    env.route(/connect\/volume/, { status: 200, json: {} });
+    env.start();
+    await settle();
+    env.S.actions.setVolume(40); await settle();
+    expect(got.at(-1)).toBe(40);
+    expect(env.calls.filter((x) => /connect\/volume/.test(x.url))).toEqual([]);
+    // the cluster shows the speaker at 13 %: one PUT of 65535 to it, and the slider does not follow that level
+    env.fire('wmp-spotify-devices', [{ id: 'spk1', name: 'WMP Spotify (iOS)', type: 'Speaker', active: true, volume: 8520 }]);
+    await settle();
+    const puts = env.calls.filter((x) => /connect\/volume/.test(x.url));
+    expect(puts.length).toBe(1);
+    expect(puts[0]!.url).toMatch(/\/to\/spk1$/);
+    expect(JSON.stringify(puts[0]!.body)).toBe('{"volume":65535}');
+    expect(env.S.settings.volume).toBe(40);
+    delete window.alchemySetVolume;
+  });
   it('volume to this device also goes to the host (alchemySetVolume: the iOS app sets the system volume)', async () => {
     const env = setup();
     await settle();

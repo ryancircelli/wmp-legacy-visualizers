@@ -98,7 +98,12 @@ export function volume(sp: Sp, pct: number): boolean {
   const w = W(), to = target(w);
   if (!sp.hasState || !authed() || !w.deviceId || !to) return false;
   // This device, on a host whose page cannot set its own volume (iOS): the host sets the system's.
-  if (to === w.deviceId) window.alchemySetVolume?.(Math.max(0, Math.min(100, +pct || 0)));
+  // The host's own speaker too, and that is all it gets: it plays at full and the system's volume is
+  // the one to turn. A Connect volume sent to it turned librespot's own level down instead (the wheel
+  // left it at 13 %, the phone's volume untouched: "volume control with wheel broke audio").
+  const spk = window.__wmpSpeaker?.id;
+  if (to === w.deviceId || to === spk) window.alchemySetVolume?.(Math.max(0, Math.min(100, +pct || 0)));
+  if (to === spk) return true;
   const url = 'https://' + spclient() + '/connect-state/v1/connect/volume/from/' + w.deviceId + '/to/' + to;
   const value = Math.round((Math.max(0, Math.min(100, +pct || 0)) / 100) * 65535);
   const now = Date.now();
@@ -107,6 +112,17 @@ export function volume(sp: Sp, pct: number): boolean {
     if (r.status < 200 || r.status >= 300) status(sp, 'Spotify: volume refused (' + r.status + ')');
   }, () => {});
   return true;
+}
+
+/** The host's own speaker back at full: its level is not ours to turn (volume, above), and one turned
+ *  down by an earlier page or by another Spotify client's slider stays down, kept across launches. */
+export function speakerFull(sp: Sp, id: string): void {
+  const w = W();
+  if (!authed() || !w.deviceId) return;
+  window.alchemyLog?.('spotify: the speaker was turned down: back to full');
+  const now = Date.now();
+  sp.sentVolume = sp.sentVolume.filter((x) => now - x.at < 1500).concat({ value: 65535, at: now });
+  post(sp, 'https://' + spclient() + '/connect-state/v1/connect/volume/from/' + w.deviceId + '/to/' + id, { volume: 65535 }, 'PUT').catch(() => {});
 }
 
 /** The device's own volume (the cluster's devices[id].volume, 0..65535) -> the slider and mute.
