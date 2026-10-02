@@ -3,7 +3,6 @@
 // settings group's. Settings > Main Menu hides rows by id: the label in lower case without spaces
 // ('Now Playing' is 'nowplaying'). What plays shows in the Now Playing bar under every screen (Root),
 // not in a preview pane here.
-import {  } from '../../ui';
 import * as groups from './screens';
 import type { MenuItem, Nav, ScreenEntry, Screens } from './screens/contract';
 import { MenuScreen, useNav } from './ui';
