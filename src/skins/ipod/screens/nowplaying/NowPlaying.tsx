@@ -308,6 +308,9 @@ function NowPlaying() {
       {bg ? null : art ? <img className={css.art} src={art} alt="" /> : <div className={cx(css.art, css.noart)}>♪</div>}
       {/* the cover's reflection, part of the picture: under the visualizer, the lyrics' shade and the band */}
       {art && !bg && <div className={css.under}><img className={css.reflection} src={art} alt="" /></div>}
+      {/* and upward behind the info band: the picture is behind that band too, as the Canvas is (over
+          black it went darker as the band thinned) */}
+      {art && !bg && <div className={css.above}><img className={css.reflection} src={art} alt="" /></div>}
       {overlay && <Vis tint={bars && art ? accent : null} opacity={vz.opacity} />}
       <div className={css.info}>
         <Line className={css.artist} text={t?.artist} />

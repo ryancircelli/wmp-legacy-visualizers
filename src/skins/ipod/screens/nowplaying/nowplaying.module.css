@@ -60,6 +60,12 @@
    and the band's text all paint over it in that order */
 .under { position: absolute; left: 0; right: 0; bottom: 0; height: calc(var(--unit) * 56); overflow: hidden; }
 .root:not(:has(.of)) .under { height: calc(var(--unit) * 38); }
+.above { position: absolute; left: 0; right: 0; top: 0; height: calc(var(--unit) * 60); overflow: hidden; }
+.above .reflection {
+  top: auto; bottom: 0;  /* its visual bottom (the cover's top, flipped) at the seam; whole there, fading up */
+  -webkit-mask-image: linear-gradient(rgb(0 0 0 / .95), rgb(0 0 0 / .12));
+  mask-image: linear-gradient(rgb(0 0 0 / .95), rgb(0 0 0 / .12));
+}
 .reflection {
   position: absolute; top: 0; left: 0; width: calc(var(--unit) * 240); height: calc(var(--unit) * 240);
   object-fit: cover; transform: scaleY(-1);
