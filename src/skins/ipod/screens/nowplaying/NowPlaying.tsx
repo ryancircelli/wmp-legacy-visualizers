@@ -235,7 +235,7 @@ function NowPlaying() {
     ],
     playlist: [
       { id: 'browse', label: 'Browse Playlist', onSelect: () => { if (t?.ctx) nav.push(collection(t.ctx, col.meta?.name ?? 'Playlist')); } },
-      { id: 'radio', label: 'Start Radio', onSelect: () => { if (t?.ctx) void radioFrom(sh, nav, t.ctx, col.meta?.name ?? 'Playlist'); } },
+      { id: 'radio', label: 'Playlist Radio', onSelect: () => { if (t?.ctx) void radioFrom(sh, nav, t.ctx, col.meta?.name ?? 'Playlist'); } },
       cancel,
     ],
     playlists: toItems(plMenu.sub ?? []),

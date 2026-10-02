@@ -149,7 +149,7 @@ it('two buttons over the art: ♪ (top-left) opens the track\'s menu, without th
   act(() => { fireEvent.click(within(m.np).getByRole('button', { name: 'Track' })); });
   expect(m.options().map((x) => x.textContent)).toEqual(['Start Radio', 'Add to Playlist…', 'Like', 'Browse Album', 'Browse Artist', 'Playlist…', 'Cancel']);
   m.pick('Playlist…');
-  expect(m.options().map((x) => x.textContent)).toEqual(['Browse Playlist', 'Start Radio', 'Cancel']);
+  expect(m.options().map((x) => x.textContent)).toEqual(['Browse Playlist', 'Playlist Radio', 'Cancel']);
   m.pick('Browse Playlist');
   await settle();
   expect(m.np.querySelector('[role=listbox]')).toBeNull();      // the popup closed; the playlist's screen was pushed
