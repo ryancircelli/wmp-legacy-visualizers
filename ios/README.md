@@ -107,9 +107,9 @@ timestamped, a `---- launch <date> ----` line at each start). The extension logs
 `broadcast.log` in the same container; the app merges its lines into the host log, prefixed `ext:`,
 when the list opens and 8 s after the broadcast sheet comes up, each line once.
 
-## Librespot (branch)
+## Librespot
 
-On the `librespot` branch the app is also a Spotify Connect receiver, through
+The app is also a Spotify Connect receiver (merged from the `librespot` branch 2026-10-01), through
 [librespot](https://github.com/librespot-org/librespot) 0.8.0. It shows up in Spotify's device list as
 **WMP Spotify** (a speaker); picked, Spotify plays to the app itself, and the app gets the raw audio.
 The music plays out of the app's own audio session, and the visualizers get the same audio with no
