@@ -9,10 +9,15 @@
 typedef void (*wmp_ls_pcm_cb)(void *ctx, const float *samples, size_t frames);
 // A UTF-8 log line, "librespot: ...", from any thread.
 typedef void (*wmp_ls_log_cb)(void *ctx, const char *line);
+// The session's state, from librespot's thread: its Connect device id (40 hex, UTF-8) when a session
+// comes up, NULL when it ends.
+typedef void (*wmp_ls_state_cb)(void *ctx, const char *device_id);
 
-// Starts the receiver on a thread of its own: discovery as `name` (a Speaker), the credentials cached
-// in `cache_dir` (connected at once when there are some). 0 started, -1 already running or bad input.
-int32_t wmp_ls_start(const char *name, const char *cache_dir, wmp_ls_pcm_cb pcm, wmp_ls_log_cb log, void *ctx);
+// Starts the receiver on a thread of its own: a Speaker called `name`, its Connect device id the hash
+// of `id` (NULL or "": of the name; stable per install, so a rename keeps the device), the credentials
+// cached in `cache_dir`. 0 started, -1 already running or bad input.
+int32_t wmp_ls_start(const char *name, const char *id, const char *cache_dir, wmp_ls_pcm_cb pcm, wmp_ls_log_cb log,
+                     wmp_ls_state_cb state, void *ctx);
 // The web player's access token (UTF-8), the client id it was issued to and the web player's client
 // token (both UTF-8; NULL or "" keeps the last one; the client id outlives the launch in cache_dir).
 // librespot serves the token and client token to Spotify's services in place of its own (login5 and

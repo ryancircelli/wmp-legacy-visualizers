@@ -32,11 +32,13 @@ use tokio::sync::{mpsc, oneshot};
 
 pub type PcmCb = extern "C" fn(*mut c_void, *const f32, usize);
 pub type LogCb = extern "C" fn(*mut c_void, *const c_char);
+pub type StateCb = extern "C" fn(*mut c_void, *const c_char);
 
 #[derive(Clone, Copy)]
 struct Host {
     pcm: PcmCb,
     log: LogCb,
+    state: StateCb,
     ctx: usize, // the app's pointer, handed back untouched
 }
 
@@ -52,6 +54,16 @@ fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
 // Copied out, so no lock is held while the app's callback runs (pcm blocks on purpose).
 fn host() -> Option<Host> {
     *lock(&HOST)
+}
+
+// The session's state to the app: the device id while one is up, NULL when none is.
+fn state(id: Option<&str>) {
+    if let Some(h) = host() {
+        match id.and_then(|i| CString::new(i).ok()) {
+            Some(c) => (h.state)(h.ctx as *mut c_void, c.as_ptr()),
+            None => (h.state)(h.ctx as *mut c_void, std::ptr::null()),
+        }
+    }
 }
 
 fn say(line: &str) {
@@ -103,13 +115,16 @@ impl Sink for HostSink {
 }
 
 /// # Safety
-/// `name` and `cache_dir` are NUL-terminated UTF-8; the callbacks and `ctx` outlive the receiver.
+/// `name`, `id` (may be NULL) and `cache_dir` are NUL-terminated UTF-8; the callbacks and `ctx`
+/// outlive the receiver.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn wmp_ls_start(
     name: *const c_char,
+    id: *const c_char,
     cache_dir: *const c_char,
     pcm: PcmCb,
     log: LogCb,
+    state: StateCb,
     ctx: *mut c_void,
 ) -> i32 {
     if name.is_null() || cache_dir.is_null() {
@@ -121,6 +136,8 @@ pub unsafe extern "C" fn wmp_ls_start(
             CStr::from_ptr(cache_dir).to_string_lossy().into_owned(),
         )
     };
+    let id = if id.is_null() { String::new() } else { unsafe { CStr::from_ptr(id) }.to_string_lossy().into_owned() };
+    let id = if id.is_empty() { name.clone() } else { id };
     let mut stop = lock(&STOP);
     if stop.is_some() {
         return -1;
@@ -128,6 +145,7 @@ pub unsafe extern "C" fn wmp_ls_start(
     *lock(&HOST) = Some(Host {
         pcm,
         log,
+        state,
         ctx: ctx as usize,
     });
     if log::set_logger(&Forward).is_ok() {
@@ -140,7 +158,7 @@ pub unsafe extern "C" fn wmp_ls_start(
         .name("librespot".into())
         .spawn(move || {
             match tokio::runtime::Builder::new_multi_thread().enable_all().build() {
-                Ok(rt) => rt.block_on(run(name, dir, rx, tokens)),
+                Ok(rt) => rt.block_on(run(name, id, dir, rx, tokens)),
                 Err(e) => say(&format!("librespot: no runtime: {e}")),
             }
         });
@@ -184,6 +202,7 @@ type Login = (Credentials, &'static str);
 
 async fn run(
     name: String,
+    id: String,
     dir: String,
     mut stop: oneshot::Receiver<()>,
     mut tokens: mpsc::UnboundedReceiver<(String, String, String)>,
@@ -192,9 +211,11 @@ async fn run(
     const RECONNECTS: usize = 5; // per WINDOW, as librespot's binary allows
     const TOKEN_LIFE: Duration = Duration::from_secs(50 * 60); // the web player's last an hour
 
-    // Stable across launches, as librespot's binary derives it: the credentials blob a phone hands
-    // over is encrypted for this id, and the Spotify app keeps one entry per id.
-    let device_id: String = Sha1::digest(name.as_bytes())
+    // Stable across launches, as librespot's binary derives it from the name: the credentials blob a
+    // phone hands over is encrypted for this id, and the Spotify app keeps one entry per id. From the
+    // app's install id and not the name, so two devices with one name stay two devices and a rename
+    // keeps the device.
+    let device_id: String = Sha1::digest(id.as_bytes())
         .iter()
         .map(|b| format!("{b:02x}"))
         .collect();
@@ -241,7 +262,7 @@ async fn run(
         }
     };
 
-    let mut discovery = match Discovery::builder(device_id, session_config.client_id.clone())
+    let mut discovery = match Discovery::builder(device_id.clone(), session_config.client_id.clone())
         .name(name.clone())
         .device_type(DeviceType::Speaker)
         .launch()
@@ -335,6 +356,7 @@ async fn run(
                 match Spirc::new(config.clone(), session.clone(), c, player.clone(), mixer.clone()).await {
                     Ok((s, t)) => {
                         say(&format!("librespot: session up ({via})"));
+                        state(Some(&device_id));
                         spirc = Some(s);
                         task = Some(Box::pin(t));
                     }
@@ -360,6 +382,7 @@ async fn run(
                 task = None;
                 spirc = None;
                 say("librespot: session ended");
+                state(None);
                 if !session.is_invalid() {
                     session.shutdown();
                 }

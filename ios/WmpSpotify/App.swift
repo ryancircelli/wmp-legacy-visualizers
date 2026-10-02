@@ -390,6 +390,7 @@ final class DeviceState {
         pushScene()
         pushKeyboard()
         AudioServer.shared.pushState()
+        Librespot.shared.push()
     }
 }
 
@@ -593,7 +594,7 @@ struct WebView: UIViewRepresentable {
         for name in ["log", "volume", "open", "layout", "showlog", "haptic", "awake", "statusbar", "orientation",
                      "broadcast", "brightness", "share", "homeindicator", "host", "reset", "viewport", "proximity",
                      "hapticpattern", "sound", "routepicker", "audiosession", "notify", "appearance", "clipboard",
-                     "band", "background", "keyboard", "scroll", "lstoken"] {
+                     "band", "background", "keyboard", "scroll", "lstoken", "speaker"] {
             config.userContentController.add(context.coordinator, name: name)
         }
         if let script {
@@ -611,6 +612,7 @@ struct WebView: UIViewRepresentable {
         web.scrollView.isScrollEnabled = false
         web.scrollView.bounces = false
         web.navigationDelegate = context.coordinator  // the viewport, before the first load
+        web.uiDelegate = context.coordinator  // window.prompt as a native alert (the skins have no text field)
         web.load(URLRequest(url: URL(string: "https://open.spotify.com/")!))
         WebHolder.shared.web = web
         return web
@@ -643,7 +645,19 @@ struct WebView: UIViewRepresentable {
     // or "duck"; notify, JSON for notify(_:) or "cancel:<id>"; appearance, "light", "dark" or "auto";
     // clipboard, a text copied; band, "hidden" or "shown"; background, "#rrggbb" or "#rgb"; keyboard,
     // "ignore" or "avoid"; scroll, "on" or "off", the web view's own scrolling and bounce.
-    final class Coordinator: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
+    final class Coordinator: NSObject, WKScriptMessageHandler, WKNavigationDelegate, WKUIDelegate {
+        /// window.prompt(text, default), as the system alert with a text field; nil on Cancel.
+        func webView(_ webView: WKWebView, runJavaScriptTextInputPanelWithPrompt prompt: String, defaultText: String?,
+                     initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping (String?) -> Void) {
+            guard var top = webView.window?.rootViewController else { completionHandler(nil); return }
+            while let p = top.presentedViewController { top = p }
+            let a = UIAlertController(title: prompt, message: nil, preferredStyle: .alert)
+            a.addTextField { $0.text = defaultText }
+            a.addAction(UIAlertAction(title: "Cancel", style: .cancel) { _ in completionHandler(nil) })
+            a.addAction(UIAlertAction(title: "OK", style: .default) { _ in completionHandler(a.textFields?.first?.text) })
+            top.present(a, animated: true)
+        }
+
         // Each navigation in the stored viewport's content mode; the desktop user agent stays either way.
         func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction,
                      preferences: WKWebpagePreferences,
@@ -814,6 +828,9 @@ struct WebView: UIViewRepresentable {
             case "lstoken":
                 guard let s = message.body as? String, !s.isEmpty else { return }
                 Librespot.shared.token(s)
+            case "speaker":
+                guard let s = message.body as? String, !s.isEmpty else { return }
+                Librespot.shared.rename(s)
             default:
                 HostLog.shared.log("page: \(message.body)")
             }
@@ -1117,6 +1134,28 @@ final class Librespot {
     var paired: Bool { FileManager.default.fileExists(atPath: Self.cache.appending(path: "credentials.json").path) }
 
     private var lastToken = ""  // on the main thread
+    private var deviceId: String?  // on the main thread: librespot's Connect device id while its session is up
+
+    /// The speaker's name in Spotify's pickers, the page's to set (alchemySpeakerName). The phone's own
+    /// name is "iPhone" or "iPad" to apps since iOS 16 without an entitlement Apple grants on request.
+    var name: String { UserDefaults.standard.string(forKey: "speaker.name") ?? "WMP Spotify (iOS)" }
+
+    /// window.__wmpSpeaker = {id, name} and 'wmp-speaker', to the page.
+    func push() {
+        WebHolder.shared.push("__wmpSpeaker", "wmp-speaker", ["id": deviceId ?? NSNull(), "name": name] as [String: Any])
+    }
+
+    /// On the main thread: a new name from the page, kept; the receiver restarts under it (its device
+    /// id, from the install, stays).
+    func rename(_ n: String) {
+        guard n != name else { return }
+        UserDefaults.standard.set(n, forKey: "speaker.name")
+        HostLog.shared.log("speaker: renamed to \(n)")
+        deviceId = nil
+        push()
+        wmp_ls_stop()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) { self.start() }
+    }
 
     /// On the main thread: the web player's access token (the "lstoken" message,
     /// "<clientId> <clientToken> <token>"), which librespot serves to Spotify's services in place of
@@ -1138,10 +1177,17 @@ final class Librespot {
         output()
         Forwarder.shared.rate(44100, from: .librespot)
         try? FileManager.default.createDirectory(at: Self.cache, withIntermediateDirectories: true)
-        let started = wmp_ls_start("WMP Spotify", Self.cache.path, { _, samples, frames in
+        let id = UIDevice.current.identifierForVendor?.uuidString ?? name
+        let started = wmp_ls_start(name, id, Self.cache.path, { _, samples, frames in
             Librespot.shared.take(samples, frames)
         }, { _, line in
             if let line { HostLog.shared.log(String(cString: line)) }
+        }, { _, id in
+            let s = id.map { String(cString: $0) }
+            DispatchQueue.main.async {
+                Librespot.shared.deviceId = s
+                Librespot.shared.push()
+            }
         }, nil)
         if started != 0 { HostLog.shared.log("librespot: not started") }
     }
