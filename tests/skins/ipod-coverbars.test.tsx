@@ -74,32 +74,32 @@ it('the overlay: over the cover and over the Canvas, Bars in the cover\'s accent
   expect([m.box(), !!m.np.querySelector('canvas'), ...m.out()]).toEqual([null, false, 'opaque', null]);
 });
 
-it('Opacity (dim while the overlay is off) steps 100 -> 75 -> 50 -> 25 -> 100 with the list kept open; the layer follows over the cover and over the Canvas', async () => {
+it('Opacity (dim while the overlay is off), 50 by default, steps 50 -> 25 -> 100 -> 75 -> 50 with the list kept open; the layer follows over the cover and over the Canvas', async () => {
   const m = atNowPlaying();
   await m.play('spotify:track:a', 'https://i.scdn.co/image/abc');
   m.menu();
-  expect([m.row('Opacity').textContent, m.row('Opacity').getAttribute('aria-disabled')]).toEqual(['Opacity100%', null]);
+  expect([m.row('Opacity').textContent, m.row('Opacity').getAttribute('aria-disabled')]).toEqual(['Opacity50%', null]);
   const steps: [string, string][] = [];
   for (let k = 0; k < 4; k++) { m.pick('Opacity'); steps.push([m.row('Opacity').textContent ?? '', m.layer()!.style.opacity]); }
-  expect(steps).toEqual([['Opacity75%', '0.75'], ['Opacity50%', '0.5'], ['Opacity25%', '0.25'], ['Opacity100%', '']]);
+  expect(steps).toEqual([['Opacity25%', '0.25'], ['Opacity100%', ''], ['Opacity75%', '0.75'], ['Opacity50%', '0.5']]);
   m.pick('Opacity');
-  expect(readPref('ipod.visOpacity', 100)).toBe(75);
+  expect(readPref('ipod.visOpacity', 50)).toBe(25);
   await m.play('spotify:track:c', 'https://i.scdn.co/image/abc');   // over the Canvas: the same
-  expect([m.box(), m.layer()?.style.opacity, m.layer()?.style.filter]).toEqual(['overlay', '0.75', 'saturate(1.75)']);   // thinner, and its colour stronger
+  expect([m.box(), m.layer()?.style.opacity, m.layer()?.style.filter]).toEqual(['overlay', '0.25', 'saturate(3.25)']);   // thinner, and its colour stronger
   m.pick('Visualizer');                              // off: the row dim, the setting kept
-  expect([m.layer(), m.row('Opacity').getAttribute('aria-disabled'), m.row('Opacity').textContent]).toEqual([null, 'true', 'Opacity75%']);
+  expect([m.layer(), m.row('Opacity').getAttribute('aria-disabled'), m.row('Opacity').textContent]).toEqual([null, 'true', 'Opacity25%']);
   m.pick('Visualizer');
-  expect(m.layer()?.style.opacity).toBe('0.75');
+  expect(m.layer()?.style.opacity).toBe('0.25');
 });
 
-it('a stored opacity that is not 100, 75, 50 or 25 reads as 100', () => {
+it('a stored opacity that is not 100, 75, 50 or 25 reads as 50', () => {
   localStorage.setItem('ipod.visOpacity', '60');
   const m = atNowPlaying();
   m.menu();
-  expect(m.row('Opacity').textContent).toBe('Opacity100%');
+  expect(m.row('Opacity').textContent).toBe('Opacity50%');
   localStorage.setItem('ipod.visOpacity', '"half"');
   act(() => { window.dispatchEvent(new StorageEvent('storage', { key: 'ipod.visOpacity' })); });
-  expect(m.row('Opacity').textContent).toBe('Opacity100%');
+  expect(m.row('Opacity').textContent).toBe('Opacity50%');
 });
 
 it('what earlier builds stored: Cover Bars is Bars with the overlay on; the tap cycle\'s visualizer and Over Cover are the overlay on (the art the cover), Over Cover\'s key gone', () => {

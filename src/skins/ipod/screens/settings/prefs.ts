@@ -103,11 +103,11 @@ export const useVisualizer = () => usePref('ipod.visualizer', 'bars:0');
  *  Waves in the cover's accent). On at first. */
 export const useVisOn = () => usePref('ipod.visOn', true);
 /** 'ipod.visOpacity': Visualizer… > Opacity, in percent: the visualization's while it is on; one of
- *  VIS_OPACITY, anything else read as 100 */
+ *  VIS_OPACITY, 50 by default (the owner, 2026-10-02), anything else read as 50 */
 export const VIS_OPACITY = [100, 75, 50, 25] as const;
 export function useVisOpacity(): [number, (v: number) => void] {
-  const [v, set] = usePref('ipod.visOpacity', 100);
-  return [(VIS_OPACITY as readonly number[]).includes(v) ? v : 100, set];
+  const [v, set] = usePref('ipod.visOpacity', 50);
+  return [(VIS_OPACITY as readonly number[]).includes(v) ? v : 50, set];
 }
 /** What earlier builds stored, as it is now (2026-10-02): Cover Bars (a value of 'ipod.visualizer' of
  *  its own) is Bars; the tap cycle's visualizer mode ('ipod.canvas' show 'vis') and Over Cover
