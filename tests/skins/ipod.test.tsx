@@ -435,6 +435,28 @@ it('Now Playing\'s visualizer is Bars (ipod.visualizer) while shown, a change at
   expect(vis()).toEqual(['battery', 3, 'battery', 3]);
 });
 
+it('Now Playing draws Bars at a width its bars fill edge to edge (299 for the phone\'s 349), stretched to the area; other presets at the area\'s own', () => {
+  vi.stubGlobal('IntersectionObserver', class { observe() {} disconnect() {} });
+  let width = 349;
+  vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockImplementation(() => width);
+  const nav = createNav(mainMenu(), () => nowPlaying());
+  const m = mountSkinNow('spotify', fakeData(),
+    <NavContext.Provider value={nav}><div data-testid="np">{nowPlaying().render(nav)}</div></NavContext.Provider>);
+  const tap = () => act(() => { fireEvent.click(m.getByTestId('np').querySelector('[class*=tap]')!); });
+  const frame = () => (m.S().vis.scale === null ? null : Math.round(width * m.S().vis.scale!));
+  expect(m.S().vis.scale).toBeNull();
+  tap();                                             // the visualizer: Bars
+  expect(frame()).toBe(299);
+  act(() => { width = 280; window.dispatchEvent(new Event('resize')); });
+  expect(frame()).toBe(275);
+  act(() => writePref('ipod.visualizer', 'bars:1'));   // Ocean Mist: a bar a column, any width
+  expect(m.S().vis.scale).toBeNull();
+  act(() => writePref('ipod.visualizer', 'bars:0'));
+  expect(frame()).toBe(275);
+  tap();                                             // away: settings.scale again
+  expect(m.S().vis.scale).toBeNull();
+});
+
 /** the iPod at Settings: `click` a row by its text; `headers` the section bands shown; `title` the status row's */
 function atSettings() {
   const m = mount(), click = (label: string) => act(() => { fireEvent.click(m.row(label)); });

@@ -87,7 +87,8 @@ context{uri,kind,name}, from: string } · queue { next: Track[] } · library { p
 { tracks, total, name, loading }> } · home { greeting, sections } · radio { stations } · devices { list } · lyrics { status,
 lines, plain, enabled } · ui { view: 'now'|'library'|'guide'|'radio'|'devices', taskPane, playlistPane, fullscreen,
 bare, dialog, menu } · settings (persisted) { vis, preset, fps, animate, lyrics, volume, muted, skin, clockMode, … } ·
-vis { kind, preset, hold, alpha, tint } (alpha / tint: the engine's output, not saved)
+vis { kind, preset, hold, alpha, tint, scale } (alpha / tint: the engine's output; scale: a skin's frame size over
+settings.scale while it shows; none saved)
 Adapters write the store through actions; skins subscribe with selectors; commands are a `Commands` object on the
 store (`useStore.getState().commands`). Position extrapolation is a selector helper (`positionNow(state)`), never a
 1 Hz setState.

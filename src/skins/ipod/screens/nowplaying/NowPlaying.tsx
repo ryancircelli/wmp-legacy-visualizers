@@ -32,7 +32,7 @@ import type { MenuItem, ScreenEntry } from '../contract';
 import { useVisFit, useVisualizers, visId } from '../settings';
 import { Bar, MenuScreen, Popup, useNav, useScan, useWheel } from '../../ui';
 import { pickAccent, rgbOf } from './accent';
-import { IDLE_MS, nextMode, ofText, SCRUB_COMMIT_MS, scrubAccel, scrubStep, times, volumeStep, VOLUME_MS, type Mode } from './logic';
+import { barsFit, IDLE_MS, nextMode, ofText, SCRUB_COMMIT_MS, scrubAccel, scrubStep, times, volumeStep, VOLUME_MS, type Mode } from './logic';
 import css from './nowplaying.module.css';
 
 export function nowPlaying(): ScreenEntry {
@@ -351,7 +351,7 @@ function Vis({ over, tint }: { over?: boolean; tint?: string | null }) {
     a.setSettings({ scale: fit === 'stretch' ? 'original' : 'auto' });
     return () => a.setSettings({ scale: prev });
   }, [on, fit, sh]);
-  // the iPod's visualization (ipod.visualizer; Cover Bars: Bars) onto the shared settings.vis / preset the same way
+  // the iPod's visualization (ipod.visualizer) onto the shared settings.vis / preset the same way
   const { preset } = useVisualizers();
   useEffect(() => {
     if (!on) return;
@@ -359,6 +359,24 @@ function Vis({ over, tint }: { over?: boolean; tint?: string | null }) {
     if (x) a.setVis(x.vis, x.preset);
     return () => a.setVis(prev.kind, prev.preset);
   }, [on, preset, sh]);
+  // Bars and Waves' Bars (50 bars of 5, a gap of 1, centred) leaves a margin either side of a wider
+  // frame: its frame is drawn at the widest width under the area's that the bars fill edge to edge
+  // (barsFit), the height in proportion, and the canvas stretches it to the area as it does any frame
+  // (vis.scale over settings.scale while shown, the ticker's). The other presets fill any width.
+  const [cw, setCw] = useState(0);
+  useEffect(() => {
+    // the area's width follows the window's (the screen is 240 units of it)
+    const read = () => setCw(ref.current?.clientWidth ?? 0);
+    read();
+    window.addEventListener('resize', read);
+    return () => window.removeEventListener('resize', read);
+  }, []);
+  useEffect(() => {
+    if (!on || preset !== 'bars:0' || cw < 16) return;
+    const st = sh.store, scale = (v: number | null) => st.setState((s) => ({ vis: { ...s.vis, scale: v } }));
+    scale(barsFit(cw, 50, 5, 1) / cw);
+    return () => scale(null);
+  }, [on, preset, cw, sh]);
   // Over Cover: the engine's output with alpha from brightness while shown (vis.alpha / tint, which the
   // ticker hands the engine as it does the scale), then opaque again
   useEffect(() => {

@@ -96,6 +96,9 @@ export interface AppState {
      *  shows the visualizer over something (the iPod's Over Cover); not a setting, never saved */
     alpha: 'opaque' | 'luma';
     tint: readonly [number, number, number] | null;
+    /** the engine's frame as a fraction of the view, over settings.scale while a skin sizes it itself
+     *  (the iPod's Bars: a width the bars fill edge to edge); null = settings.scale; never saved */
+    scale: number | null;
   };
   commands: Commands;
   actions: Actions;
@@ -197,7 +200,7 @@ export function createAppStore(opts: { settings?: Settings; persist?: boolean } 
       lyrics: { status: 'none', lines: null, plain: null, track: null, source: null },
       ui: { view: 'now', fullscreen: false, bare: false, dialog: null, menu: null, status: '', libNode: null, libSel: null, searchQ: '', searchOnly: null },
       settings,
-      vis: { kind: settings.vis, preset: settings.preset, hold: false, level: null, alpha: 'opaque', tint: null },
+      vis: { kind: settings.vis, preset: settings.preset, hold: false, level: null, alpha: 'opaque', tint: null, scale: null },
       commands: noCommands,
       actions,
     };

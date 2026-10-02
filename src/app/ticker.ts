@@ -49,7 +49,7 @@ export function createTicker(store: AppStore, onFirstFrame: () => void): Ticker 
   function make() {
     if (!canvas) return;
     const s = store.getState();
-    eng = createEngine(s.vis.kind, canvas, { preset: s.vis.preset, scale: S().scale,
+    eng = createEngine(s.vis.kind, canvas, { preset: s.vis.preset, scale: s.vis.scale ?? S().scale,
       options: { intended: S().intended, fps: S().fps, backgroundColor: S().bg, alpha: s.vis.alpha, tint: s.vis.tint } });
   }
 
@@ -100,7 +100,7 @@ export function createTicker(store: AppStore, onFirstFrame: () => void): Ticker 
           if (eng && eng.kind === s.vis.kind) eng.setPreset(s.vis.preset);
           else make();
         }),
-        store.subscribe((s) => s.settings.scale, (v) => eng?.setScale(v)),
+        store.subscribe((s) => s.vis.scale ?? s.settings.scale, (v) => eng?.setScale(v)),
         store.subscribe((s) => s.settings.intended, (v) => { if (eng) eng.options.intended = v; }),
         store.subscribe((s) => s.settings.bg, (v) => { if (eng) eng.options.backgroundColor = v; }),
         store.subscribe((s) => s.settings.fps, (v) => { if (eng) eng.options.fps = v; acc = 0; }),

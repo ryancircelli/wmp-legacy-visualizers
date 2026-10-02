@@ -35,6 +35,15 @@ export const scrubAccel = (gapMs: number): 1 | 2 | 4 => (gapMs < 100 ? 4 : gapMs
 export const volumeStep = (vol: number, dir: 1 | -1, max: number): number =>
   Math.min(max, Math.max(0, Math.round(vol + (dir * max) / 50)));
 
+/** Bars and Waves' bars at a fixed width (src/engine/bars.ts drawBars): `bars` at most, each `barW`
+ *  wide with `gap` after it, centred, so a frame wider than they span keeps a margin either side. The
+ *  widest frame at or under `w` that they fill edge to edge: whole pitches, less the last gap (the
+ *  engine's xoff 0, its last bar on the right edge). The Bars preset: (w, 50, 5, 1), 299 at most. */
+export const barsFit = (w: number, bars: number, barW: number, gap: number): number => {
+  const p = barW + gap;
+  return p * Math.min(bars, Math.floor((w + gap) / p)) - gap;
+};
+
 /** center: the next mode this track has, in the nano's order; past the last, the progress bar */
 export const nextMode = (m: Mode, has: Partial<Record<Mode, boolean>>): Mode =>
   MODES.slice(MODES.indexOf(m) + 1).find((x) => has[x]) ?? 'default';
