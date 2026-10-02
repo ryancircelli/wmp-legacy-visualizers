@@ -6,12 +6,36 @@ overlay, as CONTRACT.md v6.1 describes: `WmpSpotify/observer.js` runs at documen
 player's token, state and query hashes from its own traffic, and mounts the skin in a shadow root on
 top. Spotify's page is never driven through its DOM.
 
-The page is not built into the app. Each launch fetches `spotify-inject.js` from wmp.ryancircelli.com
-(what deploy.yml publishes) and caches it, so a fix to the player reaches the phone without a new build.
-`observer.js` is fetched the same way, as `ios-observer.js` (taken only when it is our script, not an
-error page), with the copy built into the app used only when neither the site nor the cache has it, so a
-change to the observer needs no build either. The log says where each came from (`page: bundle from
-site|cache|none`, `page: observer from site|cache|bundled`).
+The page is not built into the app: `spotify-inject.js` comes from wmp.ryancircelli.com (what
+deploy.yml publishes), and so does `observer.js`, as `ios-observer.js` (taken only when it is our
+script, not an error page), so a fix to either reaches the phone without a new build. A launch, in order:
+
+1. The window comes up in the page's last layout. The messages below that shape the first frame
+   (`layout`, `statusbar`, `homeindicator`, `band`, `orientation`, `background`, `keyboard`) are kept
+   in UserDefaults as the page sends them and applied again when the app starts, before the web view
+   shows, so a skin's layout (the iPod's edge to edge on black) does not flash the default one first.
+2. The web view starts at once from the copies the last launch saved in Application Support (the
+   builds before kept them in Caches, read when there is none), the observer built into the app
+   standing in for one never saved: no network wait (`page: bundle from cache`, `page: observer from
+   cache|bundled`). With no bundle saved (the first launch) it waits for the site's, the built-in
+   observer the fallback (`page: bundle from site|none`, `page: observer from site|bundled`).
+3. Behind it the app fetches the site's two files and saves each that parses for the next launch
+   (`page: bundle on site unchanged|updated|not fetched`, the same for the observer, in the list
+   only). One that differs from what this launch runs goes into the web view's user script once the
+   page has mounted (observer.js's `overlay mounted` line), so a reload runs it. A new bundle also
+   refreshes the page in place (`page: bundle updated from site: refreshing in place`): observer.js's
+   `alchemyRestart`, run half a second after the page's `window.Alchemy` appears, fetches the bundle
+   again and remounts the page without stopping the music. A new observer cannot be swapped into a
+   live document and runs from the next load (`page: observer updated from site: runs from the next
+   load`).
+4. The page mounts its skin. The iPod skin draws its body and wheel at once, with a boot screen in its
+   screen (src/skins/ipod/Boot.tsx: the note and a progress bar on black) until Spotify's sign-in,
+   the first player state or device list, and the speaker's session are in, 6 s at most; logged
+   out, Spotify's login page shows at once.
+
+Measured before this order, which waited for the site at every launch: launch to bundle fetched
+under 1 s, overlay mounted about 1 s, dealer socket about 2 s, registered and first state about 3 s.
+The order above is not yet measured on a phone.
 The page talks to the app through `webkit.messageHandlers.<name>.postMessage`: `log` (a line for the host
 log), `volume` (below), `open` (an http or https URL, opened outside the app, in Safari or the app that
 claims it), `layout` (`"edge"` puts the web view over the whole screen, under the notch and the home
@@ -19,7 +43,9 @@ indicator, with the band hidden; `"safe"`, the default, is the layout described 
 (the whole log in its sheet, for an edge-to-edge page with no band to long-press). The app tells the page
 the web view's safe-area insets in points as `window.__wmpSafeArea = {top, right, bottom, left}`, then
 fires `wmp-safe-area` on `window`, whenever they change and again after each `layout` message (so a
-reloaded page that sends its layout gets them); inside the safe area they are all 0.
+reloaded page that sends its layout gets them); inside the safe area they are all 0. They are the
+window's safe area where the web view overlaps it, never the keyboard (which SwiftUI counts in a hosted
+view's own insets while it shows).
 Playback is meant to carry on with the phone locked (the audio background mode).
 Link previews are off in the web view: a long press on a link is the page's, not a preview.
 The skin's volume slider and mute set the phone's system volume: a page cannot change its own playback
@@ -43,8 +69,14 @@ noted), posted with `webkit.messageHandlers.<name>.postMessage(<string>)` and wr
   hidden, the web view takes its place and the log opens by `showlog`.
 - `background`: a CSS hex color, `"#rrggbb"` or `"#rgb"`, behind the web view and in the safe layout's
   bars (black by default); anything else is ignored.
-- `keyboard`: `"ignore"` (the default: the keyboard covers the page, WebKit scrolling the focused field
-  into view) or `"avoid"` (the layout shrinks to above the keyboard).
+- `keyboard`: `"ignore"` (the default: the keyboard covers the page) or `"avoid"` (the layout shrinks to
+  above the keyboard). In `"ignore"`, on open.spotify.com with `scroll` off, nothing moves for the
+  keyboard: WebKit's scroll to the focused field is undone as it happens, and as the keyboard hides the
+  scroll view's inset (WebKit's, for the keyboard, which it left about 26 pt short once) goes back to
+  none and its offset to rest (`InsetWebView.watchKeyboard`; the log's list says `keyboard: shown, <h>
+  pt` and `keyboard: hidden`). Elsewhere (Spotify's login page) WebKit still scrolls to its fields. The
+  input accessory bar over the keyboard (‹ › ✓) stays: WKWebView has no API for it, only swizzling its
+  private content view.
 - `scroll`: `"on"` or `"off"` (the default), the web view's own scrolling and bounce.
 - `orientation`: `"portrait"`, `"landscape"` or `"any"`; the window turns to it and stays.
 - `appearance`: `"light"`, `"dark"` or `"auto"`, the window's (and so the page's `prefers-color-scheme`).

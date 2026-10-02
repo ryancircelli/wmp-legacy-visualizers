@@ -1,6 +1,7 @@
 // The phone around the iPod (the iOS app's window.alchemy* bindings, ios/README.md). Each call is
 // optional: in a browser none of them exist and the skin is just the page.
 import { useCallback, useEffect, useSyncExternalStore } from 'react';
+import { useShell } from '../../ui';
 
 /** A host report (window.__wmpBattery, __wmpSafeArea, ...), re-read on its event. */
 export function useHostGlobal<K extends keyof Window>(key: K, event: string): Window[K] {
@@ -12,8 +13,11 @@ export function useHostGlobal<K extends keyof Window>(key: K, event: string): Wi
 }
 
 /** While the iPod shows: edge to edge, no status bar, home indicator or log band, portrait, a black
- *  backdrop and the screen kept awake. Unmounted (the skin switched), the app's defaults come back. */
+ *  backdrop and the screen kept awake. Unmounted with the skin switched, the app's defaults come back;
+ *  unmounted with the iPod still the skin (a refresh in place, whose new page sets them all again),
+ *  they stay, so the phone's layout does not flash. */
 export function useHostChrome(): void {
+  const { store } = useShell();
   useEffect(() => {
     const w = window;
     w.alchemyLayout?.('edge');
@@ -24,6 +28,7 @@ export function useHostChrome(): void {
     w.alchemyBackground?.('#000000');
     w.alchemyAwake?.(true);
     return () => {
+      if (store.getState().settings.skin === 'ipod') return;
       w.alchemyLayout?.('safe');
       w.alchemyStatusBar?.(false);
       w.alchemyHomeIndicator?.(false);
@@ -31,7 +36,7 @@ export function useHostChrome(): void {
       w.alchemyOrientation?.('any');
       w.alchemyAwake?.(false);
     };
-  }, []);
+  }, [store]);
 }
 
 const ASKED = 'ipod.viewport';

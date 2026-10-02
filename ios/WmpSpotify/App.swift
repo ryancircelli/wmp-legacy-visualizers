@@ -1,6 +1,6 @@
 // The iOS host (CONTRACT.md v6.1): Spotify's own web player in one WKWebView, with our page
-// mounted over it by observer.js. The page's bundle and observer.js are fetched at every launch; the
-// last good copies are kept in Caches for launches without a network.
+// mounted over it by observer.js. A launch starts at once from the page's bundle and observer.js as
+// the last launch saved them, and fetches the site's behind it (userScript, PageUpdate).
 import AVFoundation
 import AVKit
 import AudioToolbox
@@ -153,7 +153,9 @@ func groupPath(_ name: String) -> String? {
 
 // What the page sets of the host's window, by script message, on the main thread ("layout",
 // "showlog", "statusbar", "homeindicator", "orientation", "band", "background", "keyboard"). Not
-// SwiftUI's Layout, hence the name.
+// SwiftUI's Layout, hence the name. All but "showlog" shape the first frame, so they are kept in
+// UserDefaults and applied again when the app starts, before the web view first shows: a relaunch
+// starts in the page's last layout instead of the default one until the page sends them again.
 final class PageLayout: ObservableObject {
     static let shared = PageLayout()
     @Published var edge = false     // the web view over the whole screen, no band
@@ -167,6 +169,47 @@ final class PageLayout: ObservableObject {
     // "viewport": "mobile" or "desktop" (the default), the content mode WebView asks for at each
     // navigation; kept across launches.
     static var viewport: String { UserDefaults.standard.string(forKey: "viewport") ?? "desktop" }
+
+    private static let kept = ["layout", "statusbar", "homeindicator", "band", "orientation", "background", "keyboard"]
+    private static let masks: [String: UIInterfaceOrientationMask] =
+        ["portrait": .portrait, "landscape": .landscape, "any": .allButUpsideDown]
+
+    /// The last launch's layout, from the first use (Player's first frame, or AppDelegate's first ask).
+    private init() {
+        for name in Self.kept {
+            if let s = UserDefaults.standard.string(forKey: "page.\(name)") { apply(name, s) }
+        }
+    }
+
+    /// On the main thread: one of the kept messages from the page, applied, logged and kept for the
+    /// next launch; false (and dropped) when `s` is none of its values.
+    @discardableResult
+    func set(_ name: String, _ s: String) -> Bool {
+        guard apply(name, s) else { return false }
+        HostLog.shared.log("\(name): \(s)", quiet: true)
+        UserDefaults.standard.set(s, forKey: "page.\(name)")
+        return true
+    }
+
+    @discardableResult
+    private func apply(_ name: String, _ s: String) -> Bool {
+        switch (name, s) {
+        case ("layout", "edge"), ("layout", "safe"): edge = s == "edge"
+        case ("statusbar", "hidden"), ("statusbar", "shown"): statusBarHidden = s == "hidden"
+        case ("homeindicator", "hidden"), ("homeindicator", "shown"): homeIndicatorHidden = s == "hidden"
+        case ("band", "hidden"), ("band", "shown"): bandHidden = s == "hidden"
+        case ("keyboard", "ignore"), ("keyboard", "avoid"): keyboardAvoid = s == "avoid"
+        case ("orientation", _):
+            guard let mask = Self.masks[s] else { return false }
+            orientations = mask
+        case ("background", _):
+            guard let color = hexColor(s) else { return false }
+            background = color
+        default:
+            return false
+        }
+        return true
+    }
 }
 
 // A CSS hex color, "#rrggbb" or "#rgb", as a Color; nil for anything else.
@@ -379,13 +422,14 @@ struct Player: View {
             // (the height it had with the broadcast picker at its right end, so the page's size is
             // unchanged). Edge to edge (the page's "layout" message) the web view fills the screen and
             // the band is gone, as it is when the page's "band" message hides it. The web view is the
-            // same one in all of these, never rebuilt. The keyboard is left to WebKit, which scrolls
-            // the focused field into view itself, unless the page's "keyboard" message has set
+            // same one in all of these, never rebuilt. The keyboard covers the page and moves nothing
+            // (on Spotify's player with the page's scrolling off, not even WebKit's scroll to the
+            // focused field: InsetWebView.watchKeyboard), unless the page's "keyboard" message has set
             // "avoid": the layout then shrinks to above the keyboard (the web view ignores only the
             // container's safe area edge to edge, never the keyboard's).
             VStack(spacing: 0) {
                 if ready {
-                    WebView(script: script, edge: layout.edge, background: layout.background)
+                    WebView(script: script, background: layout.background)
                         .ignoresSafeArea(.container, edges: layout.edge ? .all : [])
                 } else {
                     Color.clear
@@ -465,56 +509,133 @@ struct RoutePicker: UIViewRepresentable {
 // dist/spotify-inject.js as the site publishes it (tools/postbuild.js).
 struct Inject: Decodable { let html, css, js: String }
 
-// `name` from wmp.ryancircelli.com, parsed, with where it came from: "site" when it answers 200 with a
-// body `parse` takes (a captive portal answers 200 too), that body then cached for launches without a
-// network; else "cache", the last copy cached; nil with neither.
-func siteFile<T: Sendable>(_ name: String, _ parse: @escaping @Sendable (Data) -> T?) async -> (value: T, source: String)? {
-    let cache = URL.cachesDirectory.appending(path: name)
-    let request = URLRequest(url: URL(string: "https://wmp.ryancircelli.com/\(name)")!,
-                             cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 5)
-    if case let (data, response)? = try? await URLSession.shared.data(for: request),
-       (response as? HTTPURLResponse)?.statusCode == 200, let value = parse(data) {
-        try? data.write(to: cache)
-        return (value, "site")
-    }
-    if let data = try? Data(contentsOf: cache), let value = parse(data) { return (value, "cache") }
-    return nil
+// The page's two files on wmp.ryancircelli.com (the observer is dist/ios-observer.js, the same file as
+// observer.js), each taken only when it parses, since a captive portal answers 200 too: the bundle
+// when its JSON decodes, the observer when it is our script and not an error page.
+let bundleFile = "spotify-inject.js", observerFile = "ios-observer.js"
+func parseBundle(_ data: Data) -> Inject? { try? JSONDecoder().decode(Inject.self, from: data) }
+func parseObserver(_ data: Data) -> String? {
+    guard let text = String(data: data, encoding: .utf8),
+          text.contains("location.hostname !== 'open.spotify.com'") else { return nil }
+    return text
 }
 
-// observer.js wrapped as its header says, or nil when no bundle was ever fetched: the web player
-// then shows bare, without the overlay. The observer comes from the site too (ios-observer.js, the
-// same file), the copy built into the app only when neither the site nor the cache has it, so a
-// change to either reaches the phone without a new build.
-func userScript() async -> String? {
-    async let fetchedBundle = siteFile("spotify-inject.js") { try? JSONDecoder().decode(Inject.self, from: $0) }
-    async let fetchedObserver = siteFile("ios-observer.js") { data -> String? in
-        // Our script, not an error page.
-        guard let text = String(data: data, encoding: .utf8),
-              text.contains("location.hostname !== 'open.spotify.com'") else { return nil }
-        return text
-    }
-    let bundled = Bundle.main.url(forResource: "observer", withExtension: "js")
-        .flatMap { try? String(contentsOf: $0, encoding: .utf8) }
-    let bundle = await fetchedBundle
-    let observer = await fetchedObserver ?? bundled.map { (value: $0, source: "bundled") }
-    HostLog.shared.log("page: bundle from \(bundle?.source ?? "none")")
-    HostLog.shared.log("page: observer from \(observer?.source ?? "none")")
-    guard let inject = bundle?.value,
-          let observerJS = observer?.value,
-          let html = try? JSONEncoder().encode(inject.html),
+// The last copy of `name` fetched from the site, kept in Application Support; the builds before kept it
+// in Caches, read when there is none, so the first launch after the update starts at once too.
+func savedFile(_ name: String) -> Data? {
+    (try? Data(contentsOf: URL.applicationSupportDirectory.appending(path: name)))
+        ?? (try? Data(contentsOf: URL.cachesDirectory.appending(path: name)))
+}
+
+// `name` from wmp.ryancircelli.com when it answers 200 with a body `parse` takes, that body then saved
+// for the next launch (savedFile); nil when it does not (offline, an error page).
+func siteFile<T: Sendable>(_ name: String, _ parse: @escaping @Sendable (Data) -> T?) async -> (data: Data, value: T)? {
+    let request = URLRequest(url: URL(string: "https://wmp.ryancircelli.com/\(name)")!,
+                             cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 5)
+    guard case let (data, response)? = try? await URLSession.shared.data(for: request),
+          (response as? HTTPURLResponse)?.statusCode == 200, let value = parse(data) else { return nil }
+    let dir = URL.applicationSupportDirectory
+    try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+    try? data.write(to: dir.appending(path: name), options: .atomic)
+    return (data, value)
+}
+
+// observer.js wrapped round the bundle as its header says: the user script.
+func wrap(_ inject: Inject, _ observer: String) -> String? {
+    guard let html = try? JSONEncoder().encode(inject.html),
           let css = try? JSONEncoder().encode(inject.css) else { return nil }
     return """
         (function (HTML, CSS, RUN) {
-        \(observerJS)
+        \(observer)
         })(\(String(decoding: html, as: UTF8.self)), \(String(decoding: css, as: UTF8.self)), function () { "use strict";
         \(inject.js)
         });
         """
 }
 
+// This launch's user script, or nil without a bundle: the web player then shows bare, without the
+// overlay. From the copies the last launch saved when there are any, at once, with no network wait
+// (the observer built into the app standing in for one never saved), the site's then fetched behind
+// it (PageUpdate). With no bundle saved (the first launch), the site's, waited for, the built-in
+// observer the fallback. The log says where each came from.
+func userScript() async -> String? {
+    let bundled = Bundle.main.url(forResource: "observer", withExtension: "js")
+        .flatMap { try? String(contentsOf: $0, encoding: .utf8) }
+    if let data = savedFile(bundleFile), let inject = parseBundle(data) {
+        let saved = savedFile(observerFile).flatMap(parseObserver)
+        HostLog.shared.log("page: bundle from cache")
+        HostLog.shared.log("page: observer from \(saved == nil ? "bundled" : "cache")")
+        guard let observer = saved ?? bundled else { return nil }
+        Task.detached { await PageUpdate.shared.check(bundle: data, observer: observer) }
+        return wrap(inject, observer)
+    }
+    async let fetchedBundle = siteFile(bundleFile, parseBundle)
+    async let fetchedObserver = siteFile(observerFile, parseObserver)
+    let site = await fetchedBundle?.value, fetched = await fetchedObserver?.value
+    HostLog.shared.log("page: bundle from \(site == nil ? "none" : "site")")
+    HostLog.shared.log("page: observer from \(fetched != nil ? "site" : bundled != nil ? "bundled" : "none")")
+    guard let inject = site, let observer = fetched ?? bundled else { return nil }
+    return wrap(inject, observer)
+}
+
+// The site's copies of the page, fetched behind a launch that started from the saved ones
+// (userScript); each that parses is saved for the next launch (siteFile). One that differs from what
+// this launch runs goes into the web view's user script, so the page's next load (a reload) runs it,
+// but only once the page has mounted: sooner, it could reach the document this launch is still
+// loading, which would then be refreshed for nothing. A new bundle also refreshes the mounted page in
+// place (observer.js's alchemyRestart: it fetches the bundle again and remounts the page without
+// stopping the music). A new observer cannot be swapped into a live document: it runs from the next load.
+final class PageUpdate {
+    static let shared = PageUpdate()
+    private var mounted = false  // on the main thread: an overlay has mounted
+    private var update: (script: String, refresh: Bool)?  // on the main thread: waiting for the mount
+
+    /// Behind the launch: `bundle` and `observer` are what this launch runs.
+    func check(bundle: Data, observer: String) async {
+        async let fetchedBundle = siteFile(bundleFile, parseBundle)
+        async let fetchedObserver = siteFile(observerFile, parseObserver)
+        let site = await fetchedBundle, siteObserver = await fetchedObserver?.value
+        let newBundle: Inject? = site.flatMap { $0.data == bundle ? nil : $0.value }
+        let newObserver: String? = siteObserver == observer ? nil : siteObserver
+        HostLog.shared.log("page: bundle on site \(site == nil ? "not fetched" : newBundle == nil ? "unchanged" : "updated")", quiet: true)
+        HostLog.shared.log("page: observer on site \(siteObserver == nil ? "not fetched" : newObserver == nil ? "unchanged" : "updated")", quiet: true)
+        if newObserver != nil { HostLog.shared.log("page: observer updated from site: runs from the next load") }
+        guard newBundle != nil || newObserver != nil,
+              let inject = newBundle ?? parseBundle(bundle),
+              let script = wrap(inject, newObserver ?? observer) else { return }
+        DispatchQueue.main.async {
+            self.update = (script, newBundle != nil)
+            self.apply()
+        }
+    }
+
+    /// On the main thread: an overlay mounted (observer.js's "overlay mounted" log line).
+    func pageMounted() {
+        mounted = true
+        apply()
+    }
+
+    private func apply() {
+        guard mounted, let update, let web = WebHolder.shared.web else { return }
+        self.update = nil
+        let scripts = web.configuration.userContentController
+        scripts.removeAllUserScripts()
+        scripts.addUserScript(WKUserScript(source: update.script, injectionTime: .atDocumentStart, forMainFrameOnly: true))
+        guard update.refresh else { return }
+        HostLog.shared.log("page: bundle updated from site: refreshing in place")
+        // Not at "overlay mounted" itself: the bundle has only begun mounting then (window.Alchemy, its
+        // unmount, comes after its first render) and starts its adapter a frame after that render
+        // (src/app/mount.tsx), so a refresh any sooner would leave the old page running behind the new
+        // one. ponytail: half a second's margin past window.Alchemy, not a signal from the page.
+        WebHolder.shared.run("""
+            (function go(n) { if (window.Alchemy) setTimeout(function () { window.alchemyRestart && window.alchemyRestart(); }, 500);
+            else if (n) setTimeout(go, 100, n - 1); })(100)
+            """)
+    }
+}
+
 struct WebView: UIViewRepresentable {
     let script: String?
-    let edge: Bool
     let background: Color
 
     func makeCoordinator() -> Coordinator { Coordinator() }
@@ -546,19 +667,24 @@ struct WebView: UIViewRepresentable {
         // turns it on).
         web.scrollView.isScrollEnabled = false
         web.scrollView.bounces = false
+        // No automatic content insets. Edge to edge, WebKit would otherwise still inset the page from
+        // the notch and the home indicator (Spotify's viewport is not viewport-fit=cover); the page pads
+        // itself by window.__wmpSafeArea. Inside the safe area they would be 0 anyway, but for the
+        // keyboard, which SwiftUI counts in the safe area and which "ignore" leaves over the page.
+        web.scrollView.contentInsetAdjustmentBehavior = .never
         web.navigationDelegate = context.coordinator  // the viewport, before the first load
         web.uiDelegate = context.coordinator  // window.prompt as a native alert (the skins have no text field)
+        // Held still for the keyboard (held): WebKit forwards its scroll view's delegate calls to this
+        // one alongside its own.
+        web.scrollView.delegate = context.coordinator
+        web.watchKeyboard()
         web.load(URLRequest(url: URL(string: "https://open.spotify.com/")!))
         WebHolder.shared.web = web
         return web
     }
 
-    // Edge to edge, WebKit would otherwise still inset the page from the notch and the home indicator
-    // (Spotify's viewport is not viewport-fit=cover); the page pads itself by window.__wmpSafeArea.
-    // Left as it is by default, and once set kept: inside the safe area the insets are 0. The page's
-    // background color, behind its content and in the bars.
+    // The page's background color, behind its content and in the bars.
     func updateUIView(_ web: WKWebView, context: Context) {
-        if edge { web.scrollView.contentInsetAdjustmentBehavior = .never }
         let color = UIColor(background)
         web.backgroundColor = color
         web.scrollView.backgroundColor = color
@@ -578,7 +704,10 @@ struct WebView: UIViewRepresentable {
     // or "duck"; notify, JSON for notify(_:) or "cancel:<id>"; appearance, "light", "dark" or "auto";
     // clipboard, a text copied; band, "hidden" or "shown"; background, "#rrggbb" or "#rgb"; keyboard,
     // "ignore" or "avoid"; scroll, "on" or "off", the web view's own scrolling and bounce.
-    final class Coordinator: NSObject, WKScriptMessageHandler, WKNavigationDelegate, WKUIDelegate {
+    final class Coordinator: NSObject, WKScriptMessageHandler, WKNavigationDelegate, WKUIDelegate, UIScrollViewDelegate {
+        /// The web view's scroll view moved: back at rest while it is held (keepAtRest).
+        func scrollViewDidScroll(_ scrollView: UIScrollView) { keepAtRest(scrollView) }
+
         /// window.prompt(text, default), as the system alert with a text field; nil on Cancel.
         func webView(_ webView: WKWebView, runJavaScriptTextInputPanelWithPrompt prompt: String, defaultText: String?,
                      initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping (String?) -> Void) {
@@ -617,10 +746,12 @@ struct WebView: UIViewRepresentable {
                       let scheme = url.scheme?.lowercased(), scheme == "http" || scheme == "https" else { return }
                 HostLog.shared.log("open: \(url)", quiet: true)
                 UIApplication.shared.open(url)
+            case "log":
+                let line = "\(message.body)"
+                HostLog.shared.log("page: \(line)")
+                if line == "spotify: overlay mounted" { PageUpdate.shared.pageMounted() }
             case "layout":
-                guard let mode = message.body as? String, mode == "edge" || mode == "safe" else { return }
-                HostLog.shared.log("layout: \(mode)", quiet: true)
-                PageLayout.shared.edge = mode == "edge"
+                guard let mode = message.body as? String, PageLayout.shared.set("layout", mode) else { return }
                 // On the main thread already; assumeIsolated whichever isolation the SDK gives this method.
                 if let web = message.webView as? InsetWebView { MainActor.assumeIsolated { web.pushInsets() } }
             case "showlog":
@@ -632,21 +763,16 @@ struct WebView: UIViewRepresentable {
                 guard let s = message.body as? String, s == "on" || s == "off" else { return }
                 HostLog.shared.log("awake: \(s)", quiet: true)
                 UIApplication.shared.isIdleTimerDisabled = s == "on"
-            case "statusbar":
-                guard let s = message.body as? String, s == "hidden" || s == "shown" else { return }
-                HostLog.shared.log("statusbar: \(s)", quiet: true)
-                PageLayout.shared.statusBarHidden = s == "hidden"
+            case "statusbar", "homeindicator", "band", "background", "keyboard":
+                guard let s = message.body as? String else { return }
+                PageLayout.shared.set(message.name, s)
             case "orientation":
-                let masks: [String: UIInterfaceOrientationMask] =
-                    ["portrait": .portrait, "landscape": .landscape, "any": .allButUpsideDown]
-                guard let s = message.body as? String, let mask = masks[s] else { return }
-                HostLog.shared.log("orientation: \(s)", quiet: true)
-                PageLayout.shared.orientations = mask
+                guard let s = message.body as? String, PageLayout.shared.set("orientation", s) else { return }
                 // iOS asks AppDelegate again, then turns the window if it is outside the new mask; a
                 // refused turn (an iPad in Split View, say) is left be.
                 let scene = windowScene()
                 scene?.keyWindow?.rootViewController?.setNeedsUpdateOfSupportedInterfaceOrientations()
-                scene?.requestGeometryUpdate(UIWindowScene.GeometryPreferences.iOS(interfaceOrientations: mask))
+                scene?.requestGeometryUpdate(UIWindowScene.GeometryPreferences.iOS(interfaceOrientations: PageLayout.shared.orientations))
             case "proximity":
                 let on = (message.body as? String) == "on"
                 UIDevice.current.isProximityMonitoringEnabled = on
@@ -672,10 +798,6 @@ struct WebView: UIViewRepresentable {
                     popover.permittedArrowDirections = []
                 }
                 root.present(sheet, animated: true)
-            case "homeindicator":
-                guard let s = message.body as? String, s == "hidden" || s == "shown" else { return }
-                HostLog.shared.log("homeindicator: \(s)", quiet: true)
-                PageLayout.shared.homeIndicatorHidden = s == "hidden"
             case "host":
                 DeviceState.shared.pushAll()
             case "reset":
@@ -721,18 +843,6 @@ struct WebView: UIViewRepresentable {
                 guard let s = message.body as? String else { return }
                 HostLog.shared.log("clipboard: \(s.count) characters", quiet: true)
                 UIPasteboard.general.string = s
-            case "band":
-                guard let s = message.body as? String, s == "hidden" || s == "shown" else { return }
-                HostLog.shared.log("band: \(s)", quiet: true)
-                PageLayout.shared.bandHidden = s == "hidden"
-            case "background":
-                guard let s = message.body as? String, let color = hexColor(s) else { return }
-                HostLog.shared.log("background: \(s)", quiet: true)
-                PageLayout.shared.background = color
-            case "keyboard":
-                guard let s = message.body as? String, s == "ignore" || s == "avoid" else { return }
-                HostLog.shared.log("keyboard: \(s)", quiet: true)
-                PageLayout.shared.keyboardAvoid = s == "avoid"
             case "scroll":
                 guard let s = message.body as? String, s == "on" || s == "off",
                       let scroll = WebHolder.shared.web?.scrollView else { return }
@@ -781,6 +891,8 @@ func notify(_ body: String) {
 // The web view, telling the page its safe-area insets in points whenever they change and when it joins
 // a window: window.__wmpSafeArea = {top, right, bottom, left}, then a "wmp-safe-area" event on window.
 // Inside the safe area they are all 0; edge to edge they are the notch's and the home indicator's.
+// They are the window's, where the web view overlaps them, and never the keyboard's: SwiftUI counts
+// the keyboard in a hosted view's own safeAreaInsets while it shows, and the page would pad itself by it.
 final class InsetWebView: WKWebView {
     override func safeAreaInsetsDidChange() {
         super.safeAreaInsetsDidChange()
@@ -804,10 +916,59 @@ final class InsetWebView: WKWebView {
     }
 
     func pushInsets() {
-        let i = safeAreaInsets
-        evaluateJavaScript("window.__wmpSafeArea={top:\(i.top),right:\(i.right),bottom:\(i.bottom),left:\(i.left)};window.dispatchEvent(new Event('wmp-safe-area'))",
+        guard let window else { return }
+        let f = convert(bounds, to: window), s = window.safeAreaInsets, w = window.bounds
+        let top = max(0, s.top - f.minY), left = max(0, s.left - f.minX)
+        let bottom = max(0, f.maxY - (w.maxY - s.bottom)), right = max(0, f.maxX - (w.maxX - s.right))
+        evaluateJavaScript("window.__wmpSafeArea={top:\(top),right:\(right),bottom:\(bottom),left:\(left)};window.dispatchEvent(new Event('wmp-safe-area'))",
                            completionHandler: nil)
     }
+
+    // The keyboard in "ignore" (PageLayout.keyboardAvoid off: the default, and the iPod's) covers the
+    // page and moves nothing. WebKit scrolls its scroll view to reveal the focused field (held off as
+    // it happens: keepAtRest) and adds the keyboard to the scroll view's bottom inset, which it did not
+    // always take back as the keyboard went (seen with the iPod's search: the page short of the
+    // screen's bottom by about 26 pt after). The inset is WebKit's own while the keyboard shows; as it
+    // hides, after WebKit's handler (a main-actor task runs after the notification's observers), a held
+    // scroll view gets back the inset it had before, none (nothing else sets one), and its rest, and the
+    // web view is laid out again. The keyboard's showing and hiding are logged, quietly.
+    func watchKeyboard() {
+        let center = NotificationCenter.default
+        center.addObserver(forName: UIResponder.keyboardDidShowNotification, object: nil, queue: .main) { note in
+            let frame = (note.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? NSValue)?.cgRectValue
+            HostLog.shared.log("keyboard: shown, \(Int(frame?.height ?? 0)) pt", quiet: true)
+        }
+        for name in [UIResponder.keyboardWillHideNotification, UIResponder.keyboardDidHideNotification] {
+            center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                if name == UIResponder.keyboardDidHideNotification { HostLog.shared.log("keyboard: hidden", quiet: true) }
+                guard let self else { return }
+                Task { @MainActor in self.settle() }
+            }
+        }
+    }
+
+    private func settle() {
+        guard held(scrollView) else { return }
+        if scrollView.contentInset != .zero { scrollView.contentInset = .zero }
+        keepAtRest(scrollView)
+        setNeedsLayout()
+    }
+}
+
+// The web view's scroll view is held still for the keyboard: "ignore" (PageLayout.keyboardAvoid off),
+// with the page's own scrolling off ("scroll"), on Spotify's player. Spotify's login page (another host)
+// keeps WebKit's scroll to its fields, which the keyboard could otherwise cover.
+func held(_ scrollView: UIScrollView) -> Bool {
+    !PageLayout.shared.keyboardAvoid && !scrollView.isScrollEnabled
+        && (scrollView.superview as? WKWebView)?.url?.host() == "open.spotify.com"
+}
+
+// A held scroll view back at rest, its content's top left at its own: WebKit's scroll to a focused
+// field undone as it happens (Coordinator's scrollViewDidScroll), so the page does not jump as the
+// keyboard opens.
+func keepAtRest(_ scrollView: UIScrollView) {
+    let rest = CGPoint(x: -scrollView.adjustedContentInset.left, y: -scrollView.adjustedContentInset.top)
+    if held(scrollView), scrollView.contentOffset != rest { scrollView.contentOffset = rest }
 }
 
 // The phone's output volume, which the skin's slider and mute set: a page cannot change its own

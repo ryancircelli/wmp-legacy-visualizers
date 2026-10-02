@@ -7,6 +7,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent, type PointerEvent } from 'react';
 import { useStore } from 'zustand';
 import { useApp, useShell, useWindowControls } from '../../ui';
+import { Boot } from './Boot';
 import { ClickWheel } from './ClickWheel';
 import { useHostChrome, useHostGlobal, useDesktopViewport } from './host';
 import { mainMenu } from './menus';
@@ -130,6 +131,7 @@ export function Root() {
                   {stack.map((slot, i) => <Frame key={slot.id} hub={hub} slot={slot} nav={nav} shown={i === stack.length - 1} />)}
                 </div>
                 {bar && <NowPlayingBar onOpen={() => nav.toNowPlaying()} />}
+                <Boot />
               </div>
             </div>
             <ClickWheel

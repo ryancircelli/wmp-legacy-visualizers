@@ -1,0 +1,37 @@
+/* The boot screen (Boot.tsx), in nano pixels (--unit) as the rest of the screen: black over all of
+   it, the white note centred with the thin bar under it (the Now Playing bar's blue on its light
+   track, ipod.module.css .npbar), faded out at the end. */
+.boot {
+  position: absolute;
+  inset: 0;
+  z-index: 3;                       /* over the stack, the status row and the asleep LCD (2) */
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: calc(var(--unit) * 36);
+  background: #000000;
+  transition: opacity .25s ease-out; /* Boot.tsx FADE */
+}
+.boot[data-fade] { opacity: 0; }
+.mark {
+  width: calc(var(--unit) * 64);
+  fill: #FFFFFF;
+}
+.bar {
+  position: relative;
+  overflow: hidden;
+  width: calc(var(--unit) * 120);
+  height: calc(var(--unit) * 5);
+  border-radius: calc(var(--unit) * 2);
+  box-shadow: inset 0 0 0 calc(var(--unit) * .5) rgb(0 0 0 / .18);
+  background: var(--ipod-bar-bg);
+}
+.bar::after {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: calc(var(--v, 0) * 100%);
+  background: var(--ipod-bar-fill);
+  transition: width .1s linear;     /* one poll (Boot.tsx STEP), so the fill moves on smoothly */
+}
