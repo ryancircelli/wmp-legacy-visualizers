@@ -2,7 +2,7 @@
 // this runs later: read what window.__wmpSpotify already has, then follow its events.
 import type { Device } from '../../model';
 import { onState } from './state';
-import { deviceVolume, speakerFull, transfer } from './connect';
+import { deviceVolume, speakerFull, transfer, transport as play } from './connect';
 import { W, type PlayerState, type Sp } from './sp';
 import { transport } from './transport';
 
@@ -48,8 +48,22 @@ export function onDevices(sp: Sp, list: unknown): void {
     window.alchemyLog?.('spotify: playing on this page: moving to the speaker');
     void transfer(sp, spk);
   }
+  // The speaker's connection to Spotify dropped while it played (2026-10-02, three times in an evening:
+  // "Connection to server closed", then its session back up with no active device and the track lost).
+  // It comes back idle and waits; the owner pulled playback back by hand (a resume: the transfer first,
+  // then the cluster's kept track and position). Done for him here: once, within 3 minutes of the loss.
+  const active = W().activeDeviceId, playing = sp.store.getState().playback.status === 'playing';
+  if (spk && was.active === spk && was.playing && active !== spk && !devs.some((x) => x.id === spk)) lostAt = Date.now();
+  if (spk && lostAt && !active && devs.some((x) => x.id === spk)) {
+    if (Date.now() - lostAt < 180_000) {
+      window.alchemyLog?.('spotify: the speaker is back after losing its connection: resuming on it');
+      void play(sp, 'play');
+    }
+    lostAt = 0;
+  }
+  was = { active, playing };
 }
-let movedAt = 0, fullAt = 0;
+let movedAt = 0, fullAt = 0, lostAt = 0, was: { active: string | null | undefined; playing: boolean } = { active: null, playing: false };
 
 export function observe(sp: Sp): () => void {
   const on: [string, (e: Event) => void][] = [

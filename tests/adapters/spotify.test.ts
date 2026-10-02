@@ -311,6 +311,26 @@ describe('3. transport: connect-state commands', () => {
     expect(env.calls.indexOf(t)).toBeLessThan(env.calls.indexOf(c));
     expect(JSON.stringify(c.body)).toBe('{"command":{"endpoint":"resume"}}');
   });
+  it('the speaker back after losing its connection while playing (no active device, the speaker gone, then back): resumed on it once; not after a pause', async () => {
+    vi.stubGlobal('__wmpSpeaker', { id: 'spk1', name: 'WMP Spotify (iOS)' });
+    const env = boot({ loggedIn: true, state: FX.playerState, activeDeviceId: 'spk1' });
+    env.resources.push({ name: 'https://gew4-spclient.spotify.com/connect-state/v1/devices/hobs_x', initiatorType: 'fetch' });
+    env.route(/connect\/transfer/, { status: 200, json: {} });
+    env.route(/player\/command/, { status: 200, json: { ack_id: 'a' } });
+    env.start();
+    await settle();
+    const spk = { id: 'spk1', name: 'WMP Spotify (iOS)', type: 'Speaker', active: true, volume: 65535 };
+    env.fire('wmp-spotify-devices', [spk]); await settle();                  // playing on the speaker
+    expect(env.S.playback.status).toBe('playing');
+    window.__wmpSpotify!.activeDeviceId = '';
+    env.fire('wmp-spotify-devices', []); await settle();                     // the connection dropped: gone, nothing active
+    env.fire('wmp-spotify-devices', [{ ...spk, active: false }]); await settle();   // its session back up, idle
+    const cmds = env.calls.filter((x) => /player\/command/.test(x.url));
+    expect(cmds.map((x) => JSON.stringify(x.body))).toEqual(['{"command":{"endpoint":"resume"}}']);
+    expect(env.calls.some((x) => /connect\/transfer\/from\/.*\/to\/spk1$/.test(x.url))).toBe(true);   // the transfer first
+    env.fire('wmp-spotify-devices', [{ ...spk, active: false }]); await settle();   // again: nothing more
+    expect(env.calls.filter((x) => /player\/command/.test(x.url)).length).toBe(1);
+  });
 });
 
 describe('3b. the playing context names Now Playing and Up Next', () => {
