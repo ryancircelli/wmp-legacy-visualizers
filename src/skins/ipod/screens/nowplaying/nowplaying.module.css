@@ -5,6 +5,9 @@
 .root {
   position: relative; height: 100%; overflow: hidden;
   background: #000; color: #fff;
+  /* the unit is a fraction of a pixel on a phone, and this area can end a hair short of the white
+     screen behind it: a pixel of black past its right edge and its foot (a white line showed there) */
+  box-shadow: 1px 0 0 #000, 0 1px 0 #000, 1px 1px 0 #000;
   font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
 }
 
