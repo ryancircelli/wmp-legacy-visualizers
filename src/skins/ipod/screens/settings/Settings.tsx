@@ -60,7 +60,9 @@ function SettingsMenu() {
     !!window.alchemyRestart && { id: 'refresh', label: 'Refresh Player', onSelect: restartApp },
     { id: 'support', label: 'Support', chevron: true, onSelect: to(nav, menu('settings/support', 'Support', () => [
       { id: 'repo', label: 'Source Code', onSelect: () => openLink(LINKS.repo) },
-      { id: 'issues', label: 'Report a Problem', onSelect: () => openLink(LINKS.repo + '/issues') }])) },
+      { id: 'issues', label: 'Report a Problem', onSelect: () => openLink(LINKS.repo + '/issues') },
+      // the iOS app's log sheet (the band that opens it is hidden under this skin)
+      ...(window.alchemyShowLog ? [{ id: 'log', label: 'Host Log', onSelect: () => window.alchemyShowLog?.() }] : [])])) },
     st.canLogout && { id: 'logout', label: 'Log Out', chevron: true,
                       onSelect: to(nav, confirm('settings/logout', 'Log Out', 'Log Out', (n) => { n.home(); c().logout(); })) },
   ];
