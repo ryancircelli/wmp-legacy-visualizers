@@ -142,12 +142,13 @@
   background-image: linear-gradient(90deg, #fff var(--f, 0%), rgb(255 255 255 / .5) var(--f, 0%));
 }
 
-/* Quiet (NowPlaying.tsx: QUIET_MS without input while it plays): nothing moves; the bands stay the same
-   bands, thinned to .55 (their gradient and the controls band's reflection with it) so the visualizer and
-   the Canvas show through, the text, the progress, "N of M" and the device line whole with a shadow; the
-   ⋯ fades out. (With lyrics showing over the Canvas the controls band keeps its shade: it carries on
+/* Quiet (NowPlaying.tsx: QUIET_MS without input while it plays): nothing moves; the info band's gradient
+   thins to .3 and the controls band's goes altogether (the owner, 2026-10-02: "i want the bottom
+   background to disappear ... and also make title even more transparent"; .55 for both at first), its
+   reflection of the cover staying as it is, so the visualizer and the Canvas show through; the text, the
+   progress, "N of M" and the device line whole with a shadow; the ⋯ fades out. (With lyrics showing over the Canvas the controls band keeps its shade: it carries on
    theirs, which they keep.) */
 .more { transition: opacity .3s ease; }
-.root[data-quiet] .info::before, .root[data-quiet]:not([data-canvas]:has(.lyrics)) .controls::before { opacity: .55; }
-.root[data-quiet] .reflection { opacity: calc(.25 * .55); }
+.root[data-quiet] .info::before { opacity: .3; }
+.root[data-quiet]:not([data-canvas]:has(.lyrics)) .controls::before { opacity: 0; }
 .root[data-quiet] .more { opacity: 0; pointer-events: none; }

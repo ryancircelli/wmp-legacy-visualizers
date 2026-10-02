@@ -1,5 +1,5 @@
 // The iPod's Now Playing goes quiet after QUIET_MS without input while it plays: nothing moves or goes,
-// the bands (and the cover's reflection) thin to .55 and the ⋯ fades out (CSS on data-quiet; the look is
+// the info band thins to .3, the controls band's background goes (its reflection stays) and the ⋯ fades out (CSS on data-quiet; the look is
 // checked in Chromium against the original build); any input wakes it, a tap on the screen, a wheel turn
 // or an arrow key doing nothing else, the wheel's buttons acting as ever. The visualizer overlay is the
 // whole area in both views; the minimized view's bar and mirrors are gone.
