@@ -15,7 +15,7 @@ import { cityOf, fmtClock, stepHue, zoneTime } from './logic';
 import { BarPage, check, confirm, DIM, menu, onOff, page, Row, Sun, TEXT, TextPage, u, useNow } from './parts';
 import {
   CLOCK0, LIBRARY_FILTERS, MAIN_MENU, resetMenu, resetPrefs, setMenuItem, useAppearance, useDisplay, useLibraryView, useMenuVisibility, usePref, useShake,
-  useVisFit, useVisualizer, useVisualizerItems, useVolumeLimitPref, visId,
+  useVisFit, useVisualizers, useVolumeLimitPref,
 } from './prefs';
 
 declare const __PAGE_BUILD__: string | undefined;
@@ -29,7 +29,7 @@ const GROW: CSSProperties = { flex: 1, minHeight: 0 };
 const to = (nav: ReturnType<typeof useNav>, e: ScreenEntry) => () => nav.push(e);
 
 function SettingsMenu() {
-  const nav = useNav(), sh = useShell(), [ip, patch] = useIpodSettings(), [vis] = useVisualizer();
+  const nav = useNav(), sh = useShell(), [ip, patch] = useIpodSettings(), vis = useVisualizers().name;
   const st = useApp((s) => ({ shuffle: s.playback.shuffle, repeat: s.playback.repeat, canLogout: s.auth.canLogout,
                               lyrics: s.settings.lyrics, karaoke: s.settings.karaoke }));
   const a = () => sh.store.getState().actions, c = () => sh.store.getState().commands;
@@ -47,7 +47,7 @@ function SettingsMenu() {
     { id: 'playon', label: 'Play On', chevron: true, onSelect: to(nav, page('settings/playon', 'Play On', PlayOn)) },
     { id: 'lyrics', label: 'Lyrics', right: onOff(st.lyrics), onSelect: () => a().setLyricsEnabled(!st.lyrics) },
     { id: 'karaoke', label: 'Karaoke', right: onOff(st.karaoke), onSelect: () => a().setKaraoke(!st.karaoke) },
-    { id: 'vis', label: 'Visualizer', right: sh.presets.find((p) => visId(p) === vis)?.name, chevron: true,
+    { id: 'vis', label: 'Visualizer', right: vis, chevron: true,
       onSelect: to(nav, page('settings/visualizer', 'Visualizer', Visualizer)) },
     { id: 'color', label: 'Color', right: <Swatch bg={swatch(ip)} />, chevron: true, onSelect: to(nav, page('settings/color', 'Color', Color)) },
     { id: 'wheel', label: 'Click Wheel', right: ip.wheel === 'black' ? 'Black' : 'White', onSelect: () => patch({ wheel: ip.wheel === 'black' ? 'white' : 'black' }) },
@@ -170,8 +170,13 @@ function Playback() {
   return <MenuScreen items={items.filter((x): x is MenuItem => !!x)} />;
 }
 
-/** Now Playing's visualization (ipod.visualizer): shown at once when its visualizer is on screen. */
-const Visualizer = () => <MenuScreen items={useVisualizerItems()} />;
+/** Now Playing's visualization (ipod.visualizer) by engine, each engine's presets a page of their own;
+ *  shown at once when its visualizer is on screen. */
+function Visualizer() {
+  const nav = useNav(), open = (g: string) => nav.push({ key: 'settings/visualizer/' + g, title: g, render: () => <Presets group={g} /> });
+  return <MenuScreen items={useVisualizers().engines(open)} />;
+}
+const Presets = ({ group }: { group: string }) => <MenuScreen items={useVisualizers().presets(group)} />;
 
 /** Root's useSettingsEffects holds the volume under it everywhere. */
 function VolumeLimit() {

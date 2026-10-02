@@ -2,7 +2,7 @@
 // external store, so every reader (the chrome's status row and main menu included) re-renders on a
 // change. Storage that throws (blocked) falls back to memory for the session.
 import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
-import { useShell } from '../../../../ui';
+import { useShell, type Preset } from '../../../../ui';
 import type { MenuItem } from '../contract';
 import { msUntil, STOPWATCH0, type Stopwatch, type StopwatchLog } from './logic';
 
@@ -107,11 +107,24 @@ export const useVisFit = () => usePref<VisFit>('ipod.visFit', 'fit');
  *  while it shows, as visFit is, so the WMP 9 skin's own choice is untouched. */
 export const visId = (p: { vis: string; preset: number }) => p.vis + ':' + p.preset;
 export const useVisualizer = () => usePref('ipod.visualizer', 'bars:0');
-/** Every visualization in the registry by its name, the chosen one checked; a choice sets the pref
- *  (Settings > Visualizer, Now Playing's hold menu). */
-export function useVisualizerItems(): MenuItem[] {
-  const sh = useShell(), [cur, set] = useVisualizer();
-  return sh.presets.map((p) => ({ id: visId(p), label: p.name, right: visId(p) === cur ? '✓' : undefined, onSelect: () => set(visId(p)) }));
+/** The registry by engine (Alchemy, Bars and Waves, Battery), for Settings > Visualizer and Now
+ *  Playing's Visualizer…: `engines(open)` the engine rows, the one holding the choice showing its name,
+ *  each `open`ing its `presets(group)`, the choice checked; an engine of one preset (Alchemy's Random)
+ *  is picked at its own row. A pick sets the pref, then `then`. `name`: the choice as its row reads. */
+export function useVisualizers(then?: () => void) {
+  const sh = useShell(), [cur, set] = useVisualizer(), chosen = sh.presets.find((p) => visId(p) === cur);
+  const of = (g: string) => sh.presets.filter((p) => p.group === g);
+  const row = (p: Preset, label = p.name): MenuItem => ({ id: visId(p), label, right: visId(p) === cur ? '✓' : undefined,
+                                                         onSelect: () => { set(visId(p)); then?.(); } });
+  return {
+    name: chosen && (of(chosen.group).length > 1 ? chosen.name : chosen.group),
+    presets: (g: string) => of(g).map((p) => row(p)),
+    engines: (open: (g: string) => void): MenuItem[] => [...new Set(sh.presets.map((p) => p.group))].map((g) => {
+      const ps = of(g);
+      return ps.length === 1 ? row(ps[0]!, g)
+        : { id: g, label: g, right: chosen?.group === g ? chosen.name : undefined, chevron: true, onSelect: () => open(g) };
+    }),
+  };
 }
 
 // ---- Date & Time -----------------------------------------------------------------------------------
