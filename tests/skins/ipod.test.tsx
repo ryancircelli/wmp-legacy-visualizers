@@ -228,7 +228,7 @@ it('a playlist opens under Spotify\'s header: its cover, title, owner and count;
   key('ArrowDown');
   expect(m.sel()).toEqual(['Shuffle']);
   key('ArrowDown');
-  expect(m.sel()).toEqual(['Like']);
+  expect(m.sel()).toEqual(['Unlike']);   // in the library list: its heart is filled
   key('ArrowDown');
   expect(m.sel()).toEqual(['Song 1Queen']);
   key('ArrowUp'); key('ArrowUp'); key('ArrowUp'); key('Enter');

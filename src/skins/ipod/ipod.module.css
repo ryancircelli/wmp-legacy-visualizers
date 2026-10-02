@@ -430,6 +430,7 @@
 .act[data-kind=play] { width: calc(var(--unit) * 36); height: calc(var(--unit) * 36); background: #1ED760; color: #000000; }
 .act[data-kind=play] svg { width: 34%; margin-left: 8%; }
 .act[data-kind=more] { margin-left: auto; }
+.act[data-off] { opacity: .4; }
 .act[data-sel] { outline: calc(var(--unit) * 2.5) solid #3F7FCD; outline-offset: calc(var(--unit) * 1.5); }
 /* the Library's filter chips (FilterChips), Spotify's: pills in a row over the grid, scrolling
    sideways when they overflow; the chosen filter filled dark, the others outlined */

@@ -370,6 +370,12 @@ On-The-Go, Browse Album, Browse Artist, Cancel [UG p.39-42]. Audiobooks add a sp
 
 #### Search (UG p.44–45; layout reconstructed, the guide has no screenshot)
 
+> **This player (owner's ruling 2026-10-02: "search should open a keyboard if clicked instead of using
+> a scroll wheel"):** no letter strip. A search field in the iPod's look is the list's first position;
+> a tap or centre on it focuses it and the platform's keyboard types, searching after 400 ms; the
+> keyboard's Search key closes it and selects the first result; × clears. Unfocused, the wheel moves
+> through the field and the results. The nano's picker below is the reference it replaced.
+
 - **Layout.** Menu status bar "Search". Results fill the list area. A bottom band 56 tall (dark
   gradient as the Now Playing controls) holds the **query** (white 16 bold, magnifier glyph at left)
   over a **letter strip** "A…Z 0…9" (14 bold white). The strip scrolls so the current letter sits in

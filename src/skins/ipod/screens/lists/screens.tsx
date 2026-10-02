@@ -10,12 +10,12 @@ import { useQuery } from '@tanstack/react-query';
 import { useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { LIKED, type LibraryItem, type SearchResults, type Track } from '../../../../model';
 import {
-  canSave, isAlbum, STALE, useAddTo, useApp, useArtist, useCollection, useLibraryList, useSearch, useSearchAll, useShell, type Bucket, type Shell,
+  canSave, isAlbum, STALE, useAddTo, useApp, useArtist, useCollection, useDebounced, useLibraryList, useSearch, useSearchAll, useShell, type Bucket, type Shell,
 } from '../../../../ui';
 import { CollectionHeader, FilterChips, GridScreen, MenuScreen, Popup, Tile, useNav, useWheel } from '../../ui';
 import type { GridItem, HeadAction, MenuItem, Nav, ScreenEntry } from '../contract';
 import { LIBRARY_FILTERS, useLibraryFilter, useLibraryView, useMenuVisibility } from '../settings';
-import { albumsBy, artistList, artistsOf, az, SLOTS, strip, STRIP0, subline, type Strip, type StripAct } from './logic';
+import { albumsBy, artistList, artistsOf, az, subline } from './logic';
 
 /** nano pixels */
 const u = (n: number) => `calc(var(--unit) * ${n})`;
@@ -68,13 +68,6 @@ function playUri(sh: Shell, nav: Nav, uri: string) {
   if (uri.startsWith('spotify:artist:')) c.playContext(uri, null); else c.playAll(uri);
   nav.toNowPlaying();
 }
-/** A page's Shuffle: shuffle on, then a random song of it, in its playlist / album / Liked Songs. */
-function shufflePlay(sh: Shell, nav: Nav, rows: readonly Track[]) {
-  const s = sh.store.getState(), t = rows[Math.floor(Math.random() * rows.length)];
-  if (!t) return;
-  if (!s.playback.shuffle) s.commands.toggleShuffle();
-  playSong(sh, nav, t);
-}
 
 /** a playlist or album: a row that opens its songs, or a tile with its cover and what it is */
 const opens = (nav: Nav, x: LibraryItem): GridItem => ({
@@ -89,26 +82,33 @@ const LIKED_ART = 'data:image/svg+xml,' + encodeURIComponent(
 
 // ---- tracks --------------------------------------------------------------------------------------
 
-/** a collection page's header: its uri, cover, title and "<owner or artist> · <n> songs" */
-interface Head { uri: string; art?: string | null; title: string; line: string }
+/** a collection page's header: its uri, cover, title and "<owner or artist> · <n> songs"; `saved`: in
+ *  the library (undefined: ask), `own`: a playlist the user can edit (theirs: saved, never removed) */
+interface Head { uri: string; art?: string | null; title: string; line: string; saved?: boolean; own?: boolean }
 
 /** the playing song's row: a small ▶ at its right */
 const PLAYING = <svg viewBox="0 0 8 10" fill="currentColor" style={{ width: u(7), height: u(9) }} role="img" aria-label="Playing"><path d="M0 0l8 5-8 5z" /></svg>;
 
 /** Songs: center plays from that row; hold-center: the song's menu. A playlist's, album's or Liked
- *  Songs' page (`head`) leads with Spotify's header: the cover, Play, Shuffle, the heart and "…"
- *  (Save to Library, Start Radio; hold-centre on a button too), and its songs are two-line rows with
- *  their covers (the collection's when a song has none). */
+ *  Songs' page (`head`) leads with Spotify's header: the cover, Play (Pause while it is what plays:
+ *  then it pauses / resumes), the Shuffle toggle (Spotify's shuffle, as the status row's), the heart
+ *  and "…" (Save to Library, Start Radio; hold-centre on a button too), and its songs are two-line
+ *  rows with their covers (the collection's when a song has none). */
 function TrackList({ keep, rows, loading, more, head }: {
   keep: Box<number>; rows: readonly Track[]; loading: boolean; more?: () => void; head?: Head;
 }) {
   const sh = useShell(), nav = useNav(), [held, setHeld] = useState<Held>(null), [menu, setMenu] = useState(false);
-  const like = useAddTo(head && canSave(head.uri) ? head.uri : null), playing = useApp((s) => s.playback.track?.uri);
+  const like = useAddTo(head && canSave(head.uri) ? head.uri : null, head?.saved), playing = useApp((s) => s.playback.track?.uri);
+  const here = useApp((s) => !!head && s.playback.context?.uri === head.uri), paused = useApp((s) => s.playback.paused);
+  const shuffle = useApp((s) => s.playback.shuffle), c = () => sh.store.getState().commands;
   const open = like.uri ? () => setMenu(true) : undefined;
+  // the playing context: pause / resume it, not again from the top
+  const start = () => (here ? void c().playPause() : playUri(sh, nav, head!.uri));
   const acts: HeadAction[] = head && rows.length ? [
-    { id: 'play', kind: 'play', label: 'Play', onSelect: () => playUri(sh, nav, head.uri), onHold: open },
-    { id: 'shuffle', kind: 'shuffle', label: 'Shuffle', onSelect: () => shufflePlay(sh, nav, rows), onHold: open },
-    ...(like.uri ? [{ id: 'like', kind: 'like' as const, label: like.saved ? 'Unlike' : 'Like', on: !!like.saved, onSelect: like.toggle, onHold: open }] : []),
+    { id: 'play', kind: 'play', label: here && !paused ? 'Pause' : 'Play', on: here && !paused, onSelect: start, onHold: open },
+    { id: 'shuffle', kind: 'shuffle', label: 'Shuffle', on: shuffle, onSelect: () => c().toggleShuffle(), onHold: open },
+    ...(like.uri ? [head.own ? { id: 'like', kind: 'like' as const, label: 'Saved', on: true, onHold: open }
+      : { id: 'like', kind: 'like' as const, label: like.saved ? 'Unlike' : 'Like', on: !!like.saved, onSelect: like.toggle, onHold: open }] : []),
   ] : [];
   const lead = acts.length;
   const items: GridItem[] = [
@@ -118,15 +118,15 @@ function TrackList({ keep, rows, loading, more, head }: {
       id: i + ':' + t.uri, label: t.title, sub: t.artist, art: t.image || t.art || head?.art, right: head && t.uri === playing ? PLAYING : undefined,
       onSelect: () => playSong(sh, nav, t), onHold: () => setHeld({ t }) })),
   ];
-  // Play/Pause on the header: Shuffle shuffles, the other buttons play from the top
-  const play = (i: number) => (i >= lead ? playSong(sh, nav, rows[i - lead]!) : i === 1 ? shufflePlay(sh, nav, rows) : playUri(sh, nav, head!.uri));
+  // Play/Pause on the header: the green button's
+  const play = (i: number) => (i >= lead ? playSong(sh, nav, rows[i - lead]!) : start());
   return (
     <>
       <List keep={keep} items={items} loading={loading} empty="No Songs" near={more} play={held || menu ? undefined : play} lead={lead} tall={!!head}
             head={head && <CollectionHeader art={head.art} title={head.title} line={head.line} actions={acts} onMore={open} />} />
       {held && <TrackPopup held={held} set={setHeld} />}
       {menu && head && <Popup onClose={() => setMenu(false)} items={[
-        { id: 'like', label: like.saved ? 'Remove from Library' : 'Save to Library', onSelect: like.toggle },
+        ...(head.own ? [] : [{ id: 'like', label: like.saved ? 'Remove from Library' : 'Save to Library', onSelect: like.toggle }]),
         { id: 'radio', label: 'Start Radio', onSelect: () => void startRadio(sh, nav, head.uri, head.title) },
         { id: 'cancel', label: 'Cancel' },
       ]} />}
@@ -139,8 +139,13 @@ function Collection({ uri, title, keep }: { uri: string; title: string; keep: Bo
   const c = useCollection(uri), m = c.meta, n = c.total || c.rows.length;
   const by = m?.owner?.name || m?.artists?.map((a) => a.name).join(', ');
   const line = [by, c.loaded ? n.toLocaleString() + (n === 1 ? ' song' : ' songs') : ''].filter(Boolean).join(' · ');
+  // Saved, as WMP 9's Details pane has it: areEntitiesInLibrary never answers a playlist, so a Like just
+  // made, then the collection's own flag, then whether the library list holds it (the user's playlists,
+  // the ones they follow, saved albums). One they can edit is theirs (or one they collaborate on).
+  const lib = useLibraryList(), listed = lib.items.find((x) => x.uri === uri), opt = useApp((s) => s.saved[uri]);
+  const saved = opt ?? m?.saved ?? m?.following ?? (lib.loading ? undefined : !!listed);
   return <TrackList keep={keep} rows={c.rows} loading={c.loading} more={c.loadMore}
-                    head={{ uri, title: m?.name || title, art: uri === LIKED ? LIKED_ART : m?.image, line }} />;
+                    head={{ uri, title: m?.name || title, art: uri === LIKED ? LIKED_ART : m?.image, line, saved, own: !!listed?.editable }} />;
 }
 export const collection = (uri: string, title: string) =>
   screen('tracks:' + uri, title, 0, (k) => <Collection uri={uri} title={title} keep={k} />);
@@ -338,72 +343,85 @@ function hitsOf(r: SearchResults | undefined, q: string, nav: Nav, sh: Shell): H
   });
 }
 
-const SLOT = 20;
 // a row spans the grid view's two columns
 const LINE: CSSProperties = { display: 'flex', alignItems: 'center', gap: u(6), height: ROW, padding: `0 ${u(9)} 0 ${u(10)}`, whiteSpace: 'nowrap', gridColumn: '1 / -1' };
 const TILES: CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', alignContent: 'start' };
 
-/** Results above, the picker band below: the typed query over the letter strip, the current letter
- *  in a centred blue box. In the grid view the artists, albums and playlists are tiles, two across,
- *  between the song rows; the wheel still steps one result at a time. Wheel: the letter (in the results: the row); center: types it (opens the
- *  row); ⏭ a space, ⏮ deletes; MENU: to the results once something was typed, back to the picker,
- *  then out. Each typed character searches (§4.5). */
-function Search({ keep }: { keep: Box<Strip> }) {
-  const sh = useShell(), nav = useNav(), [s, setS] = useKept(keep), list = useRef<HTMLDivElement>(null), grid = useGrid();
-  const { results, loading } = useSearchAll(s.q), [held, setHeld] = useState<Held>(null);
-  const hits = hitsOf(results, s.q.trim(), nav, sh), row = s.row >= 0 ? Math.min(s.row, hits.length - 1) : -1, h = hits[row];
-  const go = (a: StripAct) => { const n = strip(s, a); if (n) setS(n); return !!n; };
-  /** a detent; false when nothing moved (the chrome then does not click) */
-  const tick = (dir: 1 | -1) => { const n = strip(s, { t: 'tick', dir, rows: hits.length })!; if (n.slot === s.slot && n.row === s.row) return false; setS(n); };
-  // the selected result in view, scrolling the list only (never the page around it)
+/** What Search comes back to: the typed text and the wheel's place (0: the field, 1..: the results). */
+interface Find { q: string; row: number }
+
+/** The search field over the results, the phone's keyboard to type in. A tap on the field, or the
+ *  centre on it (the wheel's first place), focuses it and so opens the keyboard; typing searches after
+ *  the 400 ms debounce; the keyboard's Search (Enter) searches at once, closes it and selects the first
+ *  result; × clears. Unfocused, the wheel walks the field then the results, centre opens one; MENU
+ *  (Escape) while typing closes the keyboard, then goes back. In the grid view the artists, albums and
+ *  playlists are tiles, two across, between the song rows; the wheel still steps one result at a time. */
+function Search({ keep }: { keep: Box<Find> }) {
+  const sh = useShell(), nav = useNav(), [s, setS] = useKept(keep), [q, setQ] = useState(s.q), run = useDebounced(setQ);
+  const list = useRef<HTMLDivElement>(null), field = useRef<HTMLInputElement>(null), grid = useGrid();
+  const { results, loading } = useSearchAll(q), [held, setHeld] = useState<Held>(null);
+  const hits = hitsOf(results, q.trim(), nav, sh), row = Math.min(s.row, hits.length), h = hits[row - 1];
+  // the shadow root's activeElement under Spotify, the document's standalone
+  const typing = () => { const f = field.current; return !!f && (f.getRootNode() as Document | ShadowRoot).activeElement === f; };
+  // the selected result in view (the field: the list's top), scrolling the list only (never the page around it)
   useLayoutEffect(() => {
-    const l = list.current, el = l?.children[row] as HTMLElement | undefined;
-    if (!l || !el) return;
-    if (el.offsetTop < l.scrollTop) l.scrollTop = el.offsetTop;
+    const l = list.current, el = l?.children[row - 1] as HTMLElement | undefined;
+    if (!l) return;
+    if (!el) l.scrollTop = 0;
+    else if (el.offsetTop < l.scrollTop) l.scrollTop = el.offsetTop;
     else if (el.offsetTop + el.offsetHeight > l.scrollTop + l.clientHeight) l.scrollTop = el.offsetTop + el.offsetHeight - l.clientHeight;
   }, [row]);
   useWheel(held ? {} : {
-    onTick: tick,
-    onCenter: () => { if (h) h.open(); else go({ t: 'enter' }); },
+    // from the kept place: several detents can land before a re-render; false when nothing moved (no click)
+    onTick: (dir) => { const at = Math.min(keep.get().row, hits.length), n = Math.max(0, Math.min(hits.length, at + dir)); if (n === at) return false; setS({ ...keep.get(), row: n }); },
+    onCenter: () => (h ? h.open() : field.current?.focus()),
     onHoldCenter: h?.track ? () => setHeld({ t: h.track! }) : undefined,
-    onMenu: () => go({ t: 'menu', rows: hits.length }),
+    onMenu: () => { if (!typing()) return; field.current!.blur(); return true; },
     onPlay: h?.play,
-    onPrev: h ? undefined : () => go({ t: 'delete' }),
-    onNext: h ? undefined : () => go({ t: 'space' }),
   });
-  const note = loading ? 'Loading…' : s.q.trim() && !hits.length ? 'No Results' : null;
+  const note = loading ? 'Loading…' : q.trim() && !hits.length ? 'No Results' : null;
   return (
     <div className="flex flex-col h-full min-h-0" style={{ color: TEXT }}>
-      <div ref={list} className="relative flex-auto min-h-0 overflow-hidden" style={{ fontSize: u(18), fontWeight: 'bold', ...(grid ? TILES : {}) }}>
+      <div className="flex-none" style={{ padding: u(6), background: 'linear-gradient(#FDFDFD, #E6E6E6 50%, #D0D0D0 51%, #E4E4E4)', borderBottom: `${u(1)} solid #5A5F64` }}>
+        {/* the iPod's search field: a white pill, the magnifier, ringed blue while the wheel is on it */}
+        <label className="flex items-center" style={{ height: u(26), gap: u(5), padding: `0 ${u(5)} 0 ${u(8)}`, borderRadius: u(13), background: '#fff',
+                                                      border: `${u(1)} solid #5A5F64`, color: DIM,
+                                                      boxShadow: row === 0 ? `0 0 0 ${u(2)} #3F7FCD` : `inset 0 ${u(1)} ${u(2)} rgb(0 0 0 / .25)` }}>
+          <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.8" style={{ flex: 'none', width: u(12), height: u(12) }} aria-hidden="true">
+            <circle cx="5" cy="5" r="3.8" /><path d="M7.8 7.8 11.3 11.3" />
+          </svg>
+          {/* 16 px at least: iOS zooms the page into a smaller field */}
+          <input ref={field} type="search" inputMode="search" enterKeyHint="search" autoCapitalize="none" autoCorrect="off" spellCheck={false}
+                 placeholder="Search" aria-label="Search" value={s.q}
+                 className="flex-auto min-w-0 appearance-none [&::-webkit-search-cancel-button]:appearance-none"
+                 style={{ border: 0, padding: 0, outline: 'none', background: 'transparent', color: TEXT, fontSize: `max(16px, ${u(14)})`, fontWeight: 'normal' }}
+                 onFocus={() => setS({ ...keep.get(), row: 0 })}
+                 onChange={(e) => { setS({ q: e.currentTarget.value, row: 0 }); run(e.currentTarget.value); }}
+                 onKeyDown={(e) => {
+                   if (e.key === 'Enter' && !e.nativeEvent.isComposing) { e.preventDefault(); run.now(s.q); e.currentTarget.blur(); setS({ ...s, row: 1 }); }
+                   // the page's Escape (leave full screen) is not this one's
+                   else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); e.currentTarget.blur(); }
+                 }} />
+          {s.q && (
+            <button type="button" aria-label="Clear" onClick={() => { setS({ q: '', row: 0 }); run.now(''); field.current?.focus(); }}
+                    className="grid place-items-center" style={{ flex: 'none', width: u(16), height: u(16), padding: 0, border: 0, borderRadius: '50%', background: '#B4B4B8', color: '#fff' }}>
+              <svg viewBox="0 0 8 8" stroke="currentColor" strokeWidth="1.6" style={{ width: u(7), height: u(7) }} aria-hidden="true"><path d="M1 1l6 6M7 1 1 7" /></svg>
+            </button>
+          )}
+        </label>
+      </div>
+      <div ref={list} className="relative flex-auto min-h-0 overflow-hidden" role="listbox" style={{ fontSize: u(18), fontWeight: 'bold', ...(grid ? TILES : {}) }}>
         {note ? <div style={{ ...LINE, color: '#8e8e93' }}>{note}</div> : hits.map((x, i) => {
-          const tap = () => { setS({ ...s, row: i, typed: false }); x.open(); };
-          return grid && x.line != null ? <Tile key={x.key} item={{ id: x.key, label: x.label, sub: x.line, art: x.art }} selected={i === row} onClick={tap} /> : (
-          <div key={x.key} onClick={tap} style={{ ...LINE, ...(i === row ? SEL : {}) }}>
+          const tap = () => { setS({ ...s, row: i + 1 }); x.open(); };
+          return grid && x.line != null ? <Tile key={x.key} item={{ id: x.key, label: x.label, sub: x.line, art: x.art }} selected={i + 1 === row} onClick={tap} /> : (
+          <div key={x.key} onClick={tap} role="option" aria-selected={i + 1 === row} style={{ ...LINE, ...(i + 1 === row ? SEL : {}) }}>
             <svg viewBox="0 0 12 12" fill="currentColor" style={{ flex: 'none', width: u(12), height: u(12) }} aria-hidden="true">
               {x.kind && GLYPH[x.kind]}
             </svg>
             <span className="truncate">{x.label}</span>
-            {x.sub && <span className="truncate" style={{ flex: 'none', maxWidth: '45%', fontSize: u(13), fontWeight: 'normal', color: i === row ? 'inherit' : DIM }}>{x.sub}</span>}
+            {x.sub && <span className="truncate" style={{ flex: 'none', maxWidth: '45%', fontSize: u(13), fontWeight: 'normal', color: i + 1 === row ? 'inherit' : DIM }}>{x.sub}</span>}
           </div>
         ); })}
-      </div>
-      <div className="flex-none" style={{ height: u(56), background: 'linear-gradient(#656565, #262626)', color: '#fff', fontWeight: 'bold' }}>
-        <div className="flex items-center" style={{ height: u(26), gap: u(6), padding: `0 ${u(10)}`, fontSize: u(16) }}>
-          <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.8" style={{ flex: 'none', width: u(12), height: u(12) }} aria-hidden="true">
-            <circle cx="5" cy="5" r="3.8" /><path d="M7.8 7.8 11.3 11.3" />
-          </svg>
-          {/* right-to-left so a long query shows its end */}
-          <div className="flex-auto min-w-0 overflow-hidden" style={{ whiteSpace: 'pre', direction: 'rtl', textAlign: 'left' }}>
-            <span style={{ direction: 'ltr', unicodeBidi: 'isolate' }}>{s.q}</span>
-          </div>
-        </div>
-        <div className="relative overflow-hidden" style={{ height: u(30), fontSize: u(14) }}>
-          <div className="absolute" style={{ left: '50%', top: u(4), width: u(SLOT), height: u(22), marginLeft: u(-SLOT / 2), ...SEL, opacity: h ? 0.35 : 1 }} />
-          <div className="absolute flex" style={{ left: '50%', top: u(4), transform: `translateX(${u(-(s.slot + 0.5) * SLOT)})`, transition: 'transform .1s' }}>
-            {SLOTS.map((ch, k) => <span key={ch} className="grid place-items-center" style={{ width: u(SLOT), height: u(22) }}
-                                         onClick={() => setS(strip({ ...s, slot: k, row: -1 }, { t: 'enter' })!)}>{ch}</span>)}
-          </div>
-        </div>
       </div>
       {held && <TrackPopup held={held} set={setHeld} />}
     </div>
@@ -433,4 +451,4 @@ export function library(): ScreenEntry {
   const keeps = Object.fromEntries(LIBRARY_FILTERS.map(([id]) => [id, box('')]));
   return { key: 'library', title: 'Library', render: () => <Library keeps={keeps} /> };
 }
-export const search = () => screen<Strip>('search', 'Search', STRIP0, (k) => <Search keep={k} />);
+export const search = () => screen<Find>('search', 'Search', { q: '', row: 0 }, (k) => <Search keep={k} />);

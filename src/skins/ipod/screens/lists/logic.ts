@@ -1,36 +1,6 @@
-// The Library screens' pure parts: Search's letter picker, the iPod's A–Z order, the Artists list and
-// the grid's description lines. No React, no DOM.
+// The Library screens' pure parts: the iPod's A–Z order, the Artists list and the grid's description
+// lines. No React, no DOM.
 import type { LibraryItem, Track } from '../../../../model';
-
-/** The picker's strip: letters then digits (⏭ types a space, ⏮ deletes; docs/ipod-skin.md §2.4). */
-export const SLOTS = [...'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'];
-const LAST = SLOTS.length - 1;
-
-/** `row` -1: the picker has the wheel (at `slot`); 0..: the result row it is on. `typed`: the query
- *  changed since the results last had the wheel, so MENU goes to them rather than out. */
-export interface Strip { q: string; slot: number; row: number; typed: boolean }
-export const STRIP0: Strip = { q: '', slot: 0, row: -1, typed: false };
-export type StripAct =
-  | { t: 'tick'; dir: 1 | -1; rows: number }
-  | { t: 'enter' } | { t: 'delete' } | { t: 'space' } | { t: 'menu'; rows: number };
-
-const edit = (s: Strip, q: string): Strip => ({ ...s, q, typed: true });
-
-/** The picker as the nano runs it. MENU in the picker goes to the results once something was typed
- *  (and there are results), else leaves (null); MENU in the results goes back to the picker. */
-export function strip(s: Strip, a: StripAct): Strip | null {
-  switch (a.t) {
-    case 'tick':
-      if (s.row >= 0) return { ...s, row: Math.max(0, Math.min(s.row + a.dir, a.rows - 1)) };
-      return { ...s, slot: Math.max(0, Math.min(LAST, s.slot + a.dir)) };
-    case 'enter': return edit(s, s.q + SLOTS[s.slot]);
-    case 'space': return s.q ? edit(s, s.q + ' ') : s;
-    case 'delete': return s.q ? edit(s, s.q.slice(0, -1)) : s;
-    case 'menu':
-      if (s.row >= 0) return { ...s, row: -1 };
-      return s.typed && a.rows ? { ...s, row: 0, typed: false } : null;
-  }
-}
 
 /** The iPod's A–Z: a leading "The", "A" or "An" ignored, case and accents too, and anything that
  *  does not start with a letter after Z (docs/ipod-skin.md §3.2). */

@@ -270,7 +270,7 @@ const heart = (on: boolean, className?: string) => (
           fill={on ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" /></svg>
 );
 const FACE: Record<HeadAction['kind'] | 'more', (on: boolean) => ReactNode> = {
-  play: () => <svg viewBox="0 0 10 12" aria-hidden="true"><path d="M1 0l9 6-9 6z" /></svg>,
+  play: (on) => <svg viewBox="0 0 10 12" aria-hidden="true"><path d={on ? 'M0 0h3v12H0zm6 0h3v12H6z' : 'M1 0l9 6-9 6z'} /></svg>,
   shuffle: () => shuffle(),
   like: (on) => heart(on),
   more: () => <svg viewBox="0 0 12 3" aria-hidden="true"><circle cx="1.5" cy="1.5" r="1.3" /><circle cx="6" cy="1.5" r="1.3" /><circle cx="10.5" cy="1.5" r="1.3" /></svg>,
@@ -279,7 +279,8 @@ const FACE: Record<HeadAction['kind'] | 'more', (on: boolean) => ReactNode> = {
 /** Spotify's playlist / album header, a MenuScreen's `head`: the cover 120 square centred (the ♪ tile
  *  when none), the title, a dim line, then round buttons: `actions` (the list's first items, so the
  *  wheel walks them before the songs: a tap or the centre runs one, hold-centre its `onHold`) and
- *  "…" (`onMore`, a tap). */
+ *  "…" (`onMore`, a tap). `on`: Play shows Pause, Shuffle is lit (dimmed when off, as the status
+ *  row's), the heart filled. */
 export const CollectionHeader: Chrome['CollectionHeader'] = ({ art, title, line, actions, onMore }) => {
   const { sel, tap } = useContext(HeadContext);
   return (
@@ -290,6 +291,7 @@ export const CollectionHeader: Chrome['CollectionHeader'] = ({ art, title, line,
       <div className={s.acts}>
         {actions.map((a, i) => (
           <div key={a.id} className={s.act} data-kind={a.kind} role="option" aria-label={a.label} aria-selected={i === sel}
+               aria-checked={a.kind === 'play' ? undefined : !!a.on} data-off={(a.kind === 'shuffle' && !a.on) || undefined}
                data-sel={i === sel || undefined} onClick={() => tap(i)}>{FACE[a.kind](!!a.on)}</div>
         ))}
         {onMore && <div className={s.act} data-kind="more" role="button" aria-label="More"
