@@ -1000,8 +1000,27 @@ final class SystemVolume {
     }
 
     private func apply() {
-        guard let level, let slider = view.subviews.compactMap({ $0 as? UISlider }).first else { return }
-        slider.value = Float(level) / 100
+        guard let level else { return }
+        // The slider wherever MPVolumeView keeps it (a direct subview once, nested on later systems).
+        func find(_ v: UIView) -> UISlider? {
+            if let s = v as? UISlider { return s }
+            for sub in v.subviews { if let s = find(sub) { return s } }
+            return nil
+        }
+        guard let slider = find(view) else {
+            HostLog.shared.logOnce("volume: no slider in MPVolumeView: the system volume cannot be set")
+            return
+        }
+        slider.setValue(Float(level) / 100, animated: false)
+        slider.sendActions(for: .valueChanged)  // a bare assignment moved the knob and not the volume
+        // What the system's volume became: a set that did not take shows here (the wheel then steps
+        // from the same level each time, 13 and 17 for ever, seen 2026-10-02).
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+            guard self.level == level else { return }  // a later set reports for itself
+            let now = Int((AVAudioSession.sharedInstance().outputVolume * 100).rounded())
+            if now != level { HostLog.shared.log("volume: asked \(level), the system is at \(now)", quiet: true) }
+            DeviceState.shared.pushVolume()
+        }
     }
 }
 
