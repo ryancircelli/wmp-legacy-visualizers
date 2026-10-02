@@ -11,12 +11,13 @@
 // behind the whole screen instead of the cover, the two bands made translucent over it; a tap on the
 // cover's area cycles Canvas -> cover -> the app's visualizer (on silence, as the phone has no capture;
 // Bars until Settings > Visualizer or Visualizer… picks another) -> Canvas, remembered (only while the
-// Canvas is chosen is one fetched). Cover Bars (a choice of Visualizer…) keeps the cover and draws
-// Bars over it, in the cover's accent (accent.ts). Playing on another device than this one (not this
+// Canvas is chosen is one fetched). Visualizer… > Over Cover keeps the cover and draws the visualization
+// over it, clear where it is dark (the engine's 'luma' output), Bars and Waves in the cover's accent
+// (accent.ts). Playing on another device than this one (not this
 // page's player, nor the iPhone's own speaker): its name, in Spotify's green, on the "N of M" line;
 // a tap on it opens Play On….
 import { Vibrant } from 'node-vibrant/browser';
-import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useStore } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { createStore } from 'zustand/vanilla';
@@ -30,7 +31,7 @@ import { useHostGlobal } from '../../host';
 import type { MenuItem, ScreenEntry } from '../contract';
 import { useVisFit, useVisualizers, visId } from '../settings';
 import { Bar, MenuScreen, Popup, useNav, useScan, useWheel } from '../../ui';
-import { pickAccent, rgbOf, tint } from './accent';
+import { pickAccent, rgbOf } from './accent';
 import { IDLE_MS, nextMode, ofText, SCRUB_COMMIT_MS, scrubAccel, scrubStep, times, volumeStep, VOLUME_MS, type Mode } from './logic';
 import css from './nowplaying.module.css';
 
@@ -203,9 +204,9 @@ function NowPlaying() {
   const [failed, setFailed] = useState('');
   const fetched = useCanvas(show === 'video' ? uri : null), canvas = fetched && fetched.url !== failed ? fetched : null;
   const fail = () => setFailed(canvas?.url ?? '');
-  // Cover Bars: the cover as in cover mode with the visualizer over it; with no cover, plain Bars
-  const vis = show === 'vis', cover = vis && vz.cover && !!art, bg = !!canvas || (vis && !cover);
-  const accent = useAccent(cover ? art : '');
+  // Over Cover: the cover as in cover mode with the visualizer over it; with no cover, the visualizer as ever
+  const vis = show === 'vis', cover = vis && vz.over && !!art, bg = !!canvas || (vis && !cover);
+  const bars = vz.preset.startsWith('bars:'), accent = useAccent(cover && bars ? art : '');
   /** a tap on the cover's area (the lyrics over it too): Canvas -> cover -> visualizer -> Canvas; a track
    *  without a Canvas shows the cover for it, so from there the tap goes straight on to the visualizer */
   const swap = (e: { stopPropagation(): void }) => {
@@ -223,7 +224,7 @@ function NowPlaying() {
         <Line className={css.album} text={t?.album} />
       </div>
       {bg ? null : art ? <img className={css.art} src={art} alt="" /> : <div className={cx(css.art, css.noart)}>♪</div>}
-      {cover && <Vis accent={accent} />}
+      {cover && <Vis over tint={bars ? accent : null} />}
       {/* a swipe from here is still MENU (Root suppresses the click that ends one); a tap is the swap's alone */}
       <div className={css.tap} onClick={swap} />
       {p.lyrics && <Lyrics onClick={swap} />}
@@ -286,7 +287,7 @@ function CanvasVideo({ src, poster, onError }: { src: string; poster?: string; o
   return <video ref={ref} className={css.bg} src={src} poster={poster} muted autoPlay loop playsInline onError={onError} />;
 }
 
-/** Cover Bars' accent for cover `url` ('' = none wanted): the cover fetched again for its pixels (CORS,
+/** Over Cover's accent for cover `url` ('' = none wanted): the cover fetched again for its pixels (CORS,
  *  not the displayed copy: WebKit may hand a crossOrigin image its cached non-CORS response, and the
  *  canvas reading it is then tainted), node-vibrant's palette of a 100 px copy, pickAccent; white when
  *  the pixels cannot be had. Once per cover, off the render path; the host's log says which. */
@@ -304,7 +305,7 @@ function useAccent(url: string): string {
       .then(({ color, why }) => {
         if (blob) URL.revokeObjectURL(blob);
         accents.set(url, color);
-        window.alchemyLog?.('ipod: cover bars accent ' + color + ' (' + why + ')');
+        window.alchemyLog?.('ipod: over cover accent ' + color + ' (' + why + ')');
         if (live) setGot(url);
       });
     return () => { live = false; };
@@ -312,39 +313,12 @@ function useAccent(url: string): string {
   return accents.get(url) ?? '#ffffff';
 }
 
-/** Cover Bars' picture: the engine's canvas (the first in `from`, hidden, still drawing) copied every
- *  frame into a buffer of its own size (at most 480 wide: a Bars bar stays whole), each pixel then the
- *  accent with its brightness as alpha (accent.ts tint), scaled to the cover area by CSS, pixelated. */
-function Tinted({ from, accent }: { from: RefObject<HTMLDivElement | null>; accent: string }) {
-  const ref = useRef<HTMLCanvasElement>(null);
-  useEffect(() => {
-    const out = ref.current, src = from.current?.querySelector('canvas'), ctx = out?.getContext('2d', { willReadFrequently: true });
-    if (!out || !src || !ctx) return;
-    const rgb = rgbOf(accent);
-    let raf = 0;
-    const frame = () => {
-      raf = requestAnimationFrame(frame);
-      const w = Math.min(src.width, 480), h = Math.round((w * src.height) / (src.width || 1));
-      if (!w || !h) return;
-      if (out.width !== w || out.height !== h) { out.width = w; out.height = h; }
-      ctx.clearRect(0, 0, w, h);
-      ctx.drawImage(src, 0, 0, w, h);
-      const img = ctx.getImageData(0, 0, w, h);
-      tint(img.data, rgb);
-      ctx.putImageData(img, 0, 0);
-    };
-    raf = requestAnimationFrame(frame);
-    return () => cancelAnimationFrame(raf);
-  }, [from, accent]);
-  return <canvas ref={ref} className={css.tinted} />;
-}
-
 /** The app's visualizer behind the whole screen as the Canvas is, drawing the iPod's choice (ipod.visualizer)
  *  on silence (Alchemy and Battery animate on it, Bars and Waves waits for sound; settings.animate off
  *  stills them). Its canvas is mounted only while this screen is the top one and the page is
- *  visible: the ticker's loop runs only with a canvas attached, so it costs nothing elsewhere (and
- *  Cover Bars' copy loop with it). `accent` (Cover Bars): over the cover only, its tinted copy shown. */
-function Vis({ accent }: { accent?: string }) {
+ *  visible: the ticker's loop runs only with a canvas attached, so it costs nothing elsewhere. `over`
+ *  (Over Cover): over the cover only, the engine's output 'luma' (clear where dark), in `tint` if one. */
+function Vis({ over, tint }: { over?: boolean; tint?: string | null }) {
   const sh = useShell(), ref = useRef<HTMLDivElement>(null), [on, setOn] = useState(() => !document.hidden);
   useEffect(() => {
     const el = ref.current;
@@ -385,14 +359,18 @@ function Vis({ accent }: { accent?: string }) {
     if (x) a.setVis(x.vis, x.preset);
     return () => a.setVis(prev.kind, prev.preset);
   }, [on, preset, sh]);
-  // Cover Bars copies the engine's canvas every frame (Tinted): it is claimed for the engine's own 2D
-  // path before the ticker attaches (a layout effect runs before the Visualizer's passive one), since
-  // a WebGL canvas without preserveDrawingBuffer reads back empty once composited
-  useLayoutEffect(() => { if (accent && on) ref.current?.querySelector('canvas')?.getContext('2d'); }, [accent, on]);
+  // Over Cover: the engine's output with alpha from brightness while shown (vis.alpha / tint, which the
+  // ticker hands the engine as it does the scale), then opaque again
+  useEffect(() => {
+    if (!on || !over) return;
+    const st = sh.store, out = (alpha: 'opaque' | 'luma', t: readonly [number, number, number] | null) =>
+      st.setState((s) => ({ vis: { ...s.vis, alpha, tint: t } }));
+    out('luma', tint ? (rgbOf(tint) as [number, number, number]) : null);
+    return () => out('opaque', null);
+  }, [on, over, tint, sh]);
   return (
-    <div ref={ref} className={accent ? css.overart : css.bg}>
-      {on && <Visualizer className={accent ? css.source : css.vis} />}
-      {on && accent && <Tinted from={ref} accent={accent} />}
+    <div ref={ref} className={over ? css.overart : css.bg}>
+      {on && <Visualizer className={over ? css.clear : css.vis} />}
     </div>
   );
 }

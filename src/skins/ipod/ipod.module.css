@@ -154,7 +154,6 @@
   --ipod-row-h: calc(var(--unit) * 356 / 12);
   /* the names some screens use for the same colours */
   --ipod-text: var(--ipod-ink);
-  --ipod-blue: var(--ipod-value);
   background: var(--ipod-screen-bg);
   color: var(--ipod-ink);
   font-size: calc(var(--unit) * 18);

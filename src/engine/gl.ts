@@ -7,6 +7,12 @@
 // comes as its own 8-bit indices and 256-entry palette (drawIndexed), looked up here instead of
 // expanded to 0x00RRGGBB on the CPU: the same colours, a quarter of the upload.
 //
+// The output's alpha (output()): 'opaque' writes 1, as it always has; 'luma' writes the colour's
+// brightest channel times 1.25 (index.ts LUMA_GAIN), premultiplied, the colour the surface's own or a
+// tint, so black is clear over whatever is under the canvas. The context has an alpha channel for
+// that, for every canvas: an opaque output's pixels are the same bytes either way, and a canvas can
+// then change between the two without a new context (its attributes are fixed at creation).
+//
 // Sampling keeps each DLL's stretch: Battery's STRETCH_DELETESCANS is nearest neighbour; Alchemy's
 // HALFTONE and any other scaled surface are smooth (a cubic filter when enlarging, which is what the
 // 2D path's imageSmoothingQuality 'high' does, and mipmaps when shrinking); a surface drawn at the
@@ -30,6 +36,8 @@ uniform highp usampler2D idx;   // mode 4: 8-bit palette indices, one per pixel
 uniform sampler2D pal;          // mode 4: 256 x 1, 0x00RRGGBB uploaded as a surface is
 uniform float B;      // cubic family (Mitchell-Netravali B, C)
 uniform float C;
+uniform int luma;     // 0: opaque, the colour as it is; 1: alpha from brightness, premultiplied
+uniform vec4 tint;    // luma: w 1 = the colour is tint.rgb (the surface a mask)
 out vec4 o;
 
 float w(float x) {
@@ -68,7 +76,12 @@ void main() {
   } else {
     c = bgr(texture(tex, d / dst));
   }
-  o = vec4(c, 1.0);
+  if (luma == 0) {
+    o = vec4(c, 1.0);
+  } else {
+    float a = min(1.0, max(c.r, max(c.g, c.b)) * 1.25);
+    o = vec4(tint.w > 0.5 ? tint.rgb * a : c, a);
+  }
 }`;
 
 export type Sampling = 'exact' | 'nearest' | 'smooth';
@@ -81,6 +94,8 @@ export interface Presenter {
   drawIndexed(idx: Uint8Array, pal: Uint32Array, w: number, h: number): void;
   /** for the smokes: one canvas pixel as RGBA, read in the same task as a draw */
   pixel(x: number, y: number): [number, number, number, number];
+  /** the next draws' alpha: opaque, or from brightness (`luma`), painted in `tint` (0..255 each) if one */
+  output(luma: boolean, tint: readonly number[] | null): void;
 }
 
 const presenters = new WeakMap<object, Presenter | null>();
@@ -129,13 +144,13 @@ function make(canvas: HTMLCanvasElement | OffscreenCanvas): Presenter | null {
   let gl: WebGL2RenderingContext | null = null;
   try {
     gl = canvas.getContext('webgl2', {
-      alpha: false, antialias: false, depth: false, stencil: false, preserveDrawingBuffer: false,
+      alpha: true, antialias: false, depth: false, stencil: false, preserveDrawingBuffer: false,
       failIfMajorPerformanceCaveat: FORCE !== '1',
     });
   } catch { gl = null; }
   if (!gl) return null;
   const g = gl;
-  let prog: WebGLProgram | null = null, tw = 0, th = 0, iw = 0, ih = 0;
+  let prog: WebGLProgram | null = null, tw = 0, th = 0, iw = 0, ih = 0, out = '';
   const loc: Record<string, WebGLUniformLocation | null> = {};
 
   function init(): boolean {
@@ -157,7 +172,7 @@ function make(canvas: HTMLCanvasElement | OffscreenCanvas): Presenter | null {
       return false;
     }
     g.useProgram(prog);
-    for (const n of ['tex', 'idx', 'pal', 'src', 'dst', 'mode', 'B', 'C']) loc[n] = g.getUniformLocation(prog, n);
+    for (const n of ['tex', 'idx', 'pal', 'src', 'dst', 'mode', 'B', 'C', 'luma', 'tint']) loc[n] = g.getUniformLocation(prog, n);
     g.uniform1i(loc.tex, 0);
     g.uniform1i(loc.idx, 1);
     g.uniform1i(loc.pal, 2);
@@ -178,6 +193,7 @@ function make(canvas: HTMLCanvasElement | OffscreenCanvas): Presenter | null {
       else g.texImage2D(g.TEXTURE_2D, 0, g.RGBA8, u ? 256 : 1, 1, 0, g.RGBA, g.UNSIGNED_BYTE, new Uint8Array(u ? 1024 : 4));
     }
     tw = th = iw = ih = 1;
+    out = '';                                    // uniforms start at 0: opaque, no tint
     return true;
   }
   if (!init()) return null;
@@ -233,6 +249,13 @@ function make(canvas: HTMLCanvasElement | OffscreenCanvas): Presenter | null {
       g.texSubImage2D(g.TEXTURE_2D, 0, 0, 0, 256, 1, g.RGBA, g.UNSIGNED_BYTE, new Uint8Array(pal.buffer, pal.byteOffset, 1024));
       g.activeTexture(g.TEXTURE0);
       paint(4, w, h);
+    },
+    output(luma, tint) {
+      const k = luma ? 'luma:' + (tint ? tint.join() : '') : '';
+      if (k === out || !prog || g.isContextLost()) return;
+      out = k;
+      g.uniform1i(loc.luma, luma ? 1 : 0);
+      g.uniform4f(loc.tint, (tint?.[0] ?? 0) / 255, (tint?.[1] ?? 0) / 255, (tint?.[2] ?? 0) / 255, tint ? 1 : 0);
     },
     pixel(x, y) {
       const out = new Uint8Array(4);

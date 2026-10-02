@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { contrast, pickAccent, rgbOf, tint } from './accent';
+import { contrast, pickAccent, rgbOf } from './accent';
 
 const sw = (rgb: number[], population: number) => ({ rgb, population });
 
@@ -25,10 +25,7 @@ describe('Cover Bars accent', () => {
     expect(pickAccent({ Vibrant: sw([240, 240, 230], 500), LightMuted: sw([250, 250, 250], 900) })).toEqual({ color: '#000000', from: 'black: no swatch at 3:1' });
     expect(pickAccent({})).toEqual({ color: '#ffffff', from: 'no swatches' });
   });
-  it('paints each pixel the accent, the engine\'s black transparent and a lit bar opaque', () => {
-    // black, Bars' green, a white peak, a dim antialiased edge
-    const px = new Uint8ClampedArray([0, 0, 0, 255, 0xa4, 0xeb, 0x0c, 255, 223, 234, 247, 255, 40, 60, 20, 255]);
-    tint(px, rgbOf('#ff8000'));
-    expect([...px]).toEqual([255, 128, 0, 0, 255, 128, 0, 255, 255, 128, 0, 255, 255, 128, 0, 75]);
+  it('reads a colour as its channels', () => {
+    expect(rgbOf('#ff8000')).toEqual([255, 128, 0]);
   });
 });

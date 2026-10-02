@@ -30,8 +30,8 @@ the end.
 > the screen spans the width inside a 3% margin, the wheel below it.
 >
 > **The tree is Spotify's now (owner, 2026-10-01), the look still the nano's.** Main menu: Home
-> (Spotify's shelves), Search, Library, Radio, Now Playing while a track is loaded, Settings, Extras
-> (off by default). Library: Playlists (Queue first), Liked Songs, Albums, Artists, Podcasts & Shows
+> (Spotify's shelves), Search, Library, Radio, Now Playing while a track is loaded, Settings (no
+> Extras: not implemented, the owner's ruling of 2026-10-02). Library: Playlists (Queue first), Liked Songs, Albums, Artists, Podcasts & Shows
 > (off by default), Queue, Cover Flow (off by default). Gone: Shuffle Songs (the status bar's shuffle,
 > repeat and heart are tap toggles), Videos, Photos, Voice Memos, Genres, Composers, Audiobooks,
 > Genius Mixes. §2.3 below is the nano's own tree, kept as the reference it was.
@@ -42,8 +42,8 @@ the end.
 |---|---|
 | Device | iPod nano 5G: 2.2" 240×376 portrait LCD at 204 ppi, Click Wheel, polished anodized aluminium, 9 colours ([EveryMac](https://everymac.com/systems/apple/ipod/specs/ipod-5th-generation-5g-nano-specs.html)) |
 | UI font | Helvetica Bold (2007+ iPods; Podium Sans before) ([Wikipedia: Podium Sans](https://en.wikipedia.org/wiki/Podium_Sans)) |
-| Build | every page of the 5G menu tree. Pages with no Spotify meaning are **hidden** or **repurposed** (§4), and pure-UI Extras are built for real (Clocks, Stopwatch, Calendars, Screen Lock, Notes, Sleep Timer) |
-| Do not build | visualizer, capture, Video Camera, Voice Memos recording, FM hardware |
+| Build | every page of the 5G menu tree. Pages with no Spotify meaning are **hidden** or **repurposed** (§4) |
+| Do not build | visualizer, capture, Video Camera, Voice Memos recording, FM hardware, Extras (not implemented: the owner's ruling, 2026-10-02) |
 | Wheel | 15° detents (24 per turn), a haptic `selection` plus sound 1104 per detent that moves something |
 
 ---
@@ -295,6 +295,10 @@ The names are plural: **Clocks**, **Calendars**. Settings groups most items unde
 **Playback**. Holding MENU on the 5G **goes straight to the main menu** [UG p.6]; it toggled the
 backlight only on older iPods.
 
+**The nano's Extras are not implemented** (the owner's ruling, 2026-10-02): this player has no
+Extras row, pages or preferences. The tree above and §2.4's Extras table keep them as the device's
+reference.
+
 ### 2.4 Pages
 
 #### Main menu
@@ -314,7 +318,6 @@ backlight only on older iPods.
 | Music, Shuffle Songs | covers from the library list |
 | Photos | covers, in a different order |
 | Radio | station covers |
-| Extras | a clock: 32 px bold time over a 12 px date on black |
 | Settings | "Spotify", then device name, then Liked count (12 px, on #f2f2f2) |
 | Now Playing | current art plus a 2-line title/artist |
 
@@ -430,30 +433,26 @@ On-The-Go, Browse Album, Browse Artist, Cancel [UG p.39-42]. Audiobooks add a sp
   selection is a 2 px blue (#3f7fcd) ring plus a scale of 1.08.
 - Full screen is the cover 240×240 centred on black, with its name and owner or artist underneath.
 
-#### Extras: pages we build
+#### Extras (not implemented)
+
+Not built, by the owner's ruling of 2026-10-02: this player has no Extras. The nano's pages, kept as
+the reference:
 
 | Page | Layout | Controls |
 |---|---|---|
 | **Clocks** | a list of cities, each row showing the time at right in blue; the selected city opens a full page with a big analogue face (white by day, black by night; 180 px; black hands, red seconds) plus the city and date **(face reconstructed)** | centre on the list: Add (region, then city) / Delete [UG p.77] |
-| **Stopwatch** | big `mm:ss.hh` (40 px bold) with the **two most recent laps above** it (16 px) [UG p.79]; a log list | **Play** start/stop, **centre** lap, MENU then **New Timer**; logs show start, total, shortest/longest/average lap; Delete Log / Clear Logs. `logic.ts Stopwatch` persists across visits |
+| **Stopwatch** | big `mm:ss.hh` (40 px bold) with the **two most recent laps above** it (16 px) [UG p.79]; a log list | **Play** start/stop, **centre** lap, MENU then **New Timer**; logs show start, total, shortest/longest/average lap; Delete Log / Clear Logs |
 | **Calendars** | the month grid (7 columns, 28 wide, header row of weekdays 12 px), today ringed blue; "No events" | wheel moves the day, **⏮⏭ change the month** [UG p.73], centre shows the day ("No events") |
 | **Screen Lock** | blue-grey gradient (`#9fb0c4→#5e6f84`), an SVG padlock, a 4-digit tumbler (the current digit is white on the selection blue) and a caption "New Combination" / "Confirm Combination" / "Enter Combination" (screenshot p.78) | wheel picks the digit, centre confirms, ⏮⏭ move between digits [UG p.80]. Lock shows the padlock until the combination is entered; the status bar shows the lock icon |
-| **Notes** | list of notes, then a text page (14 regular, scrolling by wheel) | ship with a "Read Me" note listing the wheel controls and §4's mapping |
-| **Alarms > Sleep Timer** | Off, 15, 30, 60, 90, 120 minutes (checkmark list) [UG p.78] | at expiry `commands.pause()`; the status bar shows a small moon (reconstructed) |
+| **Notes** | list of notes, then a text page (14 regular, scrolling by wheel) | — |
+| **Alarms > Sleep Timer** | Off, 15, 30, 60, 90, 120 minutes (checkmark list) [UG p.78] | at expiry the music pauses; the status bar shows a small moon (reconstructed) |
 
-Stretch goals:
-
-- **Games** (Klondike, Maze, Vortex [UG p.76]). Vortex, a wheel-driven brick game in a tube, is the
-  natural one for a wheel.
-- **Alarms > Create Alarm.** It only fires while the app is foregrounded. On the phone it could also
-  use `alchemyNotify`.
-
-Hide: Contacts, Fitness (no step data reaches the page), Voice Memos (the iOS app has no
-microphone path).
+The rest of the nano's Extras: Games (Klondike, Maze, Vortex [UG p.76]), Alarms > Create Alarm,
+Contacts, Fitness, Voice Memos (§2.3).
 
 #### Settings pages
 
-- **Value lists** (Sleep Timer, Color, Play On, Theme, Skin) are a list with a checkmark on the
+- **Value lists** (Color, Play On, Theme, Skin) are a list with a checkmark on the
   current choice.
 - **Toggles** (Clicker, Click Wheel, Visualizer Fit, Time in Title, Library View) flip in place on
   centre and show their value in blue.
@@ -472,17 +471,17 @@ microphone path).
 
 ### 3.1 Controls, per screen
 
-| Control | Lists | Now Playing | Search picker | Radio (ours) | Photos | Stopwatch |
-|---|---|---|---|---|---|---|
-| Rotate | move selection | default: **volume** · scrub: **seek** · sliders: move slider · rating: stars | letter | tune station | move selection | scroll log |
-| Centre | open / do | cycle the mode row (§2.4) | type the letter | dial ↔ progress | full screen | lap |
-| **Hold centre** (600 ms) | context popup for the row (song: Like, Add to Playlist, Start Radio, Browse Album/Artist) | popup (§4.3) | — | Add to Favorites / Cancel | — | — |
-| MENU | back | back | to results / leave | Radio menu | back | menu |
-| **Hold MENU** | **main menu** [UG p.6] | main menu | main menu | main menu | main menu | main menu |
-| ⏯ | play the row (collections: all) [UG p.6] | play/pause | — | play/pause | slideshow | start/stop |
-| **Hold ⏯** (1.5 s) | **sleep** (pause, LCD off) [UG p.6] | sleep | sleep | sleep | sleep | sleep |
-| ⏭ / ⏮ | next / previous track (works anywhere) | next / previous (⏮ restarts after 3 s, as Spotify) | space / delete | next / previous station | next / previous page | — |
-| Hold ⏭ / ⏮ | — | **fast-forward / rewind** [UG p.6] | — | — | last / first photo | — |
+| Control | Lists | Now Playing | Search picker | Radio (ours) | Photos |
+|---|---|---|---|---|---|
+| Rotate | move selection | default: **volume** · scrub: **seek** · sliders: move slider · rating: stars | letter | tune station | move selection |
+| Centre | open / do | cycle the mode row (§2.4) | type the letter | dial ↔ progress | full screen |
+| **Hold centre** (600 ms) | context popup for the row (song: Like, Add to Playlist, Start Radio, Browse Album/Artist) | popup (§4.3) | — | Add to Favorites / Cancel | — |
+| MENU | back | back | to results / leave | Radio menu | back |
+| **Hold MENU** | **main menu** [UG p.6] | main menu | main menu | main menu | main menu |
+| ⏯ | play the row (collections: all) [UG p.6] | play/pause | — | play/pause | slideshow |
+| **Hold ⏯** (1.5 s) | **sleep** (pause, LCD off) [UG p.6] | sleep | sleep | sleep | sleep |
+| ⏭ / ⏮ | next / previous track (works anywhere) | next / previous (⏮ restarts after 3 s, as Spotify) | space / delete | next / previous station | next / previous page |
+| Hold ⏭ / ⏮ | — | **fast-forward / rewind** [UG p.6] | — | — | last / first photo |
 
 **Fast-forward and rewind on Spotify.** Do not repeat `commands.skip()` every 200 ms. Each call is
 a network round-trip, and 10 s per call at 5 Hz is a 50× jump. Instead:
@@ -629,7 +628,7 @@ caption (`useWindowControls().onCaptionMouseDown`).
 | **Podcasts** | no shows query: `contextRow` drops `spotify:show`, search has no show bucket. The **home feed does carry** `spotify:show`/`episode` items, and `playItem` plays episodes | — | **hide** in v1 (§6) |
 | **Radio** | **Spotify radio**: song radio and artist radio for what plays, radio for recent artists, the feed's Recommended Stations | `useRadio(useRadioSeeds())`, drawn as the **FM dial** (station *i* at 87.5 + 0.2*i* MHz for the big digits, station name as RDS, the playing title and artist below). Turning tunes; it **plays 600 ms after the wheel rests**: `playItem({ uri: station.uri })`. ⏮⏭ seek a station. Radio menu: Play Radio, Stop Radio (`pause`), Favorites (local list), Recent Songs (stations played, local) | **build** (repurposed) |
 | **Video Camera** | — | — | **hide** |
-| **Extras** | pure UI | §2.4 | **build** Clocks, Stopwatch, Calendars, Screen Lock, Notes, Alarms > Sleep Timer; **stretch** Games, Create Alarm; **hide** Contacts, Fitness, Voice Memos |
+| **Extras** | — | — | **not implemented** (the owner's ruling, 2026-10-02) |
 | **Settings** | §4.4 | — | **build** |
 | **Shuffle Songs** | "shuffle on and play Liked Songs" is **not possible today**: `playAll(LIKED)` starts the first Liked track *in its album*, because the adapter names no Liked Songs context | interim: shuffle on (`toggleShuffle` if off), then play a random Liked track `playContext(t.ctx ?? t.uri, t.uri)`; real fix in §4.6 | **decide** (§6) |
 | **Now Playing** | — | listed while `hasMedia` | **build** |
@@ -649,7 +648,7 @@ caption (`useWindowControls().onCaptionMouseDown`).
 | Lyrics (not a centre mode) | over the art by themselves, at its foot just above the mode row (plain ones a four-line window), in every mode, whenever `lyricsShown(s)` (`settings.lyrics` on and the track has some); no centre press (the owner's ruling, 2026-10-02: the nano's mode 6 went unfound). `useLyrics()` (synced: the current line, next line dimmed, karaoke per `settings.karaoke`) or `usePlainLyrics()` plus `useLyricScroll` (scrolled by position, never by touch: a tap on them is the art's tap, Canvas -> cover -> visualizer; the ⋯ stays over them). The centre cycles progress -> scrubber -> Radio only |
 | **Hold centre popup** | **Start Radio** · **Add to Playlist…** (a list of `useAddTo(uri).playlistMenu().sub` entries with checkmarks; centre toggles membership through `addTo`) · **Like / Unlike** (`toggle`) · **Browse Album** (push the album page for `track.albumUri`) · **Browse Artist** (`track.artistUris[0]`, then `useArtist`: top tracks, then albums) · **Play On…** (`useDevices`; centre calls `transfer(id)`; `AirPlay…` last where `alchemyRoutePicker` exists) · **Visualizer…** · **Lyrics** · **Karaoke** · Cancel. The ⋯ over the cover's corner opens the same Play On…, Visualizer…, Lyrics, Karaoke |
 | **Playing on another device** | when the active device is neither this page's player (`devices.self`) nor the iPhone's own speaker (`window.__wmpSpeaker.id`): a loud-speaker glyph and the device's name in Spotify's green (#1ED760, read on the dark band and its shade over the Canvas or the visualizer) on the "N of M" line, after it when both show; a tap opens Play On…. Nothing while it plays here (`useDevices().elsewhere` counts the speaker as elsewhere, so Now Playing checks the speaker itself) |
-| **Cover Bars** (Visualizer…'s first row) | the skin's own mode, `'cover-bars'` in `ipod.visualizer`: the cover as in cover mode with Bars and Waves' **Bars** preset over it (applied and restored as any preset; Fit / Stretch as for any). The engine's canvas draws unseen (opacity 0, so it keeps its layout and its frames); it is claimed for the engine's own 2D path before the ticker attaches, since its WebGL2 canvas (`preserveDrawingBuffer: false`) reads back empty once composited. Every animation frame a canvas of ours over the cover copies it (`drawImage` into a buffer of its size, at most 480 wide, so each 5-pixel bar stays whole), maps each pixel to the accent with alpha = its brightest channel x 1.25 (`accent.ts tint`: black transparent, a lit bar opaque) and is scaled to the cover by CSS, `image-rendering: pixelated`; the loop lives and dies with the visualizer's canvas (off screen, a hidden page, another choice: gone). No filters: an SVG `feColorMatrix` on the canvas was not applied in iOS's WKWebView (2026-10-02, the owner's screenshot: green bars on black). The accent: the cover fetched again (`fetch(url, { mode: 'cors', cache: 'no-store' })`, a blob URL handed to node-vibrant: WebKit may serve a `crossOrigin` image its cached non-CORS copy and taint the canvas), node-vibrant's palette (Android's Palette method) of a 100 px copy, the first of Vibrant, LightVibrant, DarkVibrant, LightMuted, DarkMuted at WCAG 3:1 or more against the dominant swatch, else white or black (`nowplaying/accent.ts`); white until known or when the pixels cannot be had. The host's log gets one line per cover: `ipod: cover bars accent #rrggbb (Vibrant)` or `... #ffffff (cover not readable: <error>)`. No cover: the plain Bars |
+| **Over Cover** (Visualizer…'s first row, On / Off; `ipod.visOverCover`, Off at first) | with a cover, the cover shows as in cover mode and the chosen visualization (any engine and preset; applied and restored as ever, Fit / Stretch as ever) draws over it through the engine's own **'luma' output** (ARCHITECTURE.md "Engine": alpha from each pixel's brightest channel × 1.25, black clear; set through `vis.alpha` / `vis.tint` while it shows, opaque again after). Bars and Waves' presets are painted in the cover's **accent** (`vis.tint`: the owner's Cover Bars); Alchemy and Battery keep their own colours. No cover, or Off: the visualization opaque over the whole area, as before. A stored `ipod.visualizer: 'cover-bars'` (2026-10-02's first Cover Bars) reads as Bars with Over Cover on. The accent: the cover fetched again (`fetch(url, { mode: 'cors', cache: 'no-store' })`, a blob URL handed to node-vibrant: WebKit may serve a `crossOrigin` image its cached non-CORS copy and taint the canvas), node-vibrant's palette (Android's Palette method) of a 100 px copy, the first of Vibrant, LightVibrant, DarkVibrant, LightMuted, DarkMuted at WCAG 3:1 or more against the dominant swatch, else white or black (`nowplaying/accent.ts`); white until known or when the pixels cannot be had. The host's log gets one line per cover: `ipod: over cover accent #rrggbb (Vibrant)` or `... #ffffff (cover not readable: <error>)`. (History: an SVG `feColorMatrix` filter was not applied in iOS's WKWebView; a per-frame copy into a canvas of the skin's own came next; both are gone.) |
 | Repeat glyph | `playback.repeat`: context = repeat, track = repeat-one |
 
 ### 4.4 Where the Spotify-only things live
@@ -666,9 +665,9 @@ caption (`useWindowControls().onCaptionMouseDown`).
 | **Skin switch** | **Settings > Skin** (under Appearance): "iPod ✓" / "Windows Media Player 9" sets `actions.setSettings({ skin: 'wmp9' })`. WMP 9's way here is its View > Skin submenu (already in `src/skins/menus.ts`) |
 | **Colour** | **Settings > Color** (under Appearance): the nine names (§1.2) plus **Custom** (a page with a hue strip; the wheel turns `--h` 5° per detent with a live preview; centre saves). Plus **Click Wheel**: White / Black ring |
 | **Shuffle / Repeat** | the Now Playing status row's toggles only (not in Settings) |
-| **Visualizer** | Now Playing's ⋯ menu and hold-centre popup: **Visualizer…**, Cover Bars (§4.3) then the engines, then an engine's presets (not in Settings). **Settings > Visualizer Fit** (under Appearance): Fit / Stretch |
+| **Visualizer** | Now Playing's ⋯ menu and hold-centre popup: **Visualizer…**, Over Cover (§4.3) then the engines, then an engine's presets (not in Settings). **Settings > Visualizer Fit** (under Appearance): Fit / Stretch |
 | **Shake** (iPhone only) | **Settings > Shake** (under Playback): Shuffle / Off. On `wmp-shake`, `commands.next()` (with shuffle on, Spotify's next is random; the iPod's shake also leaves the shuffle setting alone [UG p.43]) |
-| **Brightness, backlight, date and time** | not the skin's (the owner's ruling, 2026-10-02: "we are not the OS"): the device's own. The clocks follow the device's 12 / 24 hours (the platform's locale default, `logic.ts h24`, `ui.tsx useTime`) |
+| **Brightness, backlight, date and time** | not the skin's (the owner's ruling, 2026-10-02: "we are not the OS"): the device's own. The status row's clock follows the device's 12 / 24 hours (the platform's locale default, `ui.tsx useTime`) |
 | **Battery** in the status bar | iPhone: `window.__wmpBattery` / `wmp-battery` (`useHostGlobal`). Windows / Chromium: `navigator.getBattery()` when present. Otherwise draw it full |
 | **About** | Songs = `useCollection(LIKED).total`; Playlists and Albums = `useLibraryList` counts; Version = `__wmpHost.version (build)` on iPhone; Playing On = the active device; **Check for Updates** = `commands.checkForUpdates()` answered in a 1-row page |
 
@@ -694,7 +693,7 @@ and Volume Limit (stretch: a skin-local cap on `setVolume`).
 
 - Main Menu checklist plus Preview Panel, and the Music Menu checklist
 - Clicker, Shake, Time in Title
-- Color, Click Wheel, Sleep Timer
+- Color, Click Wheel
 - Reset Settings (resets `ipod.settings` only, never the app's)
 
 ### 4.5 Must-nots
@@ -768,8 +767,8 @@ Checked against the files as they stood while this was written (2026-09-30).
 10. **Cover Flow placement.** A Music-menu page in portrait (this spec), or real landscape on
     rotation (needs `alchemyOrientation('any')` while it shows).
 11. **Album order.** A–Z (the iPod's) or Spotify's recents order.
-12. **Extras scope for v1.** Clocks, Stopwatch, Calendars, Screen Lock, Notes and Sleep Timer
-    (proposed); Games and Create Alarm later.
+12. **Extras scope for v1.** Decided (the owner's ruling, 2026-10-02): none; Extras is not
+    implemented.
 
 ---
 

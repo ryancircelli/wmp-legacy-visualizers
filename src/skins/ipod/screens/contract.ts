@@ -137,9 +137,6 @@ export interface Screens {
   fmRadio(): ScreenEntry;
   /** Home: Spotify Home's shelves of tiles on one page, each with See all (its items as a screen) */
   home(): ScreenEntry;
-  // group settings/ (Settings and Extras; the 5G's Extras: Alarms, Calendars, Clocks, Contacts,
-  // Fitness, Games, Notes, Screen Lock, Stopwatch, Voice Memos (§2.3))
-  settings(): ScreenEntry; extras(): ScreenEntry;
-  /** Extras > Alarms: a sleep timer and an alarm that plays (§6 item 12) */
-  alarms(): ScreenEntry;
+  // group settings/
+  settings(): ScreenEntry;
 }

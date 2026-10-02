@@ -92,6 +92,10 @@ export interface AppState {
     hold: boolean;
     /** the audio producer: one TimedLevel per call, filled in place */
     level: (() => TimedLevel) | null;
+    /** the engine's output (EngineOptions alpha / tint): 'opaque' unless a skin asks for 'luma' while it
+     *  shows the visualizer over something (the iPod's Over Cover); not a setting, never saved */
+    alpha: 'opaque' | 'luma';
+    tint: readonly [number, number, number] | null;
   };
   commands: Commands;
   actions: Actions;
@@ -193,7 +197,7 @@ export function createAppStore(opts: { settings?: Settings; persist?: boolean } 
       lyrics: { status: 'none', lines: null, plain: null, track: null, source: null },
       ui: { view: 'now', fullscreen: false, bare: false, dialog: null, menu: null, status: '', libNode: null, libSel: null, searchQ: '', searchOnly: null },
       settings,
-      vis: { kind: settings.vis, preset: settings.preset, hold: false, level: null },
+      vis: { kind: settings.vis, preset: settings.preset, hold: false, level: null, alpha: 'opaque', tint: null },
       commands: noCommands,
       actions,
     };

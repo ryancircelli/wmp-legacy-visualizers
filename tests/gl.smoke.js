@@ -5,7 +5,8 @@
 // 34 for a B-spline and 18 for Catmull-Rom), Battery nearest. Battery is drawn from its 8-bit frame
 // and palette (drawIndexed) until something reads px: that draw must be the one of px expanded on
 // the CPU, pixel for pixel, on the same frame and on frames through a palette fade. ?gl=1: headless
-// WebGL is software, which the page otherwise declines.
+// WebGL is software, which the page otherwise declines. Then the 'luma' output (alpha from brightness,
+// a tint) on a known colour, and 'opaque' after it as before.
 import { createRequire } from 'module';
 import { fileURLToPath } from 'url';
 const require = createRequire(import.meta.url);
@@ -49,6 +50,15 @@ for (const [vis, preset, limit] of [['bars', 0, { max: 0 }], ['alchemy', 0, { ma
     // channel order: one known colour through the GPU path
     s.px.fill(0x123456); e.present();
     const one = new Uint8Array(4); gl.readPixels(W >> 1, H >> 1, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, one);
+    // the 'luma' output: alpha from the brightest channel x 1.25, premultiplied; a tint paints the
+    // colour; then 'opaque' again, as it was
+    const at = (v) => { s.px.fill(v); e.present(); const q = new Uint8Array(4); gl.readPixels(W >> 1, H >> 1, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, q); return [...q]; };
+    e.options.alpha = 'luma';
+    const luma = { black: at(0), green: at(0xa4eb0c), dim: at(0x281e0a) };
+    e.options.tint = [230, 40, 40];
+    Object.assign(luma, { tinted: at(0xa4eb0c), tintedDim: at(0x281e0a), tintedBlack: at(0) });
+    e.options.alpha = 'opaque'; e.options.tint = null;
+    luma.back = at(0x123456);
     // Battery through a palette fade: each frame from its indices, then the same frame from px
     const fade = [];
     if (indexed) {
@@ -62,7 +72,7 @@ for (const [vis, preset, limit] of [['bars', 0, { max: 0 }], ['alchemy', 0, { ma
         prev = pal;
       }
     }
-    return { present: e.debug().present, max, share: over / (W * H * 3), one: [...one], indexed, cpu, fade };
+    return { present: e.debug().present, max, share: over / (W * H * 3), one: [...one], indexed, cpu, fade, luma };
   });
   assert.strictEqual(r.present, 'webgl2', vis + ': not on the WebGL2 path');
   assert.strictEqual(r.indexed, vis === 'battery', vis + ': drawn from indices ' + r.indexed);
@@ -76,6 +86,10 @@ for (const [vis, preset, limit] of [['bars', 0, { max: 0 }], ['alchemy', 0, { ma
     console.log(`  battery: GPU palette = CPU px on the frame and 4 fade frames (${r.fade.map((f) => f.at).join(', ')})`);
   }
   assert.deepStrictEqual(r.one, [0x12, 0x34, 0x56, 255], vis + ': channel order ' + r.one);
+  const near = (a, b) => a.length === b.length && a.every((v, i) => Math.abs(v - b[i]) <= 1);
+  const L = r.luma, want = { black: [0, 0, 0, 0], green: [164, 235, 12, 255], dim: [40, 30, 10, 50], tinted: [230, 40, 40, 255],
+                            tintedDim: [45, 8, 8, 50], tintedBlack: [0, 0, 0, 0], back: [0x12, 0x34, 0x56, 255] };
+  for (const k of Object.keys(want)) assert(near(L[k], want[k]), `${vis}: luma ${k} ${L[k]}, not ${want[k]}`);
   if ('max' in limit) assert(r.max <= limit.max, `${vis}: max difference ${r.max} > ${limit.max}`);
   // Battery: headless Skia steps columns in fixed point and takes the lower texel at a few exact ties
   if ('share' in limit) assert(r.share <= limit.share, `${vis}: ${(r.share * 100).toFixed(2)}% of channels differ`);

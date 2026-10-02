@@ -1,10 +1,9 @@
-// The Settings and Extras screens' own preferences, each a localStorage 'ipod.*' key read through one
+// The Settings screens' own preferences, each a localStorage 'ipod.*' key read through one
 // external store, so every reader (the chrome's status row and main menu included) re-renders on a
 // change. Storage that throws (blocked) falls back to memory for the session.
-import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
+import { useEffect, useMemo, useSyncExternalStore } from 'react';
 import { useShell } from '../../../../ui';
 import type { MenuItem } from '../contract';
-import { msUntil, STOPWATCH0, type Stopwatch, type StopwatchLog } from './logic';
 
 const subs = new Set<() => void>();
 const mem = new Map<string, string>();
@@ -56,11 +55,11 @@ export function resetPrefs(): void {
 /** The rows Settings > Menus > Main Menu turns on and off, in the chrome's order, by its row id
  *  (src/skins/ipod/menus.tsx: the label in lower case without spaces), and Library Filters' chips. */
 const rows = (labels: string[]) => labels.map((l) => [l.toLowerCase().replace(/\s+/g, ''), l] as const);
-export const MAIN_MENU = rows(['Home', 'Search', 'Library', 'Radio', 'Extras']);
+export const MAIN_MENU = rows(['Home', 'Search', 'Library', 'Radio']);
 /** the Library's filter chips (stored under `music`, the Library menu's old name) */
 export const LIBRARY_FILTERS = rows(['Playlists', 'Albums', 'Artists', 'Podcasts']);
-/** Off until turned on: Extras, Podcasts (the adapter lists no shows yet). */
-const OFF = new Set(['extras', 'podcasts']);
+/** Off until turned on: Podcasts (the adapter lists no shows yet). */
+const OFF = new Set(['podcasts']);
 /** 'ipod.menus': which main-menu rows and Library chips show, by id (MAIN_MENU, LIBRARY_FILTERS), and
  *  Every listed id is present; an id not
  *  listed (Settings, Now Playing) is undefined: show it. Only the user's own choices are stored; a
@@ -96,36 +95,46 @@ export const useShake = () => usePref('ipod.shake', true);
 export type VisFit = 'fit' | 'stretch';
 export const useVisFit = () => usePref<VisFit>('ipod.visFit', 'fit');
 /** 'ipod.visualizer': the visualization Now Playing shows, a registry entry's (shell presets) visId,
- *  or COVER_BARS; Bars and Waves' Bars until another is chosen; applied onto the shared settings.vis /
- *  preset only while it shows, as visFit is, so the WMP 9 skin's own choice is untouched. */
+ *  Bars and Waves' Bars until another is chosen; applied onto the shared settings.vis / preset only
+ *  while it shows, as visFit is, so the WMP 9 skin's own choice is untouched. */
 export const visId = (p: { vis: string; preset: number }) => p.vis + ':' + p.preset;
 export const useVisualizer = () => usePref('ipod.visualizer', 'bars:0');
-/** Cover Bars: the skin's own mode, not a preset: Bars and Waves' Bars over the cover, in its accent */
-const COVER_BARS = 'cover-bars';
-/** The visualizations for Now Playing's Visualizer… (its ⋯ and hold menus): `engines(open)` is Cover
- *  Bars, then the registry's engines (Alchemy, Bars and Waves, Battery), the one holding the choice
- *  showing its name, each `open`ing its `presets(group)`, the choice checked; an engine of one preset
- *  (Alchemy's Random) is picked at its own row. A pick sets the pref, then `then`. `cover`: Cover Bars
- *  is the choice; `preset`: the visId of the engine preset in effect (Cover Bars: Bars). */
+/** 'ipod.visOverCover': Visualizer… > Over Cover: with a cover, it shows and the visualization draws
+ *  over it, clear where it is dark (the engine's 'luma' output; Bars and Waves in the cover's accent) */
+export const useVisOverCover = () => usePref('ipod.visOverCover', false);
+/** Cover Bars was a value of 'ipod.visualizer' of its own (2026-10-02): it is Bars over the cover now */
+export function migrateVisPrefs(): void {
+  if (readPref<string>('ipod.visualizer', 'bars:0') !== 'cover-bars') return;   // readPref caches by key: the hook's own default
+  writePref('ipod.visualizer', 'bars:0');
+  writePref('ipod.visOverCover', true);
+}
+migrateVisPrefs();
+/** The visualizations for Now Playing's Visualizer… (its ⋯ and hold menus): `engines(open)` is the Over
+ *  Cover toggle, then the registry's engines (Alchemy, Bars and Waves, Battery), the one holding the
+ *  choice showing its name, each `open`ing its `presets(group)`, the choice checked; an engine of one
+ *  preset (Alchemy's Random) is picked at its own row. A pick or the toggle sets its pref, then `then`.
+ *  `preset`: the choice; `over`: Over Cover is on. */
 export function useVisualizers(then?: () => void) {
-  const sh = useShell(), [cur, set] = useVisualizer(), chosen = sh.presets.find((p) => visId(p) === cur);
+  const sh = useShell(), [cur, set] = useVisualizer(), [over, setOver] = useVisOverCover(), chosen = sh.presets.find((p) => visId(p) === cur);
   const of = (g: string) => sh.presets.filter((p) => p.group === g);
   const pick = (id: string, label: string): MenuItem => ({ id, label, right: id === cur ? '✓' : undefined, onSelect: () => { set(id); then?.(); } });
   return {
-    cover: cur === COVER_BARS,
-    preset: cur === COVER_BARS ? 'bars:0' : cur,
+    preset: cur,
+    over,
     presets: (g: string) => of(g).map((p) => pick(visId(p), p.name)),
-    engines: (open: (g: string) => void): MenuItem[] => [pick(COVER_BARS, 'Cover Bars'), ...[...new Set(sh.presets.map((p) => p.group))].map((g) => {
-      const ps = of(g);
-      return ps.length === 1 ? pick(visId(ps[0]!), g)
-        : { id: g, label: g, right: chosen?.group === g ? chosen.name : undefined, chevron: true, onSelect: () => open(g) };
-    })],
+    engines: (open: (g: string) => void): MenuItem[] => [
+      { id: 'over', label: 'Over Cover', right: over ? 'On' : 'Off', onSelect: () => { setOver(!over); then?.(); } },
+      ...[...new Set(sh.presets.map((p) => p.group))].map((g) => {
+        const ps = of(g);
+        return ps.length === 1 ? pick(visId(ps[0]!), g)
+          : { id: g, label: g, right: chosen?.group === g ? chosen.name : undefined, chevron: true, onSelect: () => open(g) };
+      })],
   };
 }
 
 // ---- Time in Title ---------------------------------------------------------------------------------
 /** 'ipod.clock': Appearance > Time in Title (the status row over the menus shows the time instead of
- *  the screen's title). The clock's 12 / 24 hours are the device's (logic.ts h24); an old stored
+ *  the screen's title). The clock's 12 / 24 hours are the device's (ui.tsx useTime); an old stored
  *  twentyFourHour is ignored, and dropped at the next write. */
 export interface ClockPrefs { timeInTitle: boolean }
 export const CLOCK0: ClockPrefs = { timeInTitle: false };
@@ -135,33 +144,16 @@ export const useClockPrefs = (): ClockPrefs => usePref('ipod.clock', CLOCK0)[0];
 /** 'ipod.volumeLimit': 0..100, 100 = no limit. */
 export const useVolumeLimitPref = () => usePref('ipod.volumeLimit', 100);
 
-// ---- Extras ----------------------------------------------------------------------------------------
-/** 'ipod.clocks': the world clocks' IANA zones, '' = this device's */
-export const useClocks = () => usePref<string[]>('ipod.clocks', ['']);
-export const useStopwatch = () => usePref<Stopwatch>('ipod.stopwatch', STOPWATCH0);
-/** 'ipod.stopwatch.logs': Stopwatch's finished timers, newest first */
-export const useStopwatchLogs = () => usePref<StopwatchLog[]>('ipod.stopwatch.logs', []);
-/** 'ipod.lock': the Screen Lock combination, four digits; '' = none set yet */
-export const useLockCode = () => usePref('ipod.lock', '');
+// ---- Theme -----------------------------------------------------------------------------------------
 /** 'ipod.appearance': what Settings' Theme last asked the host for */
 export const useAppearance = () => usePref<'light' | 'dark' | 'auto'>('ipod.appearance', 'auto');
-/** 'ipod.sleep': Alarms > Sleep Timer, for the chrome's moon too: `at` the Date.now() it pauses at
- *  (null = off), `mins` the choice */
-export interface SleepTimer { at: number | null; mins: number }
-export const SLEEP0: SleepTimer = { at: null, mins: 0 };
-export const useSleepTimer = () => usePref('ipod.sleep', SLEEP0);
-/** 'ipod.alarm': Alarms > Alarm: plays (commands.play) every day at h:mm while on */
-export interface Alarm { on: boolean; h: number; m: number }
-export const useAlarm = () => usePref<Alarm>('ipod.alarm', { on: false, h: 7, m: 0 });
 
 // ---- what runs everywhere ------------------------------------------------------------------------------
 /** Mount once, in the chrome's Root: Volume Limit holds the Spotify player's volume (settings.volume)
  *  at or under it (the local engine's volume is capture sensitivity, never limited); Shake skips on
- *  the iPhone's 'wmp-shake'; the sleep timer pauses when it runs out and the alarm plays when it is
- *  time, whichever screen shows (both only while the page runs). */
+ *  the iPhone's 'wmp-shake'. */
 export function useSettingsEffects(): void {
-  const store = useShell().store, [limit] = useVolumeLimitPref(), [shake] = useShake(), [sleep] = useSleepTimer(), [alarm] = useAlarm();
-  const [rang, setRang] = useState(0);
+  const store = useShell().store, [limit] = useVolumeLimitPref(), [shake] = useShake();
   useEffect(() => store.subscribe((s) => s.auth.engine === 'spotify' && s.settings.volume > limit,
     (over) => { if (over) store.getState().actions.setSettings({ volume: limit }); }, { fireImmediately: true }), [store, limit]);
   useEffect(() => {
@@ -170,17 +162,6 @@ export function useSettingsEffects(): void {
     window.addEventListener('wmp-shake', next);
     return () => window.removeEventListener('wmp-shake', next);
   }, [store, shake]);
-  useEffect(() => {
-    if (sleep.at == null) return;
-    const t = setTimeout(() => { void store.getState().commands.pause(); writePref('ipod.sleep', SLEEP0); }, Math.max(0, sleep.at - Date.now()));
-    return () => clearTimeout(t);
-  }, [store, sleep.at]);
-  useEffect(() => {
-    if (!alarm.on) return;
-    // `rang` re-arms it for tomorrow
-    const t = setTimeout(() => { void store.getState().commands.play(); setRang((n) => n + 1); }, msUntil(alarm.h, alarm.m, Date.now()));
-    return () => clearTimeout(t);
-  }, [store, alarm.on, alarm.h, alarm.m, rang]);
 }
 /** The name Root mounts it by (it began as Volume Limit alone). */
 export const useVolumeLimit = useSettingsEffects;

@@ -25,7 +25,15 @@ export interface EngineOptions {
   intended: boolean;
   fps: number;
   backgroundColor: number;
+  /** the output step only (the visualizers never read them): 'opaque' (the default) presents the
+   *  surface as it is; 'luma' gives each pixel an alpha from its brightness (blitLuma), so black is
+   *  clear and whatever is under the canvas shows through */
+  alpha?: OutputAlpha;
+  /** 'luma' only: each pixel painted this colour (0..255 each), the surface used as a mask */
+  tint?: Tint | null;
 }
+export type OutputAlpha = 'opaque' | 'luma';
+export type Tint = readonly [number, number, number];
 
 export interface CreateEngineOptions {
   preset?: number;
@@ -120,6 +128,24 @@ const LITTLE_ENDIAN = (function () {
   return new Uint8Array(b)[0] === 1;
 })();
 
+/** 'luma''s alpha: a pixel's brightest channel times this, so a lit pixel (one channel at 204 or
+ *  more: Bars and Waves' green at 235, a white peak) is opaque and black is clear. gl.ts's shader has the same. */
+export const LUMA_GAIN = 1.25;
+
+/** The 'luma' output (RGBA bytes, unpremultiplied as ImageData is): alpha the brightest channel times
+ *  LUMA_GAIN, colour the tint, or else the pixel's own at that alpha's strength (c / a: what the
+ *  WebGL path's premultiplied (c, a) composites to). */
+export function blitLuma(px: Uint32Array, out: Uint8ClampedArray, tint?: Tint | null): void {
+  for (let i = 0, j = 0; i < px.length; i++, j += 4) {
+    const p = px[i], r = (p >>> 16) & 0xff, g = (p >>> 8) & 0xff, b = p & 0xff;
+    const a = Math.min(255, Math.round(Math.max(r, g, b) * LUMA_GAIN));
+    if (tint) { out[j] = tint[0]; out[j + 1] = tint[1]; out[j + 2] = tint[2]; }
+    else if (a) { out[j] = (r * 255) / a; out[j + 1] = (g * 255) / a; out[j + 2] = (b * 255) / a; }
+    else out[j] = out[j + 1] = out[j + 2] = 0;
+    out[j + 3] = a;
+  }
+}
+
 export function blit(px: Uint32Array, out32: Uint32Array): void {
   let i, p;
   const n = px.length;
@@ -155,7 +181,7 @@ function makeBuffer(): { canvas: CanvasLike; ctx: Ctx2D | null } {
  * `resize()` sets that backing size from the view (clientWidth/clientHeight by default).
  */
 export function createEngine(kind: VisKind, canvas: CanvasLike, opts: CreateEngineOptions = {}): VisEngine {
-  const options: EngineOptions = { intended: false, fps: 60, backgroundColor: 0x000000, ...opts.options };
+  const options: EngineOptions = { intended: false, fps: 60, backgroundColor: 0x000000, alpha: 'opaque', tint: null, ...opts.options };
   const max = presetMax(kind);
   const clampPreset = (n: number) => Math.min(max, Math.max(0, n | 0));
   const raw = makeRaw(kind, clampPreset(opts.preset ?? 0), options);
@@ -191,13 +217,23 @@ export function createEngine(kind: VisKind, canvas: CanvasLike, opts: CreateEngi
     present() {
       const s = last;
       if (!s || s.w !== bw || s.h !== bh) return;
+      const luma = raw.options.alpha === 'luma', tint = luma ? raw.options.tint ?? null : null;
       if (gl) {
+        gl.output(luma, tint);
         // Battery's palette lookup on the GPU while nothing has read (and so built) px
         if (s.idx && s.pal) gl.drawIndexed(s.idx, s.pal, bw, bh);
         else gl.draw(s.px, bw, bh, sampling);
         return;
       }
       if (!img || !img32 || !buf.ctx || !buf.canvas || !view) return;
+      if (luma) {
+        // the last frame would show through the clear pixels: the canvas is cleared first
+        blitLuma(s.px, img.data, tint);
+        buf.ctx.putImageData(img, 0, 0);
+        view.clearRect(0, 0, canvas.width, canvas.height);
+        view.drawImage(buf.canvas, 0, 0, canvas.width, canvas.height);
+        return;
+      }
       blit(s.px, img32);
       buf.ctx.putImageData(img, 0, 0);
       view.drawImage(buf.canvas, 0, 0, canvas.width, canvas.height);

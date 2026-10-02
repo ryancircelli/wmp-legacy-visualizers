@@ -8,7 +8,8 @@ concatenates them into `alchemy.html` in the order listed in `src/ORDER.txt`.
 - `TimedLevel`: `{ freq: [Uint8Array(1024), Uint8Array(1024)], wave: [Uint8Array(1024), Uint8Array(1024)], state: 0|1|2, timeStamp: number }`
   (state 2 = playing, same as WMP). Waveform bytes centred on 128. Frequency bytes 0..255.
 - `Surface`: `{ w, h, px: Uint32Array(w*h) }` — 0x00RRGGBB little-endian *as the DLL stores it*:
-  `px[i] = (r<<16)|(g<<8)|b`, alpha byte 0. (Conversion to canvas RGBA happens only in the shell.)
+  `px[i] = (r<<16)|(g<<8)|b`, alpha byte 0. (Conversion to canvas RGBA happens only in the shell: opaque, or with
+  `options.alpha: 'luma'` an alpha from each pixel's brightest channel and optionally `options.tint`; ARCHITECTURE.md "Engine".)
 - `Rand`: MSVC CRT LCG. `Alchemy.rand()` returns 0..32767: `seed = (seed*214013 + 2531011)|0; return (seed>>>16)&0x7fff`.
   `Alchemy.srand(s)`. Every effect uses these, never `Math.random`.
 

@@ -55,7 +55,7 @@ it('arrows move the selection, Enter opens Library, Escape comes back; a tick th
   expect(m.sel()).toEqual(['Library']);
 });
 
-it('Spotify\'s menus in the nano\'s look: Extras hidden, no Now Playing row (the bar opens it); the Library\'s chips without Podcasts', async () => {
+it('Spotify\'s menus in the nano\'s look: no Extras, no Now Playing row (the bar opens it); the Library\'s chips without Podcasts', async () => {
   const m = mount();
   expect(m.rows()).toEqual(['Home', 'Search', 'Library', 'Radio', 'Settings']);
   act(() => { m.store.setState((s) => ({ playback: { ...s.playback, track: { uri: 'spotify:track:a', title: 'T', artist: 'A', duration: 1 } } })); });
@@ -526,7 +526,7 @@ it('the ⋯ over the cover opens this page\'s options: Lyrics and Karaoke toggle
   open();
   expect([m.S().settings.karaoke, rows()]).toEqual([false, ['Play On…', 'Visualizer…', 'LyricsOff', 'KaraokeOff', 'Cancel']]);
   pick('Visualizer…');                               // the engines, then (a second popup) an engine's presets
-  expect(rows()).toEqual(['Cover Bars', 'Alchemy', 'Bars and WavesBars', 'Battery']);
+  expect(rows()).toEqual(['Over CoverOff', 'Alchemy', 'Bars and WavesBars', 'Battery']);
   pick('Bars and WavesBars');
   expect(rows()).toEqual(['Bars✓', 'Ocean Mist', 'Fire Storm', 'Scope']);
   expect(np.querySelector('canvas')).toBeNull();     // the cover (no Canvas) until one is picked
@@ -535,7 +535,7 @@ it('the ⋯ over the cover opens this page\'s options: Lyrics and Karaoke toggle
     .toEqual(['"bars:2"', true, 'bars', 2, []]);
   open();
   pick('Visualizer…');
-  expect(rows()).toEqual(['Cover Bars', 'Alchemy', 'Bars and WavesFire Storm', 'Battery']);
+  expect(rows()).toEqual(['Over CoverOff', 'Alchemy', 'Bars and WavesFire Storm', 'Battery']);
   pick('Alchemy');                                   // its one preset: picked at its row
   expect([localStorage.getItem('ipod.visualizer'), m.S().vis.kind, rows()]).toEqual(['"alchemy:0"', 'alchemy', []]);
   act(() => { fireEvent.click(np.querySelector('[class*=tap]')!); });   // back to the Canvas for the tests after

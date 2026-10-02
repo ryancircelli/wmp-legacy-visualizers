@@ -50,7 +50,7 @@ export function createTicker(store: AppStore, onFirstFrame: () => void): Ticker 
     if (!canvas) return;
     const s = store.getState();
     eng = createEngine(s.vis.kind, canvas, { preset: s.vis.preset, scale: S().scale,
-      options: { intended: S().intended, fps: S().fps, backgroundColor: S().bg } });
+      options: { intended: S().intended, fps: S().fps, backgroundColor: S().bg, alpha: s.vis.alpha, tint: s.vis.tint } });
   }
 
   function frame(now: number) {
@@ -104,6 +104,8 @@ export function createTicker(store: AppStore, onFirstFrame: () => void): Ticker 
         store.subscribe((s) => s.settings.intended, (v) => { if (eng) eng.options.intended = v; }),
         store.subscribe((s) => s.settings.bg, (v) => { if (eng) eng.options.backgroundColor = v; }),
         store.subscribe((s) => s.settings.fps, (v) => { if (eng) eng.options.fps = v; acc = 0; }),
+        store.subscribe((s) => s.vis.alpha, (v) => { if (eng) eng.options.alpha = v; }),
+        store.subscribe((s) => s.vis.tint, (v) => { if (eng) eng.options.tint = v; }),
       ];
       // One observer covers window resizes, full screen and the task pane collapsing.
       let tm = 0;

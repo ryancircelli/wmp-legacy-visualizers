@@ -73,6 +73,13 @@ load the TS through tsx) and reproduce docs/EXACTNESS.md on a sample: Alchemy 3 
 0–3 at 3 000, Battery presets 0, 1, 9, 20 at 3 000 — identical, before the old files are deleted. (The full 30 000 pass
 is re-run once at the end by the lead.)
 
+The output step (index.ts present / blit, gl.ts's shader) is the only place a surface becomes canvas pixels, and it has
+one option of its own: `options.alpha` 'opaque' (the default: alpha 255, byte for byte what it always was) or 'luma'
+(alpha = the brightest channel × 1.25, black clear; premultiplied in WebGL2, unpremultiplied ImageData in 2D), with
+`options.tint` [r,g,b] painting every pixel that colour (the surface a mask). The WebGL2 context has an alpha channel
+for every canvas so the two switch at run time; the visualizers never read either. The app sets them from `vis.alpha` /
+`vis.tint` (ticker.ts), which only a skin showing the visualizer over something asks for (the iPod's Over Cover).
+
 ## Store (zustand) — the one state the skins read
 auth { loggedIn, engine: 'spotify'|'local' } · playback { status, track{uri,title,artist,album,art,duration}, position
 (ms at `at` timestamp), paused, shuffle, repeat: 'off'|'context'|'track', volume 0..100, muted, canSeek/Next/Prev,
@@ -80,7 +87,7 @@ context{uri,kind,name}, from: string } · queue { next: Track[] } · library { p
 { tracks, total, name, loading }> } · home { greeting, sections } · radio { stations } · devices { list } · lyrics { status,
 lines, plain, enabled } · ui { view: 'now'|'library'|'guide'|'radio'|'devices', taskPane, playlistPane, fullscreen,
 bare, dialog, menu } · settings (persisted) { vis, preset, fps, animate, lyrics, volume, muted, skin, clockMode, … } ·
-vis { kind, preset, hold }
+vis { kind, preset, hold, alpha, tint } (alpha / tint: the engine's output, not saved)
 Adapters write the store through actions; skins subscribe with selectors; commands are a `Commands` object on the
 store (`useStore.getState().commands`). Position extrapolation is a selector helper (`positionNow(state)`), never a
 1 Hz setState.

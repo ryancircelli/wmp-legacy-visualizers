@@ -1,15 +1,14 @@
-// What the Settings and Extras pages share: nano-pixel metrics and colours, the screen-entry
-// helpers, the red confirm list, a text page the wheel scrolls, a bar page the wheel sets, and the
-// clock tick.
-import { useEffect, useRef, useState, type FC, type ReactNode } from 'react';
+// What the Settings pages share: nano-pixel metrics and colours, the screen-entry helpers, the red
+// confirm list, a text page the wheel scrolls and a bar page the wheel sets.
+import { useRef, useState, type FC, type ReactNode } from 'react';
 import { Bar, MenuScreen, useNav, useWheel } from '../../ui';
 import type { MenuItem, Nav, ScreenEntry } from '../contract';
 
 /** n nano pixels */
 export const u = (n: number) => `calc(var(--unit) * ${n})`;
 // the chrome's colours (ipod.module.css), the spec's values behind them (docs/ipod-skin.md §2.2)
-export const TEXT = 'var(--ipod-text, #000)', DIM = 'var(--ipod-dim, #8e8e93)', BLUE = 'var(--ipod-blue, #3e94e1)';
-export const SEL_BG = 'var(--ipod-sel-bg, linear-gradient(180deg, #4ea0dc 0%, #4690d4 40%, #3f7fcd 70%, #336ac7 100%))';
+export const TEXT = 'var(--ipod-text, #000)', DIM = 'var(--ipod-dim, #8e8e93)';
+const SEL_BG = 'var(--ipod-sel-bg, linear-gradient(180deg, #4ea0dc 0%, #4690d4 40%, #3f7fcd 70%, #336ac7 100%))';
 const ROW = `var(--ipod-row-h, ${u(29.67)})`;
 export const check = (on: boolean) => (on ? '✓' : undefined);
 export const onOff = (on: boolean) => (on ? 'On' : 'Off');
@@ -19,9 +18,6 @@ export const page = (key: string, title: string, C: FC): ScreenEntry => ({ key, 
 /** A plain list. */
 export const menu = (key: string, title: string, items: (nav: Nav) => MenuItem[]): ScreenEntry =>
   ({ key, title, render: (nav) => <MenuScreen items={items(nav)} /> });
-/** The iPod's "No Contacts" page. */
-export const nothing = (key: string, title: string, text: string): ScreenEntry =>
-  ({ key, title, render: () => <MenuScreen items={[]} empty={text} /> });
 
 /** Reset Settings / Log Out (§2.4 Settings pages): the act, then Cancel, the act's selection bar red
  *  (reconstructed). It opens on Cancel, so a double press never acts. */
@@ -70,15 +66,4 @@ export function BarPage({ value, onTick, caption, lo, hi }: {
       <div style={{ display: 'flex', alignItems: 'center', gap: u(6) }}>{lo}<div style={{ flex: 1 }}><Bar value={value} /></div>{hi}</div>
     </div>
   );
-}
-
-/** Date.now(), re-read every `ms` while `on`. */
-export function useNow(ms: number, on = true): number {
-  const [now, setNow] = useState(Date.now);
-  useEffect(() => {
-    if (!on) return;
-    const id = setInterval(() => setNow(Date.now()), ms);
-    return () => clearInterval(id);
-  }, [ms, on]);
-  return now;
 }
