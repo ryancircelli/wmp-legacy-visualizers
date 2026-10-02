@@ -306,6 +306,8 @@ function NowPlaying() {
       {canvas?.type === 'video' ? <CanvasVideo src={canvas.url} poster={art || undefined} onError={fail} />
         : canvas ? <img className={css.bg} src={canvas.url} alt="" onError={fail} /> : null}
       {bg ? null : art ? <img className={css.art} src={art} alt="" /> : <div className={cx(css.art, css.noart)}>♪</div>}
+      {/* the cover's reflection, part of the picture: under the visualizer, the lyrics' shade and the band */}
+      {art && !bg && <div className={css.under}><img className={css.reflection} src={art} alt="" /></div>}
       {overlay && <Vis tint={bars && art ? accent : null} opacity={vz.opacity} />}
       <div className={css.info}>
         <Line className={css.artist} text={t?.artist} />
@@ -318,7 +320,6 @@ function NowPlaying() {
       <span className={css.more} role="button" aria-label="Options"
             onClick={(e) => { e.stopPropagation(); window.alchemyHaptic?.('light'); setPopup('options'); }}>⋯</span>
       <div className={css.controls}>
-        {art && !bg && <img className={css.reflection} src={art} alt="" />}
         {vol ? (
           <div className={css.row}>
             <Speaker />

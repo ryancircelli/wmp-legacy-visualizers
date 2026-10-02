@@ -46,19 +46,23 @@
    centred at screen y 345, "N of M" centred at y 361 */
 .controls {
   position: absolute; bottom: 0; left: 0; right: 0; height: calc(var(--unit) * 56);
-  overflow: hidden; isolation: isolate;
+  overflow: hidden; isolation: isolate; z-index: 1;  /* over the lyrics' gradient: its text whole */
 }
 /* a shade that grows from nothing (no edge on a bright picture), under lyrics carrying on theirs */
 .controls::before { background: linear-gradient(transparent, rgb(0 0 0 / .75)); }
-.root:has(.lyrics) .controls::before { background: rgb(0 0 0 / .75); }
+.root:has(.lyrics) .controls::before { background: none; }  /* the lyrics' one gradient covers the band */
 /* no "N of M" under it: the band is the mode row alone (the owner: too much padding under the bar) */
 .root:not(:has(.of)) .controls { height: calc(var(--unit) * 38); }
 .root:not(:has(.of)) .row { top: calc(var(--unit) * 10); }
 /* the cover and its tap area reach down to the shorter band (the cover crops a little at the sides) */
 .root:not(:has(.of)) .art, .root:not(:has(.of)) .tap { height: calc(var(--unit) * 258); }
+/* the band's area, clipping the reflection: a root child, so that the visualizer, the lyrics' one gradient
+   and the band's text all paint over it in that order */
+.under { position: absolute; left: 0; right: 0; bottom: 0; height: calc(var(--unit) * 56); overflow: hidden; }
+.root:not(:has(.of)) .under { height: calc(var(--unit) * 38); }
 .reflection {
   position: absolute; top: 0; left: 0; width: calc(var(--unit) * 240); height: calc(var(--unit) * 240);
-  object-fit: cover; transform: scaleY(-1); z-index: -1;
+  object-fit: cover; transform: scaleY(-1);
   /* the picture carrying on under the band, as the Canvas does: whole at the seam with the cover (a
      dimmer mirror made a step there, "some kind of bar"), fading down the band (the mask is flipped
      with the image: its bottom is the seam) */
@@ -131,15 +135,19 @@
 
 /* lyrics over the cover, at its foot just above the mode row: white 14 on black at 70 % */
 .lyrics {
-  position: absolute; top: calc(var(--unit) * 60); left: 0; right: 0; bottom: calc(var(--unit) * 56);
-  display: flex; flex-direction: column; justify-content: flex-end; padding: 0 calc(var(--unit) * 10) calc(var(--unit) * 6);
+  /* the box reaches the bottom of the area, its lines kept above the controls band by the padding: its
+     shade is then ONE gradient from the bottom of the screen up past the lines (the owner: "just make 1
+     gradient"), the band drawing none of its own while lyrics show; the box takes no touches (they go
+     to the art's tap area and the band under it), the click here is for the tests' sake */
+  position: absolute; top: calc(var(--unit) * 60); left: 0; right: 0; bottom: 0; pointer-events: none;
+  display: flex; flex-direction: column; justify-content: flex-end; padding: 0 calc(var(--unit) * 10) calc(var(--unit) * 62);
   /* a band behind the lines only, fading out above: the art (the visualizer, the Canvas) stays bright */
-  background: linear-gradient(to top, rgb(0 0 0 / .75), rgb(0 0 0 / .5) calc(var(--unit) * 67), transparent calc(var(--unit) * 120)); text-align: center;
+  background: linear-gradient(to top, rgb(0 0 0 / .8), rgb(0 0 0 / .55) calc(var(--unit) * 123), transparent calc(var(--unit) * 176)); text-align: center;
   text-shadow: 0 calc(var(--unit) * 1) calc(var(--unit) * 3) rgb(0 0 0 / .9);
   font-size: calc(var(--unit) * 11.5); line-height: calc(var(--unit) * 15);
 }
 /* plain lyrics: four lines' window, scrolled with the track */
-.root:not(:has(.of)) .lyrics { bottom: calc(var(--unit) * 38); }
+.root:not(:has(.of)) .lyrics { padding-bottom: calc(var(--unit) * 44); background: linear-gradient(to top, rgb(0 0 0 / .8), rgb(0 0 0 / .55) calc(var(--unit) * 105), transparent calc(var(--unit) * 158)); }
 .plain { max-height: calc(var(--unit) * 60); overflow: hidden; white-space: pre-line; }
 .cur { font-weight: bold; }
 .next { margin-top: calc(var(--unit) * 8); color: rgb(255 255 255 / .5); }
