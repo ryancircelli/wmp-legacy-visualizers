@@ -11,6 +11,8 @@ export const MODES: readonly Mode[] = ['default', 'scrub', 'radio'];
 /** ms: a scrub seeks this long after its last detent (§3.1); a mode falls back to the progress bar
  *  after IDLE without input (§2.4, 5 s reconstructed); the volume bar goes VOLUME after its last tick */
 export const SCRUB_COMMIT_MS = 400, IDLE_MS = 5000, VOLUME_MS = 2000;
+/** ms without input while it plays before Now Playing minimizes to the art and one line (the owner's ask, 2026-10-02) */
+export const MINIMIZE_MS = 5000;
 
 /** m:ss (h:mm:ss past an hour), whole seconds as the iPod counts them */
 export function clock(sec: number): string {

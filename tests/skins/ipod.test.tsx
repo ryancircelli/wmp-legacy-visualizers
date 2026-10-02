@@ -2,7 +2,7 @@
 // the nano 5G's menus, the chevron on the selected row only, taps, the library's grid, Home's shelves, a
 // collection's header, and the hold-⏮/⏭ scan.
 import { act, cleanup, fireEvent, render, renderHook, within } from '@testing-library/react';
-import { afterEach, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import type { ReactNode } from 'react';
 import { makeShell } from '../../src/app/App';
 import type { Ticker } from '../../src/app/ticker';
@@ -17,6 +17,8 @@ import { NavContext } from '../../src/skins/ipod/wheel';
 import { ShellContext } from '../../src/ui';
 import { fakeData, mountSkinNow, settle } from './harness';
 
+// Now Playing watches whether it is on screen (jsdom has no IntersectionObserver: this one never calls back, so it is)
+beforeEach(() => { vi.stubGlobal('IntersectionObserver', class { observe() {} disconnect() {} }); });
 afterEach(() => { cleanup(); delete window.alchemyHaptic; vi.useRealTimers(); vi.unstubAllGlobals(); localStorage.clear(); });
 const key = (k: string) => act(() => { window.dispatchEvent(new KeyboardEvent('keydown', { key: k, cancelable: true })); });
 

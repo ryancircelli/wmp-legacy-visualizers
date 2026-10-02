@@ -139,3 +139,29 @@
   color: transparent; -webkit-background-clip: text; background-clip: text;
   background-image: linear-gradient(90deg, #fff var(--f, 0%), rgb(255 255 255 / .5) var(--f, 0%));
 }
+
+/* Minimized (NowPlaying.tsx: MINIMIZE_MS without input while it plays): the bands slide out and the ⋯
+   fades, the art takes the whole area (cropped to it), and one line stays at the foot: "Title · Artist"
+   over a 2.5-unit progress line, on a shade that reads on any picture; the lyrics sit just above it */
+.info, .controls, .more { transition: transform .3s ease, opacity .3s ease; }
+.art, .tap, .overart { transition: top .3s ease, height .3s ease; }
+.root[data-mini] .info { transform: translateY(-100%); opacity: 0; pointer-events: none; }
+.root[data-mini] .controls { transform: translateY(100%); opacity: 0; pointer-events: none; }
+.root[data-mini] .more { opacity: 0; pointer-events: none; }
+.root[data-mini] :is(.art, .tap, .overart) { top: 0; height: 100%; }
+.root[data-mini] .lyrics { top: 0; bottom: calc(var(--unit) * 22); }
+.mini {
+  position: absolute; left: 0; right: 0; bottom: 0; height: calc(var(--unit) * 30);
+  display: flex; flex-direction: column; justify-content: flex-end;
+  background: linear-gradient(transparent, rgb(0 0 0 / .65));
+  opacity: 0; transition: opacity .3s ease; pointer-events: none;
+}
+.root[data-mini] .mini { opacity: 1; }
+.miniline {
+  padding: 0 calc(var(--unit) * 8) calc(var(--unit) * 5); text-align: center;
+  font-size: calc(var(--unit) * 11); font-weight: bold; line-height: calc(var(--unit) * 14);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-shadow: 0 1px 2px #000;
+}
+.miniprog { height: calc(var(--unit) * 2.5); background: rgb(255 255 255 / .25); }
+.miniprog > div { height: 100%; background: linear-gradient(#7a98ce, #5181d6); }
+

@@ -2,12 +2,14 @@
 // Shuffle is Spotify's shuffle toggle, the heart is filled for what the library holds (the user's own
 // playlists always, and never removed).
 import { act, cleanup, fireEvent } from '@testing-library/react';
-import { afterEach, expect, it } from 'vitest';
+import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { LIKED, type LibraryItem, type Track } from '../../src/model';
 import { Root } from '../../src/skins/ipod/Root';
 import { fakeData, mountSkinNow, settle } from './harness';
 
-afterEach(() => { cleanup(); localStorage.clear(); });
+// Now Playing watches whether it is on screen (jsdom has no IntersectionObserver: this one never calls back, so it is)
+beforeEach(() => { vi.stubGlobal('IntersectionObserver', class { observe() {} disconnect() {} }); });
+afterEach(() => { cleanup(); vi.unstubAllGlobals(); localStorage.clear(); });
 const MINE = 'spotify:playlist:mine', FOLLOWED = 'spotify:playlist:followed', OTHER = 'spotify:playlist:other';
 const track = (n: number): Track => ({ uri: 'spotify:track:' + n, title: 'Song ' + n, artist: 'Queen', duration: 1 });
 const pl = (uri: string, name: string, o: Partial<LibraryItem> = {}): LibraryItem => ({ uri, name, owner: 'someone', ...o });

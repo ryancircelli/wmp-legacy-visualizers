@@ -17,14 +17,14 @@
 // page's player, nor the iPhone's own speaker): its name, in Spotify's green, on the "N of M" line;
 // a tap on it opens Play On….
 import { Vibrant } from 'node-vibrant/browser';
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from 'react';
 import { useStore } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { createStore } from 'zustand/vanilla';
 import { Visualizer } from '../../../../app/Visualizer';
 import { lyricsShown, positionNow, type Track } from '../../../../model';
 import {
-  artOk, cx, deviceName, isSpotify, Karaoke, playingTrack, useAddTo, useApp, useArtist, useCanvas, useCollection, useDevices, useLyricScroll,
+  artOk, cx, deviceName, isPlaying, isSpotify, Karaoke, playingTrack, useAddTo, useApp, useArtist, useCanvas, useCollection, useDevices, useLyricScroll,
   usePlainLyrics, usePosition, useRadioSeeds, useShell, type MenuEntry,
 } from '../../../../ui';
 import { useHostGlobal } from '../../host';
@@ -32,7 +32,7 @@ import type { MenuItem, ScreenEntry } from '../contract';
 import { useVisFit, useVisualizers, visId } from '../settings';
 import { Bar, MenuScreen, Popup, useNav, useScan, useWheel } from '../../ui';
 import { pickAccent, rgbOf } from './accent';
-import { barsFit, IDLE_MS, nextMode, ofText, SCRUB_COMMIT_MS, scrubAccel, scrubStep, times, volumeStep, VOLUME_MS, type Mode } from './logic';
+import { barsFit, IDLE_MS, MINIMIZE_MS, nextMode, ofText, SCRUB_COMMIT_MS, scrubAccel, scrubStep, times, volumeStep, VOLUME_MS, type Mode } from './logic';
 import css from './nowplaying.module.css';
 
 export function nowPlaying(): ScreenEntry {
@@ -109,6 +109,39 @@ function NowPlaying() {
     return () => window.removeEventListener('wmp-volume', on);
   }, []);
 
+  // Minimized (MINIMIZE_MS without input while it plays, this screen the top one, no popup, no scrubber or
+  // Radio slider): the bands and the ⋯ go, the art takes the whole area, and one line (title · artist
+  // over a thin progress line) stays at the foot. Any input restores it. A tap on the screen, a wheel
+  // turn or an arrow key that restores does nothing else (`woke`: the press or key that woke it, its
+  // ticks and its click consumed); the wheel's buttons and their keys act as ever too.
+  const root = useRef<HTMLDivElement>(null), seen = useOnScreen(root), playing = useApp(isPlaying);
+  const [mini, setMini] = useState(false), [wasIdle, setWasIdle] = useState(false);
+  const idle = seen && playing && !popup && m === 'default';
+  // paused, a popup, a mode, off screen: restored, and kept so until it is idle again and the time passes
+  if (idle !== wasIdle) { setWasIdle(idle); if (!idle) setMini(false); }
+  const live = useRef({ mini, idle, woke: false, timer: 0 });
+  useLayoutEffect(() => { live.current.mini = mini; live.current.idle = idle; });
+  useEffect(() => {
+    const L = live.current;
+    const arm = () => { clearTimeout(L.timer); if (L.idle) L.timer = window.setTimeout(() => setMini(true), MINIMIZE_MS); };
+    // the ref first, so the same input's other listeners (the wheel's, whichever runs first) see it awake
+    const input = () => { L.woke = L.mini; if (L.mini) { L.mini = false; setMini(false); } arm(); };
+    const click = (e: Event) => { if (!L.woke) return; L.woke = false; e.stopPropagation(); e.preventDefault(); };
+    arm();
+    const opts = { capture: true };
+    window.addEventListener('pointerdown', input, opts);
+    window.addEventListener('keydown', input, opts);
+    window.addEventListener('wheel', input, opts);
+    window.addEventListener('click', click, opts);
+    return () => {
+      clearTimeout(L.timer);
+      window.removeEventListener('pointerdown', input, opts);
+      window.removeEventListener('keydown', input, opts);
+      window.removeEventListener('wheel', input, opts);
+      window.removeEventListener('click', click, opts);
+    };
+  }, [idle]);
+
   // what it plays from: "N of M" (its first loaded page only), and the row's album / artist
   const col = useCollection(t?.ctx);
   const row = col.rows.find((r) => r.uri === uri);
@@ -163,6 +196,8 @@ function NowPlaying() {
   useWheel({
     // an open Popup registers after this screen, so it takes the ticks, center and MENU while open
     onTick: (dir) => {
+      const L = live.current;
+      if (L.mini || L.woke) { L.mini = false; setMini(false); return false; }   // it only wakes the screen
       setPoke((n) => n + 1);
       const s = get();
       if (m === 'scrub') {
@@ -215,7 +250,7 @@ function NowPlaying() {
     canvasPref.setState({ show: show === 'cover' || (show === 'video' && !canvas) ? 'vis' : vis ? 'video' : 'cover' });
   };
   return (
-    <div className={css.root} data-canvas={bg ? '' : undefined}>
+    <div ref={root} className={css.root} data-canvas={bg ? '' : undefined} data-mini={mini ? '' : undefined}>
       {vis && !cover ? <Vis /> : canvas?.type === 'video' ? <CanvasVideo src={canvas.url} poster={art || undefined} onError={fail} />
         : canvas ? <img className={css.bg} src={canvas.url} alt="" onError={fail} /> : null}
       <div className={css.info}>
@@ -265,9 +300,31 @@ function NowPlaying() {
           </div>
         )}
       </div>
+      {/* minimized: the one line and the progress under it, over a shade at the foot */}
+      <div className={css.mini} aria-hidden={!mini}>
+        <div className={css.miniline}>{[t?.title, t?.artist].filter(Boolean).join(' · ')}</div>
+        <div className={css.miniprog}><div style={{ width: f * 100 + '%' }} /></div>
+      </div>
       {popup && <Popup items={items[popup]} onClose={() => setPopup((x) => (x === popup ? null : x))} />}
     </div>
   );
+}
+
+/** whether `ref`'s element is on screen: its screen the top one (the stack hides the others: no
+ *  intersection) and the page visible */
+function useOnScreen(ref: RefObject<HTMLElement | null>): boolean {
+  const [on, setOn] = useState(() => !document.hidden);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    let seen = true;
+    const sync = () => setOn(seen && !document.hidden);
+    const io = new IntersectionObserver(([e]) => { seen = !!e?.isIntersecting; sync(); });
+    io.observe(el);
+    document.addEventListener('visibilitychange', sync);
+    return () => { io.disconnect(); document.removeEventListener('visibilitychange', sync); };
+  }, [ref]);
+  return on;
 }
 
 /** The Canvas clip filling the screen, muted and looping as Spotify's apps play it; only while this
@@ -319,17 +376,7 @@ function useAccent(url: string): string {
  *  visible: the ticker's loop runs only with a canvas attached, so it costs nothing elsewhere. `over`
  *  (Over Cover): over the cover only, the engine's output 'luma' (clear where dark), in `tint` if one. */
 function Vis({ over, tint }: { over?: boolean; tint?: string | null }) {
-  const sh = useShell(), ref = useRef<HTMLDivElement>(null), [on, setOn] = useState(() => !document.hidden);
-  useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    let seen = true;
-    const sync = () => setOn(seen && !document.hidden);
-    const io = new IntersectionObserver(([e]) => { seen = !!e?.isIntersecting; sync(); });
-    io.observe(el);
-    document.addEventListener('visibilitychange', sync);
-    return () => { io.disconnect(); document.removeEventListener('visibilitychange', sync); };
-  }, []);
+  const sh = useShell(), ref = useRef<HTMLDivElement>(null), on = useOnScreen(ref);
   // The ticker holds the engine while WMP's view is off Now Playing (vis.hold: a WMP view left on
   // Library sets it again at every Spotify start); here it is the screen, so no hold while shown,
   // then the hold WMP's view implies.
