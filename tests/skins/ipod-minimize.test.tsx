@@ -17,9 +17,9 @@ const wait = (ms: number) => act(() => { vi.advanceTimersByTime(ms); });
 /** the iPod on Now Playing, a track playing from 25 s of 100 */
 function atNowPlaying() {
   const m = mountSkinNow('spotify', fakeData(), <div data-testid="ipod"><Root /></div>);
-  const play = (uri: string, title: string, status: 'playing' | 'paused' = 'playing') => act(() => {
+  const play = (uri: string, title: string, status: 'playing' | 'paused' = 'playing', art?: string) => act(() => {
     m.store.setState((s) => ({ playback: { ...s.playback, status, paused: status === 'paused', position: 25_000, at: Date.now(), canSeek: true,
-                                           track: { uri, title, artist: 'Band', duration: 100_000 } } }));
+                                           track: { uri, title, artist: 'Band', duration: 100_000, art } } }));
   });
   play('spotify:track:a', 'Song');
   act(() => { fireEvent.click(m.getByTestId('ipod').querySelector('[aria-label="Now Playing"][role=button]')!); });
@@ -112,3 +112,18 @@ it('a wheel turn or a tap on the screen restores it and does nothing else; the w
   key('Enter');                                      // the centre (its key): its mode, and restored
   expect([m.mini(), !!m.np().querySelector('[class*=diamond]')]).toEqual([false, true]);
 });
+
+it('minimized with a cover, the cover\'s reflection fills under it (the ♪ tile: none); the bar is the clear one here, the menus\' its own', () => {
+  const m = atNowPlaying();
+  const reflection = () => m.np().querySelector('[class*=reflection]');
+  wait(MINIMIZE_MS);
+  expect([m.mini(), reflection()]).toEqual([true, null]);   // no cover: the ♪ tile, black under it
+  m.play('spotify:track:a', 'Song', 'playing', 'https://i.scdn.co/image/abc');
+  expect([m.mini(), reflection()?.getAttribute('src')]).toEqual([true, 'https://i.scdn.co/image/abc']);
+  // the clear look is the page's own wrapper's (.foot); the menus' bar has none
+  expect(m.bar()!.parentElement!.className).toMatch(/foot/);
+  key('Escape');                                     // to the main menu: its bar, opaque as ever
+  const menuBar = within(m.getByTestId('ipod')).getAllByRole('button', { name: 'Now Playing' }).find((x) => !x.closest('[aria-hidden=true]'))!;
+  expect(menuBar.parentElement!.className).not.toMatch(/foot/);
+});
+
