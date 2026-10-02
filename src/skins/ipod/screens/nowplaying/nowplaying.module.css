@@ -15,7 +15,10 @@
    band; its background is a layer of its own (::before) so the quiet state can thin it */
 .info { position: absolute; top: 0; left: 0; right: 0; height: calc(var(--unit) * 60); isolation: isolate; }
 .info::before, .controls::before { content: ""; position: absolute; inset: 0; z-index: -1; transition: opacity .3s ease; }
-.info::before { background: linear-gradient(#424242, #010101); }
+/* one look for every picture, the Canvas view's (the owner, 2026-10-02: "combine video and album views as
+   i only want the video style"): translucent bands over whatever is behind, the album being one more
+   picture (its cover and, in the controls band, its reflection, on the area's black) */
+.info::before { background: linear-gradient(rgb(66 66 66 / .6), rgb(1 1 1 / .6)); }
 .line {
   position: absolute; left: calc(var(--unit) * 8); right: calc(var(--unit) * 8);
   height: calc(var(--unit) * 17); line-height: calc(var(--unit) * 17);
@@ -45,7 +48,9 @@
   position: absolute; bottom: 0; left: 0; right: 0; height: calc(var(--unit) * 56);
   overflow: hidden; isolation: isolate;
 }
-.controls::before { background: linear-gradient(#656565, #262626); }
+/* a shade that grows from nothing (no edge on a bright picture), under lyrics carrying on theirs */
+.controls::before { background: linear-gradient(transparent, rgb(0 0 0 / .75)); }
+.root:has(.lyrics) .controls::before { background: rgb(0 0 0 / .75); }
 /* no "N of M" under it: the band is the mode row alone (the owner: too much padding under the bar) */
 .root:not(:has(.of)) .controls { height: calc(var(--unit) * 38); }
 .root:not(:has(.of)) .row { top: calc(var(--unit) * 10); }
@@ -117,12 +122,7 @@
    area, behind the controls band, whatever the art: one size always */
 .overlay { position: absolute; inset: calc(var(--unit) * 60) 0 0 0; }
 .clear { display: block; width: 100%; height: 100%; }
-/* over the Canvas (or the visualizer over the black) the bands are translucent; the controls band a
-   shade that grows from nothing (no edge on a bright picture), under the lyrics carrying on theirs */
-.root[data-canvas] .info::before { background: linear-gradient(rgb(66 66 66 / .6), rgb(1 1 1 / .6)); }
-.root[data-canvas] .controls::before { background: linear-gradient(transparent, rgb(0 0 0 / .75)); }
-.root[data-canvas]:has(.lyrics) .controls::before { background: rgb(0 0 0 / .75); }
-.root[data-canvas] :is(.line, .row, .of), .root[data-quiet] :is(.line, .row, .of) { text-shadow: 0 1px 2px #000; }
+.line, .row, .of { text-shadow: 0 1px 2px #000; }
 
 /* lyrics over the cover, at its foot just above the mode row: white 14 on black at 70 % */
 .lyrics {
@@ -147,16 +147,8 @@
 }
 
 /* Quiet (NowPlaying.tsx: QUIET_MS without input while it plays): nothing moves; the info band's gradient
-   thins to .3 (the owner, 2026-10-02: "make title even more transparent"; .55 at first) and the controls
-   band becomes the Canvas view's (below), so the visualizer and the Canvas show through; the text, the
-   progress, "N of M" and the device line whole with a shadow; the ⋯ fades out. (With lyrics showing over the Canvas the controls band keeps its shade: it carries on
-   theirs, which they keep.) */
+   thins to .3 and the ⋯ fades out; the controls band, the album's reflection, the text, the progress,
+   "N of M" and the device line stay as they are. */
 .more { transition: opacity .3s ease; }
 .root[data-quiet] .info::before { opacity: .3; }
-/* quiet, the controls band is the Canvas view's own in both views (the owner: "literally use the same
-   exact bottom bar as the video on the minimize, which has gradient protection room"): the shade that
-   grows from nothing, under lyrics carrying on theirs; no grey, no reflection */
-.root[data-quiet] .controls::before { background: linear-gradient(transparent, rgb(0 0 0 / .75)); }
-.root[data-quiet]:has(.lyrics) .controls::before { background: rgb(0 0 0 / .75); }
-.root[data-quiet] .reflection { opacity: 0; }
 .root[data-quiet] .more { opacity: 0; pointer-events: none; }
