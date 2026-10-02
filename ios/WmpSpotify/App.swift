@@ -1147,6 +1147,7 @@ final class Librespot {
         for (command, name) in commands {
             command.isEnabled = true
             command.addTarget { _ in
+                HostLog.shared.log("remote: \(name)", quiet: true)
                 wmp_ls_command(name)
                 return .success
             }
@@ -1272,6 +1273,7 @@ final class Librespot {
         }
         if let image = art.image { info[MPMediaItemPropertyArtwork] = image }
         center.nowPlayingInfo = info
+        HostLog.shared.log("nowplaying: \(np.playing ? "playing" : "paused") at \(np.position / 1000) s", quiet: true)
     }
 
     // ponytail: the engine runs from launch to the end, rendering silence between songs, which keeps the
