@@ -1452,6 +1452,9 @@ final class Librespot {
             // Another app's audio (a call, Spotify's own app) leaves the session inactive, and the engine
             // cannot start on an inactive session ('what', 2003329396, a burst of them each time, seen
             // 2026-10-02): the speaker is being played to, so the session is taken back first.
+            // the category too, each time: the web view can change the app's (WebKit sets the host's
+            // session as its page's audio comes and goes)
+            try AVAudioSession.sharedInstance().setCategory(.playback)
             try AVAudioSession.sharedInstance().setActive(true)
             try engine.start()
             node.play()
@@ -1467,6 +1470,7 @@ final class Librespot {
         }
     }
     private var outputFailed = false  // on librespot's player thread, but for the first start
+    private var stalls = 0            // under `room`: seconds running the queue has not moved
 
     /// The app in front (the scene's phase): the queue's depth follows it.
     var front = true
@@ -1517,9 +1521,24 @@ final class Librespot {
         // choppy", the owner, 2026-10-03); a second's wait at most, in case the engine stopped (output()
         // starts it again at the next packet).
         room.lock()
-        while queued > (front ? 22050 : 88200), room.wait(until: Date() + 1) {}
+        var waited = true
+        while queued > (front ? 22050 : 88200), waited { waited = room.wait(until: Date() + 1) }
+        // A full second and nothing played: the engine says it runs and plays nothing (2026-10-03, a
+        // resume twenty seconds after a pause: 1.4 s of the song in 38 s, a packet a second). Twice
+        // running, it is started over: the session's category put back and taken, the engine and the
+        // node from stopped, what was queued let go.
+        stalls = waited ? 0 : stalls + 1
+        let kick = stalls >= 2
+        if kick { stalls = 0; queued = 0 }
         queued += frames
         room.unlock()
+        if kick {
+            let s = AVAudioSession.sharedInstance()
+            HostLog.shared.log("audio: nothing is being played (engine \(engine.isRunning ? "running" : "stopped"), node \(node.isPlaying ? "playing" : "stopped"), category \(s.category.rawValue) options \(s.categoryOptions.rawValue)): starting over")
+            node.stop()
+            engine.stop()
+            output()
+        }
         // To the page as it is heard, so the visualizers keep time with the speaker.
         node.scheduleBuffer(buffer, completionCallbackType: .dataPlayedBack) { _ in
             Forwarder.shared.pcm(data)
