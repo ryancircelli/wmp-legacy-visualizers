@@ -20,9 +20,9 @@ export const COLORS: Record<Preset, readonly [number, number, number]> = {
   mocha: [24, 32, 40], espresso: [22, 36, 17],
   // the owner's Custom pick (2026-10-02, "add this red": hue 0, saturation 100, lightness 29), as its base (the three over LOOK)
   crimson: [0, 87, 25],
-  // gold (the owner, 2026-10-03): meant to read as 45° 78% 52% (a metallic gold; 60% first, "needs more saturation", #d4af37's neighbourhood), so its
+  // gold (the owner, 2026-10-03): the owner's mustard sweater, sampled at 40° 65% 43% in its mid tones and about 41° 69% 46% where lit (after two guesses at a brighter gold, #d4af37's neighbourhood), so its
   // base is that over LOOK, the cylinder's lights lifting it back
-  gold: [45, 68, 45],
+  gold: [41, 60, 40],
 };
 /** Custom's lightness range: the body's lights top out at 72 % (ipod.module.css --hi), so past 75 the
  *  cylinder goes flat (its centre as bright as its bands); under 15 its edge and shade go black */
