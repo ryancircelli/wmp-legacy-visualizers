@@ -168,12 +168,13 @@
    for lyrics when not minimized"); quiet, at the cover's foot where the reflection starts ("align the
    bottom line of the lyrics to the bottom of the album before the reflection"; below) */
 .root:not(:has(.of)) .lyrics { padding-bottom: calc(var(--unit) * 50); transition: padding-bottom .3s ease; background: linear-gradient(to top, rgb(0 0 0 / .88), rgb(0 0 0 / .6) calc(var(--unit) * 105), transparent calc(var(--unit) * 158)); }
-/* five lines' window (12 a line), gliding with the track: the line coming in at the top fades in over a
-   line's height (it was cut through its letters: "what's happening to lyrics here?") */
+/* five lines' window (12 a line), gliding with the track: the lines fade in at the bottom and out at
+   the top over a line's height (the top one was cut through its letters; the owner, 2026-10-03: "add a
+   fade to top and bottom of the scrolling lyrics for the fallback") */
 .plain {
   max-height: calc(var(--unit) * 60); overflow: hidden; white-space: pre-line;
-  -webkit-mask-image: linear-gradient(transparent, #000 calc(var(--unit) * 14));
-  mask-image: linear-gradient(transparent, #000 calc(var(--unit) * 14));
+  -webkit-mask-image: linear-gradient(transparent, #000 calc(var(--unit) * 14), #000 calc(100% - var(--unit) * 14), transparent);
+  mask-image: linear-gradient(transparent, #000 calc(var(--unit) * 14), #000 calc(100% - var(--unit) * 14), transparent);
 }
 .cur { font-weight: bold; }
 .next { margin-top: calc(var(--unit) * 2); color: rgb(255 255 255 / .5); }
