@@ -1212,7 +1212,7 @@ final class Librespot {
                 let other = AVAudioSession.sharedInstance().isOtherAudioPlaying
                 HostLog.shared.log("audio: interrupted (reason \(reason), other audio \(other ? "playing" : "silent"))\(was ? ", pausing" : "")")
                 self.interrupted = was
-                if was { wmp_ls_command("pause") }
+                if was { wmp_ls_command("pause"); self.waitOut() }
             case .ended:
                 let opts = AVAudioSession.InterruptionOptions(rawValue: n.userInfo?[AVAudioSessionInterruptionOptionKey] as? UInt ?? 0)
                 let resume = self.interrupted && opts.contains(.shouldResume)
@@ -1224,6 +1224,28 @@ final class Librespot {
         }
     }
     private var interrupted = false  // on the main thread: paused by an interruption, to resume after it
+
+    /// Paused by an interruption, the app would be suspended within seconds and not hear it end (the
+    /// music stayed off, the phone untouched on a counter, 2026-10-03). It asks for the background time
+    /// iOS allows (about half a minute) and looks every two seconds: once the other audio has been
+    /// silent twice running and iOS has not said "over", it plays on, once. A longer interruption (a
+    /// call, a video being watched) leaves it paused, as before.
+    private func waitOut() {
+        var task = UIBackgroundTaskIdentifier.invalid
+        var quiet = 0, timer: Timer?
+        let done = { timer?.invalidate(); if task != .invalid { UIApplication.shared.endBackgroundTask(task); task = .invalid } }
+        task = UIApplication.shared.beginBackgroundTask(withName: "interruption") { done() }
+        let until = Date() + 25
+        timer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { _ in
+            guard self.interrupted, Date() < until else { done(); return }   // over (iOS said so), or out of time
+            quiet = AVAudioSession.sharedInstance().isOtherAudioPlaying ? 0 : quiet + 1
+            guard quiet >= 2 else { return }
+            HostLog.shared.log("audio: the other audio is silent and iOS has not said so: resuming")
+            self.interrupted = false
+            wmp_ls_command("play")
+            done()
+        }
+    }
 
     /// The speaker's name in Spotify's pickers, the page's to set (alchemySpeakerName). The phone's own
     /// name is "iPhone" or "iPad" to apps since iOS 16 without an entitlement Apple grants on request.
@@ -1346,8 +1368,11 @@ final class Librespot {
     private static let IDLE_S = 2.0
     private func idle() {
         DispatchQueue.main.asyncAfter(deadline: .now() + Librespot.IDLE_S) {
-            guard !self.playing, self.engine.isRunning else { return }
-            self.engine.stop()
+            // Paused by an interruption, the session stays the speaker's (interrupted, not given up):
+            // giving it up there had the app suspended with nobody left to hear "interruption over,
+            // resume", and the music stayed off (2026-10-03, the phone untouched on a counter).
+            guard !self.playing, !self.interrupted else { return }
+            if self.engine.isRunning { self.engine.stop() }
             try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
             HostLog.shared.log("audio: idle, the session given up", quiet: true)
         }
