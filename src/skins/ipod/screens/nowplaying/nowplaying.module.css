@@ -48,9 +48,10 @@
   position: absolute; bottom: 0; left: 0; right: 0; height: calc(var(--unit) * 56);
   overflow: hidden; isolation: isolate; z-index: 1;  /* over the lyrics' gradient: its text whole */
 }
-/* a shade that grows from nothing (no edge on a bright picture), under lyrics carrying on theirs */
-.controls::before { background: linear-gradient(transparent, rgb(0 0 0 / .75)); }
-.root:has(.lyrics) .controls::before { background: none; }  /* the lyrics' one gradient covers the band */
+/* awake, the nano's own grey band, a separation from the picture (the owner, 2026-10-02, "minimized is
+   perfect; add back the bottom background separation for not minimized"); quiet, the shade that grows
+   from nothing (no edge on a bright picture), under lyrics carrying on theirs (below) */
+.controls::before { background: linear-gradient(#656565, #262626); }
 /* no "N of M" under it: the band is the mode row alone (the owner: too much padding under the bar) */
 .root:not(:has(.of)) .controls { height: calc(var(--unit) * 38); }
 .root:not(:has(.of)) .row { top: calc(var(--unit) * 10); }
@@ -190,7 +191,8 @@
 .root[data-quiet] .info::before { opacity: .3; }
 /* the foot's shade thins too (the owner: "less aggressive in the minimize just like the header does"):
    the band's to .4, and the lyrics' one gradient to about half its strength */
-.root[data-quiet] .controls::before { opacity: .4; }
+.root[data-quiet] .controls::before { background: linear-gradient(transparent, rgb(0 0 0 / .75)); opacity: .4; }
+.root[data-quiet]:has(.lyrics) .controls::before { background: none; }  /* the lyrics' one gradient covers the band */
 .root[data-quiet] .lyrics { background: linear-gradient(to top, rgb(0 0 0 / .45), rgb(0 0 0 / .3) calc(var(--unit) * 123), transparent calc(var(--unit) * 176)); }
 .root[data-quiet]:not(:has(.of)) .lyrics { background: linear-gradient(to top, rgb(0 0 0 / .45), rgb(0 0 0 / .3) calc(var(--unit) * 105), transparent calc(var(--unit) * 158)); }
 .root[data-quiet] .more { opacity: 0; pointer-events: none; }
