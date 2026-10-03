@@ -2,9 +2,11 @@
 //   GET spclient.wg.spotify.com/inspiredby-mix/v2/seed_to_playlist/<seed uri>?response-format=json
 //   -> {"mediaItems":[{"uri":"spotify:playlist:…"}]}   (without response-format it answers protobuf)
 // Stations: song radio and artist radio for what is playing, radio for the artists in the home
-// feed's "Jump back in" / "Recents" rows, then the feed's own "Recommended Stations".
+// feed's "Jump back in" / "Recents" rows, then the followed artists (library order) up to SEEDS in
+// all, then the feed's own "Recommended Stations".
 import type { RadioSeed, Station } from '../../model';
 import { fetchHome } from './home';
+import { fetchFollowedArtists } from './library';
 import { post, type Sp } from './sp';
 
 const RADIO = 'https://spclient.wg.spotify.com/inspiredby-mix/v2/seed_to_playlist/';
@@ -29,22 +31,28 @@ export function radioSeeds(sp: Sp): RadioSeed[] {
   return seeds;
 }
 
+/** seeds at most: a dial of about this many stations (the owner, 2026-10-02: "doesn't have enough options") */
+const SEEDS = 24;
+
 /** Stations: these seeds, then artist radio for the home feed's "Jump back in" / "Recents"
- *  artists, then its "Recommended Stations" (home fetched when not held). Each seed resolves once. */
+ *  artists, then for the followed artists, SEEDS in all, then the feed's "Recommended Stations"
+ *  (home fetched when not held). Each seed resolves once. */
 export async function fetchRadio(sp: Sp, seeds: RadioSeed[] = radioSeeds(sp)): Promise<Station[]> {
   seeds = [...seeds];
   const home = sp.cache.home ?? await fetchHome(sp).catch(() => null);
   const rec: Station[] = [];
+  const artist = (a: { uri: string; name: string }, img: string | null = null) => {
+    if (seeds.length < SEEDS && !seeds.some((x) => x.seed === a.uri)) seeds.push({ seed: a.uri, name: a.name + ' Radio', sub: 'Artist radio', img });
+  };
   for (const sec of home?.sections ?? []) {
     const recent = /jump back in|recent/i.test(sec.title);
     for (const it of sec.items) {
       const a = /^spotify:artist:/.test(it.uri) ? { uri: it.uri, name: it.name } : it.artist;
-      if (recent && a && seeds.length < 10 && !seeds.some((x) => x.seed === a.uri)) {
-        seeds.push({ seed: a.uri, name: a.name + ' Radio', sub: 'Artist radio', img: a.uri === it.uri ? it.img : null });
-      }
+      if (recent && a) artist(a, a.uri === it.uri ? it.img : null);
       if (/station/i.test(sec.title) && /^spotify:playlist:/.test(it.uri)) rec.push({ uri: it.uri, name: it.name, sub: it.sub, img: it.img });
     }
   }
+  if (seeds.length < SEEDS) for (const a of await fetchFollowedArtists(sp).catch(() => [])) artist(a, a.image ?? null);
   const uris = await Promise.all(seeds.map((x) => seedStation(sp, x.seed)));
   const out: Station[] = [];
   seeds.forEach((x, i) => { const u = uris[i]; if (u) out.push({ uri: u, name: x.name, sub: x.sub, img: x.img ?? null }); });

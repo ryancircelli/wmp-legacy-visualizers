@@ -169,14 +169,17 @@ interface Tuner { at: Kept; list: Kept<Station[] | null> }
 export const fmRadio = (): ScreenEntry => dial({ at: kept(0), list: kept<Station[] | null>(null) });
 const dial = (r: Tuner): ScreenEntry => ({ key: 'fmRadio', title: 'Radio', render: () => <Dial r={r} /> });
 
-/** station i on the dial, MHz (§4.2) */
+/** the dial's range, MHz (§4.2); the stations spread evenly over it (the owner, 2026-10-02: "evenly
+ *  disperse across the standard range, right now it goes between 87 and 89"), to the nearest 0.1 */
 const MHZ0 = 87.5, STEP = 0.2, MHZ1 = 108;
+export const mhz = (i: number, n: number): number => Math.round((MHZ0 + (n > 1 ? ((MHZ1 - MHZ0) * i) / (n - 1) : 0)) * 10) / 10;
 /** nano pixels per MHz: the numbers every 2 MHz sit 60 apart, four of them on screen */
 const PX = 30;
 
 /** The FM screen: the station's name as RDS, the playing title and artist, the frequency big, the
  *  dial at the bottom. Turning tunes and plays once the wheel rests 600 ms; ⏮⏭ seek a station;
- *  center switches the dial with the song's progress bar; hold-center: Favorites; MENU: the Radio menu. */
+ *  center switches the dial with the song's progress bar; hold-center: Favorites and Recent Songs (the
+ *  nano's Radio menu is gone: MENU goes back; the owner, 2026-10-02: "why is this page needed"). */
 function Dial({ r }: { r: Tuner }) {
   const sh = useShell(), nav = useNav(), live = useRadio(useRadioSeeds()).stations, [frozen] = useKept(r.list);
   const list = frozen ?? live ?? [], n = list.length, [sel, setI] = useKept(r.at), i = Math.min(sel, Math.max(0, n - 1)), st = list[i];
@@ -197,10 +200,9 @@ function Dial({ r }: { r: Tuner }) {
     onCenter: () => setBar(!bar),
     onHoldCenter: st ? () => setHeld(true) : undefined,
     onPlay: st && !now ? () => tuneIn(sh, st) : undefined,
-    onMenu: () => { nav.replace(radioMenu(r)); return true; },
   });
   if (!st) return <MenuScreen items={[]} loading={!live} empty="No Stations" />;
-  const f = MHZ0 + STEP * i;
+  const f = mhz(i, n);
   return (
     <div className="relative h-full overflow-hidden text-white" style={{ background: 'linear-gradient(#0d1420, #1b2a44 45%, #0a0f18)' }}>
       <div className="absolute inset-x-0 text-center" style={{ top: u(8), padding: `0 ${u(10)}` }}>
@@ -217,13 +219,15 @@ function Dial({ r }: { r: Tuner }) {
         <span className="font-bold" style={{ fontSize: u(14) }}>FM</span>
       </div>
       <div className="absolute inset-x-0" style={{ bottom: u(16), height: u(60) }}>
-        {bar ? <Progress /> : <Scale f={f} dots={list.flatMap((x, k) => (log.fav.some((y) => y.uri === x.uri) ? [k] : []))} />}
+        {bar ? <Progress /> : <Scale f={f} dots={list.flatMap((x, k) => (log.fav.some((y) => y.uri === x.uri) ? [mhz(k, n)] : []))} />}
       </div>
       {held && <Popup onClose={() => setHeld(false)} items={[
         { id: 'fav', label: fav ? 'Remove from Favorites' : 'Add to Favorites', onSelect: () => {
           const v = radioLog.get();
           radioLog.set({ ...v, fav: fav ? without(v.fav, st) : [...v.fav, bare(st)] });
         } },
+        { id: 'favs', label: 'Favorites', onSelect: () => nav.push(stations('fav', 'Favorites')) },
+        { id: 'recent', label: 'Recent Songs', onSelect: () => nav.push(stations('recent', 'Recent Songs')) },
         { id: 'cancel', label: 'Cancel' },
       ]} />}
     </div>
@@ -231,7 +235,7 @@ function Dial({ r }: { r: Tuner }) {
 }
 
 /** The scale under the fixed red needle, sliding as the dial tunes: a tick every 0.2 MHz, a long one
- *  every 1, the numbers every 2; orange dots on the favourites. */
+ *  every 1, the numbers every 2; orange dots on the favourites (their MHz). */
 function Scale({ f, dots }: { f: number; dots: number[] }) {
   const x = (mhz: number) => u((mhz - MHZ0) * PX);
   return (
@@ -244,7 +248,7 @@ function Scale({ f, dots }: { f: number; dots: number[] }) {
           <span key={m} className="absolute font-bold" style={{ left: x(m), top: 0, transform: 'translateX(-50%)', fontSize: u(14), lineHeight: u(16) }}>{m}</span>
         ))}
         {dots.map((k) => (
-          <span key={k} className="absolute" style={{ left: x(MHZ0 + STEP * k), top: u(40), width: u(5), height: u(5), marginLeft: u(-2.5), borderRadius: '50%', background: '#ff9500' }} />
+          <span key={k} className="absolute" style={{ left: x(k), top: u(40), width: u(5), height: u(5), marginLeft: u(-2.5), borderRadius: '50%', background: '#ff9500' }} />
         ))}
       </div>
       <div className="absolute" style={{ left: '50%', top: u(16), height: u(34), width: u(2), marginLeft: u(-1), background: '#e0201a' }} />
@@ -256,27 +260,6 @@ function Scale({ f, dots }: { f: number; dots: number[] }) {
 function Progress() {
   const v = usePosition((ms, s) => { const d = s.playback.track?.duration ?? 0; return d ? Math.round((ms / d) * 500) / 500 : 0; });
   return <div style={{ padding: `${u(24)} ${u(30)} 0` }}><Bar value={v} /></div>;
-}
-
-/** MENU on the FM screen: Play Radio (back to it, playing), Stop Radio, Favorites, Recent Songs
- *  [UG p.65]. It replaces the FM screen, so MENU here goes back to the main menu, as on the nano. */
-function radioMenu(r: Tuner): ScreenEntry {
-  return { key: 'fmRadio/menu', title: 'Radio', render: () => <RadioMenu r={r} /> };
-}
-
-function RadioMenu({ r }: { r: Tuner }) {
-  const sh = useShell(), nav = useNav(), live = useRadio(useRadioSeeds()).stations, list = r.list.get() ?? live;
-  const items: MenuItem[] = [
-    { id: 'play', label: 'Play Radio', onSelect: () => {
-      const st = list?.[Math.min(r.at.get(), list.length - 1)];
-      if (st) { r.list.set(list); tuneIn(sh, st); }
-      nav.replace(dial(r));
-    } },
-    { id: 'stop', label: 'Stop Radio', onSelect: () => void sh.store.getState().commands.pause() },
-    { id: 'fav', label: 'Favorites', chevron: true, onSelect: () => nav.push(stations('fav', 'Favorites')) },
-    { id: 'recent', label: 'Recent Songs', chevron: true, onSelect: () => nav.push(stations('recent', 'Recent Songs')) },
-  ];
-  return <MenuScreen items={items} />;
 }
 
 const stations = (which: keyof RadioLog, title: string): ScreenEntry =>

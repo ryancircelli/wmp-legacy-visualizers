@@ -264,7 +264,7 @@ Main menu  (screenshot UG p.9/13; "Now Playing" is appended while something play
 ├── Photos ✔ ............... All Photos ✔, <albums>, Settings ✔ (Time Per Slide, Music, Repeat,
 │                            Shuffle Photos, Transitions, TV Out, TV Signal) [UG p.69-70]
 ├── Podcasts ✔ ............. shows, newest first, blue dot = unplayed [UG p.47]
-├── Radio ✔ ................ the FM screen; MENU there opens the Radio menu: Play Radio, Stop Radio,
+├── Radio ✔ ................ the FM screen; MENU goes back (the nano's Radio menu is gone, 2026-10-02: "why is this page needed"); hold-centre: Favorites, Recent Songs,
 │                            Favorites, Tagged Songs, Recent Songs, Radio Regions, Live Pause [UG p.65]
 ├── Video Camera ✔ ......... viewfinder [UG p.52]
 ├── Extras ✔ ............... Alarms ✔ (Create Alarm, Sleep Timer) [p.78], Calendars ✔ (All Calendars,
@@ -630,7 +630,7 @@ caption (`useWindowControls().onCaptionMouseDown`).
 | **Videos** | nothing playable | — | **hide** by default (§6: or a "Home" shelves page in this slot) |
 | **Photos** | **album-art browser** | covers of `useLibraryList()` items plus Liked; ⏯ plays the collection | **build** (repurposed) |
 | **Podcasts** | no shows query: `contextRow` drops `spotify:show`, search has no show bucket. The **home feed does carry** `spotify:show`/`episode` items, and `playItem` plays episodes | — | **hide** in v1 (§6) |
-| **Radio** | **Spotify radio**: song radio and artist radio for what plays, radio for recent artists, the feed's Recommended Stations | `useRadio(useRadioSeeds())`, drawn as the **FM dial** (station *i* at 87.5 + 0.2*i* MHz for the big digits, station name as RDS, the playing title and artist below). Turning tunes; it **plays 600 ms after the wheel rests**: `playItem({ uri: station.uri })`. ⏮⏭ seek a station. Radio menu: Play Radio, Stop Radio (`pause`), Favorites (local list), Recent Songs (stations played, local) | **build** (repurposed) |
+| **Radio** | **Spotify radio**: song radio and artist radio for what plays, radio for recent artists, the feed's Recommended Stations | `useRadio(useRadioSeeds())`, drawn as the **FM dial** (the stations spread evenly from 87.5 to 108.0 MHz, to the nearest 0.1 — `home/index.tsx mhz(i, n)`; the owner, 2026-10-02: "evenly disperse across the standard range, right now it goes between 87 and 89" — for the big digits, station name as RDS, the playing title and artist below). Turning tunes; it **plays 600 ms after the wheel rests**: `playItem({ uri: station.uri })`. ⏮⏭ seek a station. Up to 24 seeds: the song, its artist, Home's recent artists, then the followed artists in library order ("doesn't have enough options"), plus Home's Recommended Stations. No Radio menu (2026-10-02): the dial's hold-centre popup has Add to / Remove from Favorites, Favorites (local list), Recent Songs (stations played, local) | **build** (repurposed) |
 | **Video Camera** | — | — | **hide** |
 | **Extras** | — | — | **not implemented** (the owner's ruling, 2026-10-02) |
 | **Settings** | §4.4 | — | **build** |
