@@ -40,6 +40,24 @@ window.alchemyElectron = { loopback: false, mode: 'app' };
 // playing… our app starts trying to take over the audio and they fight, and i was paused"), the web
 // content process never idle meanwhile. Unmuted media of the page's is kept paused; the overlay's own
 // muted media (the Canvas clip) plays as ever.
+// And whatever audio the web view does make is ambient: WebKit runs it in a process of its own, which
+// iOS takes for another app, and a session coming up there (silent) interrupted the app's speaker with
+// nothing to see or hear (2026-10-03: "audio: interrupted (reason 0, other audio silent)", every other
+// app closed). An ambient session mixes and interrupts nobody. Web Audio is logged when the page makes
+// or starts a context, to say what it was.
+try { if (navigator.audioSession) navigator.audioSession.type = 'ambient'; } catch (e) {}
+(function () {
+  ['AudioContext', 'webkitAudioContext'].forEach(function (name) {
+    var C = window[name];
+    if (!C || C.__wmp) return;
+    var resume = C.prototype.resume, seen = 0;
+    C.prototype.resume = function () {
+      if (seen++ < 3) log('the page started a Web Audio context (' + this.state + ')');
+      return resume.apply(this, arguments);
+    };
+    C.__wmp = true;
+  });
+})();
 (function () {
   var play = HTMLMediaElement.prototype.play, told = false;
   HTMLMediaElement.prototype.play = function () {
