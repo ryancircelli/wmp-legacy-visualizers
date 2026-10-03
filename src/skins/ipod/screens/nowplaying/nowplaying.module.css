@@ -168,7 +168,13 @@
    for lyrics when not minimized"); quiet, at the cover's foot where the reflection starts ("align the
    bottom line of the lyrics to the bottom of the album before the reflection"; below) */
 .root:not(:has(.of)) .lyrics { padding-bottom: calc(var(--unit) * 50); transition: padding-bottom .3s ease; background: linear-gradient(to top, rgb(0 0 0 / .88), rgb(0 0 0 / .6) calc(var(--unit) * 105), transparent calc(var(--unit) * 158)); }
-.plain { max-height: calc(var(--unit) * 60); overflow: hidden; white-space: pre-line; }
+/* five lines' window (12 a line), gliding with the track: the line coming in at the top fades in over a
+   line's height (it was cut through its letters: "what's happening to lyrics here?") */
+.plain {
+  max-height: calc(var(--unit) * 60); overflow: hidden; white-space: pre-line;
+  -webkit-mask-image: linear-gradient(transparent, #000 calc(var(--unit) * 14));
+  mask-image: linear-gradient(transparent, #000 calc(var(--unit) * 14));
+}
 .cur { font-weight: bold; }
 .next { margin-top: calc(var(--unit) * 2); color: rgb(255 255 255 / .5); }
 /* karaoke: the line's words dim until sung, the current one filling. The fill is a white copy of the
