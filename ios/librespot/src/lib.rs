@@ -513,10 +513,16 @@ async fn run(
                     say(&format!("librespot: {c}: no session"));
                     continue;
                 };
+                // By what the player is doing (`playing`, its own events), not by what Spirc believes: the
+                // two fell out of step (a resume, a pause and a resume while a track loaded, 2026-10-03:
+                // Spirc paused, the player playing) and four presses of pause did nothing. The opposite
+                // command first puts Spirc where the player is (a no-op when they agree), then the one meant.
+                let pause = |s: &Spirc| s.play().and_then(|_| s.pause());
+                let play = |s: &Spirc| s.pause().and_then(|_| s.play());
                 let done = match c.as_str() {
-                    "play" => s.play(),
-                    "pause" => s.pause(),
-                    "toggle" => s.play_pause(),
+                    "play" => if playing { Ok(()) } else { play(s) },
+                    "pause" => if playing { pause(s) } else { Ok(()) },
+                    "toggle" => if playing { pause(s) } else { play(s) },
                     "next" => s.next(),
                     "prev" => s.prev(),
                     _ => match c.strip_prefix("seek:").and_then(|ms| ms.parse().ok()) {

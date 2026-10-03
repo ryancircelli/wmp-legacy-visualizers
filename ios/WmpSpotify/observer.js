@@ -61,7 +61,9 @@ try { if (navigator.audioSession) navigator.audioSession.type = 'ambient'; } cat
 (function () {
   var play = HTMLMediaElement.prototype.play, told = false;
   HTMLMediaElement.prototype.play = function () {
-    if (this.muted || this.getRootNode() !== document) return play.apply(this, arguments);
+    // the overlay's own (in its shadow root) and anything muted; Spotify's player element is in no
+    // document at all (made and never attached), so "not in the document" let it through
+    if (this.muted || this.getRootNode() instanceof ShadowRoot) return play.apply(this, arguments);
     if (!told) { told = true; log('the page tried to play media: blocked (the speaker plays)'); }
     return Promise.resolve();
   };

@@ -1231,7 +1231,9 @@ final class Librespot {
                   let type = AVAudioSession.InterruptionType(rawValue: raw) else { return }
             switch type {
             case .began:
-                let was = self.playing
+                // playing: samples within the last three seconds (the flag alone stays up when the session
+                // dies under a song: no stop comes)
+                let was = self.playing && Date().timeIntervalSince(self.fed) < 3
                 // why, as far as iOS says: its reason (0 another app's audio, 1 the app was suspended, 2 the
                 // built-in mic muted, 4 the route went away) and whether other audio is playing now
                 let reason = n.userInfo?[AVAudioSessionInterruptionReasonKey] as? UInt ?? 0
@@ -1276,6 +1278,7 @@ final class Librespot {
         }
     }
     private var interrupted = false  // on the main thread: paused by an interruption, to resume after it
+    private var fed = Date.distantPast  // when samples last came (librespot's thread writes, main reads)
 
     /// Paused by an interruption, the app would be suspended within seconds and not hear it end (the
     /// music stayed off, the phone untouched on a counter, 2026-10-03). It asks for the background time
@@ -1484,6 +1487,7 @@ final class Librespot {
             playing = true
             Forwarder.shared.started()
         }
+        fed = Date()
         output()
         guard let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(frames)),
               let channels = buffer.floatChannelData else { return }
