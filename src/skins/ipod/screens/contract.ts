@@ -114,7 +114,7 @@ export interface ChromeModule extends Chrome {
 
 export interface IpodSettings {
   /** the body: a preset name or the custom hue, saturation and lightness */
-  color: 'silver' | 'black' | 'purple' | 'blue' | 'green' | 'yellow' | 'orange' | 'red' | 'pink' | 'mocha' | 'espresso' | 'crimson' | 'custom';
+  color: 'silver' | 'black' | 'purple' | 'blue' | 'green' | 'yellow' | 'orange' | 'red' | 'pink' | 'mocha' | 'espresso' | 'crimson' | 'gold' | 'custom';
   hue: number;        // 0..360, for 'custom'
   sat: number;        // 0..100 %, for 'custom'
   light: number;      // 15..75 % (settings.ts LIGHT), for 'custom'

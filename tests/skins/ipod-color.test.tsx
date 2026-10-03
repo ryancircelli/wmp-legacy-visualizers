@@ -50,7 +50,7 @@ const drag = (el: HTMLElement, id: number, ...pts: [number, number][]) => {
 it('lists the nine colours, Mocha Tan, Espresso Brown and Crimson, then Custom; a preset sets the body', () => {
   const m = atColor();
   expect(m.rows()).toEqual(['Silver', 'Black', 'Purple', 'Blue', 'Green✓ ', 'Yellow', 'Orange', 'Pink', '(PRODUCT) RED',
-    'Mocha Tan', 'Espresso Brown', 'Crimson', 'Custom']);
+    'Mocha Tan', 'Espresso Brown', 'Crimson', 'Gold', 'Custom']);
   expect(m.hsl()).toEqual(['140', '70%', '34%']);
   m.click('Mocha Tan');
   expect(m.hsl()).toEqual(['24', '32%', '40%']);
