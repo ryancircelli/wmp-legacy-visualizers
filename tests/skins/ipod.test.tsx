@@ -5,6 +5,7 @@ import { act, cleanup, fireEvent, render, renderHook, within } from '@testing-li
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import type { ReactNode } from 'react';
 import { makeShell } from '../../src/app/App';
+import { hostCrossfade } from '../../src/adapters/spotify';
 import type { Ticker } from '../../src/app/ticker';
 import { createAppStore } from '../../src/model';
 import { mainMenu } from '../../src/skins/ipod/menus';
@@ -551,6 +552,22 @@ it('Settings\' host-gated rows show only with their host: Theme, Refresh Player,
     'Source Code', 'Report a Problem', 'Host Log',
     'Log Out',
   ]);
+});
+
+it('Crossfade: shown with the host\'s player only, under General; Off -> 2 s -> 5 s -> 8 s -> 12 s -> Off, each step sent to the host by the adapter', () => {
+  const sent: string[] = [];
+  vi.stubGlobal('alchemyPlayer', (c: string) => { sent.push(c); });
+  const m = atSettings();
+  expect(m.rows()).toEqual(SETTINGS);                // the binding alone shows nothing: the adapter says the host can
+  let off = () => {};
+  act(() => { off = hostCrossfade(m.store); });
+  expect(m.rows()).toEqual([...SETTINGS.slice(0, 7), 'CrossfadeOff', ...SETTINGS.slice(7)]);
+  m.click('CrossfadeOff');
+  m.click('Crossfade2 s');
+  expect([m.rows()[7], m.S().settings.crossfade, sent]).toEqual(['Crossfade5 s', 5, ['crossfade:0', 'crossfade:2', 'crossfade:5']]);
+  for (const r of ['Crossfade5 s', 'Crossfade8 s', 'Crossfade12 s']) m.click(r);
+  expect([m.rows()[7], sent.at(-1)]).toEqual(['CrossfadeOff', 'crossfade:0']);
+  off();
 });
 
 it('Reset Settings puts back what Settings keeps: the toggles, the click wheel, the library view; the volume as it was', () => {

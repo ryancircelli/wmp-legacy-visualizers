@@ -4,8 +4,10 @@
 #include <stddef.h>
 #include <stdint.h>
 
-// Interleaved stereo float32 frames at 44100 Hz, on librespot's player thread. It may block: that is
-// the back-pressure that paces playback. frames 0 (samples NULL): the sink stopped (a pause, a stop).
+// Interleaved stereo float32 frames at 44100 Hz, on librespot's player thread (with a crossfade set, on
+// the sink's own pump thread instead: one thread at a time either way). It may block: that is the
+// back-pressure that paces playback. frames 0 (samples NULL): the sink stopped (a pause, a stop; with a
+// crossfade, after what was already handed over, and at the end of the context after what was queued).
 typedef void (*wmp_ls_pcm_cb)(void *ctx, const float *samples, size_t frames);
 // A UTF-8 log line, "librespot: ...", from any thread.
 typedef void (*wmp_ls_log_cb)(void *ctx, const char *line);
@@ -15,7 +17,8 @@ typedef void (*wmp_ls_state_cb)(void *ctx, const char *device_id);
 // What plays, from librespot's thread, on each track change, play, pause, seek, end of track and stop:
 // one whole JSON object (UTF-8), {"playing":bool,"position":ms,"title":"","artist":"" (", "-joined),
 // "album":"","art":"" (the largest cover's url, or ""),"duration":ms,"uri":"spotify:track:..."}. A stop
-// sends playing false, position 0 and the track fields empty.
+// sends playing false, position 0 and the track fields empty. Positions here and in the player callback
+// are what is heard (with a crossfade, the player's less what the sink has queued ahead).
 typedef void (*wmp_ls_np_cb)(void *ctx, const char *json);
 // The host's player (the page's window.__wmpPlayer, as it is: the host only forwards it), from
 // librespot's thread, at each track change, play, pause, seek, position correction, stop, shuffle or
@@ -42,7 +45,10 @@ void wmp_ls_token(const char *token, const char *client_id, const char *client_t
 // "next", "prev", "seek:<ms>", "shuffle:0|1", "repeat:off|context|track", "take" (taken over, not
 // resumed) or "load:{"context":uri,"track":uri|null,"shuffle":bool|null,"position":ms}" (activated
 // first when not active; always plays; shuffle null leaves it). Dropped, with a log line, while no
-// session is up; an unknown one is logged and ignored.
+// session is up; an unknown one is logged and ignored. Also "crossfade:<s>", taken with or without a
+// session: at a track's natural end (not a skip, a load or a seek) the next track fades in over the
+// last s seconds of this one (an integer, 0 off, the default; clamped to 0..12). Kept for the process,
+// not across launches: the page sends it at its start and at each change. Logged.
 void wmp_ls_command(const char *cmd);
 // Asks the receiver to shut down; a later wmp_ls_start starts it again.
 void wmp_ls_stop(void);

@@ -3,9 +3,8 @@
 // What Now Playing controls itself is not here (Shuffle and Repeat: the status row; Lyrics, Karaoke,
 // Visualizer, Play On: its ⋯ and hold menus), nor what the device does (brightness, backlight, the date
 // and time, the clock's 24 hours, the volume), nor what has no meaning on Spotify (§4.4: Radio Regions, Language,
-// Font Size, Rotate, Sort Contacts, Spoken Menus, Sound Check, EQ, Audio Crossfade, Audiobooks, Mono
-// Audio). A value shows at its row's right; a value list checks the current choice; a toggle flips in
-// place (§2.4).
+// Font Size, Rotate, Sort Contacts, Spoken Menus, Sound Check, EQ, Audiobooks, Mono Audio). A value shows at
+// its row's right; a value list checks the current choice; a toggle flips in place (§2.4).
 import { useEffect, useState, type CSSProperties } from 'react';
 import { LIKED, type UpdateCheck } from '../../../../model';
 import { appDownload, isAlbum, LINKS, openLink, restartApp, useApp, useCollection, useLibraryList, useShell } from '../../../../ui';
@@ -29,10 +28,13 @@ const header = (label: string): MenuItem => ({ id: 'h:' + label, label, header: 
 /** the rows shown: the gated ones dropped, then a header left with no row under it */
 const shown = (items: (MenuItem | false)[]) => items.filter((x): x is MenuItem => !!x)
   .filter((x, i, a) => !x.header || (i + 1 < a.length && !a[i + 1]!.header));
+/** Crossfade's steps in seconds, Off (0) after the last */
+const FADES = [2, 5, 8, 12];
 
 function SettingsMenu() {
   const nav = useNav(), sh = useShell(), canLogout = useApp((s) => s.auth.canLogout);
   const [ip, patch] = useIpodSettings(), [theme] = useAppearance(), [view, setView] = useLibraryView();
+  const { canFade, fade } = useApp((s) => ({ canFade: !!s.auth.canCrossfade, fade: s.settings.crossfade }));
   return <MenuScreen items={shown([
     header('Appearance'),
     { id: 'skin', label: 'Skin', right: 'iPod', chevron: true, onSelect: to(nav, menu('settings/skin', 'Skin', () => [
@@ -51,6 +53,9 @@ function SettingsMenu() {
     { id: 'view', label: 'Library View', right: view === 'list' ? 'List' : 'Grid', onSelect: () => setView(view === 'list' ? 'grid' : 'list') },
 
     header('General'),
+    // the host's own speaker's (docs/ipod-skin.md "Crossfade"): Off -> 2 s -> 5 s -> 8 s -> 12 s -> Off
+    canFade && { id: 'crossfade', label: 'Crossfade', right: fade ? fade + ' s' : 'Off',
+                 onSelect: () => sh.store.getState().actions.setSettings({ crossfade: FADES.find((n) => n > fade) ?? 0 }) },
     { id: 'about', label: 'About', chevron: true, onSelect: to(nav, page('settings/about', 'About', About)) },
     { id: 'updates', label: 'Check for Updates', chevron: true, onSelect: to(nav, page('settings/updates', 'Check for Updates', Updates)) },
     // The newest player from the site, in place: the music goes on (ios/WmpSpotify/observer.js alchemyRestart)

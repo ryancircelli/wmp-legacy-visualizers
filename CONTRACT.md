@@ -367,12 +367,17 @@ Commands, page -> host:
     `repeat:<off|context|track>`. `take` become the active device with Spotify's remembered session, without resuming.
   - `load:<json>` play a context, always starting playback: `{"context":"spotify:playlist:…","track":"spotify:track:…"|null,
     "shuffle":true|false|null,"position":0}` (`shuffle: null` leaves it as it is); not the active device: activate first.
+  - `crossfade:<seconds>` an integer, 0 (off, the host's default) to 12, out of range clamped: at a track's natural end
+    (not a skip, a load or a seek) the next track fades in over the last that many seconds of this one, equal-power,
+    on the host's own speaker only (Spotify sends Connect devices no crossfade of its own). Taken whether or not the
+    speaker is active or has a session; the host keeps it no longer than it runs, so the page sends it at its start and
+    at each change (`settings.crossfade`, `src/adapters/spotify/index.ts hostCrossfade`).
   - `play` / `pause` / `toggle` / `next` / `prev` / `seek:<ms>` keep any meaning the host already gives them elsewhere
     (the iOS app's Control Center); `play` gains the take-first rule.
 State, host -> page: `window.__wmpPlayer` with the event `wmp-player` on window at every change, and once more when the
 page asks (`alchemyHost()`), from the player's own events:
   `{ v: 1, active, playing, uri ('' when nothing is loaded), title, artist, album, art (as __wmpSpeakerTrack has them),
-  duration (ms), position (ms, true at `at`), at (epoch ms; the page extrapolates while playing), shuffle,
+  duration (ms), position (ms, true at `at`: what is heard, behind what a crossfade has queued), at (epoch ms; the page extrapolates while playing), shuffle,
   repeat: 'off'|'context'|'track' }` — `active`: its speaker is the active Connect device. No context uri, queue or
   restrictions: the page keeps taking those from Spotify's cluster. `__wmpSpeakerTrack` / `wmp-speaker-track` (v9) stay
   as they are for an older page; the page reads them still on a host without `__wmpPlayer`.

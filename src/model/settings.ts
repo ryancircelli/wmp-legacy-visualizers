@@ -25,6 +25,8 @@ export interface Settings {
   lyrics: boolean;
   /** synced lyrics highlight word by word (off: the current line lit plainly) */
   karaoke: boolean;
+  /** seconds the next track fades in over the end of this one, 0 off (the host's own speaker only: auth.canCrossfade) */
+  crossfade: number;
   /** the clock shows remaining (-m:ss) instead of elapsed */
   remaining?: boolean;
   taskPane?: boolean;
@@ -39,7 +41,7 @@ export interface Settings {
 
 export const DEFAULTS: Settings = {
   fps: 60, scale: 'original', intended: false, bg: 0x000000, smoothing: 0, debug: false,
-  vis: 'alchemy', preset: 0, advanced: false, animate: true, volume: 100, muted: false, lyrics: true, karaoke: true, skin: 'wmp9', detailsPane: true, libraryView: 'details',
+  vis: 'alchemy', preset: 0, advanced: false, animate: true, volume: 100, muted: false, lyrics: true, karaoke: true, crossfade: 0, skin: 'wmp9', detailsPane: true, libraryView: 'details',
 };
 
 const clamp = (v: number, lo: number, hi: number) => (v < lo ? lo : v > hi ? hi : v);
@@ -62,6 +64,7 @@ export function normalize(raw: Record<string, unknown>, firstRun = false): Setti
   s.animate = s.animate !== false;
   s.lyrics = s.lyrics !== false;
   s.karaoke = s.karaoke !== false;
+  s.crossfade = clamp(Math.round(+s.crossfade || 0), 0, 12);
   if (typeof s.skin !== 'string' || !s.skin) s.skin = DEFAULTS.skin;
   s.detailsPane = s.detailsPane !== false;
   s.libraryView = s.libraryView === 'tiles' ? 'tiles' : 'details';

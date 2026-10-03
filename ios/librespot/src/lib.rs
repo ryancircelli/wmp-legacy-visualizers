@@ -1,12 +1,15 @@
 //! The app's Spotify Connect receiver (ios/README.md, "Librespot"): librespot's discovery, session,
 //! Connect state and player, wired as librespot's own binary wires them (src/main.rs at v0.8.0), with
-//! a sink that hands the app interleaved stereo f32 at 44100 Hz. The C ABI is wmp_librespot.h.
+//! a sink that hands the app interleaved stereo f32 at 44100 Hz (with a crossfade set, through a queue
+//! of its own: crossfade.rs). The C ABI is wmp_librespot.h.
+
+mod crossfade;
 
 use std::{
     ffi::{CStr, CString, c_char, c_void},
     future::Future,
     pin::Pin,
-    sync::{Mutex, MutexGuard},
+    sync::{Arc, Mutex, MutexGuard, atomic::Ordering::Relaxed},
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
@@ -255,21 +258,29 @@ impl log::Log for Forward {
     fn flush(&self) {}
 }
 
-// The app's sink: librespot decodes at 44100 Hz stereo, f64 interleaved.
-struct HostSink;
+// The app's pcm callback: samples (interleaved stereo frames), or None for "the sink stopped".
+fn hand(samples: Option<&[f32]>) {
+    if let Some(h) = host() {
+        match samples {
+            Some(f) => (h.pcm)(h.ctx as *mut c_void, f.as_ptr(), f.len() / 2),
+            None => (h.pcm)(h.ctx as *mut c_void, std::ptr::null(), 0),
+        }
+    }
+}
+
+// The app's sink: librespot decodes at 44100 Hz stereo, f64 interleaved. Each packet goes to the app as
+// it comes, or with a crossfade set through crossfade.rs's queue.
+struct HostSink(crossfade::Feed);
 
 impl Sink for HostSink {
     fn stop(&mut self) -> SinkResult<()> {
-        if let Some(h) = host() {
-            (h.pcm)(h.ctx as *mut c_void, std::ptr::null(), 0);
-        }
+        self.0.stop();
         Ok(())
     }
 
     fn write(&mut self, packet: AudioPacket, converter: &mut Converter) -> SinkResult<()> {
-        if let (AudioPacket::Samples(samples), Some(h)) = (packet, host()) {
-            let f = converter.f64_to_f32(&samples);
-            (h.pcm)(h.ctx as *mut c_void, f.as_ptr(), f.len() / 2);
+        if let AudioPacket::Samples(samples) = packet {
+            self.0.write(&converter.f64_to_f32(&samples));
         }
         Ok(())
     }
@@ -467,13 +478,16 @@ async fn run(
         }
     };
     let mut session = Session::new(session_config.clone(), cache.clone());
+    let fade = Arc::new(crossfade::Pump::default());
+    let feed = crossfade::Feed::new(fade.clone(), hand, say);
     let player = Player::new(
         PlayerConfig::default(),
         session.clone(),
         mixer.get_soft_volume(),
-        || Box::new(HostSink),
+        move || Box::new(HostSink(feed)),
     );
     let mut events = player.get_player_event_channel();
+    fade.listen(player.get_player_event_channel()); // the sink's own, read in order with its samples
     // Full volume: the phone's own volume is the one to turn.
     let config = ConnectConfig {
         name,
@@ -499,6 +513,12 @@ async fn run(
     // not always there to do it (2026-10-03).
     let mut lost: Option<Instant> = None;
     let mut up: Option<Instant> = None; // since when the session has been up
+    // With a crossfade set, the player's positions lead what is heard by what the sink has queued, so
+    // what goes to the app is less that (crossfade.rs's lead; at a pause and its resume, the lead when
+    // the sink stopped). Not a seek's, and not after a track change, a stop or a seek while paused until
+    // the next Playing: the sink drops its queue at its next write or stop (or the track is new), so the
+    // event's own position is the one heard.
+    let mut fresh = false;
 
     loop {
         tokio::select! {
@@ -639,6 +659,18 @@ async fn run(
             // Control Center's buttons and the page's player (wmp_ls_command, the contract's commands), to
             // the live session.
             Some(c) = commands.recv() => {
+                // The page's setting, kept for the process (not by the session, and not across launches:
+                // the page sends it at its start and at each change).
+                if let Some(n) = c.strip_prefix("crossfade:") {
+                    match crossfade::parse(n) {
+                        Some(n) => {
+                            crossfade::SECS.store(n, Relaxed);
+                            say(&format!("librespot: crossfade {n} s"));
+                        }
+                        None => say(&format!("librespot: unknown command {c}")),
+                    }
+                    continue;
+                }
                 let Some(s) = spirc.as_ref() else {
                     say(&format!("librespot: {c}: no session"));
                     continue;
@@ -694,6 +726,7 @@ async fn run(
             },
             Some(e) = events.recv() => match e {
                 PlayerEvent::TrackChanged { audio_item } => {
+                    fresh = true;
                     track = Track::new(&audio_item);
                     say(&format!("librespot: now playing: {} \u{2014} {}", track.title, track.artist));
                     now_playing(&track, playing, 0);
@@ -702,24 +735,31 @@ async fn run(
                 PlayerEvent::Playing { position_ms, .. } => {
                     say("librespot: playing");
                     playing = true;
+                    let position_ms = if std::mem::take(&mut fresh) { position_ms } else { position_ms.saturating_sub(fade.held_ms()) };
                     now_playing(&track, playing, position_ms);
                     hp.send(&track, playing, Some(position_ms));
                 }
                 PlayerEvent::Paused { position_ms, .. } => {
                     say("librespot: paused");
                     playing = false;
+                    let position_ms = if fresh { position_ms } else { position_ms.saturating_sub(fade.held_ms()) };
                     now_playing(&track, playing, position_ms);
                     hp.send(&track, playing, Some(position_ms));
                 }
                 PlayerEvent::Seeked { position_ms, .. } => {
+                    fresh |= !playing; // playing, the sink's next write drops the queue: the next pause's stop sees it
                     now_playing(&track, playing, position_ms);
                     hp.send(&track, playing, Some(position_ms));
                 }
-                PlayerEvent::PositionCorrection { position_ms, .. } => hp.send(&track, playing, Some(position_ms)),
+                PlayerEvent::PositionCorrection { position_ms, .. } => {
+                    hp.send(&track, playing, Some(position_ms.saturating_sub(fade.lead_ms())))
+                }
                 // Not a pause: the next track's Playing follows at once, and Control Center flickered to
                 // paused at every track change. A session that ends here says Paused or Stopped itself.
-                PlayerEvent::EndOfTrack { .. } => now_playing(&track, playing, track.duration),
+                // The decoder's end, which is heard as much later as it has queued.
+                PlayerEvent::EndOfTrack { .. } => now_playing(&track, playing, track.duration.saturating_sub(fade.lead_ms())),
                 PlayerEvent::Stopped { .. } => {
+                    fresh = true;
                     say("librespot: stopped");
                     playing = false;
                     track = Track::default();

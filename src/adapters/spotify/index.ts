@@ -5,6 +5,7 @@
 // socket (PCM, lyrics, GSMTC as a fallback) comes from the local adapter's startHost.
 import { LIKED, noCommands, type AppStore } from '../../model';
 import { announceHostUpdate, checkForUpdates, detectMode, hostWindow, win } from '../host';
+import * as hostPlayer from '../host/player';
 import { hostTransport, startHost, type HostLink } from '../local';
 import * as C from './connect';
 import { openLink, parseLink } from './links';
@@ -86,6 +87,14 @@ export function spotifyCommands(sp: Sp, host: HostLink | null) {
   } satisfies typeof noCommands;
 }
 
+/** Crossfade on the host's own speaker (CONTRACT v10 `crossfade:<s>`): offered while the host has the player
+ *  (auth.canCrossfade), the setting sent at once and at each change; the host keeps nothing across launches. */
+export function hostCrossfade(store: AppStore): () => void {
+  const on = hostPlayer.available();
+  store.getState().actions.setAuth({ canCrossfade: on });
+  return on ? store.subscribe((s) => s.settings.crossfade, (n) => hostPlayer.send('crossfade:' + n), { fireImmediately: true }) : () => {};
+}
+
 export function createSpotifyAdapter(store: AppStore): { start(): void; stop(): void } {
   let offs: (() => void)[] = [], host: HostLink | null = null;
   return {
@@ -123,6 +132,7 @@ export function createSpotifyAdapter(store: AppStore): { start(): void; stop(): 
         () => { window.removeEventListener('wmp-volume', buttons); document.removeEventListener('visibilitychange', seen);
                 window.removeEventListener('wmp-thermal', thermal); window.removeEventListener('wmp-lowpower', thermal); },
         store.subscribe((s) => (s.settings.muted ? 0 : s.settings.volume), (v) => { if (!sp.fromDevice) C.volume(sp, v); }),
+        hostCrossfade(store),
         transport().start(),   // first: the Tauri bridge sets up what observe reads
         observe(sp),
       ];

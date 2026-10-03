@@ -50,6 +50,8 @@ export interface AppState {
     nativeTitle?: boolean;
     /** a newer exe is out (window.alchemyHostUpdate): Help offers the download */
     hostUpdate?: boolean;
+    /** the host's own player takes settings.crossfade (CONTRACT v10 `crossfade:<s>`) */
+    canCrossfade?: boolean;
   };
   playback: Playback;
   queue: { next: Track[] };

@@ -184,6 +184,18 @@ overlay, plays as ever).
   (`wmp_ls_command`'s commands and the player-state callback) is the shared layer a second host
   (Windows) would reuse: the parsing, the activation rules and the state all live in lib.rs, and
   Swift only forwards.
+- **Crossfade** (2026-10-03). Spotify sends a Connect device no crossfade and librespot only plays
+  gapless, so the speaker fades itself: `crossfade:<s>` (0 to 12, the page's setting, sent at its start
+  and at each change; kept for the process) through `wmp_ls_command`, all of it in the crate
+  (`src/crossfade.rs`), none in Swift. Off, the sink hands each packet to the app as ever. On, it keeps
+  up to that many seconds queued ahead of what is heard (filled as fast as librespot decodes, empty after
+  a start or a seek so nothing is delayed) and a pump thread hands them over, the app's callback still
+  blocking as before; at a natural end the next track is mixed into the old one's tail still queued.
+  The sink tells a natural end from a skip, a seek or a stop by librespot's own player events, read from
+  a channel of its own on the player thread, in order with the samples; a skip, seek or stop drops the
+  queue, a pause keeps it (resuming where it was heard), the end of a context plays it out. Positions
+  to the page and Control Center are what is heard; Spotify's other clients see Spirc's own, which is
+  right but after a pause and resume, when it runs ahead by what was queued.
 - **Name, id, and which device plays.** The speaker is "WMP Spotify (iOS)": the phone's own name
   ("Ryan's iPhone") is "iPhone" or "iPad" to apps since iOS 16 without an entitlement Apple grants on
   request. The page can rename it (`alchemySpeakerName(name)`, the "speaker" message; a rename
