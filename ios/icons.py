@@ -1,18 +1,19 @@
 #!/usr/bin/env python3
-"""The app's alternate icons, one per body colour, drawn from the one green icon (the owner, 2026-10-03:
+"""The app's icons, one per body colour, drawn from the one source icon, ios/icon-source.png (the owner, 2026-10-03:
 "have the icon change with theme color… shouldn't hardcode these images"). iOS takes alternate icons
 only from the bundle, never drawn at run time, so they are made here at build time (ios.yml, before
 xcodegen): each preset of src/skins/ipod/settings.ts COLORS (read from the file: no second table), and
 for Custom a grid the page snaps to (src/skins/ipod/icon.ts: the same HUES, LIGHTS and GREYS).
 
-  python3 ios/icons.py            writes ios/WmpSpotify/Assets.xcassets/Icon-<name>.appiconset/
+  python3 ios/icons.py            writes ios/WmpSpotify/Assets.xcassets/Icon-<name>.appiconset/ and, in the
+                                  default body colour (green), AppIcon.appiconset's own
 Needs Pillow."""
 import colorsys, json, os, re, sys
 from PIL import Image
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 ASSETS = os.path.join(ROOT, 'WmpSpotify', 'Assets.xcassets')
-SRC = os.path.join(ASSETS, 'AppIcon.appiconset', 'icon-1024.png')
+SRC = os.path.join(ROOT, 'icon-source.png')   # the one drawing every icon is a recolouring of (the owner's, 2026-10-03)
 LOOK = 1.15                       # settings.ts LOOK: a preset's numbers are its base, lifted by the lights
 HUES = range(0, 360, 30)          # Custom's grid: icon.ts has the same
 LIGHTS = (35, 55)
@@ -56,8 +57,8 @@ def main():
     for h in HUES:
         for l in LIGHTS: want['c-h%03d-l%d' % (h, l)] = (h, 80, l)
     for l in GREYS: want['c-grey-l%d' % l] = (0, 0, l)
-    for name, (h, s, l) in want.items():
-        d = os.path.join(ASSETS, 'Icon-%s.appiconset' % name)
+    for name, (h, s, l) in list(want.items()) + [('', want['green'])]:   # '': the app's own icon, the default colour's
+        d = os.path.join(ASSETS, 'Icon-%s.appiconset' % name if name else 'AppIcon.appiconset')
         os.makedirs(d, exist_ok=True)
         out = Image.new('RGB', im.size)
         out.putdata(recolour(src, ref, h, s, l))
