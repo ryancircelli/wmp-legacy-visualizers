@@ -403,6 +403,7 @@ async fn run(
     // It came back idle and the music stopped at the end of the song, the page (hidden, throttled)
     // not always there to do it (2026-10-03).
     let mut lost: Option<Instant> = None;
+    let mut up: Option<Instant> = None; // since when the session has been up
 
     loop {
         tokio::select! {
@@ -453,6 +454,7 @@ async fn run(
                     Ok((s, t)) => {
                         say(&format!("librespot: session up ({via})"));
                         state(Some(&device_id));
+                        up = Some(Instant::now());
                         if lost.take().is_some_and(|at| at.elapsed() < Duration::from_secs(180)) {
                             say("librespot: the session was lost under a playing song: taking the playback back");
                             // Spotify's transfer to this device (its remembered song and place), then a
@@ -484,14 +486,28 @@ async fn run(
                     }
                 }
             },
-            _ = async {
-                if let Some(t) = task.as_mut() {
-                    t.await;
+            // The session's end: its task finishing, or, sooner, the session found invalid (a read error
+            // on its connection: iOS took the sockets with the network path, as the phone locks or leaves
+            // Wi-Fi; Spirc's own task took nine seconds more to end, 2026-10-03). A session that had
+            // stood half a minute connects again at once; a shorter one waits the five seconds.
+            dead = async {
+                match task.as_mut() {
+                    Some(t) => tokio::select! {
+                        _ = t => false,
+                        _ = async { while !session.is_invalid() { tokio::time::sleep(Duration::from_secs(1)).await; } } => true,
+                    },
+                    None => false,
                 }
             }, if task.is_some() && !connecting => {
+                if let (true, Some(t)) = (dead, task.take()) {
+                    if let Some(s) = spirc.as_ref() {
+                        let _ = s.shutdown();
+                    }
+                    tokio::spawn(t); // its shutdown finishes on its own
+                }
                 task = None;
                 spirc = None;
-                say("librespot: session ended");
+                say(if dead { "librespot: session ended (its connection was lost)" } else { "librespot: session ended" });
                 if playing {
                     lost = Some(Instant::now());
                 }
@@ -500,7 +516,7 @@ async fn run(
                     session.shutdown();
                 }
                 connecting = again(&mut reconnects, WINDOW, RECONNECTS);
-                retry = true;
+                retry = up.take().is_none_or(|at| at.elapsed() < Duration::from_secs(30));
             },
             Some((t, c, ct)) = tokens.recv() => {
                 if !c.is_empty() && c != session_config.client_id {

@@ -1,5 +1,5 @@
 # librespot-core 0.8.0 as the app builds it (build.sh applies this to the crate from crates.io): the OS
-# constant "linux" on iOS (Cargo.toml says why), and setters that hand login5 and spclient the web
+# constant "linux" on iOS (Cargo.toml says why), the read error that closes the connection named in its log line, and setters that hand login5 and spclient the web
 # player's own tokens (src/lib.rs says why). diff -ruN against the crate, paths a/ b/.
 --- a/src/config.rs
 +++ b/src/config.rs
@@ -58,3 +58,14 @@
      pub async fn client_token(&self) -> Result<String, Error> {
          let client_token = self.lock(|inner| {
              if let Some(token) = &inner.client_token {
+--- a/src/session.rs
++++ b/src/session.rs
+@@ -897,7 +897,7 @@
+                     return Poll::Ready(Ok(()));
+                 }
+                 Poll::Ready(Some(Err(e))) => {
+-                    error!("Connection to server closed.");
++                    error!("Connection to server closed: {e}");
+                     session.shutdown();
+                     return Poll::Ready(Err(e));
+                 }
