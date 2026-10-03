@@ -61,6 +61,14 @@ export function onDevices(sp: Sp, list: unknown): void {
     }
     lostAt = 0;
   }
+  // a resume asked for while the speaker was away (connect.ts): now that it is back, within half a minute
+  if (spk && sp.wantPlay && devs.some((x) => x.id === spk)) {
+    if (Date.now() - sp.wantPlay < 30_000) {
+      window.alchemyLog?.('spotify: the speaker is back: the resume asked for meanwhile');
+      void play(sp, 'play');
+    }
+    sp.wantPlay = 0;
+  }
   was = { active, playing };
 }
 let movedAt = 0, fullAt = 0, lostAt = 0, was: { active: string | null | undefined; playing: boolean } = { active: null, playing: false };

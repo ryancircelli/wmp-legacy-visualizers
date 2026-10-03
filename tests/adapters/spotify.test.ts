@@ -333,6 +333,40 @@ describe('3. transport: connect-state commands', () => {
   });
 });
 
+describe('3a. the host speaker away and back (the app suspended while paused)', () => {
+  it('a resume refused for want of the speaker (502 / 404) is kept, and played when the speaker is back', async () => {
+    vi.stubGlobal('__wmpSpeaker', { id: 'spk1', name: 'WMP Spotify (iOS)' });
+    const env = boot({ loggedIn: true, state: { ...FX.playerState, is_paused: true }, activeDeviceId: 'spk1' });
+    env.resources.push({ name: 'https://gew4-spclient.spotify.com/connect-state/v1/devices/hobs_x', initiatorType: 'fetch' });
+    let gone = true;
+    env.route(/connect\/transfer/, { status: 200, json: {} });
+    env.route(/player\/command/, () => (gone ? { status: 404, json: {} } : { status: 200, json: { ack_id: 'a' } }));
+    env.start();
+    await settle();
+    void env.C.playPause(); await settle();                          // the speaker is not there: 404
+    expect(window.__wmpSpotify!.activeDeviceId).toBe('');
+    gone = false;
+    env.fire('wmp-spotify-devices', [{ id: 'spk1', name: 'WMP Spotify (iOS)', type: 'Speaker', active: false, volume: 65535 }]);
+    await settle();
+    const ok = env.calls.filter((x) => /player\/command/.test(x.url)).pop()!;
+    expect(JSON.stringify(ok.body)).toBe('{"command":{"endpoint":"resume"}}');
+    expect(env.calls.some((x) => /connect\/transfer\/from\/.*\/to\/spk1$/.test(x.url))).toBe(true);
+    const n = env.calls.length;
+    env.fire('wmp-spotify-devices', [{ id: 'spk1', name: 'WMP Spotify (iOS)', type: 'Speaker', active: false, volume: 65535 }]);
+    await settle();
+    expect(env.calls.filter((x) => /player\/command/.test(x.url)).length).toBe(env.calls.slice(0, n).filter((x) => /player\/command/.test(x.url)).length);   // once
+  });
+  it('the speaker saying it is paused, and where, wins over a state that still says playing', async () => {
+    vi.stubGlobal('__wmpSpeaker', { id: 'spk1', name: 'WMP Spotify (iOS)' });
+    const uri = FX.playerState.track.uri;
+    vi.stubGlobal('__wmpSpeakerTrack', { uri, title: 'T', artist: 'A', album: 'B', art: '', duration: 300_000, position: 4935, playing: false });
+    const env = boot({ loggedIn: true, state: { ...FX.playerState, is_paused: false }, activeDeviceId: 'spk1' });
+    env.start();
+    await settle();
+    expect([env.S.playback.status, env.S.playback.position]).toEqual(['paused', 4935]);
+  });
+});
+
 describe('3b. the playing context names Now Playing and Up Next', () => {
   it('fetches the playing playlist once for its name and tracks', async () => {
     const env = boot({ loggedIn: true, state: FX.playerState });

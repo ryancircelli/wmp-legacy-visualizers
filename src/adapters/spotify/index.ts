@@ -16,7 +16,7 @@ import { newCache, type Sp } from './sp';
 import { transport } from './transport';
 
 export function newSp(store: AppStore, fallback: Sp['fallback'] = () => {}): Sp {
-  return { store, fallback, hasState: false, last: null, scanned: {}, bad: {}, read: {}, scan: null, routed: false, routes: {}, sentVolume: [], fromDevice: false,
+  return { store, fallback, hasState: false, last: null, scanned: {}, bad: {}, read: {}, scan: null, routed: false, routes: {}, sentVolume: [], fromDevice: false, wantPlay: 0,
            blockedUntil: 0, ctxNames: {}, seeds: {}, loading: {}, cache: newCache() };
 }
 

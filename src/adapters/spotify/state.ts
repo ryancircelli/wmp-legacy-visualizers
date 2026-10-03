@@ -88,10 +88,15 @@ function want(sp: Sp, uri: string): void {
  *  last session, not something playing anywhere: shown paused, the clock standing still. */
 export function toPlayback(sp: Sp, ps: PlayerState): Partial<Playback> {
   const t = ps.track ?? {}, md = t.metadata ?? {}, rs = ps.restrictions ?? {};
-  const now = Date.now(), paused = !!ps.is_paused || !W().activeDeviceId, speed = +(ps.playback_speed ?? 1) || 1;
-  const pos = (+(ps.position_as_of_timestamp ?? 0) || 0) + (paused ? 0 : (now - (+(ps.timestamp ?? 0) || now)) * speed);
-  const row = rowFor(sp, t.uri);   // what librespot leaves out (it sends the uri alone)
   const own = speakerTrack(t.uri); // the host's speaker, on what it plays itself
+  // The speaker's own word that it is paused, and where, wins over a state that still says playing: a
+  // pause from Control Center with the app in the background reached the speaker and not this page
+  // (the app was suspended before Spotify's update came: the clock had run to the end on return, 2026-10-03).
+  const held = !!own && !own.playing && W().activeDeviceId === window.__wmpSpeaker?.id;
+  const now = Date.now(), paused = !!ps.is_paused || !W().activeDeviceId || held, speed = +(ps.playback_speed ?? 1) || 1;
+  const pos = held && !ps.is_paused ? own.position
+    : (+(ps.position_as_of_timestamp ?? 0) || 0) + (paused ? 0 : (now - (+(ps.timestamp ?? 0) || now)) * speed);
+  const row = rowFor(sp, t.uri);   // what librespot leaves out (it sends the uri alone)
   const dur = +(ps.duration ?? 0) || +(md.duration ?? 0) || own?.duration || row?.duration || 0;
   const o = ps.options ?? {};
   const ctx = LIKED_CTX.test(ps.context_uri ?? '') ? LIKED : ps.context_uri;   // Liked Songs: its library uri

@@ -59,6 +59,15 @@ export async function command(sp: Sp, cmd: Cmd, orElse?: (() => void) | null, re
       if (window.__wmpSpotify) window.__wmpSpotify.activeDeviceId = '';
       return command(sp, cmd, orElse, true);
     }
+    // A resume to the host's speaker while it is away (the app was suspended in the background, paused;
+    // back in front, its session takes a few seconds to come up again: 502, then 404, 2026-10-03): kept,
+    // and played when the speaker is back (observers.ts onDevices).
+    if (to === window.__wmpSpeaker?.id && cmd.endpoint === 'resume' && (r.status === 404 || r.status >= 500)) {
+      if (window.__wmpSpotify) window.__wmpSpotify.activeDeviceId = '';
+      sp.wantPlay = Date.now();
+      status(sp, 'Spotify: reconnecting…');
+      return false;
+    }
     status(sp, 'Spotify: ' + (msg || 'command refused (' + r.status + ')'));
   } catch { log('offline'); status(sp, 'Spotify: command failed (offline)'); }
   orElse?.();
