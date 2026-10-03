@@ -83,6 +83,32 @@ func logKind(_ line: String) -> String? {
     return first
 }
 
+/// The app's processor time (this process: the web content process is not counted) over each stretch
+/// in the background and in the foreground, one log line as the stretch ends: "cpu: 41 s of 12m04
+/// in background (6%)" (the owner, 2026-10-02: "is there a chance backgrounding the app consumes more
+/// cpu while music is playing").
+final class CpuMeter {
+    static let shared = CpuMeter()
+    private var since = ProcessInfo.processInfo.systemUptime, cpu = CpuMeter.cpuSeconds(), phase = "launch"
+    func scene(_ p: ScenePhase) {
+        let name = p == .active ? "foreground" : p == .background ? "background" : "inactive"
+        if name == "inactive" { return }   // the flicker on the way in or out: the stretch carries on
+        let now = ProcessInfo.processInfo.systemUptime, used = CpuMeter.cpuSeconds()
+        let wall = now - since, spent = used - cpu
+        if wall >= 30, phase != "launch" {
+            let m = Int(wall) / 60, s = Int(wall) % 60
+            HostLog.shared.log(String(format: "cpu: %.0f s of %dm%02d in %@ (%.0f%%)", spent, m, s, phase, wall > 0 ? spent / wall * 100 : 0))
+        }
+        since = now; cpu = used; phase = name
+    }
+    /// user + system time of this process, seconds
+    private static func cpuSeconds() -> Double {
+        var ts = timespec()
+        clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &ts)
+        return Double(ts.tv_sec) + Double(ts.tv_nsec) / 1e9
+    }
+}
+
 final class HostLog: ObservableObject {
     static let shared = HostLog()
     private static let cap = 3000
@@ -519,6 +545,7 @@ struct Player: View {
         .onChange(of: scenePhase, initial: true) { _, phase in
             HostLog.shared.log("scene: \(phase)", quiet: true)
             DeviceState.shared.scene = phase == .active ? "active" : phase == .background ? "background" : "inactive"
+            CpuMeter.shared.scene(phase)
         }
         .task {
             script = await userScript()
