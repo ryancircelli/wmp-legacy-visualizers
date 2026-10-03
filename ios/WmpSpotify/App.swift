@@ -17,9 +17,9 @@ struct WmpSpotifyApp: App {
 
     init() {
         // .playback: the music keeps going with the screen locked, in the background
-        // (UIBackgroundModes audio) and with the mute switch on.
+        // (UIBackgroundModes audio) and with the mute switch on. Not active yet: the speaker takes the
+        // session when it has samples and gives it up when idle (Librespot.output / idle).
         try? AVAudioSession.sharedInstance().setCategory(.playback)
-        try? AVAudioSession.sharedInstance().setActive(true)
         HostLog.shared.log("host: build \(Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "?")")
         Librespot.shared.start()
         DeviceState.shared.start()
@@ -1190,7 +1190,29 @@ final class Librespot {
                                       center.changePlaybackRateCommand, center.ratingCommand, center.likeCommand,
                                       center.dislikeCommand, center.bookmarkCommand]
         for command in off { command.isEnabled = false }
+        // Another app's audio (a reel, a call) interrupts the session: the speaker pauses with it, as a
+        // player should, rather than taking the session back at every packet ("they fight", the owner,
+        // 2026-10-02), and plays on only when the system says the other is done and resuming is right.
+        NotificationCenter.default.addObserver(forName: AVAudioSession.interruptionNotification, object: nil, queue: .main) { n in
+            guard let raw = n.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt,
+                  let type = AVAudioSession.InterruptionType(rawValue: raw) else { return }
+            switch type {
+            case .began:
+                let was = self.playing
+                HostLog.shared.log("audio: interrupted\(was ? ", pausing" : "")")
+                self.interrupted = was
+                if was { wmp_ls_command("pause") }
+            case .ended:
+                let opts = AVAudioSession.InterruptionOptions(rawValue: n.userInfo?[AVAudioSessionInterruptionOptionKey] as? UInt ?? 0)
+                let resume = self.interrupted && opts.contains(.shouldResume)
+                HostLog.shared.log("audio: interruption over\(resume ? ", resuming" : "")")
+                self.interrupted = false
+                if resume { wmp_ls_command("play") }
+            @unknown default: break
+            }
+        }
     }
+    private var interrupted = false  // on the main thread: paused by an interruption, to resume after it
 
     /// The speaker's name in Spotify's pickers, the page's to set (alchemySpeakerName). The phone's own
     /// name is "iPhone" or "iPad" to apps since iOS 16 without an entitlement Apple grants on request.
@@ -1305,9 +1327,20 @@ final class Librespot {
         HostLog.shared.log("nowplaying: \(np.playing ? "playing" : "paused") at \(np.position / 1000) s", quiet: true)
     }
 
-    // ponytail: the engine runs from launch to the end, rendering silence between songs, which keeps the
-    // app and its Connect session awake in the background at some battery cost; stop it on a long
-    // pause if that matters. Started again here after an interruption or a route change stopped it.
+    // The engine runs only while there are samples: paused for IDLE_S, it stops and the session is
+    // given up (a running engine rendering silence held the session day and night: the app was
+    // "playing" to the system while paused, and the web view and it kept the phone awake; the owner,
+    // 2026-10-02: "i think this might also be the battery drain issue cause"). Started again here at
+    // the next packet, after a pause, an interruption or a route change alike.
+    private static let IDLE_S = 2.0
+    private func idle() {
+        DispatchQueue.main.asyncAfter(deadline: .now() + Librespot.IDLE_S) {
+            guard !self.playing, self.engine.isRunning else { return }
+            self.engine.stop()
+            try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+            HostLog.shared.log("audio: idle, the session given up", quiet: true)
+        }
+    }
     private func output() {
         guard !engine.isRunning else { return }
         do {
@@ -1338,6 +1371,7 @@ final class Librespot {
             node.stop()
             if engine.isRunning { node.play() }
             Forwarder.shared.stopped()
+            idle()
             return
         }
         if !playing {

@@ -133,6 +133,17 @@ The music plays out of the app's own audio session, and the visualizers get the 
 librespot is only the audio sink. The page's own player shows up as "WMP Spotify (This Device)", next to
 librespot's "WMP Spotify".
 
+**The audio session is the speaker's only while it plays** (2026-10-02). The engine starts at the first
+packet (`Librespot.output`: session active, engine started) and, two seconds after the sink stops
+(`idle`), stops again and gives the session up with `notifyOthersOnDeactivation`; nothing activates it
+at launch. Another app's interruption pauses the speaker (`wmp_ls_command("pause")`) and the speaker
+plays on only when the interruption ends with `shouldResume`. Before this the engine ran from launch
+to exit rendering silence, so the app was "playing" to iOS while paused, took the session back at every
+packet, fought other apps' audio (an Instagram reel) and kept the phone awake. The page side of the
+same fix (observer.js): the web player's own unmuted media never plays — `HTMLMediaElement.play` is a
+no-op for it — so WebKit holds no audio session of its own either (the Canvas clip, muted, in the
+overlay, plays as ever).
+
 - `ios/librespot/` is a small Rust crate (`wmp-librespot`, staticlib and cdylib) on librespot-core,
   -connect, -playback, -metadata and -discovery 0.8.0 with no audio backend, rustls with compiled-in
   roots, and a sink that hands the app interleaved stereo float32 at 44100 Hz. Its C ABI is

@@ -34,6 +34,20 @@ var log = function (m) { window.alchemyLog('spotify: ' + m); };
 // it (ios/README.md, "Librespot"). The stand-in is never closed: a pause and the next song carry on
 // in it.
 window.alchemyElectron = { loopback: false, mode: 'app' };
+// Spotify's own page plays nothing here: the app's speaker plays, and an <audio> of the web player's
+// (a silent one it keeps alive as a Connect controller) made WebKit hold the phone's audio session and
+// take it back after another app's interruption (the owner, 2026-10-02: a reel in Instagram "starts
+// playing… our app starts trying to take over the audio and they fight, and i was paused"), the web
+// content process never idle meanwhile. Unmuted media of the page's is kept paused; the overlay's own
+// muted media (the Canvas clip) plays as ever.
+(function () {
+  var play = HTMLMediaElement.prototype.play, told = false;
+  HTMLMediaElement.prototype.play = function () {
+    if (this.muted || this.getRootNode() !== document) return play.apply(this, arguments);
+    if (!told) { told = true; log('the page tried to play media: blocked (the speaker plays)'); }
+    return Promise.resolve();
+  };
+})();
 var AUDIO_URL = 'ws://127.0.0.1:47831/audio';
 window.alchemyScreensaver = { audio: true, url: AUDIO_URL };
 var audioSock = null;
