@@ -89,6 +89,18 @@ jobs:
           xcodebuild archive -project ios/WmpSpotify.xcodeproj -scheme WmpSpotify -configuration Release
           -destination 'generic/platform=iOS' -archivePath build/WmpSpotify.xcarchive
           CURRENT_PROJECT_VERSION=${{ github.run_number }} $SIGN -quiet
+      # What the app weighs, by part (the owner, 2026-10-03: "break down why the app is 23mb"): the bundle's
+      # files largest first, the executable's segments, and how much of the catalog is icons.
+      - name: Size report
+        run: |
+          app=$(ls -d build/WmpSpotify.xcarchive/Products/Applications/*.app)
+          echo "== the bundle"; du -sk "$app" | awk '{printf "%.1f MB total\n", $1/1024}'
+          find "$app" -type f -exec ls -l {} + | awk '{printf "%8.2f MB  %s\n", $5/1048576, $9}' | sort -rn | head -15
+          echo "== the executable"; size -m "$app/WmpSpotify" | grep -E "^Segment|total" || true
+          echo "== the asset catalog"; xcrun assetutil --info "$app/Assets.car" | grep -c '"Name"' || true
+          xcrun assetutil --info "$app/Assets.car" | python3 -c "import json,sys; d=json.load(sys.stdin); t={};
+          [t.__setitem__(x.get('Name','?').split('-')[0], t.get(x.get('Name','?').split('-')[0],0)+x.get('SizeOnDisk',0)) for x in d if isinstance(x,dict)];
+          [print('%8.2f MB  %s' % (v/1048576,k)) for k,v in sorted(t.items(), key=lambda kv:-kv[1])[:6]]" || true
       # ExportOptions.plist has destination upload: exporting is the upload to App Store Connect.
       - name: Upload to TestFlight
         run: >-
