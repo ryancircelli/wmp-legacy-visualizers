@@ -49,7 +49,10 @@ export async function command(sp: Sp, cmd: Cmd, orElse?: (() => void) | null, re
   }
   const url = 'https://' + spclient() + '/connect-state/v1/player/command/from/' + w.deviceId + '/to/' + to;
   try {
-    const r = await post(sp, url, { command: cmd });
+    // five seconds for an answer: back from a spell in the background the first requests go out on
+    // connections iOS has already taken, and wait there in silence (a press that seemed ignored)
+    const r = await Promise.race([post(sp, url, { command: cmd }),
+      new Promise<never>((_, no) => { window.setTimeout(() => no(new Error('timeout')), 5000); })]);
     if (r.status >= 200 && r.status < 300) { log(String(r.status)); return true; }
     const msg = (r.json as { error?: { message?: string } } | null)?.error?.message;
     log(r.status + ' ' + (msg || ''));
@@ -69,8 +72,8 @@ export async function command(sp: Sp, cmd: Cmd, orElse?: (() => void) | null, re
       return false;
     }
     status(sp, 'Spotify: ' + (msg || 'command refused (' + r.status + ')'));
-  } catch {
-    log('offline');
+  } catch (e) {
+    log((e as Error)?.message === 'timeout' ? 'no answer in 5 s' : 'offline');
     // the same resume, asked before the network was back (the request itself failed): kept too
     if (to === window.__wmpSpeaker?.id && cmd.endpoint === 'resume') { sp.wantPlay = Date.now(); status(sp, 'Spotify: reconnecting…'); return false; }
     status(sp, 'Spotify: command failed (offline)');

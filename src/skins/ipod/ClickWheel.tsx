@@ -99,8 +99,12 @@ export function ClickWheel(props: WheelProps) {
     if (!g || e.pointerId !== g.id) return;
     press.current = null;
     clearTimeout(g.timer);
-    if (g.held) p.current.onHoldEnd?.(g.zone);
-    else if (e.type === 'pointerup' && !g.turned) { window.alchemyHaptic?.('light'); p.current[TAP[g.zone]](); }
+    // The host's log says what each press of a button came to (the owner, 2026-10-03: "wheel pauses were
+    // ignored", with nothing in the log to tell a press that was not a tap from a command that went nowhere).
+    const say = (what: string) => { if (g.zone !== 'center' || what !== 'tap') window.alchemyLog?.('wheel: ' + g.zone + ' ' + what); };
+    if (g.held) { say('held'); p.current.onHoldEnd?.(g.zone); }
+    else if (e.type === 'pointerup' && !g.turned) { say('tap'); window.alchemyHaptic?.('light'); p.current[TAP[g.zone]](); }
+    else if (g.zone !== 'center' && e.type === 'pointerup' && Math.abs(wrap(g.anchor - g.start)) < DETENT) say('not a tap: it moved');
   };
 
   useEffect(() => {
