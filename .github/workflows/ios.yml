@@ -51,6 +51,8 @@ jobs:
             ios/librespot/target
           key: librespot-${{ hashFiles('ios/librespot/Cargo.lock') }}
       - run: brew install xcodegen
+      # the alternate icons, one per body colour, drawn from the one green icon (ios/icons.py)
+      - run: python3 -m pip install --user --break-system-packages pillow && python3 ios/icons.py
       - run: xcodegen generate --spec ios/project.yml
       # The key stays out of every command line (printf is a shell builtin). SIGN holds the four flags both
       # xcodebuild steps need, written once; it is expanded unquoted below on purpose, as four words.

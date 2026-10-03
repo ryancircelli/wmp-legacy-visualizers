@@ -742,7 +742,7 @@ struct WebView: UIViewRepresentable {
         // have the sheet, and here that post throws in the page and is swallowed.
         for name in ["log", "volume", "open", "layout", "showlog", "haptic", "awake", "statusbar", "orientation",
                      "brightness", "share", "homeindicator", "host", "reset", "viewport", "proximity",
-                     "hapticpattern", "sound", "routepicker", "audiosession", "notify", "appearance", "clipboard",
+                     "hapticpattern", "sound", "routepicker", "audiosession", "notify", "appearance", "clipboard", "icon",
                      "band", "background", "keyboard", "scroll", "lstoken", "speaker"] {
             config.userContentController.add(context.coordinator, name: name)
         }
@@ -924,6 +924,16 @@ struct WebView: UIViewRepresentable {
                 HostLog.shared.log("audiosession: \(s)", quiet: true)
                 try? AVAudioSession.sharedInstance().setCategory(.playback, options: o)
                 try? AVAudioSession.sharedInstance().setActive(true)
+            case "icon":
+                // The app's icon in the skin's body colour: one of ios/icons.py's (Icon-<name>), the green
+                // one for "green" or a name the bundle has none for. iOS says so itself each time it changes.
+                guard let s = message.body as? String, s.range(of: "^[a-z0-9-]{1,24}$", options: .regularExpression) != nil,
+                      UIApplication.shared.supportsAlternateIcons else { return }
+                let name: String? = s == "green" ? nil : "Icon-" + s
+                guard UIApplication.shared.alternateIconName != name else { return }
+                UIApplication.shared.setAlternateIconName(name) { error in
+                    HostLog.shared.log("icon: \(s)\(error.map { " failed: " + $0.localizedDescription } ?? "")")
+                }
             case "notify":
                 guard let s = message.body as? String else { return }
                 notify(s)

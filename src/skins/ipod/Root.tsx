@@ -10,6 +10,7 @@ import { useApp, useShell, useWindowControls } from '../../ui';
 import { Boot } from './Boot';
 import { ClickWheel } from './ClickWheel';
 import { useHostChrome, useHostGlobal, useDesktopViewport } from './host';
+import { iconFor } from './icon';
 import { mainMenu } from './menus';
 import { brick, fmRadio, nowPlaying } from './screens';
 import { createNav, top, type NavStore, type Slot } from './nav';
@@ -30,6 +31,13 @@ type Plain = 'onPlay' | 'onPrev' | 'onNext' | 'onHoldPlay';
 
 export function Root() {
   const sh = useShell(), [ipod] = useIpodSettings();
+  // the app's icon in the body's colour (the iOS app; the owner, 2026-10-03), once the colour has stood
+  // three seconds (Custom's drags; iOS announces every change). The app does nothing when it is the one it has.
+  const icon = iconFor(ipod);
+  useEffect(() => {
+    const t = window.setTimeout(() => window.alchemyIcon?.(icon), 3000);
+    return () => clearTimeout(t);
+  }, [icon]);
   const [nav] = useState(() => createNav(mainMenu(), () => nowPlaying())), [hub] = useState<Hub>(() => new Map());
   // the screens under the dark status bar (§2.2: Now Playing, Radio, the Extras apps)
   const [dark] = useState(() => new Set([nowPlaying, fmRadio, brick].map((f) => f().key))), [npKey] = useState(() => nowPlaying().key);

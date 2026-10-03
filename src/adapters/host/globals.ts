@@ -94,6 +94,8 @@ declare global {
     alchemySound?: (id?: number) => void;
     alchemyRoutePicker?: () => void;
     alchemyAudioSession?: (mode: 'solo' | 'mix' | 'duck') => void;
+    /** the app's icon: a body colour's name (src/skins/ipod/icon.ts iconFor), one of the bundle's (ios/icons.py) */
+    alchemyIcon?: (name: string) => void;
     alchemyNotify?: (n: { title: string; body: string; seconds: number; id: string } | `cancel:${string}`) => void;
     alchemyAppearance?: (mode: 'light' | 'dark' | 'auto') => void;
     alchemyClipboard?: (text: string) => void;

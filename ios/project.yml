@@ -56,6 +56,8 @@ targets:
         TARGETED_DEVICE_FAMILY: "1,2"
         SWIFT_VERSION: "5.9"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        # every Icon-<name> set ios/icons.py makes is an alternate icon (UIApplication.setAlternateIconName)
+        ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS: "YES"
         GENERATE_INFOPLIST_FILE: "NO"
         # librespot (ios/librespot), built by its build.sh before xcodegen runs (.github/workflows/ios.yml),
         # with what rustc says the library needs besides (build.sh prints native-static-libs; libSystem is

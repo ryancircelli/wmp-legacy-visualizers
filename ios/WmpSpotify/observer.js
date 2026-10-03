@@ -170,6 +170,7 @@ window.alchemyViewport = function (mode) { post('viewport', mode === 'mobile' ? 
 window.alchemyHapticPattern = function (events) { post('hapticpattern', JSON.stringify({ events: events || [] })); }; // [{t,i,s,d}]
 window.alchemySound = function (id) { post('sound', (id | 0) || 1104); };                                       // 1104 = the keyboard tick
 window.alchemyRoutePicker = function () { post('routepicker', ''); };                                          // AirPlay
+window.alchemyIcon = function (name) { post('icon', String(name)); };                                          // the app's icon, by body colour
 window.alchemyAudioSession = function (mode) { post('audiosession', mode || 'solo'); };                       // solo|mix|duck
 window.alchemyNotify = function (n) { post('notify', typeof n === 'string' ? n : JSON.stringify(n || {})); };  // {title,body,seconds,id} or 'cancel:<id>'
 window.alchemyAppearance = function (mode) { post('appearance', mode || 'auto'); };                           // light|dark|auto

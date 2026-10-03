@@ -34,3 +34,6 @@ ios/WmpSpotify/WmpSpotify.entitlements
 ios/librespot/target/
 ios/librespot/out/
 ios/librespot/vendor/
+
+# the alternate app icons: made at build time by ios/icons.py
+ios/WmpSpotify/Assets.xcassets/Icon-*.appiconset/
