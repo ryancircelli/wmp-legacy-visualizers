@@ -1227,7 +1227,8 @@ final class Librespot {
 
     /// Paused by an interruption, the app would be suspended within seconds and not hear it end (the
     /// music stayed off, the phone untouched on a counter, 2026-10-03). It asks for the background time
-    /// iOS allows (about half a minute) and looks every two seconds: once the other audio has been
+    /// iOS allows (about half a minute) and looks every second (a gym timer's beep, the owner's case, is over
+    /// in one): once the other audio has been
     /// silent twice running and iOS has not said "over", it plays on, once. A longer interruption (a
     /// call, a video being watched) leaves it paused, as before.
     private func waitOut() {
@@ -1236,7 +1237,7 @@ final class Librespot {
         let done = { timer?.invalidate(); if task != .invalid { UIApplication.shared.endBackgroundTask(task); task = .invalid } }
         task = UIApplication.shared.beginBackgroundTask(withName: "interruption") { done() }
         let until = Date() + 25
-        timer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { _ in
+        timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { _ in
             guard self.interrupted, Date() < until else { done(); return }   // over (iOS said so), or out of time
             quiet = AVAudioSession.sharedInstance().isOtherAudioPlaying ? 0 : quiet + 1
             guard quiet >= 2 else { return }
