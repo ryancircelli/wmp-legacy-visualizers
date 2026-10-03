@@ -157,17 +157,17 @@
   position: absolute; top: calc(var(--unit) * 60); left: 0; right: 0; bottom: 0; pointer-events: none;
   display: flex; flex-direction: column; justify-content: flex-end; padding: 0 calc(var(--unit) * 10) calc(var(--unit) * 62);
   /* a band behind the lines only, fading out above: the art (the visualizer, the Canvas) stays bright */
-  background: linear-gradient(to top, rgb(0 0 0 / .8), rgb(0 0 0 / .55) calc(var(--unit) * 123), transparent calc(var(--unit) * 176)); text-align: center;
+  background: linear-gradient(to top, rgb(0 0 0 / .88), rgb(0 0 0 / .6) calc(var(--unit) * 123), transparent calc(var(--unit) * 176)); text-align: center;
   text-shadow: 0 calc(var(--unit) * 1) calc(var(--unit) * 3) rgb(0 0 0 / .9);
   /* 11 on 12 (the owner, 2026-10-02: 80% of 11.5, then "increase font to 10", then "too small and gaps
      too much still, especially between lyric lines"): tight lines */
   font-size: calc(var(--unit) * 11); line-height: calc(var(--unit) * 12);
 }
 /* plain lyrics: four lines' window, scrolled with the track */
-/* awake, the last line sits 4 above the grey band (the owner, 2026-10-02: "a little padding above the bar
+/* awake, the last line sits 8 above the grey band (the owner, 2026-10-02: "a little padding above the bar
    for lyrics when not minimized"); quiet, at the cover's foot where the reflection starts ("align the
    bottom line of the lyrics to the bottom of the album before the reflection"; below) */
-.root:not(:has(.of)) .lyrics { padding-bottom: calc(var(--unit) * 42); transition: padding-bottom .3s ease; background: linear-gradient(to top, rgb(0 0 0 / .8), rgb(0 0 0 / .55) calc(var(--unit) * 105), transparent calc(var(--unit) * 158)); }
+.root:not(:has(.of)) .lyrics { padding-bottom: calc(var(--unit) * 46); transition: padding-bottom .3s ease; background: linear-gradient(to top, rgb(0 0 0 / .88), rgb(0 0 0 / .6) calc(var(--unit) * 105), transparent calc(var(--unit) * 158)); }
 .plain { max-height: calc(var(--unit) * 60); overflow: hidden; white-space: pre-line; }
 .cur { font-weight: bold; }
 .next { margin-top: calc(var(--unit) * 2); color: rgb(255 255 255 / .5); }
