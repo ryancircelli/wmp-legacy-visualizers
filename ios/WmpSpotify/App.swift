@@ -1206,7 +1206,11 @@ final class Librespot {
             switch type {
             case .began:
                 let was = self.playing
-                HostLog.shared.log("audio: interrupted\(was ? ", pausing" : "")")
+                // why, as far as iOS says: its reason (0 another app's audio, 1 the app was suspended, 2 the
+                // built-in mic muted, 4 the route went away) and whether other audio is playing now
+                let reason = n.userInfo?[AVAudioSessionInterruptionReasonKey] as? UInt ?? 0
+                let other = AVAudioSession.sharedInstance().isOtherAudioPlaying
+                HostLog.shared.log("audio: interrupted (reason \(reason), other audio \(other ? "playing" : "silent"))\(was ? ", pausing" : "")")
                 self.interrupted = was
                 if was { wmp_ls_command("pause") }
             case .ended:

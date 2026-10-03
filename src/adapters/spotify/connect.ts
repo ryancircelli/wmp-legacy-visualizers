@@ -69,7 +69,12 @@ export async function command(sp: Sp, cmd: Cmd, orElse?: (() => void) | null, re
       return false;
     }
     status(sp, 'Spotify: ' + (msg || 'command refused (' + r.status + ')'));
-  } catch { log('offline'); status(sp, 'Spotify: command failed (offline)'); }
+  } catch {
+    log('offline');
+    // the same resume, asked before the network was back (the request itself failed): kept too
+    if (to === window.__wmpSpeaker?.id && cmd.endpoint === 'resume') { sp.wantPlay = Date.now(); status(sp, 'Spotify: reconnecting…'); return false; }
+    status(sp, 'Spotify: command failed (offline)');
+  }
   orElse?.();
   return false;
 }
