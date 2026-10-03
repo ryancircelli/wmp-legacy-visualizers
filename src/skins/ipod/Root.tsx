@@ -35,7 +35,11 @@ export function Root() {
   // three seconds (Custom's drags; iOS announces every change). The app does nothing when it is the one it has.
   const icon = iconFor(ipod);
   useEffect(() => {
-    const t = window.setTimeout(() => window.alchemyIcon?.(icon), 3000);
+    const t = window.setTimeout(() => {
+      // said in the host's log, so a change that does not show can be told from one never asked for
+      if (window.alchemyLayout) window.alchemyLog?.('ipod: icon ' + icon + (window.alchemyIcon ? '' : ' (this app build or its observer has no alchemyIcon yet)'));
+      window.alchemyIcon?.(icon);
+    }, 3000);
     return () => clearTimeout(t);
   }, [icon]);
   const [nav] = useState(() => createNav(mainMenu(), () => nowPlaying())), [hub] = useState<Hub>(() => new Map());
