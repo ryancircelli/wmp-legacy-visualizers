@@ -330,7 +330,7 @@ that fed it until 2026-10-02 is gone, ios/README.md "History"), `alchemyLog` (a 
 and a `wmp-safe-area` event), `alchemyShowLog` (the host's log sheet), and for a click-wheel skin
 `alchemyHaptic(kind)`, `alchemyAwake(on)`, `alchemyStatusBar(hidden)`, `alchemyOrientation(mode)`.
 The phone's reports, each a window global with an event of the same name: `__wmpVolume` (the buttons too), `__wmpBattery`, `__wmpRoute`,
-`__wmpBrightness`, `__wmpHost`, and `wmp-shake`; `alchemyHost()` asks for all at once. Also
+`__wmpBrightness`, `__wmpHost`, and `wmp-shake`; `alchemyHost()` asks for all at once. `__wmpTilt` (a number, -1 tilted left to 1 right: gravity's x, to 0.01) with `wmp-tilt`, ten a second at most while the app is in front and not in Low Power Mode, is the iPod skin's (its metal's lights move with the hand). Also
 `alchemyBrightness(v?)`, `alchemyShare(text)`, `alchemyHomeIndicator(hidden)`, `alchemyOpenSettings()`,
 `alchemyReset()` (the web view's data cleared, a reload); and the rest of the phone mapped whether
 used or not: `alchemyViewport`, `alchemyHapticPattern`, `alchemySound`, `alchemyRoutePicker`,

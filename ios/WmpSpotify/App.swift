@@ -5,6 +5,7 @@ import AVFoundation
 import AVKit
 import AudioToolbox
 import CoreHaptics
+import CoreMotion
 import MediaPlayer
 import SwiftUI
 import UIKit
@@ -81,6 +82,30 @@ func logKind(_ line: String) -> String? {
     let first = parts[0].trimmingCharacters(in: .whitespaces)
     if first == "page", parts.count == 3 { return "page: " + parts[1].trimmingCharacters(in: .whitespaces) }
     return first
+}
+
+/// window.__wmpTilt and 'wmp-tilt': the phone's roll, -1 (tilted left) to 1, from gravity's x, for the
+/// skin's metal to move its lights with the hand (the owner, 2026-10-03). Ten readings a second while the
+/// app is in front, sent when it has moved by 0.02; not at all in Low Power Mode or in the background.
+final class Tilt {
+    static let shared = Tilt()
+    private let motion = CMMotionManager()
+    private var last = 2.0
+    func run(_ on: Bool) {
+        guard on, motion.isDeviceMotionAvailable, !ProcessInfo.processInfo.isLowPowerModeEnabled else {
+            if motion.isDeviceMotionActive { motion.stopDeviceMotionUpdates() }
+            return
+        }
+        guard !motion.isDeviceMotionActive else { return }
+        motion.deviceMotionUpdateInterval = 0.1
+        motion.startDeviceMotionUpdates(to: .main) { data, _ in
+            guard let x = data?.gravity.x else { return }
+            let v = (max(-1, min(1, x)) * 100).rounded() / 100
+            guard abs(v - self.last) >= 0.02 else { return }
+            self.last = v
+            WebHolder.shared.push("__wmpTilt", "wmp-tilt", v)
+        }
+    }
 }
 
 /// The app's processor time (this process: the web content process is not counted) over each stretch
@@ -546,6 +571,7 @@ struct Player: View {
             HostLog.shared.log("scene: \(phase)", quiet: true)
             DeviceState.shared.scene = phase == .active ? "active" : phase == .background ? "background" : "inactive"
             CpuMeter.shared.scene(phase)
+            Tilt.shared.run(phase == .active)
             Forwarder.shared.front = phase != .background
             Librespot.shared.front = phase != .background
         }

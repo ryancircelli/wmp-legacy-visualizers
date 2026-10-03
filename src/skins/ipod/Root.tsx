@@ -117,11 +117,12 @@ export function Root() {
   const k = Math.min(4, Math.max(1, window.innerWidth / (window.screen?.width || window.innerWidth)));
   const insets = safe && ({ '--safe-top': safe.top * k + 'px', '--safe-right': safe.right * k + 'px', '--safe-bottom': safe.bottom * k + 'px', '--safe-left': safe.left * k + 'px' } as CSSProperties);
 
+  const sheen = useSheen();
   return (
     <NavContext.Provider value={nav}>
       <div className={s.backdrop} data-ui-root="" onMouseDown={caption ? drag : undefined}>
         {/* on the phone (the iOS app) the body always fills the screen, whatever shape its viewport */}
-        <div className={s.body} data-wheel={ipod.wheel} data-phone={window.alchemyLayout ? '' : undefined} style={{ ...bodyVars(ipod), ...insets }}>
+        <div className={s.body} ref={sheen} data-wheel={ipod.wheel} data-phone={window.alchemyLayout ? '' : undefined} style={{ ...bodyVars(ipod), ...insets }}>
           <div className={s.device} ref={device}>
             <div className={s.bezel}>
               <div className={s.screen} data-asleep={asleep || undefined} data-bar={bar || undefined} {...screenTouch}>
@@ -185,4 +186,27 @@ function click() {
   g.gain.value = .12;
   src.connect(hp).connect(g).connect(ac.destination);
   src.start();
+}
+
+/** The metal answers the room and the hand, lightly (the owner, 2026-10-03): --lux from the screen's
+ *  brightness (the phone's follows the room's light; apps are not given the sensor itself), --tilt from
+ *  the phone's roll (the iOS app's __wmpTilt). Set on the body's style, no render; the two are
+ *  registered as numbers so the changes ease (ipod.module.css .body's transition). */
+function useSheen() {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    for (const [name, v] of [['--tilt', '0'], ['--lux', '1']] as const) {
+      try { CSS.registerProperty({ name, syntax: '<number>', inherits: true, initialValue: v }); } catch { /* registered already, or not supported: it steps */ }
+    }
+    const set = () => {
+      const el = ref.current, b = window.__wmpBrightness, t = window.__wmpTilt;
+      if (!el) return;
+      if (typeof b === 'number') el.style.setProperty('--lux', String(Math.round((0.94 + 0.12 * Math.max(0, Math.min(1, b))) * 1000) / 1000));
+      if (typeof t === 'number') el.style.setProperty('--tilt', String(Math.max(-1, Math.min(1, t))));
+    };
+    set();
+    window.addEventListener('wmp-brightness', set); window.addEventListener('wmp-tilt', set);
+    return () => { window.removeEventListener('wmp-brightness', set); window.removeEventListener('wmp-tilt', set); };
+  }, []);
+  return ref;
 }

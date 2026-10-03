@@ -20,26 +20,38 @@
   --s: 0%;
   --l: 66%;
   --grain-alpha: .08;                /* the vertical brushing: 0 = polished */
-  --base: hsl(var(--h) var(--s) var(--l));
+  /* the room and the hand (Root.tsx, from the phone): --lux scales the lights with the screen's
+     brightness, which follows the room's (.94 dim to 1.06 bright); --tilt, -1 to 1 as the phone rolls
+     left to right, slides the two bands of light across by up to 5 % of the width, as a reflection
+     moves. Both lightly (the owner, 2026-10-03); 1 and 0 where the host reports neither */
+  --lux: 1;
+  --tilt: 0;
+  transition: --tilt .25s linear, --lux 1.5s ease;   /* registered as numbers (Root.tsx useSheen): they ease */
+  --t: calc(var(--tilt) * 5%);
+  --L: calc(var(--l) * var(--lux));
+  --base: hsl(var(--h) var(--s) var(--L));
   /* every tone is the body's own hue at a lightness relative to its own (orange, 50 %, gets the
      owner's 68 / 58 / 42 / 30 / 14 / 6 %), never mixed with white: the lights are the hue brighter
      and more saturated (silver, unsaturated, alone turns near-white there) */
   --sh: min(100%, calc(var(--s) * 1.3));
   /* the lights lean a touch warmer, as the photo's orange goes yellow in its highlight; they top out
      at 72 % (silver's a light grey, never white) */
-  --hi: hsl(calc(var(--h) + 6) var(--sh) min(72%, calc(var(--l) * 1.36)));
-  --hi2: hsl(calc(var(--h) + 3) var(--sh) min(68%, calc(var(--l) * 1.16)));
-  --rise: hsl(calc(var(--h) + 4) var(--sh) min(70%, calc(var(--l) * 1.2)));
-  --mid: hsl(var(--h) var(--s) calc(var(--l) * .84));
-  --shade: hsl(var(--h) var(--s) calc(var(--l) * .6));
+  --hi: hsl(calc(var(--h) + 6) var(--sh) min(72%, calc(var(--L) * 1.36)));
+  --hi2: hsl(calc(var(--h) + 3) var(--sh) min(68%, calc(var(--L) * 1.16)));
+  --rise: hsl(calc(var(--h) + 4) var(--sh) min(70%, calc(var(--L) * 1.2)));
+  /* the centre: .84 read as a dark line down the middle (the owner, on Gold); .95 */
+  --mid: hsl(var(--h) var(--s) calc(var(--L) * .95));
+  --shade: hsl(var(--h) var(--s) calc(var(--L) * .6));
   /* the thin edge line: the hue at about 25 % (orange's), never black */
   --edge: hsl(var(--h) var(--s) calc(var(--l) * .5));
   /* across the width the slab is a glossy cylinder lit from both sides, mirror-symmetric: a thin
      darker line at each edge, a broad soft band near each side (its bright zone 14-24 % and 76-86 %,
      with gentle ramps either side), the mid tone in the centre. It spans the whole width, so
      nothing shows round it. In percent of the width, so any viewport scales it alike */
-  --metal: linear-gradient(90deg, var(--edge) 0, var(--edge) .4%, var(--shade) .9%, var(--rise) 6%, var(--hi) 14%, var(--hi) 24%,
-                           var(--hi2) 32%, var(--mid) 50%, var(--hi2) 68%, var(--hi) 76%, var(--hi) 86%, var(--rise) 94%,
+  --metal: linear-gradient(90deg, var(--edge) 0, var(--edge) .4%, var(--shade) .9%, var(--rise) calc(6% + var(--t)),
+                           var(--hi) calc(14% + var(--t)), var(--hi) calc(24% + var(--t)), var(--hi2) calc(32% + var(--t)),
+                           var(--mid) calc(50% + var(--t)), var(--hi2) calc(68% + var(--t)), var(--hi) calc(76% + var(--t)),
+                           var(--hi) calc(86% + var(--t)), var(--rise) calc(94% + var(--t)),
                            var(--shade) 99.1%, var(--edge) 99.6%, var(--edge) 100%);
   --ipod-font: Helvetica, "Helvetica Neue", Arial, sans-serif;
   /* the screen (screens read these names too) */
