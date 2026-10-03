@@ -15,10 +15,10 @@
    band; its background is a layer of its own (::before) so the quiet state can thin it */
 .info { position: absolute; top: 0; left: 0; right: 0; height: calc(var(--unit) * 60); isolation: isolate; }
 .info::before, .controls::before { content: ""; position: absolute; inset: 0; z-index: -1; transition: opacity .3s ease; }
-/* one look for every picture, the Canvas view's (the owner, 2026-10-02: "combine video and album views as
-   i only want the video style"): translucent bands over whatever is behind, the album being one more
-   picture (its cover and, in the controls band, its reflection, on the area's black) */
-.info::before { background: linear-gradient(rgb(66 66 66 / .6), rgb(1 1 1 / .6)); }
+/* awake, the nano's own dark band (the owner, 2026-10-02: "make the header like this again on non
+   minimized"); quiet, the Canvas view's translucent one, thinned (below): the album one more picture
+   behind it then (its cover and, above the band, its reflection) */
+.info::before { background: linear-gradient(#424242, #010101); }
 .line {
   position: absolute; left: calc(var(--unit) * 8); right: calc(var(--unit) * 8);
   height: calc(var(--unit) * 17); line-height: calc(var(--unit) * 17);
@@ -164,10 +164,10 @@
   font-size: calc(var(--unit) * 11); line-height: calc(var(--unit) * 12);
 }
 /* plain lyrics: four lines' window, scrolled with the track */
-/* awake, the last line sits 8 above the grey band (the owner, 2026-10-02: "a little padding above the bar
+/* awake, the last line sits 12 above the grey band (the owner, 2026-10-02: "a little padding above the bar
    for lyrics when not minimized"); quiet, at the cover's foot where the reflection starts ("align the
    bottom line of the lyrics to the bottom of the album before the reflection"; below) */
-.root:not(:has(.of)) .lyrics { padding-bottom: calc(var(--unit) * 46); transition: padding-bottom .3s ease; background: linear-gradient(to top, rgb(0 0 0 / .88), rgb(0 0 0 / .6) calc(var(--unit) * 105), transparent calc(var(--unit) * 158)); }
+.root:not(:has(.of)) .lyrics { padding-bottom: calc(var(--unit) * 50); transition: padding-bottom .3s ease; background: linear-gradient(to top, rgb(0 0 0 / .88), rgb(0 0 0 / .6) calc(var(--unit) * 105), transparent calc(var(--unit) * 158)); }
 .plain { max-height: calc(var(--unit) * 60); overflow: hidden; white-space: pre-line; }
 .cur { font-weight: bold; }
 .next { margin-top: calc(var(--unit) * 2); color: rgb(255 255 255 / .5); }
@@ -189,7 +189,7 @@
    thins to .3, the controls band's to .4 and the lyrics' gradient to about half, and the ⋯ fades out; the
    album's reflection, the text, the progress, "N of M" and the device line stay as they are. */
 .more { transition: opacity .3s ease; }
-.root[data-quiet] .info::before { opacity: .3; }
+.root[data-quiet] .info::before { background: linear-gradient(rgb(66 66 66 / .6), rgb(1 1 1 / .6)); opacity: .36; }  /* .3, then "20% darker" */
 .root[data-quiet]:not(:has(.of)) .lyrics { padding-bottom: calc(var(--unit) * 38); }
 /* the foot's shade thins too (the owner: "less aggressive in the minimize just like the header does"):
    the band's to .4, and the lyrics' one gradient to about half its strength */
