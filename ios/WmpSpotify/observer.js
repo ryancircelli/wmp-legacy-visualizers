@@ -393,7 +393,9 @@ function mount() {
   var root = host.attachShadow({ mode: 'open' });
   var sheet = new CSSStyleSheet();
   // The page fills the screen: square the skin's chrome, as the desktop hosts do.
-  sheet.replaceSync(CSS + '\n#chrome,#titlebar{border-radius:0!important}');
+  // the overlay's own text (the click wheel's MENU) is not selectable either: the body rule below
+  // does not reach into this shadow root (the selection loupe came up on a long press on the wheel)
+  sheet.replaceSync(CSS + '\n#chrome,#titlebar{border-radius:0!important}\n*{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}input,textarea,[contenteditable]{-webkit-user-select:text;user-select:text}');
   root.adoptedStyleSheets = [sheet];
   root.innerHTML = HTML;
   document.body.appendChild(host);

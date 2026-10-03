@@ -549,6 +549,8 @@
   color: #000000;
   touch-action: none;
   cursor: pointer;
+  /* a long press is the wheel's own, never a text selection (the loupe came up over MENU on the phone) */
+  -webkit-user-select: none; user-select: none; -webkit-touch-callout: none;
 }
 .nparts { flex: none; width: calc(var(--unit) * 28); border: var(--unit) solid #4A4A4A; border-radius: 0; }
 .nptext { flex: auto; min-width: 0; }
