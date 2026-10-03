@@ -11,7 +11,7 @@ import { Boot } from './Boot';
 import { ClickWheel } from './ClickWheel';
 import { useHostChrome, useHostGlobal, useDesktopViewport } from './host';
 import { mainMenu } from './menus';
-import { fmRadio, nowPlaying } from './screens';
+import { brick, fmRadio, nowPlaying } from './screens';
 import { createNav, top, type NavStore, type Slot } from './nav';
 import type { WheelInput } from './screens/contract';
 import { bodyVars, ipodSettings, useIpodSettings } from './settings';
@@ -31,8 +31,8 @@ type Plain = 'onPlay' | 'onPrev' | 'onNext' | 'onHoldPlay';
 export function Root() {
   const sh = useShell(), [ipod] = useIpodSettings();
   const [nav] = useState(() => createNav(mainMenu(), () => nowPlaying())), [hub] = useState<Hub>(() => new Map());
-  // the screens under the dark status bar (§2.2)
-  const [dark] = useState(() => new Set([nowPlaying, fmRadio].map((f) => f().key))), [npKey] = useState(() => nowPlaying().key);
+  // the screens under the dark status bar (§2.2: Now Playing, Radio, the Extras apps)
+  const [dark] = useState(() => new Set([nowPlaying, fmRadio, brick].map((f) => f().key))), [npKey] = useState(() => nowPlaying().key);
   const { stack, dir } = useStore(nav.store), topSlot = stack[stack.length - 1]!, busy = useBusy(topSlot.id);
   // the Now Playing bar: under every screen but Now Playing while a track is loaded
   const bar = useApp((x) => !!x.playback.track) && topSlot.entry.key !== npKey;

@@ -56,7 +56,7 @@ export function resetPrefs(): void {
 /** The rows Settings > Menus > Main Menu turns on and off, in the chrome's order, by its row id
  *  (src/skins/ipod/menus.tsx: the label in lower case without spaces), and Library Filters' chips. */
 const rows = (labels: string[]) => labels.map((l) => [l.toLowerCase().replace(/\s+/g, ''), l] as const);
-export const MAIN_MENU = rows(['Home', 'Search', 'Library', 'Radio']);
+export const MAIN_MENU = rows(['Home', 'Search', 'Library', 'Radio', 'Brick']);
 /** the Library's filter chips (stored under `music`, the Library menu's old name) */
 export const LIBRARY_FILTERS = rows(['Playlists', 'Albums', 'Artists', 'Podcasts']);
 /** Off until turned on: Podcasts (the adapter lists no shows yet). */

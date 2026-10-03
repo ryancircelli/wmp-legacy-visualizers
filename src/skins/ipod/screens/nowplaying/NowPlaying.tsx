@@ -377,7 +377,7 @@ function NowPlaying() {
 
 /** whether `ref`'s element is on screen: its screen the top one (the stack hides the others: no
  *  intersection) and the page visible */
-function useOnScreen(ref: RefObject<HTMLElement | null>): boolean {
+export function useOnScreen(ref: RefObject<HTMLElement | null>): boolean {
   const [on, setOn] = useState(() => !document.hidden);
   useEffect(() => {
     const el = ref.current;

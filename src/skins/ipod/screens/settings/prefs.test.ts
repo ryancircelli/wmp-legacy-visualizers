@@ -9,7 +9,7 @@ afterEach(() => localStorage.clear());
 
 it('shows every row and chip but Podcasts until it is turned on', () => {
   const { result } = renderHook(() => useMenuVisibility());
-  expect(result.current.main).toEqual({ home: true, search: true, library: true, radio: true });
+  expect(result.current.main).toEqual({ home: true, search: true, library: true, radio: true, brick: true });
   expect(result.current.music).toEqual({ playlists: true, albums: true, artists: true, podcasts: false });
   act(() => setMenuItem('music', 'podcasts', true));
   expect(result.current.music.podcasts).toBe(true);

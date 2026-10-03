@@ -21,7 +21,7 @@ function MainMenu() {
   const nav = useNav(), shown = groups.useMenuVisibility().main;
   const items: MenuItem[] = [
     to(nav, 'Home', 'home'), to(nav, 'Search', 'search'), to(nav, 'Library', 'library'), to(nav, 'Radio', 'fmRadio'),
-    to(nav, 'Settings', 'settings'),
+    to(nav, 'Brick', 'brick'), to(nav, 'Settings', 'settings'),
   ];
   return <MenuScreen items={visible(items, shown)} />;
 }

@@ -59,9 +59,9 @@ it('arrows move the selection, Enter opens Library, Escape comes back; a tick th
 
 it('Spotify\'s menus in the nano\'s look: no Extras, no Now Playing row (the bar opens it); the Library\'s chips without Podcasts', async () => {
   const m = mount();
-  expect(m.rows()).toEqual(['Home', 'Search', 'Library', 'Radio', 'Settings']);
+  expect(m.rows()).toEqual(['Home', 'Search', 'Library', 'Radio', 'Brick', 'Settings']);
   act(() => { m.store.setState((s) => ({ playback: { ...s.playback, track: { uri: 'spotify:track:a', title: 'T', artist: 'A', duration: 1 } } })); });
-  expect(m.rows()).toEqual(['Home', 'Search', 'Library', 'Radio', 'Settings']);
+  expect(m.rows()).toEqual(['Home', 'Search', 'Library', 'Radio', 'Brick', 'Settings']);
   act(() => { fireEvent.click(m.row('Library')); });
   await settle();
   expect(m.rows()).toEqual(['Playlists', 'Albums', 'Artists', 'QueueUp next', 'Liked SongsPlaylist · 0 songs']);
@@ -503,6 +503,25 @@ it('Settings: one list under section headers, without what Now Playing or the de
     expect(m.title()).toBe(title);
     key('Escape');
   }
+});
+
+it('Brick: a main-menu row that opens its canvas under the dark status row (the time, no title), MENU back; Settings > Main Menu hides it', () => {
+  vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(null);   // jsdom has none (it logs)
+  const m = atSettings();
+  key('Escape');
+  m.click('Brick');
+  expect([m.shown('[class*=status]')[0]!.hasAttribute('data-dark'), m.shown('canvas').length]).toEqual([true, 1]);
+  key('Enter');                                      // serves; the wheel's other keys are the game's
+  key('ArrowDown');
+  key('Escape');
+  expect(m.title()).toBe('iPod');
+  m.click('Settings');
+  m.click('Main Menu');
+  expect(m.rows()).toEqual(['Home✓', 'Search✓', 'Library✓', 'Radio✓', 'Brick✓']);
+  m.click('Brick✓');
+  key('Escape');
+  key('Escape');
+  expect(m.rows()).toEqual(['Home', 'Search', 'Library', 'Radio', 'Settings']);
 });
 
 it('the status row over the menus: the screen\'s title at the left, the time centred (the device\'s 12 / 24 hours), ▶ and the battery at the right; over Now Playing its toggles, the time, the battery', () => {

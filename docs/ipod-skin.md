@@ -30,8 +30,9 @@ the end.
 > the screen spans the width inside a 3% margin, the wheel below it.
 >
 > **The tree is Spotify's now (owner, 2026-10-01), the look still the nano's.** Main menu: Home
-> (Spotify's shelves), Search, Library, Radio, Now Playing while a track is loaded, Settings (no
-> Extras: not implemented, the owner's ruling of 2026-10-02). Library: Playlists (Queue first), Liked Songs, Albums, Artists, Podcasts & Shows
+> (Spotify's shelves), Search, Library, Radio, Brick (the click wheel's Breakout, §4.2), Now Playing
+> while a track is loaded, Settings (no Extras: not implemented, the owner's ruling of 2026-10-02;
+> Brick, one of its old games, is a main-menu row of its own). Library: Playlists (Queue first), Liked Songs, Albums, Artists, Podcasts & Shows
 > (off by default), Queue, Cover Flow (off by default). Gone: Shuffle Songs (the status bar's shuffle,
 > repeat and heart are tap toggles), Videos, Photos, Voice Memos, Genres, Composers, Audiobooks,
 > Genius Mixes. §2.3 below is the nano's own tree, kept as the reference it was.
@@ -300,7 +301,7 @@ The names are plural: **Clocks**, **Calendars**. Settings groups most items unde
 backlight only on older iPods.
 
 **The nano's Extras are not implemented** (the owner's ruling, 2026-10-02): this player has no
-Extras row, pages or preferences. The tree above and §2.4's Extras table keep them as the device's
+Extras row, pages or preferences. The one game it has, **Brick**, is a main-menu row (§4.2). The tree above and §2.4's Extras table keep them as the device's
 reference.
 
 ### 2.4 Pages
@@ -631,6 +632,7 @@ caption (`useWindowControls().onCaptionMouseDown`).
 | **Photos** | **album-art browser** | covers of `useLibraryList()` items plus Liked; ⏯ plays the collection | **build** (repurposed) |
 | **Podcasts** | no shows query: `contextRow` drops `spotify:show`, search has no show bucket. The **home feed does carry** `spotify:show`/`episode` items, and `playItem` plays episodes | — | **hide** in v1 (§6) |
 | **Radio** | **Spotify radio**: song radio and artist radio for what plays, radio for recent artists, the feed's Recommended Stations | `useRadio(useRadioSeeds())`, drawn as the **FM dial** (the stations spread evenly from 87.5 to 108.0 MHz, to the nearest 0.1 — `home/index.tsx mhz(i, n)`; the owner, 2026-10-02: "evenly disperse across the standard range, right now it goes between 87 and 89" — for the big digits, station name as RDS, the playing title and artist below). Turning tunes; it **plays 600 ms after the wheel rests**: `playItem({ uri: station.uri })`. ⏮⏭ seek a station. Up to 24 seeds: the song, its artist, Home's recent artists, then the followed artists in library order ("doesn't have enough options"), plus Home's Recommended Stations. No Radio menu (2026-10-02): the dial's hold-centre popup has Add to / Remove from Favorites, Favorites (local list), Recent Songs (stations played, local) | **build** (repurposed) |
+| **Brick** (the owner, 2026-10-02: "add the old click wheel brick breaker game") | — (the click-wheel nanos' Extras > Games Breakout, 2005–2009) | `screens/brick/`: `Brick.tsx` draws, `logic.ts` is the game as pure functions (a state and dt in ms in, the next state out; `logic.test.ts`). **Look:** black, a white outline (top, left, right; the foot open) under a band with the score at the left and "Balls n" at the right in the skin's bold font; 5 rows of 10 bricks, flat red, orange, yellow, green, blue top to bottom with 1-unit gaps; a white paddle near the foot and a square white ball. One `<canvas>` the area's size, laid out in units (a 240th of its width; the field's height is the area's, 356, or 312 over the Now Playing bar) at the device's pixel ratio, drawn every animation frame only while the screen is on top (`useOnScreen`) and the game runs; paused or over, one frame. The dark status bar (§2.2, as the Extras apps). **Controls:** the ring's continuous turn (`useTurn`) moves the paddle, clockwise right, 3 paddle widths a full turn (`Brick.tsx TURN`, a tuning knob; 1.5 was slow across the field); a drag anywhere on the screen moves it as far (the chrome's swipe-right MENU not taken there); arrows and the mouse wheel step it a detent's worth, silently. Centre serves (the ball rides the paddle until then), resumes, and after Game Over starts again; hold-centre pauses ("Paused") and resumes. MENU is the usual back and pauses a ball in play, as covering the screen (Now Playing over it) or hiding the page does; the game is kept in the module, so coming back finds it where it was, paused. ⏮ ⏭ ⏯ keep their music. A brick broken: a light haptic (the centre press already has its own; no new sound). **Rules:** 3 balls; a brick breaks on a hit, 10 × its row from the bottom (red 50 … blue 10); the ball 4 % faster every 10 bricks; off the paddle the angle follows where it lands (the centre straight up, the edges 60° off); all cleared, the next level, the ball 10 % faster; the last ball lost, "Game Over", the score and the high score (`ipod.brick`, through `readPref` / `writePref`; Reset Settings clears it with the other `ipod.*` keys). On in Settings > Menus > Main Menu by default | **build** |
 | **Video Camera** | — | — | **hide** |
 | **Extras** | — | — | **not implemented** (the owner's ruling, 2026-10-02) |
 | **Settings** | §4.4 | — | **build** |
@@ -689,7 +691,7 @@ rows show only with their host, and a header with no row shown under it is not s
 | Header | Its rows, in order |
 |---|---|
 | **Appearance** | Skin ›, Color ›, Click Wheel (White / Black), Clicker (On / Off), Theme › (Light / Dark / Automatic, *`alchemyAppearance`*) |
-| **Menus** | Main Menu ›, Library Filters ›, Library View (Grid / List) |
+| **Menus** | Main Menu › (Home, Search, Library, Radio, Brick, each on or off; all on at first), Library Filters ›, Library View (Grid / List) |
 | **General** | About ›, Check for Updates ›, Refresh Player (*`alchemyRestart`*), Reset Settings ›, Legal › |
 | **Support** | Source Code, Report a Problem, Host Log (*`alchemyShowLog`*) |
 | **Account** | Log Out › (*`auth.canLogout`*: the confirm list) |

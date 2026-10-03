@@ -140,4 +140,7 @@ export interface Screens {
   home(): ScreenEntry;
   // group settings/
   settings(): ScreenEntry;
+  // group brick/
+  /** Brick: the click wheel's Breakout (docs/ipod-skin.md §4.2) */
+  brick(): ScreenEntry;
 }
