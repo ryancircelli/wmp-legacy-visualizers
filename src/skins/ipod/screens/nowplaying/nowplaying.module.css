@@ -63,17 +63,19 @@
 .above { position: absolute; left: 0; right: 0; top: 0; height: calc(var(--unit) * 60); overflow: hidden; }
 .above .reflection {
   top: auto; bottom: 0;  /* its visual bottom (the cover's top, flipped) at the seam; whole there, fading up */
-  -webkit-mask-image: linear-gradient(rgb(0 0 0 / .95), rgb(0 0 0 / .12));
-  mask-image: linear-gradient(rgb(0 0 0 / .95), rgb(0 0 0 / .12));
+  -webkit-mask-image: linear-gradient(#000, rgb(0 0 0 / .75) 23%, rgb(0 0 0 / .12));
+  mask-image: linear-gradient(#000, rgb(0 0 0 / .75) 23%, rgb(0 0 0 / .12));
 }
 .reflection {
-  position: absolute; top: 0; left: 0; width: calc(var(--unit) * 240); height: calc(var(--unit) * 240);
+  /* the cover's own box (258 tall, so the same crop and scale: a 240 one met the cover's bottom row
+     with a different row, a faint line at the seam under the lyrics) */
+  position: absolute; top: 0; left: 0; width: calc(var(--unit) * 240); height: calc(var(--unit) * 258);
   object-fit: cover; transform: scaleY(-1);
   /* the picture carrying on under the band, as the Canvas does: whole at the seam with the cover (a
-     dimmer mirror made a step there, "some kind of bar"), fading down the band (the mask is flipped
-     with the image: its bottom is the seam) */
-  -webkit-mask-image: linear-gradient(rgb(0 0 0 / .12), rgb(0 0 0 / .95));
-  mask-image: linear-gradient(rgb(0 0 0 / .12), rgb(0 0 0 / .95));
+     dimmer mirror made a step there, "some kind of bar"; even .95 showed as a line), fading down the
+     band (the mask is flipped with the image: its bottom is the seam) */
+  -webkit-mask-image: linear-gradient(rgb(0 0 0 / .12), rgb(0 0 0 / .8) 85%, #000);
+  mask-image: linear-gradient(rgb(0 0 0 / .12), rgb(0 0 0 / .8) 85%, #000);
 }
 .row {
   position: absolute; top: calc(var(--unit) * 16); left: 0; right: 0; height: calc(var(--unit) * 18);
