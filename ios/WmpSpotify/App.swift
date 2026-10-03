@@ -1210,7 +1210,20 @@ final class Librespot {
                 // built-in mic muted, 4 the route went away) and whether other audio is playing now
                 let reason = n.userInfo?[AVAudioSessionInterruptionReasonKey] as? UInt ?? 0
                 let other = AVAudioSession.sharedInstance().isOtherAudioPlaying
-                HostLog.shared.log("audio: interrupted (reason \(reason), other audio \(other ? "playing" : "silent"))\(was ? ", pausing" : "")")
+                // and who else there is to suspect: the session's category as it stands (WebKit sets the host
+                // app's when the page's media starts and stops) and the page's own media, logged by the page
+                let s = AVAudioSession.sharedInstance()
+                HostLog.shared.log("audio: interrupted (reason \(reason), other audio \(other ? "playing" : "silent"), category \(s.category.rawValue) options \(s.categoryOptions.rawValue))\(was ? ", pausing" : "")")
+                WebHolder.shared.run("""
+                (function () {
+                  var all = [], walk = function (r) { r.querySelectorAll('video,audio').forEach(function (m) { all.push(m); });
+                    r.querySelectorAll('*').forEach(function (e) { if (e.shadowRoot) walk(e.shadowRoot); }); };
+                  walk(document);
+                  window.alchemyLog('media at the interruption: ' + (all.length ? all.map(function (m) {
+                    return m.tagName.toLowerCase() + (m.muted ? ' muted' : ' UNMUTED') + (m.paused ? ' paused' : ' playing') + ' ' + m.currentTime.toFixed(1) + 's ' + (m.currentSrc || '').slice(-24);
+                  }).join('; ') : 'none'));
+                })()
+                """)
                 self.interrupted = was
                 if was { wmp_ls_command("pause"); self.waitOut() }
             case .ended:
@@ -1239,9 +1252,12 @@ final class Librespot {
         let until = Date() + 25
         timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { _ in
             guard self.interrupted, Date() < until else { done(); return }   // over (iOS said so), or out of time
-            quiet = AVAudioSession.sharedInstance().isOtherAudioPlaying ? 0 : quiet + 1
+            // in front, the audio is this app's to have (nothing was seen or heard to interrupt it there,
+            // twice on 2026-10-03): two seconds, then it plays on whatever the other session says
+            let ours = DeviceState.shared.scene == "active"
+            quiet = ours || !AVAudioSession.sharedInstance().isOtherAudioPlaying ? quiet + 1 : 0
             guard quiet >= 2 else { return }
-            HostLog.shared.log("audio: the other audio is silent and iOS has not said so: resuming")
+            HostLog.shared.log("audio: \(ours ? "in front" : "the other audio is silent") and iOS has not said it is over: resuming")
             self.interrupted = false
             wmp_ls_command("play")
             done()
