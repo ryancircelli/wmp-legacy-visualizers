@@ -1213,7 +1213,7 @@ final class Librespot {
                 // and who else there is to suspect: the session's category as it stands (WebKit sets the host
                 // app's when the page's media starts and stops) and the page's own media, logged by the page
                 let s = AVAudioSession.sharedInstance()
-                HostLog.shared.log("audio: interrupted (reason \(reason), other audio \(other ? "playing" : "silent"), category \(s.category.rawValue) options \(s.categoryOptions.rawValue))\(was ? ", pausing" : "")")
+                HostLog.shared.log("audio: interrupted (reason \(reason), other audio \(other ? "playing" : "silent"), category \(s.category.rawValue) options \(s.categoryOptions.rawValue))")
                 WebHolder.shared.run("""
                 (function () {
                   var all = [], walk = function (r) { r.querySelectorAll('video,audio').forEach(function (m) { all.push(m); });
@@ -1224,8 +1224,21 @@ final class Librespot {
                   }).join('; ') : 'none'));
                 })()
                 """)
-                self.interrupted = was
-                if was { wmp_ls_command("pause"); self.waitOut() }
+                // Playing: a third of a second, then by what is heard. Nothing (a session that came up
+                // silent: every seven and a half minutes on 2026-10-03, "audio cutting out for a bit"): the
+                // session is taken back at once and the music plays on, never paused. Something: the
+                // speaker pauses and waits the interruption out.
+                guard was else { return }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                    if AVAudioSession.sharedInstance().isOtherAudioPlaying {
+                        self.interrupted = true
+                        wmp_ls_command("pause")
+                        self.waitOut()
+                    } else {
+                        HostLog.shared.log("audio: nothing is heard: playing on")
+                        self.output()
+                    }
+                }
             case .ended:
                 let opts = AVAudioSession.InterruptionOptions(rawValue: n.userInfo?[AVAudioSessionInterruptionOptionKey] as? UInt ?? 0)
                 let resume = self.interrupted && opts.contains(.shouldResume)
