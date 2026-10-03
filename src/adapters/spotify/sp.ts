@@ -46,6 +46,9 @@ export interface Sp {
   sentVolume: { value: number; at: number }[];
   /** true while a device-reported volume is written to the settings (no PUT back) */
   fromDevice: boolean;
+  /** shuffle / repeat ('cluster.shuffle', 'host.repeat', …) as Spotify's cluster and the host's player last
+   *  gave them, and when each last changed (receipt time; 0 = as first seen). state.ts hostOver */
+  opts: Record<string, { v: unknown; at: number }>;
   /** when a resume to the host's speaker failed for want of the speaker (it was reconnecting): played once it is back */
   wantPlay: number;
   /** internal fetches by uri: the playing context and album names while in flight; a track asked for

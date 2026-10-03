@@ -367,6 +367,182 @@ describe('3a. the host speaker away and back (the app suspended while paused)', 
   });
 });
 
+describe('3c. the host\'s own player (CONTRACT v10: alchemyPlayer, __wmpPlayer)', () => {
+  const SPK = { id: 'spk1', name: 'WMP Spotify (iOS)' };
+  const HP = (o: Record<string, unknown> = {}) => ({ v: 1, active: true, playing: true, uri: FX.playerState.track.uri, title: 'Wish I Knew You',
+    artist: 'The Revivalists', album: 'Men Amongst Mountains', art: 'https://i.scdn.co/image/ab67616d00001e02c5214ee5d4300598a8a95264',
+    duration: 274140, position: 10_000, at: T0 - 2000, shuffle: false, repeat: 'off', ...o });
+  /** the host's bindings stubbed: what alchemyPlayer was sent, what alchemyLog was told */
+  function host(player: Record<string, unknown> | null) {
+    const sent: string[] = [], log: string[] = [];
+    vi.stubGlobal('__wmpSpeaker', SPK);
+    vi.stubGlobal('alchemyPlayer', (c: string) => { sent.push(c); });
+    vi.stubGlobal('alchemyLog', (l: string) => { log.push(l); });
+    if (player) vi.stubGlobal('__wmpPlayer', player);
+    return { sent, log };
+  }
+  function setup(W: Record<string, unknown>) {
+    const env = boot({ loggedIn: true, state: FX.playerState, ...W });
+    env.resources.push({ name: 'https://gew4-spclient.spotify.com/connect-state/v1/devices/hobs_x', initiatorType: 'fetch' });
+    env.route(/player\/command/, { status: 200, json: { ack_id: 'a' } });
+    env.route(/connect\/transfer/, { status: 200, json: {} });
+    env.start();
+    return env;
+  }
+  const cloud = (env: ReturnType<typeof boot>) => env.calls.filter((c) => /player\/command|connect\/transfer/.test(c.url));
+  const report = (env: ReturnType<typeof boot>, o: Record<string, unknown>) => { vi.stubGlobal('__wmpPlayer', HP(o)); env.fire('wmp-player', null); };
+
+  it('the speaker the target: transport, plays, shuffle, repeat and stop go to alchemyPlayer as its strings, none to connect-state; each said in the log', async () => {
+    const h = host(HP({ shuffle: true, repeat: 'context' }));          // as the cluster has them
+    const env = setup({ activeDeviceId: 'spk1' });
+    await settle();
+    void env.C.playPause(); await settle();                           // the host says playing: a pause
+    expect(env.S.playback.status).toBe('paused');                    // optimistic, as through the cloud
+    report(env, { playing: false, position: 12_000, at: Date.now(), shuffle: true, repeat: 'context' });
+    expect([env.S.playback.status, env.S.playback.position, env.S.playback.pending]).toEqual(['paused', 12_000, null]);
+    void env.C.playPause(); await settle();
+    void env.C.next(); await settle();
+    void env.C.prev(); await settle();
+    void env.C.seek(60_000); await settle();
+    env.C.playContext(PL, 'spotify:track:0gEyKnHvgkrkBM6fbeHdwK'); await settle();
+    env.C.playContext('spotify:playlist:shelf'); await settle();
+    env.C.toggleShuffle(); await settle();                            // shuffle on: off
+    env.C.toggleShuffle(); await settle();                            // and on again (the optimistic off)
+    env.C.playAll(PL); await settle();                                // shuffle on: the play shuffled
+    env.C.cycleRepeat(); await settle();                              // repeat context: track
+    env.C.cycleRepeat(); await settle();
+    env.C.stop(); await settle();
+    expect(h.sent).toEqual(['pause', 'play', 'next', 'prev', 'seek:60000',
+      'load:{"context":"' + PL + '","track":"spotify:track:0gEyKnHvgkrkBM6fbeHdwK","shuffle":null,"position":0}',
+      'load:{"context":"spotify:playlist:shelf","track":null,"shuffle":null,"position":0}',
+      'shuffle:0', 'shuffle:1',
+      'load:{"context":"' + PL + '","track":null,"shuffle":true,"position":0}',
+      'repeat:track', 'repeat:off', 'pause', 'seek:0']);
+    expect(cloud(env)).toEqual([]);
+    expect(h.log.filter((l) => l.endsWith(" to the host's player"))).toEqual(h.sent.map((c) => 'spotify: ' + c + " to the host's player"));
+    expect(env.sent().filter((m) => m.type === 'mediaCmd')).toEqual([]);
+  });
+
+  it('the speaker idle (nothing active): play takes the playback itself; anything else waits on a take until the host reports the speaker active', async () => {
+    const h = host(HP({ active: false, playing: false }));
+    const env = setup({ activeDeviceId: '' });
+    await settle();
+    expect(env.S.playback.status).toBe('paused');                    // the cluster's memory of the last session
+    void env.C.playPause(); await settle();
+    expect(h.sent).toEqual(['play']);
+    void env.C.next(); void env.C.seek(5000); await settle();
+    expect(h.sent).toEqual(['play', 'take']);                         // one take for both
+    report(env, { active: true, playing: true });
+    await settle();
+    expect(h.sent).toEqual(['play', 'take', 'next', 'seek:5000']);
+    expect(cloud(env)).toEqual([]);                                   // no transfer first, no resume through the cloud
+  });
+
+  it('another device active: everything through connect-state as before, nothing to the host', async () => {
+    const h = host(HP({ active: false, playing: false }));
+    const env = setup({});
+    await settle();
+    expect([env.S.playback.status, env.S.playback.position]).toEqual(['playing', 30091 + 5000]);   // the cluster's
+    void env.C.playPause(); await settle();
+    void env.C.next(); await settle();
+    void env.C.seek(60_000); await settle();
+    env.C.playContext(PL, 'spotify:track:0gEyKnHvgkrkBM6fbeHdwK'); await settle();
+    env.C.toggleShuffle(); await settle();
+    env.C.cycleRepeat(); await settle();
+    expect(env.cmds().map((c) => c.endpoint)).toEqual(['pause', 'skip_next', 'seek_to', 'play', 'set_shuffling_context', 'set_options']);
+    expect(env.calls.filter((c) => /player\/command/.test(c.url)).every((c) => c.url.endsWith('/to/' + FX.activeDeviceId))).toBe(true);
+    expect(h.sent).toEqual([]);
+  });
+
+  it('the playback follows __wmpPlayer while it is in charge: paused at its position, playing on from its `at`, its track; the context and restrictions stay the cluster\'s', async () => {
+    const T = 'spotify:track:7hostTrack';
+    host(HP({ playing: false, uri: T, title: 'H', artist: 'HA', album: 'HB', duration: 200_000, position: 4000, at: T0 - 60_000, shuffle: false, repeat: 'track' }));
+    const env = setup({ activeDeviceId: 'spk1' });                   // the cluster: another track, playing, shuffled
+    await settle();
+    let p = env.S.playback;
+    // shuffle and repeat: the cluster's, the host's never having changed since it was first seen
+    expect([p.status, p.paused, p.position, p.shuffle, p.repeat]).toEqual(['paused', true, 4000, true, 'context']);
+    expect(positionNow(env.S, T0 + 10_000)).toBe(4000);
+    expect(p.track).toMatchObject({ uri: T, title: 'H', artist: 'HA', album: 'HB', duration: 200_000, ctx: FX.playerState.context_uri });
+    expect(p.context).toEqual({ uri: FX.playerState.context_uri, kind: 'playlist', label: 'Playlist' });
+    expect([p.from, p.canSeek, p.canNext, p.canPrev]).toEqual(['Playlist', true, true, true]);
+    expect(env.S.ui.status).toBe('Paused: HA – H');
+    report(env, { uri: FX.playerState.track.uri, playing: true, position: 4000, at: T0 - 1000, shuffle: false, repeat: 'off' });
+    p = env.S.playback;                                               // the host's repeat changed (track -> off): its
+    expect([p.status, p.position, p.shuffle, p.repeat, p.track!.title]).toEqual(['playing', 5000, true, 'off', 'Wish I Knew You']);
+    expect(positionNow(env.S, T0 + 2000)).toBe(7000);
+    expect(p.track!.art).toBe('https://i.scdn.co/image/ab67616d0000b273c5214ee5d4300598a8a95264');
+    // a cluster push meanwhile: the host's word still wins on what it owns
+    env.fire('wmp-spotify-state', clone(FX.playerState));
+    expect([env.S.playback.position, env.S.playback.shuffle, env.S.playback.repeat]).toEqual([5000, true, 'off']);
+    // the speaker no longer the active device: the cluster's again
+    report(env, { active: false });
+    expect([env.S.playback.position, env.S.playback.repeat]).toEqual([30091 + 5000, 'context']);
+  });
+
+  it('shuffle and repeat: whichever source changed them last (the host\'s are stale after it takes the playback; right after a toggle from here)', async () => {
+    const h = host(HP({ shuffle: false, repeat: 'off' }));
+    const env = setup({ state: { ...FX.playerState, options: { shuffling_context: false, repeating_context: false } }, activeDeviceId: 'spk1' });
+    await settle();
+    expect([env.S.playback.shuffle, env.S.playback.repeat]).toEqual([false, 'off']);
+    // another client turned shuffle on (or the session the host took had it): the host says nothing new
+    vi.setSystemTime(T0 + 1000);
+    env.fire('wmp-spotify-state', { ...FX.playerState, options: { shuffling_context: true, repeating_context: false } });
+    expect(env.S.playback.shuffle).toBe(true);
+    report(env, { shuffle: false, position: 11_000, at: Date.now() });   // a report with its old shuffle: still on
+    expect(env.S.playback.shuffle).toBe(true);
+    // a toggle from here: off, and the host's report of it (the same value it had) is right
+    vi.setSystemTime(T0 + 2000);
+    env.C.toggleShuffle(); await settle();
+    expect(h.sent.at(-1)).toBe('shuffle:0');
+    expect(env.S.playback.shuffle).toBe(false);                      // optimistic
+    report(env, { shuffle: false });
+    expect([env.S.playback.shuffle, env.S.playback.pending]).toEqual([false, null]);
+    // repeat changed on the host's side: its
+    report(env, { shuffle: false, repeat: 'track' });
+    expect(env.S.playback.repeat).toBe('track');
+  });
+
+  it('before any state from Spotify the host\'s track shows on its own', async () => {
+    host(HP());
+    const env = boot({ loggedIn: true, activeDeviceId: 'spk1' });
+    env.start();
+    await settle();
+    const p = env.S.playback;
+    expect([p.status, p.source, p.position, p.track!.title, p.canNext, p.context]).toEqual(['playing', 'spotify', 12_000, 'Wish I Knew You', true, null]);
+  });
+
+  it('a host with alchemyPlayer but no __wmpPlayer: commands to the host, the playback from the cluster and __wmpSpeakerTrack as before', async () => {
+    const h = host(null);
+    vi.stubGlobal('__wmpSpeakerTrack', { uri: FX.playerState.track.uri, title: 'T', artist: 'A', album: 'B', art: '', duration: 300_000, position: 4935, playing: false });
+    const env = setup({ state: { ...FX.playerState, is_paused: false }, activeDeviceId: 'spk1' });
+    await settle();
+    expect([env.S.playback.status, env.S.playback.position]).toEqual(['paused', 4935]);
+    void env.C.next(); await settle();                                // no report to wait on: sent at once
+    expect(h.sent).toEqual(['next']);
+    expect(cloud(env)).toEqual([]);
+  });
+
+  it('the cloud\'s workarounds do not misfire: the speaker back after losing its connection is resumed through the host, once; playback on this page still moves to the speaker', async () => {
+    const h = host(null);
+    const env = setup({ activeDeviceId: 'spk1' });
+    await settle();
+    const spk = { ...SPK, type: 'Speaker', active: true, volume: 65535 };
+    env.fire('wmp-spotify-devices', [spk]); await settle();
+    window.__wmpSpotify!.activeDeviceId = '';
+    env.fire('wmp-spotify-devices', []); await settle();                     // the connection dropped
+    env.fire('wmp-spotify-devices', [{ ...spk, active: false }]); await settle();   // back, idle
+    env.fire('wmp-spotify-devices', [{ ...spk, active: false }]); await settle();
+    expect(h.sent).toEqual(['play']);
+    expect(cloud(env)).toEqual([]);
+    // this page's own player active (hidden, heard by nothing): a Connect transfer to the speaker, as before
+    vi.setSystemTime(T0 + 60_000);
+    window.__wmpSpotify!.activeDeviceId = ME;
+    env.fire('wmp-spotify-devices', [{ id: ME, name: 'Web Player', type: 'Computer', active: true }, { ...spk, active: false }]); await settle();
+    expect(cloud(env).map((c) => c.url.replace(/.*\/connect\//, ''))).toEqual(['transfer/from/' + ME + '/to/spk1']);
+  });
+});
+
 describe('3b. the playing context names Now Playing and Up Next', () => {
   it('fetches the playing playlist once for its name and tracks', async () => {
     const env = boot({ loggedIn: true, state: FX.playerState });

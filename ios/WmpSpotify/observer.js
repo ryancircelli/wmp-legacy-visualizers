@@ -148,6 +148,9 @@ window.alchemyOrientation = function (mode) { post('orientation', mode || 'any')
 // app sends it with the host report. alchemySpeakerName(name) renames it (kept across launches).
 window.__wmpSpeaker = { id: null, name: '' };
 window.alchemySpeakerName = function (name) { post('speaker', String(name || '').trim()); };
+// The speaker driven locally (the host's player): a command string for librespot; its state comes back as window.__wmpPlayer / 'wmp-player'.
+// Only on a build with the handler: this file reaches older builds too, and the page feature-detects alchemyPlayer.
+if (window.webkit && webkit.messageHandlers && webkit.messageHandlers.player) window.alchemyPlayer = function (cmd) { post('player', String(cmd)); };
 // The broadcast (screen recording) is gone: the speaker feeds the visualizers. This file is served to
 // every installed build, and builds up to 32 still have the broadcast sheet and open it by themselves at
 // launch unless told 'manual'; a build without the handler throws here and `post` swallows it.

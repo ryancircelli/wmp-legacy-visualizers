@@ -1,9 +1,12 @@
 // Connect-state commands: the player command the web player sends itself, from our device to
 // whichever device is playing. A command that fails (network, or non-2xx: Spotify's own account
 // rules) goes to the host's mediaCmd (SMTC) instead — that command only, never the session.
+// Transport, shuffle, repeat and plays go through player/: to the host's own player instead, where it
+// is in charge (CONTRACT v10), with the same optimistic patches.
 import { LIKED, positionNow, type Playback, type RepeatMode } from '../../model';
 import { optimistic, pausedPatch } from '../host/media';
 import { query } from './pathfinder';
+import { player } from './player';
 import { W, post, status, type Sp } from './sp';
 import { transport as via } from './transport';
 
@@ -83,27 +86,25 @@ export async function command(sp: Sp, cmd: Cmd, orElse?: (() => void) | null, re
 }
 
 export type Transport = 'playpause' | 'play' | 'pause' | 'next' | 'prev' | 'seek';
-/** Play/pause/next/prev/seek (ms) through connect-state, falling back to the host per command.
- *  Optimistic: the playback slice shows the result at once (next/prev: playing from 0; the track
- *  itself comes with the state), rolled back if the player refuses. */
+/** Play/pause/next/prev/seek (ms) through the player in charge (player/: the host's own, else
+ *  connect-state falling back to the host per command). Optimistic: the playback slice shows the
+ *  result at once (next/prev: playing from 0; the track itself comes with the state), rolled back if
+ *  the player refuses. */
 export function transport(sp: Sp, cmd: Transport, posMs?: number): Promise<void> {
   const st = sp.store;
   if (cmd === 'playpause') cmd = st.getState().playback.status === 'playing' ? 'pause' : 'play';
   const ms = Math.round(+(posMs ?? 0) || 0), now = Date.now();
-  const c: Cmd = cmd === 'play' ? { endpoint: 'resume' } : cmd === 'pause' ? { endpoint: 'pause' }
-    : cmd === 'next' ? { endpoint: 'skip_next' } : cmd === 'prev' ? { endpoint: 'skip_prev' }
-    : { endpoint: 'seek_to', value: ms };
   const patch: Partial<Playback> = cmd === 'play' || cmd === 'pause' ? pausedPatch(st, cmd === 'pause')
     : cmd === 'seek' ? { position: ms, at: now } : { status: 'playing', paused: false, position: 0, at: now };
   const k = cmd;
-  return optimistic(st, patch, () => command(sp, c, () => sp.fallback(k, k === 'seek' ? posMs : undefined)));
+  return optimistic(st, patch, () => player(sp).transport(k, ms));
 }
 
 /** WMP's Stop: pause and back to the start. */
 export function stop(sp: Sp): Promise<void> {
   return optimistic(sp.store, { status: 'paused', paused: true, position: 0, at: Date.now() }, async () => {
-    const [a, b] = await Promise.all([command(sp, { endpoint: 'pause' }, () => sp.fallback('pause')),
-                                      command(sp, { endpoint: 'seek_to', value: 0 }, () => sp.fallback('seek', 0))]);
+    const p = player(sp);
+    const [a, b] = await Promise.all([p.transport('pause'), p.transport('seek', 0)]);
     return a && b;
   });
 }
@@ -173,10 +174,7 @@ export function repeatMode(sp: Sp): RepeatMode {
 }
 export function setRepeat(sp: Sp, m: RepeatMode): Promise<void> {
   if (m === repeatMode(sp)) return Promise.resolve();
-  // One set_options (what the web player's own client has), not two set_repeating_* commands: those
-  // race and one is lost (measured live: Off -> Track left context off, Track -> Off left track on).
-  return optimistic(sp.store, { repeat: m },
-    () => command(sp, { endpoint: 'set_options', repeating_context: m !== 'off', repeating_track: m === 'track' }));
+  return optimistic(sp.store, { repeat: m }, () => player(sp).setRepeat(m));
 }
 export function cycleRepeat(sp: Sp): Promise<void> {
   const m = repeatMode(sp);
@@ -184,7 +182,7 @@ export function cycleRepeat(sp: Sp): Promise<void> {
 }
 export function toggleShuffle(sp: Sp): Promise<void> {
   const on = !sp.store.getState().playback.shuffle;
-  return optimistic(sp.store, { shuffle: on }, () => command(sp, { endpoint: 'set_shuffling_context', value: on }));
+  return optimistic(sp.store, { shuffle: on }, () => player(sp).setShuffle(on));
 }
 
 /** The web player's Liked Songs context, spotify:user:<username>:collection (sp.ts LIKED_CTX):
@@ -199,8 +197,8 @@ export async function likedContext(sp: Sp): Promise<string | null> {
   return sp.liked ?? null;
 }
 
-/** A context (playlist/album/artist/station, LIKED), optionally starting at one of its tracks.
- *  shuffle: the play turns shuffle on with it (player_options_override), whatever the old context had. */
+/** A context (playlist/album/artist/station, LIKED), optionally starting at one of its tracks, on the
+ *  player in charge. shuffle: the play turns shuffle on with it, whatever the old context had. */
 export async function playContext(sp: Sp, ctx: string, track?: string | null, shuffle = false): Promise<void> {
   if (ctx === LIKED) {
     const liked = await likedContext(sp);
@@ -210,15 +208,7 @@ export async function playContext(sp: Sp, ctx: string, track?: string | null, sh
     }
     ctx = liked;
   }
-  const c: Cmd = { endpoint: 'play', context: { uri: ctx, url: 'context://' + ctx },
-                   play_origin: { feature_identifier: 'playlist', feature_version: 'xpui' } };
-  // options always present, even empty: librespot's play command requires the field (an absent
-  // one is "unknown endpoint" → 400), so a shelf play with no starting track died on the speaker.
-  const o: Record<string, unknown> = {};
-  if (track) o.skip_to = { track_uri: track };
-  if (shuffle) o.player_options_override = { shuffling_context: true };
-  c.options = o;
-  await command(sp, c, null);
+  await player(sp).playContext(ctx, track ?? null, shuffle);
 }
 
 /** Add to queue: the web player's add_to_queue (the track marked queued, from the queue provider).

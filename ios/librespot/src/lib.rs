@@ -7,11 +7,13 @@ use std::{
     future::Future,
     pin::Pin,
     sync::{Mutex, MutexGuard},
-    time::{Duration, Instant},
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
 use futures_util::StreamExt;
-use librespot_connect::{ConnectConfig, Spirc};
+use librespot_connect::{
+    ConnectConfig, LoadContextOptions, LoadRequest, LoadRequestOptions, Options, PlayingTrack, Spirc,
+};
 use librespot_core::{
     authentication::Credentials,
     cache::Cache,
@@ -35,6 +37,7 @@ pub type PcmCb = extern "C" fn(*mut c_void, *const f32, usize);
 pub type LogCb = extern "C" fn(*mut c_void, *const c_char);
 pub type StateCb = extern "C" fn(*mut c_void, *const c_char);
 pub type NpCb = extern "C" fn(*mut c_void, *const c_char);
+pub type PlayerCb = extern "C" fn(*mut c_void, *const c_char);
 
 #[derive(Clone, Copy)]
 struct Host {
@@ -42,6 +45,7 @@ struct Host {
     log: LogCb,
     state: StateCb,
     np: NpCb,
+    player: PlayerCb,
     ctx: usize, // the app's pointer, handed back untouched
 }
 
@@ -141,6 +145,94 @@ fn now_playing(t: &Track, playing: bool, position: u32) {
     }
 }
 
+fn epoch_ms() -> u64 {
+    SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_millis() as u64)
+}
+
+// The host's player as the page sees it (the contract's HostPlayer, wmp_librespot.h): what librespot's
+// events left, beside `track`, kept so each message is whole. Platform-neutral, as all of this crate is:
+// a second host (Windows) would link the same commands and state.
+#[derive(Default)]
+struct HostPlayer {
+    active: bool, // the active Connect device: SessionConnected (Spirc's activation) .. SessionDisconnected
+    playing: bool,
+    shuffle: bool,
+    repeat: (bool, bool), // context, track
+    position: u32,        // ms, true at `at`
+    at: u64,              // epoch ms
+}
+
+impl HostPlayer {
+    // To the app (the `player` callback): one whole JSON object, at now. `position` is the event's, or
+    // with none (a mode or activation change) the last one carried forward while it played.
+    fn send(&mut self, t: &Track, playing: bool, position: Option<u32>) {
+        let now = epoch_ms();
+        self.position = position.unwrap_or_else(|| {
+            let p = self.position as u64 + if self.playing { now.saturating_sub(self.at) } else { 0 };
+            (if t.duration > 0 { p.min(t.duration as u64) } else { p }) as u32
+        });
+        self.at = now;
+        self.playing = playing;
+        if let (Some(h), Ok(c)) = (host(), CString::new(self.json(t))) {
+            (h.player)(h.ctx as *mut c_void, c.as_ptr());
+        }
+    }
+
+    fn json(&self, t: &Track) -> String {
+        let repeat = match self.repeat {
+            (_, true) => "track",
+            (true, _) => "context",
+            _ => "off",
+        };
+        format!(
+            r#"{{"v":1,"active":{},"playing":{},"uri":{},"title":{},"artist":{},"album":{},"art":{},"duration":{},"position":{},"at":{},"shuffle":{},"repeat":"{repeat}"}}"#,
+            self.active,
+            self.playing,
+            quote(&t.uri),
+            quote(&t.title),
+            quote(&t.artist),
+            quote(&t.album),
+            quote(&t.art),
+            t.duration,
+            self.position,
+            self.at,
+            self.shuffle,
+        )
+    }
+}
+
+// The page's "load:<json>", {"context","track" (or null),"shuffle" (or null),"position"}, as a load that
+// starts playing. Spirc's load resets shuffle and both repeats to the request's own (handle_load), so
+// the ones the page leaves alone (shuffle null, repeat always) go in as they stand. With the context uri.
+fn load_request(json: &str, shuffle: bool, repeat: (bool, bool)) -> Option<(String, LoadRequest)> {
+    let v: serde_json::Value = serde_json::from_str(json).ok()?;
+    let context = v["context"].as_str().filter(|c| !c.is_empty())?.to_owned();
+    let options = LoadRequestOptions {
+        start_playing: true,
+        seek_to: v["position"].as_f64().unwrap_or(0.0) as u32, // saturating; NaN 0
+        context_options: Some(LoadContextOptions::Options(Options {
+            shuffle: v["shuffle"].as_bool().unwrap_or(shuffle),
+            repeat: repeat.0,
+            repeat_track: repeat.1,
+        })),
+        playing_track: v["track"].as_str().filter(|t| !t.is_empty()).map(|t| PlayingTrack::Uri(t.to_owned())),
+    };
+    Some((context.clone(), LoadRequest::from_context_uri(context, options)))
+}
+
+// The playback Spotify remembers, taken over to this device (Spirc::transfer(None)), and to play, a
+// resume once it has landed in case it comes back paused (the "resume" command, Spirc's own play).
+fn take(s: &Spirc, resume: bool) -> Result<(), librespot_core::Error> {
+    let done = s.transfer(None);
+    if let (true, Some(tx)) = (resume, lock(&COMMANDS).as_ref().cloned()) {
+        tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_secs(4)).await;
+            let _ = tx.send("resume".into());
+        });
+    }
+    done
+}
+
 // librespot's own log (info and up) into the app's log: its errors are the only word on why a
 // connect failed.
 struct Forward;
@@ -195,6 +287,7 @@ pub unsafe extern "C" fn wmp_ls_start(
     log: LogCb,
     state: StateCb,
     np: NpCb,
+    player: PlayerCb,
     ctx: *mut c_void,
 ) -> i32 {
     if name.is_null() || cache_dir.is_null() {
@@ -217,6 +310,7 @@ pub unsafe extern "C" fn wmp_ls_start(
         log,
         state,
         np,
+        player,
         ctx: ctx as usize,
     });
     if log::set_logger(&Forward).is_ok() {
@@ -398,6 +492,7 @@ async fn run(
     let mut reconnects: Vec<Instant> = vec![];
     let mut track = Track::default(); // the now-playing messages' track and state
     let mut playing = false;
+    let mut hp = HostPlayer::default(); // the rest of the host's player, for the `player` messages
     // When the session ended under a playing song (the connection to Spotify closed: seen as the app
     // went to the background, several times a day): the next session takes the playback back itself.
     // It came back idle and the music stopped at the end of the song, the page (hidden, throttled)
@@ -457,16 +552,8 @@ async fn run(
                         up = Some(Instant::now());
                         if lost.take().is_some_and(|at| at.elapsed() < Duration::from_secs(180)) {
                             say("librespot: the session was lost under a playing song: taking the playback back");
-                            // Spotify's transfer to this device (its remembered song and place), then a
-                            // resume in case it comes back paused
-                            if let Err(e) = s.transfer(None) {
+                            if let Err(e) = take(&s, true) {
                                 say(&format!("librespot: transfer failed: {e}"));
-                            }
-                            if let Some(tx) = lock(&COMMANDS).as_ref().cloned() {
-                                tokio::spawn(async move {
-                                    tokio::time::sleep(Duration::from_secs(4)).await;
-                                    let _ = tx.send("resume".into());
-                                });
                             }
                         }
                         spirc = Some(s);
@@ -512,6 +599,10 @@ async fn run(
                     lost = Some(Instant::now());
                 }
                 state(None);
+                // No Spirc, nothing to command: not the active device, and not playing to the page
+                // (the player may still play out what it has buffered).
+                hp.active = false;
+                hp.send(&track, false, None);
                 if !session.is_invalid() {
                     session.shutdown();
                 }
@@ -545,7 +636,8 @@ async fn run(
                     retry = false;
                 }
             },
-            // Control Center's buttons (wmp_ls_command), to the live session.
+            // Control Center's buttons and the page's player (wmp_ls_command, the contract's commands), to
+            // the live session.
             Some(c) = commands.recv() => {
                 let Some(s) = spirc.as_ref() else {
                     say(&format!("librespot: {c}: no session"));
@@ -557,16 +649,40 @@ async fn run(
                 // command first puts Spirc where the player is (a no-op when they agree), then the one meant.
                 let pause = |s: &Spirc| s.play().and_then(|_| s.pause());
                 let play = |s: &Spirc| s.pause().and_then(|_| s.play());
+                // Spirc ignores all but activate and transfer while it is not the active device: to play,
+                // it takes the playback first; to load, it activates first.
+                let active = hp.active;
                 let done = match c.as_str() {
-                    "play" => if playing { Ok(()) } else { play(s) },
-                    "resume" => s.play(), // Spirc's own: nothing unless it is paused (after a lost session)
+                    "play" => if !active { take(s, true) } else if playing { Ok(()) } else { play(s) },
+                    "resume" => s.play(), // Spirc's own: nothing unless it is paused (after a take)
                     "pause" => if playing { pause(s) } else { Ok(()) },
-                    "toggle" => if playing { pause(s) } else { play(s) },
+                    "toggle" => if playing { pause(s) } else if active { play(s) } else { take(s, true) },
                     "next" => s.next(),
                     "prev" => s.prev(),
-                    _ => match c.strip_prefix("seek:").and_then(|ms| ms.parse().ok()) {
-                        Some(ms) => s.set_position_ms(ms),
-                        None => {
+                    "take" => if active { Ok(()) } else { take(s, false) },
+                    "shuffle:0" | "shuffle:1" => s.shuffle(c == "shuffle:1"),
+                    // Track is context and track, as Spotify's own clients set it.
+                    "repeat:off" => s.repeat(false).and_then(|_| s.repeat_track(false)),
+                    "repeat:context" => s.repeat(true).and_then(|_| s.repeat_track(false)),
+                    "repeat:track" => s.repeat(true).and_then(|_| s.repeat_track(true)),
+                    _ => match (c.strip_prefix("seek:").and_then(|ms| ms.parse().ok()), c.strip_prefix("load:")) {
+                        (Some(ms), _) => s.set_position_ms(ms),
+                        (_, Some(json)) => match load_request(json, hp.shuffle, hp.repeat) {
+                            Some((uri, r)) => {
+                                say(&format!("librespot: load {uri}"));
+                                // A load sets the modes without an event of its own.
+                                if let Some(LoadContextOptions::Options(o)) = &r.context_options {
+                                    hp.shuffle = o.shuffle;
+                                }
+                                let activated = if active { Ok(()) } else { s.activate() };
+                                activated.and_then(|_| s.load(r))
+                            }
+                            None => {
+                                say(&format!("librespot: load without a context: {json}"));
+                                continue;
+                            }
+                        },
+                        _ => {
                             say(&format!("librespot: unknown command {c}"));
                             continue;
                         }
@@ -581,18 +697,25 @@ async fn run(
                     track = Track::new(&audio_item);
                     say(&format!("librespot: now playing: {} \u{2014} {}", track.title, track.artist));
                     now_playing(&track, playing, 0);
+                    hp.send(&track, playing, Some(0));
                 }
                 PlayerEvent::Playing { position_ms, .. } => {
                     say("librespot: playing");
                     playing = true;
                     now_playing(&track, playing, position_ms);
+                    hp.send(&track, playing, Some(position_ms));
                 }
                 PlayerEvent::Paused { position_ms, .. } => {
                     say("librespot: paused");
                     playing = false;
                     now_playing(&track, playing, position_ms);
+                    hp.send(&track, playing, Some(position_ms));
                 }
-                PlayerEvent::Seeked { position_ms, .. } => now_playing(&track, playing, position_ms),
+                PlayerEvent::Seeked { position_ms, .. } => {
+                    now_playing(&track, playing, position_ms);
+                    hp.send(&track, playing, Some(position_ms));
+                }
+                PlayerEvent::PositionCorrection { position_ms, .. } => hp.send(&track, playing, Some(position_ms)),
                 // Not a pause: the next track's Playing follows at once, and Control Center flickered to
                 // paused at every track change. A session that ends here says Paused or Stopped itself.
                 PlayerEvent::EndOfTrack { .. } => now_playing(&track, playing, track.duration),
@@ -601,6 +724,30 @@ async fn run(
                     playing = false;
                     track = Track::default();
                     now_playing(&track, playing, 0);
+                    hp.send(&track, playing, Some(0));
+                }
+                // Spirc's activation (SessionConnected, at every handle_activate: an activate, a transfer
+                // here, a play from another client, a load) and its end (SessionDisconnected, at every
+                // handle_disconnect: another device took over, a disconnect, a shutdown), but a late one
+                // from a Spirc whose session already ended (its shutdown finishes on its own) after the
+                // next session's activation.
+                PlayerEvent::SessionConnected { .. } => {
+                    say("librespot: active");
+                    hp.active = true;
+                    hp.send(&track, playing, None);
+                }
+                PlayerEvent::SessionDisconnected { connection_id, .. } if connection_id == session.connection_id() => {
+                    say("librespot: inactive");
+                    hp.active = false;
+                    hp.send(&track, playing, None);
+                }
+                PlayerEvent::ShuffleChanged { shuffle } => {
+                    hp.shuffle = shuffle;
+                    hp.send(&track, playing, None);
+                }
+                PlayerEvent::RepeatChanged { context, track: one } => {
+                    hp.repeat = (context, one);
+                    hp.send(&track, playing, None);
                 }
                 PlayerEvent::Unavailable { track_id, .. } => say(&format!("librespot: unavailable: {track_id:?}")),
                 _ => {}
@@ -637,5 +784,39 @@ mod tests {
     #[test]
     fn quote_escapes() {
         assert_eq!(super::quote("a\"b\\c\n\u{1}é—"), r#""a\"b\\c\u000a\u0001é—""#);
+    }
+
+    #[test]
+    fn load_request_reads_the_page() {
+        use super::{LoadContextOptions::Options, PlayingTrack, load_request};
+        let page = r#"{"context":"spotify:playlist:p","track":"spotify:track:t","shuffle":null,"position":1500.4}"#;
+        let (uri, r) = load_request(page, true, (true, false)).unwrap();
+        assert_eq!(uri, "spotify:playlist:p");
+        assert!(r.start_playing && r.seek_to == 1500);
+        assert!(matches!(&r.playing_track, Some(PlayingTrack::Uri(t)) if t == "spotify:track:t"));
+        // shuffle null and the repeats: as they stand
+        assert!(matches!(&r.context_options, Some(Options(o)) if o.shuffle && o.repeat && !o.repeat_track));
+        let (_, r) = load_request(r#"{"context":"c","track":null,"shuffle":false,"position":0}"#, true, (false, true)).unwrap();
+        assert!(r.playing_track.is_none());
+        assert!(matches!(&r.context_options, Some(Options(o)) if !o.shuffle && !o.repeat && o.repeat_track));
+        assert!(load_request(r#"{"context":"","track":"t"}"#, false, (false, false)).is_none());
+        assert!(load_request("not json", false, (false, false)).is_none());
+    }
+
+    #[test]
+    fn host_player_carries_position_and_is_json() {
+        let t = super::Track { title: "a \"b\"".into(), duration: 10_000, uri: "spotify:track:t".into(), ..Default::default() };
+        let mut hp = super::HostPlayer { active: true, repeat: (true, true), ..Default::default() };
+        hp.send(&t, true, Some(1000));
+        hp.at -= 2000; // two seconds of playing later
+        hp.send(&t, true, None);
+        let v: serde_json::Value = serde_json::from_str(&hp.json(&t)).unwrap();
+        let p = v["position"].as_u64().unwrap();
+        assert!((3000..3100).contains(&p), "{p}");
+        assert_eq!((v["v"].as_u64(), v["title"].as_str(), v["repeat"].as_str()), (Some(1), Some("a \"b\""), Some("track")));
+        assert_eq!((v["active"].as_bool(), v["playing"].as_bool(), v["shuffle"].as_bool()), (Some(true), Some(true), Some(false)));
+        hp.at -= 60_000; // past the end: held at the duration
+        hp.send(&t, false, None);
+        assert_eq!(hp.position, 10_000);
     }
 }

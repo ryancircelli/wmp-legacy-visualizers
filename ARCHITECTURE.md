@@ -40,11 +40,18 @@ src/
     spotify/         the web player's channels (port of src/95-spotify.js): observers (window.__wmpSpotify + events),
                      pathfinder.ts (hashes: W.hashes → script scan → baked table → 412 rescan), connect.ts (commands,
                      volume, transfer), radio.ts (seed_to_playlist GET), home.ts, library.ts, search.ts, state.ts
-                     (player_state → playback slice; numbers are strings; is_paused; no active device = paused)
+                     (player_state → playback slice; numbers are strings; is_paused; no active device = paused),
+                     player/ (who plays, picked per command: one Player interface — transport, playContext,
+                     setShuffle, setRepeat — with two backends, `cloud` (connect-state, connect.ts command) and
+                     `host` (the host's own speaker through host/player.ts, CONTRACT v10), and the router: the host's
+                     when it has a player and its speaker is the command's target. connect.ts keeps the optimistic
+                     patches above both; state.ts lays the host's report over the cluster's state while its speaker
+                     is active. The UI never knows which one played)
     local/           the app/website: system audio or share picker (getDisplayMedia), host GSMTC `media` frames,
                      mediaCmd over the socket, lyrics from the host (CONTRACT v4/v5)
     host/            the socket to the desktop host (PCM + JSON), alchemyWin*/alchemyReady/alchemySpotifyLogout bindings,
-                     screensaver/app/spotify mode detection (window.alchemyScreensaver, alchemyEngine, alchemyRoot)
+                     screensaver/app/spotify mode detection (window.alchemyScreensaver, alchemyEngine, alchemyRoot);
+                     player.ts, the one door to a host's own player (alchemyPlayer, __wmpPlayer, __wmpSpeaker), any host's
   skins/
     types.ts         Skin = { id, name, Root: React.FC, shortcuts? } (see "Skins")
     menus.ts         WMP 9's menus as data (File / View / Play / Tools / Help, the visualization picker)

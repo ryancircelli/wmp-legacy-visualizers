@@ -743,7 +743,7 @@ struct WebView: UIViewRepresentable {
         for name in ["log", "volume", "open", "layout", "showlog", "haptic", "awake", "statusbar", "orientation",
                      "brightness", "share", "homeindicator", "host", "reset", "viewport", "proximity",
                      "hapticpattern", "sound", "routepicker", "audiosession", "notify", "appearance", "clipboard", "icon",
-                     "band", "background", "keyboard", "scroll", "lstoken", "speaker"] {
+                     "band", "background", "keyboard", "scroll", "lstoken", "speaker", "player"] {
             config.userContentController.add(context.coordinator, name: name)
         }
         if let script {
@@ -958,6 +958,12 @@ struct WebView: UIViewRepresentable {
             case "speaker":
                 guard let s = message.body as? String, !s.isEmpty else { return }
                 Librespot.shared.rename(s)
+            case "player":
+                // window.alchemyPlayer's command, as it is, to librespot (wmp_librespot.h, wmp_ls_command), which
+                // parses it and logs the load's context itself.
+                guard let s = message.body as? String, !s.isEmpty else { return }
+                HostLog.shared.log("player: \(s.hasPrefix("load:") ? "load" : s)", quiet: true)
+                wmp_ls_command(s)
             default:
                 HostLog.shared.log("page: \(message.body)")
             }
@@ -1320,9 +1326,20 @@ final class Librespot {
     /// name is "iPhone" or "iPad" to apps since iOS 16 without an entitlement Apple grants on request.
     var name: String { UserDefaults.standard.string(forKey: "speaker.name") ?? "WMP Spotify (iOS)" }
 
-    /// window.__wmpSpeaker = {id, name} and 'wmp-speaker', to the page.
+    /// window.__wmpSpeaker = {id, name} and 'wmp-speaker', to the page, and the player's last state with it.
     func push() {
         WebHolder.shared.push("__wmpSpeaker", "wmp-speaker", ["id": deviceId ?? NSNull(), "name": name] as [String: Any])
+        pushPlayer()
+    }
+
+    private var player: String?  // on the main thread: librespot's last player state, for a page that asks later
+
+    /// On the main thread: window.__wmpPlayer and 'wmp-player', librespot's player state as it sent it
+    /// (wmp_librespot.h, the player callback; the contract's HostPlayer). Only forwarded: its commands and
+    /// its state are librespot's (lib.rs), which a second host would share.
+    private func pushPlayer() {
+        guard let player else { return }
+        WebHolder.shared.run("window.__wmpPlayer=\(player);window.dispatchEvent(new Event('wmp-player'))")
     }
 
     /// On the main thread: a new name from the page, kept; the receiver restarts under it (its device
@@ -1372,6 +1389,13 @@ final class Librespot {
             guard let json else { return }
             let s = String(cString: json)
             DispatchQueue.main.async { Librespot.shared.nowPlaying(s) }
+        }, { _, json in
+            guard let json else { return }
+            let s = String(cString: json)
+            DispatchQueue.main.async {
+                Librespot.shared.player = s
+                Librespot.shared.pushPlayer()
+            }
         }, nil)
         if started != 0 { HostLog.shared.log("librespot: not started") }
     }

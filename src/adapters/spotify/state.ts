@@ -2,8 +2,10 @@
 // stays true while paused, so is_paused is the one to read (SPIKE2.md §3).
 import { LIKED, type Playback, type Track } from '../../model';
 import { setSession } from '../host/media';
+import * as hostPlayer from '../host/player';
 import { fetchCollectionPage, midImage, remember, trackRow } from './library';
 import { query } from './pathfinder';
+import { hostLive } from './player';
 import { LIKED_CTX, W, cap, kindOf, type PlayerState, type Sp } from './sp';
 
 export function img(u: string | undefined): string | null {
@@ -98,9 +100,10 @@ export function toPlayback(sp: Sp, ps: PlayerState): Partial<Playback> {
     : (+(ps.position_as_of_timestamp ?? 0) || 0) + (paused ? 0 : (now - (+(ps.timestamp ?? 0) || now)) * speed);
   const row = rowFor(sp, t.uri);   // what librespot leaves out (it sends the uri alone)
   const dur = +(ps.duration ?? 0) || +(md.duration ?? 0) || own?.duration || row?.duration || 0;
-  const o = ps.options ?? {};
+  const o = ps.options ?? {}, repeat = o.repeating_track ? 'track' : o.repeating_context ? 'context' : 'off';
+  if (ps.options) { note(sp, 'cluster.shuffle', !!o.shuffling_context); note(sp, 'cluster.repeat', repeat); }
   const ctx = LIKED_CTX.test(ps.context_uri ?? '') ? LIKED : ps.context_uri;   // Liked Songs: its library uri
-  return {
+  return hostOver(sp, {
     status: !t.uri ? 'stopped' : paused ? 'paused' : 'playing', source: 'spotify', paused, at: now,
     position: Math.max(0, dur ? Math.min(pos, dur) : pos),
     track: t.uri ? { uri: t.uri, title: md.title || own?.title || row?.title || '',
@@ -111,12 +114,61 @@ export function toPlayback(sp: Sp, ps: PlayerState): Partial<Playback> {
     canNext: !!t.uri && none(rs.disallow_skipping_next_reasons),
     canPrev: !!t.uri && none(rs.disallow_skipping_prev_reasons),
     shuffle: !!o.shuffling_context,
-    repeat: o.repeating_track ? 'track' : o.repeating_context ? 'context' : 'off',
+    repeat,
     context: ctx === LIKED ? { uri: LIKED, kind: 'liked', label: 'Liked Songs' }
       : ctx && /^spotify:(playlist|album|artist|show):/.test(ctx) ? { uri: ctx, kind: kindOf(ctx), label: fromText(sp, ps) } : null,
     from: t.uri ? fromText(sp, ps) : '',
     app: 'Spotify',
+  }, ctx ?? null);
+}
+
+/** A source's shuffle or repeat as seen: when it last changed (0 = as first seen). */
+function note(sp: Sp, k: string, v: unknown): void {
+  const o = sp.opts[k];
+  if (!o) sp.opts[k] = { v, at: 0 };
+  else if (o.v !== v) sp.opts[k] = { v, at: Date.now() };
+}
+/** The host's next report of shuffle and repeat counts as a change even with the same value: it follows
+ *  a toggle or a play sent from here, after which the host's are right (player/host.ts). */
+export function trustHost(sp: Sp): void {
+  for (const k of ['host.shuffle', 'host.repeat']) sp.opts[k] = { v: null, at: sp.opts[k]?.at ?? 0 };
+}
+/** The host's shuffle or repeat over the cluster's: only when it changed last. */
+const hostWins = (sp: Sp, f: string) => (sp.opts['host.' + f]?.at ?? -1) > (sp.opts['cluster.' + f]?.at ?? -1);
+
+/** The host's own player, while it is in charge (player/ hostLive): what plays, in its own word, its
+ *  position true at its `at`; the context, "Playing from", the restrictions and the queue stay the
+ *  cluster's. A track the cluster has no state for yet is shown all the same (skippable then). Shuffle
+ *  and repeat are whichever source changed them last: the host's are stale once it has taken the
+ *  playback (its own settings from before, not the session's) and say nothing of a play another client
+ *  started with its own. */
+function hostOver(sp: Sp, p: Partial<Playback>, ctx: string | null): Partial<Playback> {
+  const h = hostLive();
+  if (!h) return p;
+  const same = p.track?.uri === h.uri ? p.track : null, now = Date.now(), paused = !h.playing;
+  const dur = h.duration || same?.duration || 0, pos = h.position + (paused ? 0 : now - h.at);
+  return {
+    ...p, status: !h.uri ? 'stopped' : paused ? 'paused' : 'playing', paused, at: now,
+    position: Math.max(0, dur ? Math.min(pos, dur) : pos),
+    shuffle: hostWins(sp, 'shuffle') ? h.shuffle : p.shuffle, repeat: hostWins(sp, 'repeat') ? h.repeat : p.repeat,
+    track: h.uri ? { uri: h.uri, title: h.title || same?.title || '', artist: h.artist || same?.artist || '',
+                     album: h.album || same?.album || '', duration: dur, art: bigCover(h.art || same?.art || null), ctx } : null,
+    ...(p.track ? {} : { canSeek: !!h.uri, canNext: !!h.uri, canPrev: !!h.uri }),
   };
+}
+
+/** The host's player reported (CONTRACT v10 'wmp-player'): the playback read again. Its word, while
+ *  it is in charge, is the player's answer (a pending optimistic change gives way); otherwise the last
+ *  state is only re-read. Before any state from Spotify, its track alone. */
+export function onHostPlayer(sp: Sp): void {
+  const s = hostPlayer.state();
+  if (!s) return;                                    // a host without one: nothing of it to read
+  note(sp, 'host.shuffle', s.shuffle); note(sp, 'host.repeat', s.repeat);
+  const live = !!hostLive();
+  if (sp.last) return onState(sp, sp.last, !live);
+  if (!live) return;
+  sp.hasState = true;
+  setSession(sp.store, toPlayback(sp, {}));
 }
 
 /** A player state: it wins over any optimistic change. `replay` = the last state again, re-read
@@ -149,7 +201,8 @@ export function onState(sp: Sp, ps: PlayerState | null | undefined, replay = fal
   // A device that sends the uri alone (librespot, the app's own speaker; the web player and Spotify's
   // apps send metadata): getTrack names the track, its cover at full size.
   const uri = p.track?.uri, bare = !!uri && !ps.track?.metadata?.title;
-  if (bare && !speakerTrack(uri) && !rowFor(sp, uri)?.art) want(sp, uri);
+  const h = hostLive();
+  if (bare && !speakerTrack(uri) && !(h?.uri === uri && h.title) && !rowFor(sp, uri)?.art) want(sp, uri);
   // Up Next: the web player sends metadata for the first queued track only, librespot for none; the
   // rest are named from rows the fetches returned (the playing context's first page above), left out
   // until then; a bare device's by getTrack once that page is in (30 asked at most).

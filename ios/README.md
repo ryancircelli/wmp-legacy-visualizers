@@ -147,7 +147,7 @@ overlay, plays as ever).
 - `ios/librespot/` is a small Rust crate (`wmp-librespot`, staticlib and cdylib) on librespot-core,
   -connect, -playback, -metadata and -discovery 0.8.0 with no audio backend, rustls with compiled-in
   roots, and a sink that hands the app interleaved stereo float32 at 44100 Hz. Its C ABI is
-  `wmp_librespot.h`: `wmp_ls_start(name, id, cache_dir, pcm, log, state, np, ctx)`,
+  `wmp_librespot.h`: `wmp_ls_start(name, id, cache_dir, pcm, log, state, np, player, ctx)`,
   `wmp_ls_token(token, client_id, client_token)`, `wmp_ls_command(cmd)` and `wmp_ls_stop()`. `build.sh`
   builds it for aarch64-apple-ios into `ios/librespot/out/`, which `project.yml` links (with a bridging
   header). CI runs it before xcodegen, its cargo work cached by Cargo.lock.
@@ -166,6 +166,24 @@ overlay, plays as ever).
   pressed in the Spotify app; its other commands are off. The session is `.playback` without
   `.mixWithOthers`, which would keep the app out of Control Center: the page's `audiosession`
   message set to `"mix"` or `"duck"` (which implies mixing) would do that, and no skin sends it.
+- **The host's player** (2026-10-03). The page drives the speaker through librespot directly, not
+  through Spotify's cloud: every play, pause or next used to go page -> connect-state -> speaker, and
+  the page learned what the speaker did second-hand from Spotify's cluster, so presses were lost while
+  its dealer socket reconnected, Spirc and the player fell out of step, and the state was stale after a
+  suspension. The owner asked for "a proper abstraction layer… so the ui doesn't care about these
+  details", so the skins still only call the store. `window.alchemyPlayer(cmd)` (observer.js, defined
+  only on a build with the `player` handler, since the page feature-detects it) goes as it is to
+  `wmp_ls_command`: the Control Center commands plus `shuffle:0|1`, `repeat:off|context|track`, `take`
+  and `load:<json>`. `play` on a speaker that is not the active device first takes Spotify's remembered
+  playback (`Spirc::transfer(None)`) and resumes four seconds later, and `load` activates it first.
+  librespot's own player events come back as the contract's HostPlayer JSON (the `player` callback:
+  active, playing, track, position at an epoch time, shuffle, repeat), which `Librespot` puts in
+  `window.__wmpPlayer` with a `wmp-player` event, again with the host report. `active` follows Spirc's
+  activation events (`SessionConnected` to `SessionDisconnected`, and false when the session ends).
+  The terms are in `wmp_librespot.h`; the page side is in src/adapters/host. The C ABI
+  (`wmp_ls_command`'s commands and the player-state callback) is the shared layer a second host
+  (Windows) would reuse: the parsing, the activation rules and the state all live in lib.rs, and
+  Swift only forwards.
 - **Name, id, and which device plays.** The speaker is "WMP Spotify (iOS)": the phone's own name
   ("Ryan's iPhone") is "iPhone" or "iPad" to apps since iOS 16 without an entitlement Apple grants on
   request. The page can rename it (`alchemySpeakerName(name)`, the "speaker" message; a rename

@@ -341,7 +341,7 @@ and the last fixed choices made the page's: `alchemyBand(hidden)`, `alchemyBackg
 Connect speaker, where it has one: `__wmpSpeaker = {id, name}` (`wmp-speaker`; `id` its device id while
 its session is up, else null) and `alchemySpeakerName(name)`. The Spotify adapter sends its commands
 to the active device, else to that speaker, else to the page's own player (src/adapters/spotify/connect.ts,
-`target`), and on the phone the page's own player is hidden from every picker (observer.js). The app fetches
+`target`; to the speaker through the host's own player where the host has one, v10), and on the phone the page's own player is hidden from every picker (observer.js). The app fetches
 observer.js itself from the site too, as dist/ios-observer.js (tools/postbuild.js), with its bundled
 copy as the fallback: a change to the page or to the observer reaches the phone at its next launch. No audio
 socket, no lyrics from a host (for a track Spotify has none for, the page asks Spotify again under the uri
@@ -350,6 +350,46 @@ cannot play, then LRCLIB itself, `get` only unless it finds nothing and naming i
 header: src/adapters/spotify/lyrics.ts `fetchLyricsFallback`), no window bindings, no page-update
 signature (the site is trusted as the bundle's source). Built on GitHub's macOS runners, signed with
 Xcode's cloud-managed certificates through an App Store Connect API key, uploaded to TestFlight.
+
+## v10 — the host's player (a host capability; `src/adapters/host/player.ts`, `src/adapters/spotify/player/`)
+A host with its own Spotify Connect speaker (v9's `__wmpSpeaker`) may also drive that speaker for the page: the page's
+presses reach it without the round trip through Spotify's cloud (page -> connect-state -> the speaker), which lost presses
+while the page's socket reconnected and showed stale state after the host was suspended, and the page reads what the
+speaker does from its own player events instead of second-hand from Spotify's cluster. Any host may implement it (the
+iOS app is the first: its librespot); every binding is optional and feature-detected, so a host without them, the
+website, or a page newer than its host keeps v6.1's connect-state path for everything (no host-api bump). The page
+reaches these bindings through `src/adapters/host/player.ts` alone (`available`, `speaker`, `state`, `send`, `subscribe`).
+Commands, page -> host:
+  - `window.alchemyPlayer(cmd: string): void`, present only on a host that has it (`typeof … === 'function'`); fire and
+    forget: the answer is the next report. Unknown commands are logged by the host and ignored.
+  - `play` resume; not the active device: take the playback first (Spotify's remembered session), then resume.
+    `pause`. `toggle` play or pause by what the player is doing. `next`, `prev`. `seek:<ms>`. `shuffle:<0|1>`.
+    `repeat:<off|context|track>`. `take` become the active device with Spotify's remembered session, without resuming.
+  - `load:<json>` play a context, always starting playback: `{"context":"spotify:playlist:…","track":"spotify:track:…"|null,
+    "shuffle":true|false|null,"position":0}` (`shuffle: null` leaves it as it is); not the active device: activate first.
+  - `play` / `pause` / `toggle` / `next` / `prev` / `seek:<ms>` keep any meaning the host already gives them elsewhere
+    (the iOS app's Control Center); `play` gains the take-first rule.
+State, host -> page: `window.__wmpPlayer` with the event `wmp-player` on window at every change, and once more when the
+page asks (`alchemyHost()`), from the player's own events:
+  `{ v: 1, active, playing, uri ('' when nothing is loaded), title, artist, album, art (as __wmpSpeakerTrack has them),
+  duration (ms), position (ms, true at `at`), at (epoch ms; the page extrapolates while playing), shuffle,
+  repeat: 'off'|'context'|'track' }` — `active`: its speaker is the active Connect device. No context uri, queue or
+  restrictions: the page keeps taking those from Spotify's cluster. `__wmpSpeakerTrack` / `wmp-speaker-track` (v9) stay
+  as they are for an older page; the page reads them still on a host without `__wmpPlayer`.
+Who is in charge (the page, per command, `src/adapters/spotify/player/index.ts`): the host's player, when
+`alchemyPlayer` exists and the command's target (connect.ts `target`: the active device, or none other is) is
+`__wmpSpeaker.id`. Then transport, stop, shuffle, repeat and plays go to `alchemyPlayer` and nothing to connect-state,
+with the same optimistic changes; each command is one line in the host's log, `spotify: <cmd> to the host's player`.
+A player ignores every command but a transfer while its speaker is not the active device (librespot's Spirc), so while
+`__wmpPlayer.active` is false any command but `play` and `load` is sent after a `take`, once a report says active (5 s
+at most, one `take` for all waiting). While its speaker is also active (`__wmpPlayer.active`), the playback slice's
+status, position and track (uri, title, artist, album, art, duration) are the host's report, even for a track the
+cluster has no state for yet; the context, "Playing from", what can be skipped and the queue stay the cluster's. Shuffle
+and repeat are whichever of the two last changed them (receipt time; a value as first seen counts as no change): the
+host's are stale once it has taken the playback (its own earlier settings, not the session's) and say nothing of a play
+another client started with its own, but are right in the report after a toggle or a `load` sent from here, which counts
+as a change whatever its value. Otherwise (another Connect device active, a host without a player, the website) everything is v6.1's. Add to
+queue, volume, transfers to other devices and all browsing stay connect-state and pathfinder in every case.
 
 ## Retired: the system-audio application
 `WmpVisualizers.exe` (`--mode=app`, release `app-latest`) was retired 2026-09-24. v4 (Now Playing) and v5 (lyrics) now

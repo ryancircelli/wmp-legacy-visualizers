@@ -1,7 +1,8 @@
 // The host's observers (the Deno host's spotify.ts; bridge.ts on Tauri) start at document creation and
 // this runs later: read what window.__wmpSpotify already has, then follow its events.
 import type { Device } from '../../model';
-import { onState } from './state';
+import * as hostPlayer from '../host/player';
+import { onHostPlayer, onState } from './state';
 import { deviceVolume, speakerFull, transfer, transport as play } from './connect';
 import { W, type PlayerState, type Sp } from './sp';
 import { transport } from './transport';
@@ -83,8 +84,11 @@ export function observe(sp: Sp): () => void {
   ];
   show(wasLoggedIn());
   for (const [t, f] of on) window.addEventListener(t, f);
+  // the host's own player (CONTRACT v10), where it has one: its reports
+  const offHost = hostPlayer.subscribe(() => onHostPlayer(sp));
   onDevices(sp, W().devices);
   if (W().state) onState(sp, W().state as PlayerState);
+  onHostPlayer(sp);
   onAuth(sp, W().loggedIn);
-  return () => { for (const [t, f] of on) window.removeEventListener(t, f); };
+  return () => { for (const [t, f] of on) window.removeEventListener(t, f); offHost(); };
 }

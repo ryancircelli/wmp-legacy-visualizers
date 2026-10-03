@@ -22,6 +22,24 @@ export interface SpotifyObserved {
   devices?: unknown;
 }
 
+/** The host's own player's report (CONTRACT v10 §2): `window.__wmpPlayer`, with 'wmp-player' at each change. */
+export interface HostPlayer {
+  v: 1;
+  /** its speaker is the active Connect device */
+  active: boolean;
+  playing: boolean;
+  /** '' when nothing is loaded */
+  uri: string;
+  title: string; artist: string; album: string; art: string;
+  /** ms */
+  duration: number;
+  /** ms, true at `at` (epoch ms): extrapolated while playing */
+  position: number;
+  at: number;
+  shuffle: boolean;
+  repeat: 'off' | 'context' | 'track';
+}
+
 declare global {
   interface Window {
     alchemyEngine?: string;
@@ -84,6 +102,10 @@ declare global {
     __wmpSpeakerTrack?: { uri: string; title: string; artist: string; album: string; art: string; duration: number; position: number; playing: boolean };
     /** Renames the host's speaker (kept by the host; it re-registers under the new name). */
     alchemySpeakerName?: (name: string) => void;
+    /** The host's own player (CONTRACT v10): a command for its speaker, fire and forget ('play',
+     *  'seek:<ms>', 'load:<json>', …); the answer is the next __wmpPlayer. Read through host/player.ts only. */
+    alchemyPlayer?: (cmd: string) => void;
+    __wmpPlayer?: HostPlayer;
     __wmpBrightness?: number;
     /** the phone's roll, -1 (tilted left) to 1 (right), 0 upright: gravity's x; 'wmp-tilt' as it changes (the iOS app, in front) */
     __wmpTilt?: number;
