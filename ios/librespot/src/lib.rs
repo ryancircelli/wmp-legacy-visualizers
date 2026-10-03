@@ -398,6 +398,11 @@ async fn run(
     let mut reconnects: Vec<Instant> = vec![];
     let mut track = Track::default(); // the now-playing messages' track and state
     let mut playing = false;
+    // When the session ended under a playing song (the connection to Spotify closed: seen as the app
+    // went to the background, several times a day): the next session takes the playback back itself.
+    // It came back idle and the music stopped at the end of the song, the page (hidden, throttled)
+    // not always there to do it (2026-10-03).
+    let mut lost: Option<Instant> = None;
 
     loop {
         tokio::select! {
@@ -448,6 +453,20 @@ async fn run(
                     Ok((s, t)) => {
                         say(&format!("librespot: session up ({via})"));
                         state(Some(&device_id));
+                        if lost.take().is_some_and(|at| at.elapsed() < Duration::from_secs(180)) {
+                            say("librespot: the session was lost under a playing song: taking the playback back");
+                            // Spotify's transfer to this device (its remembered song and place), then a
+                            // resume in case it comes back paused
+                            if let Err(e) = s.transfer(None) {
+                                say(&format!("librespot: transfer failed: {e}"));
+                            }
+                            if let Some(tx) = lock(&COMMANDS).as_ref().cloned() {
+                                tokio::spawn(async move {
+                                    tokio::time::sleep(Duration::from_secs(4)).await;
+                                    let _ = tx.send("resume".into());
+                                });
+                            }
+                        }
                         spirc = Some(s);
                         task = Some(Box::pin(t));
                     }
@@ -473,6 +492,9 @@ async fn run(
                 task = None;
                 spirc = None;
                 say("librespot: session ended");
+                if playing {
+                    lost = Some(Instant::now());
+                }
                 state(None);
                 if !session.is_invalid() {
                     session.shutdown();
@@ -521,6 +543,7 @@ async fn run(
                 let play = |s: &Spirc| s.pause().and_then(|_| s.play());
                 let done = match c.as_str() {
                     "play" => if playing { Ok(()) } else { play(s) },
+                    "resume" => s.play(), // Spirc's own: nothing unless it is paused (after a lost session)
                     "pause" => if playing { pause(s) } else { Ok(()) },
                     "toggle" => if playing { pause(s) } else { play(s) },
                     "next" => s.next(),
