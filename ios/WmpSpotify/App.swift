@@ -546,6 +546,8 @@ struct Player: View {
             HostLog.shared.log("scene: \(phase)", quiet: true)
             DeviceState.shared.scene = phase == .active ? "active" : phase == .background ? "background" : "inactive"
             CpuMeter.shared.scene(phase)
+            Forwarder.shared.front = phase != .background
+            Librespot.shared.front = phase != .background
         }
         .task {
             script = await userScript()
@@ -1108,7 +1110,12 @@ final class Forwarder {
         queue.async { self.playing = true }
     }
 
+    /// Only while the app is in front: the page draws nothing in the background, and ten evaluations a
+    /// second of base64 audio there were work for nothing (set from the scene's phase).
+    var front = true
+
     func pcm(_ data: Data) {
+        guard front else { return }
         queue.async {
             guard self.playing else { return }
             self.pending.append(data)
@@ -1363,6 +1370,20 @@ final class Librespot {
     }
     private var outputFailed = false  // on librespot's player thread, but for the first start
 
+    /// The app in front (the scene's phase): the queue's depth follows it.
+    var front = true
+    /// The queue played out while the speaker was still playing: a gap that was heard. Counted, one log
+    /// line every ten seconds at most, so a choppy stretch shows in the log with where the app was.
+    private var dry = 0, dryAt = Date.distantPast
+    private func ranDry() {
+        DispatchQueue.main.async {
+            self.dry += 1
+            guard Date().timeIntervalSince(self.dryAt) >= 10 else { return }
+            HostLog.shared.log("audio: ran dry ×\(self.dry) (\(self.front ? "in front" : "in the background"))")
+            self.dry = 0; self.dryAt = Date()
+        }
+    }
+
     // librespot's player thread. No samples: the sink stopped (a pause, a stop), so what is queued is
     // dropped and the page goes dark.
     private func take(_ samples: UnsafePointer<Float>?, _ frames: Int) {
@@ -1392,10 +1413,12 @@ final class Librespot {
             }
         }
         let data = pcm.withUnsafeBufferPointer { Data(buffer: $0) }
-        // Half a second queued at most; a second's wait at most, in case the engine stopped (output()
+        // Half a second queued at most in front (a seek is heard that soon), two seconds in the
+        // background, where iOS runs this thread less often and half a second ran dry ("sometimes is
+        // choppy", the owner, 2026-10-03); a second's wait at most, in case the engine stopped (output()
         // starts it again at the next packet).
         room.lock()
-        while queued > 22050, room.wait(until: Date() + 1) {}
+        while queued > (front ? 22050 : 88200), room.wait(until: Date() + 1) {}
         queued += frames
         room.unlock()
         // To the page as it is heard, so the visualizers keep time with the speaker.
@@ -1403,8 +1426,10 @@ final class Librespot {
             Forwarder.shared.pcm(data)
             self.room.lock()
             self.queued -= frames
+            let dry = self.queued == 0 && self.playing
             self.room.signal()
             self.room.unlock()
+            if dry { self.ranDry() }
         }
     }
 }
