@@ -164,9 +164,10 @@
   font-size: calc(var(--unit) * 11); line-height: calc(var(--unit) * 12);
 }
 /* plain lyrics: four lines' window, scrolled with the track */
-/* the last line ends at the cover's foot, where the reflection starts: the band's 38 (the owner: "align the
-   bottom line of the lyrics to the bottom of the album before the reflection") */
-.root:not(:has(.of)) .lyrics { padding-bottom: calc(var(--unit) * 38); background: linear-gradient(to top, rgb(0 0 0 / .8), rgb(0 0 0 / .55) calc(var(--unit) * 105), transparent calc(var(--unit) * 158)); }
+/* awake, the last line sits 4 above the grey band (the owner, 2026-10-02: "a little padding above the bar
+   for lyrics when not minimized"); quiet, at the cover's foot where the reflection starts ("align the
+   bottom line of the lyrics to the bottom of the album before the reflection"; below) */
+.root:not(:has(.of)) .lyrics { padding-bottom: calc(var(--unit) * 42); transition: padding-bottom .3s ease; background: linear-gradient(to top, rgb(0 0 0 / .8), rgb(0 0 0 / .55) calc(var(--unit) * 105), transparent calc(var(--unit) * 158)); }
 .plain { max-height: calc(var(--unit) * 60); overflow: hidden; white-space: pre-line; }
 .cur { font-weight: bold; }
 .next { margin-top: calc(var(--unit) * 2); color: rgb(255 255 255 / .5); }
@@ -189,6 +190,7 @@
    album's reflection, the text, the progress, "N of M" and the device line stay as they are. */
 .more { transition: opacity .3s ease; }
 .root[data-quiet] .info::before { opacity: .3; }
+.root[data-quiet]:not(:has(.of)) .lyrics { padding-bottom: calc(var(--unit) * 38); }
 /* the foot's shade thins too (the owner: "less aggressive in the minimize just like the header does"):
    the band's to .4, and the lyrics' one gradient to about half its strength */
 .root[data-quiet] .controls::before { background: linear-gradient(transparent, rgb(0 0 0 / .75)); opacity: .4; }
