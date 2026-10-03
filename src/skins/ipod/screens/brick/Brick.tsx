@@ -22,9 +22,10 @@ let game = newGame(356);
 /** 'ipod.brick': the high score */
 const best = () => readPref('ipod.brick', 0);
 
-/** paddle widths a full turn of the ring moves it: a tuning knob (1.5 was slow across the 238-unit field) */
-const TURN = 3;
-const PER_DEG = (TURN * PADDLE_W) / 360;
+/** the ring's travel for the paddle to cross the whole field, degrees: half a turn, as the nano's
+ *  Brick had it (the owner, 2026-10-02: two full turns wall to wall was wrong) */
+const CROSS_DEG = 180;
+const PER_DEG = (W - 2 * WALL - PADDLE_W) / CROSS_DEG;
 /** the nano's rows, top to bottom, flat */
 const COLORS = ['#e8281e', '#f58c0a', '#f5d20a', '#3cb43c', '#2a78e0'];
 
