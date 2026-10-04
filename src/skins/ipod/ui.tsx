@@ -470,7 +470,10 @@ const barUnit = (b: HTMLElement) => (b.closest('[aria-label="Now Playing"]')?.ge
 
 export function NowPlayingBar({ onOpen }: { onOpen: () => void }) {
   const sh = useShell(), t = useApp((x) => x.playback.track), playing = useApp(isPlaying);
-  const line = useApp((x) => x.devices.list.find((d) => d.active)?.name || x.playback.from || '');
+  // the device only when it plays somewhere else (not this page's player, nor the host's own speaker), as
+  // Spotify's own mini player names one (the owner, 2026-10-04: "should it even include wmp spotify iOS if
+  // it's the own device?")
+  const line = useApp((x) => x.devices.list.find((d) => d.active && d.id !== x.devices.self && d.id !== window.__wmpSpeaker?.id)?.name || '');
   const f = usePosition((_, st) => Math.round(Math.max(0, seekFraction(st)) * 500) / 500);
   const swipe = useRef<{ id: number; x: number; y: number; done: boolean } | null>(null);
   if (!t) return null;
