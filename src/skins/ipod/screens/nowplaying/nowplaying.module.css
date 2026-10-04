@@ -197,11 +197,12 @@
    album's reflection, the text, the progress, "N of M" and the device line stay as they are. */
 .more { transition: opacity .3s ease; }
 .root[data-quiet] .info::before { background: linear-gradient(rgb(66 66 66 / .6), rgb(1 1 1 / .6)); opacity: .36; }  /* .3, then "20% darker" */
-.root[data-quiet]:not(:has(.of)) .lyrics { padding-bottom: calc(var(--unit) * 38); }
 /* the foot's shade thins too (the owner: "less aggressive in the minimize just like the header does"):
    the band's to .4, and the lyrics' one gradient to about half its strength */
-.root[data-quiet] .controls::before { background: linear-gradient(transparent, rgb(0 0 0 / .75)); opacity: .4; }
-.root[data-quiet]:has(.lyrics) .controls::before { background: none; }  /* the lyrics' one gradient covers the band */
-.root[data-quiet] .lyrics { background: linear-gradient(to top, rgb(0 0 0 / .45), rgb(0 0 0 / .3) calc(var(--unit) * 123), transparent calc(var(--unit) * 176)); }
-.root[data-quiet]:not(:has(.of)) .lyrics { background: linear-gradient(to top, rgb(0 0 0 / .45), rgb(0 0 0 / .3) calc(var(--unit) * 105), transparent calc(var(--unit) * 158)); }
+/* quiet, the controls band is the info band's own light one (the owner, 2026-10-04: "a light background on
+   the progress like the header"), with or without lyrics; the lyrics stay where they are awake (12 above
+   the band: nothing moves), their shade ending at the band's top so the band reads as the header's does */
+.root[data-quiet] .controls::before { background: linear-gradient(rgb(66 66 66 / .6), rgb(1 1 1 / .6)); opacity: .36; }
+.root[data-quiet] .lyrics { background: linear-gradient(to top, transparent calc(var(--unit) * 56), rgb(0 0 0 / .45) calc(var(--unit) * 56), rgb(0 0 0 / .3) calc(var(--unit) * 123), transparent calc(var(--unit) * 176)); }
+.root[data-quiet]:not(:has(.of)) .lyrics { background: linear-gradient(to top, transparent calc(var(--unit) * 38), rgb(0 0 0 / .45) calc(var(--unit) * 38), rgb(0 0 0 / .3) calc(var(--unit) * 105), transparent calc(var(--unit) * 158)); }
 .root[data-quiet] .more { opacity: 0; pointer-events: none; }
