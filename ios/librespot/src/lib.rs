@@ -569,6 +569,10 @@ async fn run(
                     Ok((s, t)) => {
                         say(&format!("librespot: session up ({via})"));
                         state(Some(&device_id));
+                        // The page is told where the player stands as soon as there is a session: not
+                        // active yet. Without a first report it took the speaker for active and sent a
+                        // seek that Spirc dropped ("will be ignored while Not Active", 2026-10-03).
+                        hp.send(&track, playing, None);
                         up = Some(Instant::now());
                         if lost.take().is_some_and(|at| at.elapsed() < Duration::from_secs(180)) {
                             say("librespot: the session was lost under a playing song: taking the playback back");

@@ -1465,6 +1465,10 @@ final class Librespot {
             // giving it up there had the app suspended with nobody left to hear "interruption over,
             // resume", and the music stayed off (2026-10-03, the phone untouched on a counter).
             guard !self.playing, !self.interrupted else { return }
+            // The node stopped first: stopped with the engine while "playing", it played nothing after
+            // the next start though both said they ran (two seconds of silence at every resume, until
+            // the stalled queue was started over: 2026-10-03, twice in one log).
+            self.node.stop()
             if self.engine.isRunning { self.engine.stop() }
             try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
             HostLog.shared.log("audio: idle, the session given up", quiet: true)
