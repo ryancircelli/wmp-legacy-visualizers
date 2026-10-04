@@ -263,7 +263,8 @@ it('the Now Playing bar: with a track, under every screen but Now Playing; a tap
   const rect = () => ({ left: 0, width: 240, top: 0, height: 44, right: 240, bottom: 44, x: 0, y: 0, toJSON: () => ({}) });
   expect(bar()).toBeUndefined();
   act(() => { m.store.setState((s) => ({ playback: { ...s.playback, status: 'paused', track: { uri: 'spotify:track:a', title: 'Song', artist: 'Band', duration: 1000 } } })); });
-  expect(bar()!.textContent).toContain('Song • Band');
+  expect(bar()!.textContent).toContain('Song');
+  expect(bar()!.textContent).toContain('Band');
   act(() => { fireEvent.click(within(bar()!).getByRole('button', { name: 'Play' })); });
   expect(m.cmd.playPause).toHaveBeenCalledTimes(1);
   expect(bar()).toBeDefined();                         // the button is not a tap on the bar

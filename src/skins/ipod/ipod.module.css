@@ -566,9 +566,9 @@
 }
 .nparts { flex: none; width: calc(var(--unit) * 28); border: var(--unit) solid #4A4A4A; border-radius: 0; }
 .nptext { flex: auto; min-width: 0; }
-.nptitle, .npline { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.nptitle, .npline { overflow: hidden; white-space: nowrap; }   /* too long: it marquees (ui.tsx Marquee), no "…" */
 .nptitle { font-size: calc(var(--unit) * 14); line-height: 1.25; }
-.nptitle > span, .npline { font-size: calc(var(--unit) * 11); font-weight: 400; color: var(--ipod-dim); }
+.npline { font-size: calc(var(--unit) * 11); font-weight: 400; color: var(--ipod-dim); }
 .npline { line-height: 1.3; }
 .npbtn { flex: none; display: grid; place-items: center; width: calc(var(--unit) * 26); height: calc(var(--unit) * 26); color: #6D6D6D; }
 .npbtn svg { width: calc(var(--unit) * 12); fill: currentColor; }

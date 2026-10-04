@@ -442,6 +442,32 @@ export function Bar({ value, className, onSeek }: { value: number; className?: s
  *  Playing (`onOpen`), the button plays / pauses, a swipe across (40 units, more across than down)
  *  skips, left to the next, right to the previous, the bar nudged that way. Its touches are its
  *  own, never the screen's swipe-back; a light haptic each. */
+/** One line that marquees when too long, as the nano's do (§2.2): after 1 s, at 30 units a second, a
+ *  second's rest at each end. `unit`: the box's unit in px (Now Playing's lines are 224 units wide). */
+export function Marquee({ className, text, unit }: { className?: string; text?: string; unit?: (box: HTMLElement) => number }) {
+  const box = useRef<HTMLDivElement>(null), of = useRef(unit);
+  useLayoutEffect(() => { of.current = unit; });
+  useLayoutEffect(() => {
+    const b = box.current, el = b?.firstElementChild as HTMLElement | null;
+    if (!b || !el?.animate) return;
+    let a: Animation | undefined;
+    // re-measured on resize, so a line set while the screen was hidden starts once it shows
+    const ro = new ResizeObserver(() => {
+      a?.cancel();
+      const over = el.offsetWidth - b.clientWidth, u = of.current ? of.current(b) : b.clientWidth / 224;
+      if (over <= 0 || !u) return;
+      const move = (over / u / 30) * 1000, T = 2 * move + 2000, x = `translateX(${-over}px)`;
+      a = el.animate([{ transform: 'none' }, { transform: 'none', offset: 1000 / T }, { transform: x, offset: (1000 + move) / T },
+                      { transform: x, offset: (2000 + move) / T }, { transform: 'none' }], { duration: T, iterations: Infinity });
+    });
+    ro.observe(b);
+    return () => { ro.disconnect(); a?.cancel(); };
+  }, [text]);
+  return <div ref={box} className={className}><span style={{ display: 'inline-block' }}>{text}</span></div>;
+}
+/** the Now Playing bar is the screen's 240 units wide */
+const barUnit = (b: HTMLElement) => (b.closest('[aria-label="Now Playing"]')?.getBoundingClientRect().width ?? 0) / 240;
+
 export function NowPlayingBar({ onOpen }: { onOpen: () => void }) {
   const sh = useShell(), t = useApp((x) => x.playback.track), playing = useApp(isPlaying);
   const line = useApp((x) => x.devices.list.find((d) => d.active)?.name || x.playback.from || '');
@@ -472,8 +498,10 @@ export function NowPlayingBar({ onOpen }: { onOpen: () => void }) {
          }}>
       <Art src={t.art || t.image} className={s.nparts} />
       <div className={s.nptext}>
-        <div className={s.nptitle}>{t.title}{t.artist && <span> • {t.artist}</span>}</div>
-        {line && <div className={s.npline}>{line}</div>}
+        {/* the title alone, then the artist before the device (the owner, 2026-10-04: the "…" that cut the
+            artist short on the title's line was the title's own dark one); each marquees when too long */}
+        <Marquee className={s.nptitle} text={t.title} unit={barUnit} />
+        {(t.artist || line) && <Marquee className={s.npline} text={[t.artist, line].filter(Boolean).join(' • ')} unit={barUnit} />}
       </div>
       <div className={s.npbtn} role="button" aria-label={playing ? 'Pause' : 'Play'}
            onClick={(e) => { e.stopPropagation(); window.alchemyHaptic?.('light'); void cmd().playPause(); }}>

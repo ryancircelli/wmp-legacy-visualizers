@@ -33,7 +33,7 @@ import { useHostGlobal } from '../../host';
 import type { MenuItem, ScreenEntry } from '../contract';
 import { useVisualizers, visId } from '../settings';
 import { collection, startRadio as radioFrom } from '../lists';
-import { Bar, MenuScreen, Popup, useNav, useScan, useWheel } from '../../ui';
+import { Bar, Marquee, MenuScreen, Popup, useNav, useScan, useWheel } from '../../ui';
 import { useTurn } from '../../wheel';
 import { pickAccent, rgbOf } from './accent';
 import { barsFit, IDLE_MS, nextMode, QUIET_MS, SCRUB_COMMIT_MS, scrubAccel, scrubStep, times, turnPct, volumeBy, VOLUME_MS, VOLUME_SEND_MS, VOLUME_TICK, type Mode } from './logic';
@@ -509,27 +509,8 @@ function Vis({ tint, opacity = 100, opaque = false, rising = false }: { tint: st
   );
 }
 
-/** One info line; a long one marquees as the nano's do (§2.2): after 1 s, at 30 units/s, pausing 1 s at each end. */
-function Line({ className, text }: { className?: string; text?: string }) {
-  const box = useRef<HTMLDivElement>(null);
-  useLayoutEffect(() => {
-    const b = box.current, s = b?.firstElementChild as HTMLElement | null;
-    if (!b || !s?.animate) return;
-    let a: Animation | undefined;
-    // re-measured on resize, so a line set while the screen was hidden starts once it shows
-    const ro = new ResizeObserver(() => {
-      a?.cancel();
-      const over = s.offsetWidth - b.clientWidth, unit = b.clientWidth / 224;   // the line is 224 units wide
-      if (over <= 0 || !unit) return;
-      const move = (over / unit / 30) * 1000, T = 2 * move + 2000, x = `translateX(${-over}px)`;
-      a = s.animate([{ transform: 'none' }, { transform: 'none', offset: 1000 / T }, { transform: x, offset: (1000 + move) / T },
-                     { transform: x, offset: (2000 + move) / T }, { transform: 'none' }], { duration: T, iterations: Infinity });
-    });
-    ro.observe(b);
-    return () => { ro.disconnect(); a?.cancel(); };
-  }, [text]);
-  return <div ref={box} className={cx(css.line, className)}><span>{text}</span></div>;
-}
+/** One info line; a long one marquees as the nano's do (§2.2; ui.tsx Marquee). */
+const Line = ({ className, text }: { className?: string; text?: string }) => <Marquee className={cx(css.line, className)} text={text} />;
 
 function Speaker({ loud, className }: { loud?: boolean; className?: string }) {
   return (
