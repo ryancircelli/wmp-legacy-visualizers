@@ -196,6 +196,22 @@ overlay, plays as ever).
   queue, a pause keeps it (resuming where it was heard), the end of a context plays it out. Positions
   to the page and Control Center are what is heard; Spotify's other clients see Spirc's own, which is
   right but after a pause and resume, when it runs ahead by what was queued.
+- **Sound** (2026-10-03). The page's sound settings, as `wmp_ls_command` strings like the rest, all of
+  them in the crate (`src/sound.rs`, `src/eq.rs`), none in Swift: `eq:<ten gains>` (the iPod's EQ),
+  `quality:96|160|320`, `normalise:0|1` (the iPod's Sound Check: librespot's own normalisation) and
+  `cache:0|1`. The crate keeps the last values in `sound.json` in its cache dir and starts with them,
+  so the page's values at its start normally change nothing. The equalizer is ten peaking filters an
+  octave apart (32 Hz to 16 kHz), applied where both sink paths hand the app its samples (`hand`), so
+  after the crossfade queue: a change is heard at once, not up to 12 s later, and moves over 23 ms with
+  no click. A preamp takes off the boost's peak so it cannot clip; flat, the samples go through
+  untouched. librespot fixes the bitrate and normalisation when its player is made and the cache when
+  a session is, and a session connects only once, so a quality or normalisation change rebuilds the
+  player, session and Spirc a second later: the speaker leaves Spotify's device list for a few seconds
+  and, if it was the active device, takes its playback back as after a lost session (the same
+  `lost` path: about 5 to 8 s of silence, then it plays on where it was, or stays paused). `cache:1`
+  keeps played files in `audio/` under the cache dir, about 1 GB, the least recently played dropped
+  first; `cache:0` deletes them at once and waits to rebuild until the speaker has been idle for 30 s,
+  since nobody can hear the cache.
 - **Name, id, and which device plays.** The speaker is "WMP Spotify (iOS)": the phone's own name
   ("Ryan's iPhone") is "iPhone" or "iPad" to apps since iOS 16 without an entitlement Apple grants on
   request. The page can rename it (`alchemySpeakerName(name)`, the "speaker" message; a rename

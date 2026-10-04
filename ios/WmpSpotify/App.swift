@@ -1374,6 +1374,12 @@ final class Librespot {
         output()
         Forwarder.shared.rate(44100)
         try? FileManager.default.createDirectory(at: Self.cache, withIntermediateDirectories: true)
+        // The audio cache (librespot's, up to a gigabyte under audio/): not for the phone's backups.
+        var audio = Self.cache.appending(path: "audio")
+        try? FileManager.default.createDirectory(at: audio, withIntermediateDirectories: true)
+        var values = URLResourceValues()
+        values.isExcludedFromBackup = true
+        try? audio.setResourceValues(values)
         let id = UIDevice.current.identifierForVendor?.uuidString ?? name
         let started = wmp_ls_start(name, id, Self.cache.path, { _, samples, frames in
             Librespot.shared.take(samples, frames)

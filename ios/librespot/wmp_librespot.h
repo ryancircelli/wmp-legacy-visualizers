@@ -49,6 +49,18 @@ void wmp_ls_token(const char *token, const char *client_id, const char *client_t
 // session: at a track's natural end (not a skip, a load or a seek) the next track fades in over the
 // last s seconds of this one (an integer, 0 off, the default; clamped to 0..12). Kept for the process,
 // not across launches: the page sends it at its start and at each change. Logged.
+// And the sound settings, also taken with or without a session, and kept across launches (sound.json in
+// cache_dir, read at wmp_ls_start), so one equal to the current value does nothing (one log line):
+// "eq:[g1,...,g10]" the equalizer, ten gains in dB (clamped to -12..12) for 32, 64, 125, 250, 500 Hz,
+// 1, 2, 4, 8 and 16 kHz, applied at once, ramped (no click), with a preamp against clipping; all 0 or
+// "eq:off" is no processing at all (the default). "quality:96|160|320" the stream's kbps (160 the
+// default) and "normalise:0|1" librespot's volume normalisation (off the default): librespot takes
+// both only into a new player and session, so a change restarts them a second later; the device is
+// gone from Spotify for some seconds and, when it was the active one, takes its playback back where it
+// was (playing or paused) as after a lost session. "cache:0|1" the played audio files kept in
+// cache_dir/audio, about 1 GB, the least recently played dropped first (on the default); 0 deletes
+// them at once, and the same restart follows once the speaker has stood idle for 30 s (or no session
+// is up). A bad value is logged and ignored.
 void wmp_ls_command(const char *cmd);
 // Asks the receiver to shut down; a later wmp_ls_start starts it again.
 void wmp_ls_stop(void);

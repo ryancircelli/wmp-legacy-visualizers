@@ -579,6 +579,8 @@ mod tests {
         // a seek: what is queued is dropped, the new audio follows what was already in the host's hands
         OPEN.store(false, Relaxed);
         (9..12).for_each(|k| feed.write(&vec![k as f32; CHUNK]));
+        // 9 in the host's hands before the seek (else the pump, woken late, takes 50 instead: a 1 in 60 race)
+        until(&|| p.lead_ms() == ms(2 * CHUNK));
         let t = librespot_core::SpotifyUri::from_uri("spotify:track:4uLU6hMCjMI75M1A2tKUQC").unwrap();
         tx.send(PlayerEvent::Seeked { play_request_id: 1, track_id: t, position_ms: 0 }).unwrap();
         feed.write(&vec![50.0; CHUNK]);

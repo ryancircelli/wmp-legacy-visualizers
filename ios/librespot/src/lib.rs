@@ -1,9 +1,12 @@
 //! The app's Spotify Connect receiver (ios/README.md, "Librespot"): librespot's discovery, session,
 //! Connect state and player, wired as librespot's own binary wires them (src/main.rs at v0.8.0), with
 //! a sink that hands the app interleaved stereo f32 at 44100 Hz (with a crossfade set, through a queue
-//! of its own: crossfade.rs). The C ABI is wmp_librespot.h.
+//! of its own: crossfade.rs; through the equalizer: eq.rs). The sound settings are sound.rs's. The C ABI
+//! is wmp_librespot.h.
 
 mod crossfade;
+mod eq;
+mod sound;
 
 use std::{
     ffi::{CStr, CString, c_char, c_void},
@@ -27,11 +30,10 @@ use librespot_discovery::Discovery;
 use librespot_metadata::audio::{AudioItem, UniqueFields};
 use librespot_playback::{
     audio_backend::{Sink, SinkResult},
-    config::PlayerConfig,
     convert::Converter,
     decoder::AudioPacket,
-    mixer::{self, MixerConfig},
-    player::{Player, PlayerEvent},
+    mixer::{self, Mixer, MixerConfig},
+    player::{Player, PlayerEvent, PlayerEventChannel},
 };
 use sha1::{Digest, Sha1};
 use tokio::sync::{mpsc, oneshot};
@@ -258,11 +260,13 @@ impl log::Log for Forward {
     fn flush(&self) {}
 }
 
-// The app's pcm callback: samples (interleaved stereo frames), or None for "the sink stopped".
+// The app's pcm callback: samples (interleaved stereo frames), or None for "the sink stopped". Both of
+// the sink's paths (crossfade off: each packet; on: the queue's pump) come through here, so the
+// equalizer is here: flat, it hands over the very slice.
 fn hand(samples: Option<&[f32]>) {
     if let Some(h) = host() {
         match samples {
-            Some(f) => (h.pcm)(h.ctx as *mut c_void, f.as_ptr(), f.len() / 2),
+            Some(f) => eq::through(&eq::EQ, f, |s| (h.pcm)(h.ctx as *mut c_void, s.as_ptr(), s.len() / 2)),
             None => (h.pcm)(h.ctx as *mut c_void, std::ptr::null(), 0),
         }
     }
@@ -283,6 +287,44 @@ impl Sink for HostSink {
             self.0.write(&converter.f64_to_f32(&samples));
         }
         Ok(())
+    }
+}
+
+// A player with the sound settings, its sink with a queue of its own (crossfade.rs's Pump, which lib.rs
+// asks for the positions), and its event channel.
+fn new_player(sound: &sound::Sound, session: &Session, mixer: &Arc<dyn Mixer>) -> (Arc<Player>, Arc<crossfade::Pump>, PlayerEventChannel) {
+    let fade = Arc::new(crossfade::Pump::default());
+    let feed = crossfade::Feed::new(fade.clone(), hand, say);
+    let player = Player::new(sound.player_config(), session.clone(), mixer.get_soft_volume(), move || Box::new(HostSink(feed)));
+    let events = player.get_player_event_channel();
+    fade.listen(player.get_player_event_channel()); // the sink's own, read in order with its samples
+    (player, fade, events)
+}
+
+/// The audio cache's size: librespot drops the least recently played files past it.
+const AUDIO_LIMIT: u64 = 1 << 30;
+
+// The receiver's cache: the credentials always; with the "cache" setting, the played files in audio/
+// too. Credentials only, when the audio dir will not do.
+fn open_cache(dir: &str, audio: bool) -> Option<Cache> {
+    let audio = audio.then(|| format!("{dir}/audio"));
+    Cache::new(Some(dir), None, audio.as_deref(), Some(AUDIO_LIMIT))
+        .or_else(|e| match audio {
+            Some(_) => {
+                say(&format!("librespot: no audio cache: {e}"));
+                Cache::new(Some(dir), None, None, None)
+            }
+            None => Err(e),
+        })
+        .map_err(|e| say(&format!("librespot: no cache: {e}")))
+        .ok()
+}
+
+// The cached audio deleted (the cache turned off).
+fn clear_audio(dir: &str) {
+    match std::fs::remove_dir_all(format!("{dir}/audio")) {
+        Err(e) if e.kind() != std::io::ErrorKind::NotFound => say(&format!("librespot: cached audio not deleted: {e}")),
+        _ => {}
     }
 }
 
@@ -424,11 +466,16 @@ async fn run(
             session_config.client_id = c.trim().to_owned();
         }
     }
-    // Credentials only: a kept volume would bring back a level some client once turned the speaker down
-    // to, and the speaker plays at full (the phone's volume is the one to turn).
-    let cache = Cache::new(Some(&dir), None, None, None)
-        .map_err(|e| say(&format!("librespot: no cache: {e}")))
-        .ok();
+    // The sound settings the last launch left (sound.rs): the player, the cache and the equalizer start
+    // with them.
+    let mut sound = sound::Sound::load(&dir);
+    eq::set(&sound.eq);
+    if !sound.cache {
+        clear_audio(&dir);
+    }
+    // No volume: a kept one would bring back a level some client once turned the speaker down to, and
+    // the speaker plays at full (the phone's volume is the one to turn).
+    let mut cache = open_cache(&dir, sound.cache);
     // A session up saves its reusable credentials in the cache, whatever it logged in with.
     let cached = |cache: &Option<Cache>| -> Option<Login> {
         cache.as_ref().and_then(Cache::credentials).map(|c| (c, "cached"))
@@ -478,16 +525,7 @@ async fn run(
         }
     };
     let mut session = Session::new(session_config.clone(), cache.clone());
-    let fade = Arc::new(crossfade::Pump::default());
-    let feed = crossfade::Feed::new(fade.clone(), hand, say);
-    let player = Player::new(
-        PlayerConfig::default(),
-        session.clone(),
-        mixer.get_soft_volume(),
-        move || Box::new(HostSink(feed)),
-    );
-    let mut events = player.get_player_event_channel();
-    fade.listen(player.get_player_event_channel()); // the sink's own, read in order with its samples
+    let (mut player, mut fade, mut events) = new_player(&sound, &session, &mixer);
     // Full volume: the phone's own volume is the one to turn.
     let config = ConnectConfig {
         name,
@@ -510,8 +548,16 @@ async fn run(
     // When the session ended under a playing song (the connection to Spotify closed: seen as the app
     // went to the background, several times a day): the next session takes the playback back itself.
     // It came back idle and the music stopped at the end of the song, the page (hidden, throttled)
-    // not always there to do it (2026-10-03).
-    let mut lost: Option<Instant> = None;
+    // not always there to do it (2026-10-03). Also after a rebuild (below), playing or paused as it was:
+    // (when, to play).
+    let mut lost: Option<(Instant, bool)> = None;
+    // A change of quality, normalisation or the cache (sound.rs), which librespot takes only into a new
+    // player (its PlayerConfig is fixed at Player::new) and a new session (the Cache is fixed at
+    // Session::new, and a session connects once, so Spirc, which holds the player, needs a new one):
+    // all three rebuilt a second after the last change (several make one), the playback taken back as
+    // after a lost session. The cache alone, which nothing can hear, waits until the speaker has stood
+    // idle half a minute rather than break into a song or a quick pause and resume. (when, urgent)
+    let mut rebuild: Option<(tokio::time::Instant, bool)> = None;
     let mut up: Option<Instant> = None; // since when the session has been up
     // With a crossfade set, the player's positions lead what is heard by what the sink has queued, so
     // what goes to the app is less that (crossfade.rs's lead; at a pause and its resume, the lead when
@@ -521,6 +567,11 @@ async fn run(
     let mut fresh = false;
 
     loop {
+        // When the rebuild may run: none while a live session plays, unless urgent.
+        let due = rebuild.filter(|&(_, urgent)| urgent || !playing || task.is_none()).map(|(at, urgent)| {
+            let idle = Duration::from_millis((hp.at + 30_000).saturating_sub(epoch_ms())); // hp.at: its last change
+            if urgent || task.is_none() { at } else { at.max(tokio::time::Instant::now() + idle) }
+        });
         tokio::select! {
             _ = &mut stop => break,
             c = async {
@@ -550,7 +601,7 @@ async fn run(
                     discovery = None;
                 }
             },
-            _ = async {}, if connecting => {
+            _ = async {}, if connecting && rebuild.is_none() => {
                 connecting = false;
                 if retry {
                     tokio::time::sleep(Duration::from_secs(5)).await;
@@ -574,9 +625,13 @@ async fn run(
                         // seek that Spirc dropped ("will be ignored while Not Active", 2026-10-03).
                         hp.send(&track, playing, None);
                         up = Some(Instant::now());
-                        if lost.take().is_some_and(|at| at.elapsed() < Duration::from_secs(180)) {
-                            say("librespot: the session was lost under a playing song: taking the playback back");
-                            if let Err(e) = take(&s, true) {
+                        if let Some((_, resume)) = lost.take().filter(|(at, _)| at.elapsed() < Duration::from_secs(180)) {
+                            say(if resume {
+                                "librespot: the last session ended under a playing song: taking the playback back"
+                            } else {
+                                "librespot: the last session ended under a paused song: taking the playback back, paused"
+                            });
+                            if let Err(e) = take(&s, resume) {
                                 say(&format!("librespot: transfer failed: {e}"));
                             }
                         }
@@ -620,7 +675,7 @@ async fn run(
                 spirc = None;
                 say(if dead { "librespot: session ended (its connection was lost)" } else { "librespot: session ended" });
                 if playing {
-                    lost = Some(Instant::now());
+                    lost = Some((Instant::now(), true));
                 }
                 state(None);
                 // No Spirc, nothing to command: not the active device, and not playing to the page
@@ -632,6 +687,54 @@ async fn run(
                 }
                 connecting = again(&mut reconnects, WINDOW, RECONNECTS);
                 retry = up.take().is_none_or(|at| at.elapsed() < Duration::from_secs(30));
+            },
+            // The player and session rebuilt for new sound settings (see `rebuild`). Not a failure: no
+            // reconnect counted, no wait before the connect.
+            _ = tokio::time::sleep_until(due.unwrap_or_else(tokio::time::Instant::now)), if due.is_some() => {
+                rebuild = None;
+                say("librespot: restarting the player for the new sound settings");
+                let was_up = task.is_some();
+                let back = was_up && hp.active; // this speaker's playback: the next session takes it back
+                if back {
+                    lost = Some((Instant::now(), playing));
+                }
+                // Spirc's own goodbye first (a pause, the position, inactive), so the playback Spotify
+                // remembers, and the next session takes back, stands where it was heard.
+                if let Some(s) = spirc.take() {
+                    let _ = s.shutdown();
+                }
+                // To the app as it stops (not after the waits below, which would carry the position on).
+                state(None);
+                hp.active = false;
+                hp.send(&track, false, None);
+                if back {
+                    now_playing(&track, false, hp.position); // Control Center paused meanwhile
+                }
+                if let Some(mut t) = task.take() {
+                    if tokio::time::timeout(Duration::from_secs(5), &mut t).await.is_err() {
+                        tokio::spawn(t); // its shutdown finishes on its own
+                    }
+                }
+                player.stop(); // the app told the sink stopped, if the pause did not
+                if !session.is_invalid() {
+                    session.shutdown();
+                }
+                if !sound.cache {
+                    clear_audio(&dir); // anything the old session saved since the change
+                }
+                session = Session::new(session_config.clone(), cache.clone());
+                let (p, f, e) = new_player(&sound, &session, &mixer);
+                // The old player's thread joined (its sink's last word to the app said) before the new one
+                // can play: one sink hands the app audio at a time. It has nothing to play until the
+                // session is up, so it waits here at most.
+                let old = std::mem::replace(&mut player, p);
+                let _ = tokio::time::timeout(Duration::from_secs(3), tokio::task::spawn_blocking(move || drop(old))).await;
+                (fade, events) = (f, e);
+                (playing, fresh, up) = (false, true, None);
+                if was_up {
+                    connecting = true;
+                    retry = false;
+                }
             },
             Some((t, c, ct)) = tokens.recv() => {
                 if !c.is_empty() && c != session_config.client_id {
@@ -672,6 +775,34 @@ async fn run(
                             say(&format!("librespot: crossfade {n} s"));
                         }
                         None => say(&format!("librespot: unknown command {c}")),
+                    }
+                    continue;
+                }
+                // The sound settings (sound.rs): taken with or without a session, and kept across launches,
+                // so the page's at its start are normally the ones already in use, and change nothing.
+                if let Some(new) = sound.with(&c) {
+                    match new {
+                        None => say(&format!("librespot: unknown command {c}")),
+                        Some(new) if new == sound => say(&format!("librespot: {c}: as it was")),
+                        Some(new) => {
+                            say(&format!("librespot: {c}"));
+                            eq::set(&new.eq); // at once (eq.rs); the same gains do nothing
+                            if new.cache != sound.cache {
+                                if !new.cache {
+                                    clear_audio(&dir);
+                                }
+                                cache = open_cache(&dir, new.cache); // the next session's
+                            }
+                            let urgent = (new.quality, new.normalise) != (sound.quality, sound.normalise);
+                            if urgent || new.cache != sound.cache {
+                                let urgent = urgent || rebuild.is_some_and(|(_, u)| u);
+                                rebuild = Some((tokio::time::Instant::now() + Duration::from_secs(1), urgent));
+                            }
+                            sound = new;
+                            if let Err(e) = sound.save(&dir) {
+                                say(&format!("librespot: sound settings not kept: {e}"));
+                            }
+                        }
                     }
                     continue;
                 }
