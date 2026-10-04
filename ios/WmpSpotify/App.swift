@@ -1540,8 +1540,13 @@ final class Librespot {
     private func take(_ samples: UnsafePointer<Float>?, _ frames: Int) {
         guard let samples, frames > 0 else {
             playing = false
+            // The node and then the engine, at once: a running engine is "playing" to iOS, and Control
+            // Center went on showing pause and sending pause for the two seconds until the idle stop
+            // (or for good, when that was held off: "pause play from control center still broken",
+            // 2026-10-04). Paused, the engine starts again at the next packet (output); the session is
+            // given up two seconds later (idle).
             node.stop()
-            if engine.isRunning { node.play() }
+            if engine.isRunning { engine.pause() }
             Forwarder.shared.stopped()
             idle()
             return
@@ -1549,6 +1554,9 @@ final class Librespot {
         if !playing {
             playing = true
             Forwarder.shared.started()
+            // playing again, however it came about: no interruption is being waited out any more (the
+            // flag, left up when the wait ran out, kept every later pause from giving the session up)
+            DispatchQueue.main.async { self.interrupted = false }
         }
         fed = Date()
         output()
