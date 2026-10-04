@@ -562,7 +562,7 @@ it('Crossfade: shown with the host\'s player only, under Sound; Off -> 2 s -> 5 
   expect(m.rows()).toEqual(SETTINGS);                // the binding alone shows nothing: the adapter says the host can
   let off = () => {};
   act(() => { off = hostSettings(m.store); });
-  expect(m.rows()).toEqual([...SETTINGS.slice(0, 7), 'EQOff', 'Audio QualityHigh', 'Sound CheckOff', 'CrossfadeOff', 'Audio CacheOn', ...SETTINGS.slice(7)]);
+  expect(m.rows()).toEqual([...SETTINGS.slice(0, 7), 'EQOff', 'Audio QualityHigh', 'Sound CheckOn', 'CrossfadeOff', 'Audio CacheOn', ...SETTINGS.slice(7)]);
   m.click('CrossfadeOff');
   m.click('Crossfade2 s');
   expect([m.rows()[10], m.S().settings.crossfade, sent.filter((c) => c.startsWith('crossfade:'))]).toEqual(['Crossfade5 s', 5, ['crossfade:0', 'crossfade:2', 'crossfade:5']]);

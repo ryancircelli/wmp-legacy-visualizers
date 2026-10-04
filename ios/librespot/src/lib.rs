@@ -262,12 +262,17 @@ impl log::Log for Forward {
 
 // The app's pcm callback: samples (interleaved stereo frames), or None for "the sink stopped". Both of
 // the sink's paths (crossfade off: each packet; on: the queue's pump) come through here, so the
-// equalizer is here: flat, it hands over the very slice.
+// equalizer and its limiter are here: flat, it hands over the very slice; on, the limiter's 4 ms of
+// look-ahead go out with the next packet, or before the stop.
 fn hand(samples: Option<&[f32]>) {
     if let Some(h) = host() {
+        let pcm = |s: &[f32]| (h.pcm)(h.ctx as *mut c_void, s.as_ptr(), s.len() / 2);
         match samples {
-            Some(f) => eq::through(&eq::EQ, f, |s| (h.pcm)(h.ctx as *mut c_void, s.as_ptr(), s.len() / 2)),
-            None => (h.pcm)(h.ctx as *mut c_void, std::ptr::null(), 0),
+            Some(f) => eq::through(&eq::EQ, f, pcm),
+            None => {
+                eq::stop(&eq::EQ, pcm);
+                (h.pcm)(h.ctx as *mut c_void, std::ptr::null(), 0)
+            }
         }
     }
 }

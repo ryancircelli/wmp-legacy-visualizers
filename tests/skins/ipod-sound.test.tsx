@@ -25,7 +25,7 @@ function atSettings(host: boolean) {
            sel: () => shown('[aria-selected=true]').map((x) => x.textContent),
            title: () => shown('[class*=status] [class*=title]')[0]?.textContent };
 }
-const SOUND = ['EQOff', 'Audio QualityHigh', 'Sound CheckOff', 'CrossfadeOff', 'Audio CacheOn'];
+const SOUND = ['EQOff', 'Audio QualityHigh', 'Sound CheckOn', 'CrossfadeOff', 'Audio CacheOn'];
 
 it('without the host\'s player there is no Sound section', () => {
   const m = atSettings(false);
@@ -40,13 +40,13 @@ it('with it, Sound after Menus: EQ, Audio Quality, Sound Check, Crossfade, Audio
   expect(m.rows().slice(at, at + 6)).toEqual([...SOUND, 'About']);
   m.sent.length = 0;
   for (const r of ['Audio QualityHigh', 'Audio QualityVery High']) m.click(r);
-  m.click('Sound CheckOff');
+  m.click('Sound CheckOn');
   m.click('Audio CacheOn');
   m.click('CrossfadeOff');
-  expect(m.rows().slice(at, at + 5)).toEqual(['EQOff', 'Audio QualityNormal', 'Sound CheckOn', 'Crossfade2 s', 'Audio CacheOff']);
-  expect(m.sent).toEqual(['quality:320', 'quality:96', 'normalise:1', 'cache:0', 'crossfade:2']);
+  expect(m.rows().slice(at, at + 5)).toEqual(['EQOff', 'Audio QualityNormal', 'Sound CheckOff', 'Crossfade2 s', 'Audio CacheOff']);
+  expect(m.sent).toEqual(['quality:320', 'quality:96', 'normalise:0', 'cache:0', 'crossfade:2']);
   const { quality, normalise, audioCache, crossfade } = m.S().settings;
-  expect({ quality, normalise, audioCache, crossfade }).toEqual({ quality: 96, normalise: true, audioCache: false, crossfade: 2 });
+  expect({ quality, normalise, audioCache, crossfade }).toEqual({ quality: 96, normalise: false, audioCache: false, crossfade: 2 });
 });
 
 it('EQ: the iPod\'s presets, the chosen one checked; the wheel applies each as it passes, so it is heard; MENU keeps the last; the row names it', () => {

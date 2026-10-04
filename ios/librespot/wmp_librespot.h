@@ -52,8 +52,9 @@ void wmp_ls_token(const char *token, const char *client_id, const char *client_t
 // And the sound settings, also taken with or without a session, and kept across launches (sound.json in
 // cache_dir, read at wmp_ls_start), so one equal to the current value does nothing (one log line):
 // "eq:[g1,...,g10]" the equalizer, ten gains in dB (clamped to -12..12) for 32, 64, 125, 250, 500 Hz,
-// 1, 2, 4, 8 and 16 kHz, applied at once, ramped (no click), with a preamp against clipping; all 0 or
-// "eq:off" is no processing at all (the default). "quality:96|160|320" the stream's kbps (160 the
+// 1, 2, 4, 8 and 16 kHz, applied at once, ramped (no click), at full level, with a peak limiter after it
+// (-0.5 dBFS, 4 ms look-ahead: while it is on, pcm gets each packet's audio 4 ms late, the held frames
+// with the next packet or before a stop); all 0 or "eq:off" is no processing at all (the default). "quality:96|160|320" the stream's kbps (160 the
 // default) and "normalise:0|1" librespot's volume normalisation (off the default): librespot takes
 // both only into a new player and session, so a change restarts them a second later; the device is
 // gone from Spotify for some seconds and, when it was the active one, takes its playback back where it

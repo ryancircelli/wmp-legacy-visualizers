@@ -15,7 +15,7 @@ pub struct Sound {
 
 impl Default for Sound {
     fn default() -> Self {
-        Sound { eq: [0.0; 10], quality: 160, normalise: false, cache: true }
+        Sound { eq: [0.0; 10], quality: 160, normalise: true, cache: true }
     }
 }
 

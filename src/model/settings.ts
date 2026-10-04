@@ -52,7 +52,7 @@ export interface Settings {
 
 export const DEFAULTS: Settings = {
   fps: 60, scale: 'original', intended: false, bg: 0x000000, smoothing: 0, debug: false,
-  vis: 'alchemy', preset: 0, advanced: false, animate: true, volume: 100, muted: false, lyrics: true, karaoke: true, crossfade: 0, eq: 'off', quality: 160, normalise: false, audioCache: true, skin: 'wmp9', detailsPane: true, libraryView: 'details',
+  vis: 'alchemy', preset: 0, advanced: false, animate: true, volume: 100, muted: false, lyrics: true, karaoke: true, crossfade: 0, eq: 'off', quality: 160, normalise: true, audioCache: true, skin: 'wmp9', detailsPane: true, libraryView: 'details',
 };
 
 const clamp = (v: number, lo: number, hi: number) => (v < lo ? lo : v > hi ? hi : v);
@@ -78,7 +78,7 @@ export function normalize(raw: Record<string, unknown>, firstRun = false): Setti
   s.crossfade = clamp(Math.round(+s.crossfade || 0), 0, 12);
   s.eq = eqPreset(String(s.eq)).id;
   s.quality = QUALITY_OPTS.includes(s.quality) ? s.quality : DEFAULTS.quality;
-  s.normalise = s.normalise === true;
+  s.normalise = s.normalise !== false;   // on unless turned off (Spotify's own default)
   s.audioCache = s.audioCache !== false;
   if (typeof s.skin !== 'string' || !s.skin) s.skin = DEFAULTS.skin;
   s.detailsPane = s.detailsPane !== false;

@@ -379,7 +379,7 @@ Commands, page -> host:
     processing at all; at once, without a click. `quality:<96|160|320>` the stream's bitrate in kbps (librespot's
     Bitrate). `normalise:<0|1>` volume normalisation (librespot's own; the iPod's Sound Check). `cache:<0|1>` the audio
     cache: played files kept on disk under the receiver's cache dir, about 1 GB at most, the oldest pruned; 0 turns it
-    off and deletes what is cached. Defaults: eq flat, 160, normalise off, cache on. The host keeps the last values
+    off and deletes what is cached. Defaults: eq flat, 160, normalise on (as Spotify's own clients have it: it is where an EQ boost finds its headroom), cache on. The host keeps the last values
     itself (a small file in its cache dir) and starts with them, so a command that changes nothing does nothing (no
     restart; one quiet log line at most). A change needs no relaunch: `eq` is immediate; `quality` / `normalise` /
     `cache` at the next track or by restarting the speaker's player or session, whichever is least disruptive and

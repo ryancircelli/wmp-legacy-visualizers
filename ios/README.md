@@ -203,8 +203,19 @@ overlay, plays as ever).
   so the page's values at its start normally change nothing. The equalizer is ten peaking filters an
   octave apart (32 Hz to 16 kHz), applied where both sink paths hand the app its samples (`hand`), so
   after the crossfade queue: a change is heard at once, not up to 12 s later, and moves over 23 ms with
-  no click. A preamp takes off the boost's peak so it cannot clip; flat, the samples go through
-  untouched. librespot fixes the bitrate and normalisation when its player is made and the cache when
+  no click. Flat, the samples go through untouched. A boost is applied at full level and a peak limiter
+  after the bands keeps what overshoots under full scale, as Spotify's own client does (it applies its
+  equalizer as it is and limits; its settings warn that "Loud may diminish audio quality"). The first
+  version (build 67) turned the whole signal down by the boost's peak instead, and the harness measured
+  Bass Booster making the music 6.5 dB quieter rather than the bass louder: the owner ruled to match
+  Spotify (2026-10-04). The limiter runs only while the equalizer is on: a -0.5 dBFS ceiling, one gain
+  for both channels, 4 ms of look-ahead (the gain comes down smoothly to meet a peak; those frames go
+  out with the next packet or before a stop, none lost or repeated), 50 ms hold and 100 ms release.
+  Measured (Bass Booster against flat, the same passage of a loud country master): with normalisation
+  on, +6.1 dB at 32 Hz, +5.9 at 64 Hz and 0 ± 0.4 from 1 kHz up, the limiter never reached; with it
+  off, that master already hits full scale when flat, so the limiter takes the boost back (+0.1 dB at
+  32 Hz, -3 dB from 1 kHz up) rather than clip. Spotify's client has normalisation on by default, which
+  is where its boost has room. librespot fixes the bitrate and normalisation when its player is made and the cache when
   a session is, and a session connects only once, so a quality or normalisation change rebuilds the
   player, session and Spirc a second later: the speaker leaves Spotify's device list for a few seconds
   and, if it was the active device, takes its playback back as after a lost session (the same
@@ -390,9 +401,10 @@ cargo build --example harness
   and `run.log` side by side. `crossfade run.wav` reports, for each `crossfade over L s` boundary, RMS
   and peak in 0.5 s windows from 2 s before to 2 s after, with a verdict: a gap (silence in the fade),
   a doubling (over 2 dB above both sides), clipping. `bands run.wav flat+10 bass+10` gives the ten bands'
-  levels over each range (the start is in seconds or is a mark's text) and their differences. A boost
-  brings the preamp, so Bass Booster (`eq:[5.5,4.25,3.5,2.5,1.25,0,0,0,0,0]`) shows as the low bands up
-  and the rest down by the preamp. To compare the same passage, `seek:` to the same place both times
+  levels over each range (the start is in seconds or is a mark's text) and their differences. Bass Booster
+  (`eq:[5.5,4.25,3.5,2.5,1.25,0,0,0,0,0]`) shows as the low bands up and the rest unchanged, unless
+  the limiter is working (a master already near full scale, normalisation off): then everything comes
+  down by its gain. To compare the same passage, `seek:` to the same place both times
   and `mark` a few seconds after each seek. `selftest` runs both on synthetic audio and checks them.
 
 All of the crate's Rust is the code that runs on the phone: the session, the token bypass, Spirc, the

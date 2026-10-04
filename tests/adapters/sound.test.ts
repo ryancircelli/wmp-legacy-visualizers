@@ -46,9 +46,9 @@ it('the presets: the iPod\'s 23 in its order, ten bands each within the host\'s 
   expect([eqPreset('off').gains, eqPreset('flat').gains, eqPreset('nope').id]).toEqual([Array(10).fill(0), Array(10).fill(0), 'off']);
 });
 
-it('the settings as stored: the contract\'s defaults (eq off, 160 kbps, normalise off, cache on); a value out of its set reads as its default', () => {
+it('the settings as stored: the contract\'s defaults (eq off, 160 kbps, normalise on (Spotify\'s own default), cache on); a value out of its set reads as its default', () => {
   const pick = ({ eq, quality, normalise, audioCache }: ReturnType<typeof normalize>) => ({ eq, quality, normalise, audioCache });
-  expect(pick(normalize({}))).toEqual({ eq: 'off', quality: 160, normalise: false, audioCache: true });
-  expect(pick(normalize({ eq: 'loud', quality: 128, normalise: 'yes', audioCache: false }))).toEqual({ eq: 'off', quality: 160, normalise: false, audioCache: false });
+  expect(pick(normalize({}))).toEqual({ eq: 'off', quality: 160, normalise: true, audioCache: true });
+  expect(pick(normalize({ eq: 'loud', quality: 128, normalise: 'yes', audioCache: false }))).toEqual({ eq: 'off', quality: 160, normalise: true, audioCache: false });
   expect(pick(normalize({ eq: 'rnb', quality: 320, normalise: true }))).toEqual({ eq: 'rnb', quality: 320, normalise: true, audioCache: true });
 });

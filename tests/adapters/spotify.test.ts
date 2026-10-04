@@ -369,7 +369,7 @@ describe('3a. the host speaker away and back (the app suspended while paused)', 
 
 describe('3c. the host\'s own player (CONTRACT v10: alchemyPlayer, __wmpPlayer)', () => {
   const SPK = { id: 'spk1', name: 'WMP Spotify (iOS)' };
-  const SOUND0 = ['crossfade:0', 'eq:[0,0,0,0,0,0,0,0,0,0]', 'quality:160', 'normalise:0', 'cache:1'];   // the sound settings, sent to the host's player at the adapter's start
+  const SOUND0 = ['crossfade:0', 'eq:[0,0,0,0,0,0,0,0,0,0]', 'quality:160', 'normalise:1', 'cache:1'];   // the sound settings, sent to the host's player at the adapter's start
   const HP = (o: Record<string, unknown> = {}) => ({ v: 1, active: true, playing: true, uri: FX.playerState.track.uri, title: 'Wish I Knew You',
     artist: 'The Revivalists', album: 'Men Amongst Mountains', art: 'https://i.scdn.co/image/ab67616d00001e02c5214ee5d4300598a8a95264',
     duration: 274140, position: 10_000, at: T0 - 2000, shuffle: false, repeat: 'off', ...o });
