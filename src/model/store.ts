@@ -50,8 +50,9 @@ export interface AppState {
     nativeTitle?: boolean;
     /** a newer exe is out (window.alchemyHostUpdate): Help offers the download */
     hostUpdate?: boolean;
-    /** the host's own player takes settings.crossfade (CONTRACT v10 `crossfade:<s>`) */
-    canCrossfade?: boolean;
+    /** the host has its own player (CONTRACT v10): it takes the sound settings (crossfade, eq, quality,
+     *  normalise, audioCache), which the Spotify adapter sends it; Settings shows its Sound section */
+    hostPlayer?: boolean;
   };
   playback: Playback;
   queue: { next: Track[] };

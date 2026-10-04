@@ -53,3 +53,27 @@ export function subline(uri: string, by?: string): string {
   const who = kind === 'Playlist' ? by || 'Spotify' : by;
   return who && who.toLowerCase() !== kind.toLowerCase() ? kind + ' · ' + who : kind;
 }
+
+export type QueueEdit = 'next' | 'up' | 'down' | 'remove';
+/** Up Next after an edit of row `i` of `n` (the Queue's hold-centre): the rows by index in their new
+ *  order (removed: left out) and where the selection goes (the moved row; after a removal, the row now
+ *  in its place); null when the row would not move (Play Next or Move Up on the first, Move Down on the last). */
+export function queueEdit(n: number, i: number, edit: QueueEdit): { order: number[]; at: number } | null {
+  const order = [...Array(n).keys()];
+  order.splice(i, 1);
+  if (edit === 'remove') return { order, at: Math.max(0, Math.min(i, n - 2)) };
+  const to = edit === 'next' ? 0 : edit === 'up' ? i - 1 : i + 1;
+  if (to < 0 || to >= n || to === i) return null;
+  order.splice(to, 0, i);
+  return { order, at: to };
+}
+
+/** An episode's second line: its date and length, "Sep 30, 2026 · 1 hr 5 min" (the device's date format;
+ *  either alone when the other is unknown). */
+export function episodeLine(date: string | undefined, ms: number): string {
+  const day = date && /^\d{4}-\d{2}-\d{2}$/.test(date)
+    ? new Date(date + 'T12:00:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : date;
+  const min = Math.round(ms / 60_000), h = Math.floor(min / 60);
+  const len = ms > 0 ? (h ? h + ' hr' + (min % 60 ? ' ' + (min % 60) + ' min' : '') : Math.max(1, min) + ' min') : '';
+  return [day, len].filter(Boolean).join(' · ');
+}

@@ -36,6 +36,9 @@ export interface Commands {
   /** Add to the queue (the iPod's On-The-Go; WMP 9's details pane shows its button when present);
    *  `queue.next` follows with the player's next state. Absent: the engine has no queue (local). */
   addToQueue?(trackUri: string): void;
+  /** Up Next as it should be: `queue.next`'s rows by index in their new order, a row left out removed.
+   *  Optimistic (queue.next at once, back if the player refuses). Absent: the engine has no queue. */
+  reorderQueue?(order: readonly number[]): void;
 
   // selection (fetched data is TanStack Query's: see adapters/*/queries.ts)
   /** the Search view's query: sets ui.searchQ (the results are a query keyed on it) */

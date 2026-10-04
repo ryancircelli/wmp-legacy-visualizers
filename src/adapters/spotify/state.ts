@@ -53,9 +53,12 @@ function artistName(sp: Sp, uri: string | undefined, ctx: string | undefined, md
   if (md.artist_name) return md.artist_name;
   const row = rowFor(sp, uri);
   if (row?.artist) return row.artist;
-  const a = md.artist_uri || (/^spotify:artist:/.test(ctx ?? '') ? ctx : undefined);
+  // an episode in its show: the show's name (fetchShows remembered it)
+  const a = md.artist_uri || (/^spotify:(artist|show):/.test(ctx ?? '') ? ctx : undefined);
   return (a && sp.cache.names.get(a)) || '';
 }
+/** Episodes' state metadata keys are not the tracks' (unconfirmed): each episode's keys go to the host's log once. */
+const toldEpisodes = new Set<string>();
 
 /** What the host's own speaker says it is playing (CONTRACT: __wmpSpeakerTrack), when it is this uri. */
 function speakerTrack(uri?: string | null) {
@@ -108,7 +111,7 @@ export function toPlayback(sp: Sp, ps: PlayerState): Partial<Playback> {
     position: Math.max(0, dur ? Math.min(pos, dur) : pos),
     track: t.uri ? { uri: t.uri, title: md.title || own?.title || row?.title || '',
                      artist: md.artist_name || own?.artist || artistName(sp, t.uri, ctx, md),
-                     album: md.album_title || own?.album || row?.album || '', duration: dur,
+                     album: md.album_title || own?.album || row?.album || (/^spotify:show:/.test(ctx ?? '') && sp.cache.names.get(ctx!)) || '', duration: dur,
                      art: bigCover(img(md.image_url || md.image_large_url) || own?.art || row?.art || row?.image || null), ctx: ctx ?? null } : null,
     canSeek: !!t.uri && none(rs.disallow_seeking_reasons),
     canNext: !!t.uri && none(rs.disallow_skipping_next_reasons),
@@ -203,21 +206,28 @@ export function onState(sp: Sp, ps: PlayerState | null | undefined, replay = fal
   const uri = p.track?.uri, bare = !!uri && !ps.track?.metadata?.title;
   const h = hostLive();
   if (bare && !speakerTrack(uri) && !(h?.uri === uri && h.title) && !rowFor(sp, uri)?.art) want(sp, uri);
+  if (uri?.startsWith('spotify:episode:') && !toldEpisodes.has(uri)) {
+    toldEpisodes.add(uri);
+    window.alchemyLog?.('spotify: episode ' + uri.slice(16) + ' metadata keys: ' + (Object.keys(ps.track?.metadata ?? {}).sort().join(', ') || 'none')
+      + (p.track?.title ? '' : ' (unnamed)'));
+  }
   // Up Next: the web player sends metadata for the first queued track only, librespot for none; the
   // rest are named from rows the fetches returned (the playing context's first page above), left out
   // until then; a bare device's by getTrack once that page is in (30 asked at most).
-  const next: Track[] = [], ask = bare && !(ctx && sp.loading[ctx] && !sp.cache.lists.has(ctx));
+  // Each row's place in next_tracks is kept (sp.queueAt): an edit of Up Next (queue.ts) maps back through it.
+  const next: Track[] = [], at: number[] = [], ask = bare && !(ctx && sp.loading[ctx] && !sp.cache.lists.has(ctx));
   let n = 30;
-  for (const t of ps.next_tracks ?? []) {
+  for (const [i, t] of (ps.next_tracks ?? []).entries()) {
     if (!t?.uri || !/^spotify:(track|episode):/.test(t.uri)) continue;
     const m = t.metadata ?? {}, k = rowFor(sp, t.uri);
     // its cover too (the web player sends image_url with the first queued track): the Queue's tile and rows show it
     const pic = img(m.image_small_url || m.image_url) ?? k?.image;
-    if (m.title) next.push({ uri: t.uri, title: m.title, artist: artistName(sp, t.uri, ctx, m), album: m.album_title || k?.album || '', duration: 0, ctx: ctx ?? null,
-                             ...(pic ? { image: pic } : {}) });
-    else if (k) next.push({ ...k, ctx: ctx ?? null });
-    else if (ask && n-- > 0) want(sp, t.uri);
+    const row: Track | null = m.title ? { uri: t.uri, title: m.title, artist: artistName(sp, t.uri, ctx, m), album: m.album_title || k?.album || '', duration: 0,
+                                          ctx: ctx ?? null, ...(pic ? { image: pic } : {}) }
+      : k ? { ...k, ctx: ctx ?? null } : null;
+    if (row) { next.push(row); at.push(i); } else if (ask && n-- > 0) want(sp, t.uri);
     if (next.length === 30) break;
   }
+  sp.queueAt = at;
   sp.store.getState().actions.setQueue(next);
 }

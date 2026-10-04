@@ -5,7 +5,7 @@ import { act, cleanup, fireEvent, render, renderHook, within } from '@testing-li
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import type { ReactNode } from 'react';
 import { makeShell } from '../../src/app/App';
-import { hostCrossfade } from '../../src/adapters/spotify';
+import { hostSettings } from '../../src/adapters/spotify';
 import type { Ticker } from '../../src/app/ticker';
 import { createAppStore } from '../../src/model';
 import { mainMenu } from '../../src/skins/ipod/menus';
@@ -58,14 +58,14 @@ it('arrows move the selection, Enter opens Library, Escape comes back; a tick th
   expect(m.sel()).toEqual(['Library']);
 });
 
-it('Spotify\'s menus in the nano\'s look: no Extras, no Now Playing row (the bar opens it); the Library\'s chips without Podcasts', async () => {
+it('Spotify\'s menus in the nano\'s look: no Extras, no Now Playing row (the bar opens it); the Library\'s chips, Podcasts with them', async () => {
   const m = mount();
   expect(m.rows()).toEqual(['Home', 'Search', 'Library', 'Radio', 'Brick', 'Settings']);
   act(() => { m.store.setState((s) => ({ playback: { ...s.playback, track: { uri: 'spotify:track:a', title: 'T', artist: 'A', duration: 1 } } })); });
   expect(m.rows()).toEqual(['Home', 'Search', 'Library', 'Radio', 'Brick', 'Settings']);
   act(() => { fireEvent.click(m.row('Library')); });
   await settle();
-  expect(m.rows()).toEqual(['Playlists', 'Albums', 'Artists', 'QueueUp next', 'Liked SongsPlaylist · 0 songs']);
+  expect(m.rows()).toEqual(['Playlists', 'Albums', 'Artists', 'Podcasts', 'QueueUp next', 'Liked SongsPlaylist · 0 songs']);
 });
 
 it('a chevron shows on the selected row only', () => {
@@ -109,6 +109,7 @@ it('the Library is chips over a grid: it opens on the first tile, the wheel step
     list: [album(2, 'Kid A', 'Radiohead'), album(0, 'Abbey Road', 'The Beatles'), album(1, 'Hot Space', 'Queen')],
     collections: { 'spotify:album:1': { tracks: [{ uri: 'spotify:track:s', title: 'Staying Power', artist: 'Queen', duration: 1 }] } },
   });
+  writePref('ipod.menus', { main: {}, music: { podcasts: false } });   // the three chips this walks
   const { shown, sel, rows } = mountIpod(data);
   const on = () => shown('[data-on]').map((x) => x.textContent);
   key('ArrowDown'); key('ArrowDown'); key('Enter');          // Library: Playlists, on its first tile
@@ -554,19 +555,19 @@ it('Settings\' host-gated rows show only with their host: Theme, Refresh Player,
   ]);
 });
 
-it('Crossfade: shown with the host\'s player only, under General; Off -> 2 s -> 5 s -> 8 s -> 12 s -> Off, each step sent to the host by the adapter', () => {
+it('Crossfade: shown with the host\'s player only, under Sound; Off -> 2 s -> 5 s -> 8 s -> 12 s -> Off, each step sent to the host by the adapter', () => {
   const sent: string[] = [];
   vi.stubGlobal('alchemyPlayer', (c: string) => { sent.push(c); });
   const m = atSettings();
   expect(m.rows()).toEqual(SETTINGS);                // the binding alone shows nothing: the adapter says the host can
   let off = () => {};
-  act(() => { off = hostCrossfade(m.store); });
-  expect(m.rows()).toEqual([...SETTINGS.slice(0, 7), 'CrossfadeOff', ...SETTINGS.slice(7)]);
+  act(() => { off = hostSettings(m.store); });
+  expect(m.rows()).toEqual([...SETTINGS.slice(0, 7), 'EQOff', 'Audio QualityHigh', 'Sound CheckOff', 'CrossfadeOff', 'Audio CacheOn', ...SETTINGS.slice(7)]);
   m.click('CrossfadeOff');
   m.click('Crossfade2 s');
-  expect([m.rows()[7], m.S().settings.crossfade, sent]).toEqual(['Crossfade5 s', 5, ['crossfade:0', 'crossfade:2', 'crossfade:5']]);
+  expect([m.rows()[10], m.S().settings.crossfade, sent.filter((c) => c.startsWith('crossfade:'))]).toEqual(['Crossfade5 s', 5, ['crossfade:0', 'crossfade:2', 'crossfade:5']]);
   for (const r of ['Crossfade5 s', 'Crossfade8 s', 'Crossfade12 s']) m.click(r);
-  expect([m.rows()[7], sent.at(-1)]).toEqual(['CrossfadeOff', 'crossfade:0']);
+  expect([m.rows()[10], sent.at(-1)]).toEqual(['CrossfadeOff', 'crossfade:0']);
   off();
 });
 

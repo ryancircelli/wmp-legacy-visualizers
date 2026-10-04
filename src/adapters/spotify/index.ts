@@ -3,7 +3,7 @@
 // channels the web player itself uses, never its DOM and never the public Web API; from inside its
 // page (the Deno host's overlay) or through the host (Tauri), whichever transport.ts finds. The host
 // socket (PCM, lyrics, GSMTC as a fallback) comes from the local adapter's startHost.
-import { LIKED, noCommands, type AppStore } from '../../model';
+import { eqPreset, LIKED, noCommands, type AppStore, type Settings } from '../../model';
 import { announceHostUpdate, checkForUpdates, detectMode, hostWindow, win } from '../host';
 import * as hostPlayer from '../host/player';
 import { hostTransport, startHost, type HostLink } from '../local';
@@ -12,6 +12,7 @@ import { openLink, parseLink } from './links';
 import { observe } from './observers';
 import { openArtist } from './artist';
 import { bindQueries } from './queries';
+import { reorderQueue } from './queue';
 import { addTo, setLiked } from './saved';
 import { newCache, type Sp } from './sp';
 import { transport } from './transport';
@@ -68,6 +69,7 @@ export function spotifyCommands(sp: Sp, host: HostLink | null) {
       if (/^spotify:(playlist|album|artist):/.test(uri) || uri === LIKED) void C.playContext(sp, uri, f ? f.uri : null, shuffle);
     },
     addToQueue: (uri: string) => void C.addToQueue(sp, uri),
+    reorderQueue: (order: readonly number[]) => void reorderQueue(sp, order),
     search: (q) => store.getState().actions.setUi({ searchQ: String(q ?? ''), searchOnly: null }),
     openInLibrary,
     openAlbum,
@@ -87,12 +89,23 @@ export function spotifyCommands(sp: Sp, host: HostLink | null) {
   } satisfies typeof noCommands;
 }
 
-/** Crossfade on the host's own speaker (CONTRACT v10 `crossfade:<s>`): offered while the host has the player
- *  (auth.canCrossfade), the setting sent at once and at each change; the host keeps nothing across launches. */
-export function hostCrossfade(store: AppStore): () => void {
+/** The host's own player's sound settings (CONTRACT v10 `crossfade:` `eq:` `quality:` `normalise:` `cache:`),
+ *  each a command from the settings. */
+const SOUND: ((s: Settings) => string)[] = [
+  (s) => 'crossfade:' + s.crossfade,
+  (s) => 'eq:' + JSON.stringify(eqPreset(s.eq).gains),
+  (s) => 'quality:' + s.quality,
+  (s) => 'normalise:' + (s.normalise ? 1 : 0),
+  (s) => 'cache:' + (s.audioCache ? 1 : 0),
+];
+/** Offered while the host has the player (auth.hostPlayer): every sound setting sent at once and each again at
+ *  its every change. The host keeps the last values itself too; one it already has changes nothing there. */
+export function hostSettings(store: AppStore): () => void {
   const on = hostPlayer.available();
-  store.getState().actions.setAuth({ canCrossfade: on });
-  return on ? store.subscribe((s) => s.settings.crossfade, (n) => hostPlayer.send('crossfade:' + n), { fireImmediately: true }) : () => {};
+  store.getState().actions.setAuth({ hostPlayer: on });
+  if (!on) return () => {};
+  const offs = SOUND.map((cmd) => store.subscribe((s) => cmd(s.settings), (c) => hostPlayer.send(c), { fireImmediately: true }));
+  return () => offs.forEach((off) => off());
 }
 
 export function createSpotifyAdapter(store: AppStore): { start(): void; stop(): void } {
@@ -132,7 +145,7 @@ export function createSpotifyAdapter(store: AppStore): { start(): void; stop(): 
         () => { window.removeEventListener('wmp-volume', buttons); document.removeEventListener('visibilitychange', seen);
                 window.removeEventListener('wmp-thermal', thermal); window.removeEventListener('wmp-lowpower', thermal); },
         store.subscribe((s) => (s.settings.muted ? 0 : s.settings.volume), (v) => { if (!sp.fromDevice) C.volume(sp, v); }),
-        hostCrossfade(store),
+        hostSettings(store),
         transport().start(),   // first: the Tauri bridge sets up what observe reads
         observe(sp),
       ];

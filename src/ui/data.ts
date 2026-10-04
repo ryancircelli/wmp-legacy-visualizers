@@ -4,7 +4,7 @@
 // search results, home, radio and artists are queries, cached per key across view switches.
 import { infiniteQueryOptions, queryOptions, useInfiniteQuery, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect } from 'react';
-import { LIKED, type CollectionMeta, type HomeFeed, type LibraryItem, type RadioSeed, type SearchPage, type SearchType, type Track } from '../model';
+import { LIKED, type CollectionMeta, type HomeFeed, type HomeItem, type HomeSection, type LibraryItem, type RadioSeed, type SearchPage, type SearchType, type Track } from '../model';
 import { forgetQueries } from './persist';
 import { useApp, useShell } from './shell';
 import type { Shell } from './types';
@@ -13,6 +13,7 @@ const COLLECTION = /^spotify:(playlist:|album:|collection:tracks$)/;
 /** a uri fetchCollectionPage serves (a playlist, an album, Liked Songs) */
 export const isCollectionUri = (uri: string | null | undefined): uri is string => !!uri && COLLECTION.test(uri);
 const isArtistUri = (uri: string | null | undefined): uri is string => !!uri && uri.startsWith('spotify:artist:');
+const isShowUri = (uri: string | null | undefined): uri is string => !!uri && uri.startsWith('spotify:show:');
 
 /** How long a fetched thing is fresh (no refetch on remount within it). */
 export const STALE = { collection: 60_000, home: 5 * 60_000, list: 5 * 60_000, search: 5 * 60_000, artist: 5 * 60_000 };
@@ -59,10 +60,10 @@ export interface CollectionData {
   loaded: boolean;
 }
 
-/** A playlist / album / Liked Songs, paged (null or another kind of uri: nothing, not fetched). */
+/** A playlist / album / Liked Songs, or a show's episodes, paged (null or another kind of uri: nothing, not fetched). */
 export function useCollection(uri: string | null | undefined): CollectionData {
   // keyed by the uri even before the login is known: a result kept from the last session shows now
-  const q = useQ(), ready = useReady(), is = isCollectionUri(uri), on = is && ready;
+  const q = useQ(), ready = useReady(), is = isCollectionUri(uri) || isShowUri(uri), on = is && ready;
   const r = useInfiniteQuery({ ...collectionQuery(q, is ? uri : ''), enabled: on });
   const pages = r.data?.pages ?? [];
   return {
@@ -199,6 +200,35 @@ export function useHome() {
   const q = useQ(), ready = useReady();
   const r = useQuery({ ...homeQuery(q), enabled: ready });
   return { sections: r.data?.sections ?? null, greeting: r.data?.greeting ?? '' };
+}
+
+/** The followed shows (Your Library > Podcasts), in Spotify's order. */
+export function useShows(): { items: LibraryItem[]; loading: boolean } {
+  const q = useQ(), ready = useReady();
+  const r = useQuery({ queryKey: q.keys.shows(), queryFn: () => q.fetchShows(), enabled: ready, staleTime: STALE.list });
+  return { items: r.data ?? [], loading: r.isPending };
+}
+
+/** the home feed's shelves of what was played lately (English titles: "Recents", "Recently played", "Jump back in") */
+const RECENT = /recent|jump back in/i;
+/** The playlists, albums, artists, shows (and Liked Songs) on the home feed's recently-played shelves, each
+ *  once, in the feed's order. */
+export function recentlyPlayed(sections: readonly HomeSection[]): HomeItem[] {
+  const seen = new Set<string>();
+  return sections.filter((s) => RECENT.test(s.title)).flatMap((s) => s.items)
+    .filter((x) => /^spotify:(playlist|album|artist|show):|^spotify:collection:tracks$/.test(x.uri) && !seen.has(x.uri) && !!seen.add(x.uri));
+}
+let toldRecents = false;
+/** Recently played, from the home feed already fetched (useHome); a feed with no such shelf is said in the
+ *  host's log once (its titles: another language's, or Spotify renamed them). */
+export function useRecentlyPlayed(): { items: HomeItem[]; loading: boolean } {
+  const { sections } = useHome(), items = sections ? recentlyPlayed(sections) : [], none = !!sections?.length && !items.length;
+  useEffect(() => {
+    if (!none || toldRecents) return;
+    toldRecents = true;
+    window.alchemyLog?.('spotify: home has no recently played shelf (titles: ' + sections.map((s) => s.title).join(', ') + ')');
+  }, [none, sections]);
+  return { items, loading: !sections };
 }
 
 /** What radio can be seeded from now (the playing track, its artist): re-read as the track changes. */

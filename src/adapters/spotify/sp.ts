@@ -17,8 +17,12 @@ export interface PlayerState {
   track?: { uri?: string; metadata?: Record<string, string> };
   restrictions?: Record<string, string[] | undefined>;
   options?: { shuffling_context?: boolean; repeating_context?: boolean; repeating_track?: boolean };
-  next_tracks?: ({ uri?: string; metadata?: Record<string, string> } | null)[];
+  next_tracks?: (ProvidedTrack | null)[];
+  prev_tracks?: (ProvidedTrack | null)[];
+  queue_revision?: string;
 }
+/** A next / previous track as the cluster gives it (set_queue sends them back as they came). */
+export interface ProvidedTrack { uri?: string; uid?: string; metadata?: Record<string, string>; provider?: string }
 
 export interface Sp {
   store: AppStore;
@@ -54,6 +58,8 @@ export interface Sp {
   /** internal fetches by uri: the playing context and album names while in flight; a track asked for
    *  (a speaker's bare state, state.ts) stays, as the record that it was asked once */
   loading: Record<string, Promise<unknown>>;
+  /** queue.next's rows' places in the last state's next_tracks (state.ts; queue.ts maps an edit back) */
+  queueAt?: number[];
   /** what the fetches have taught us, for naming the player's state (see cache.ts) */
   cache: Cache;
 }

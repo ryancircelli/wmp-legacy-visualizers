@@ -8,6 +8,7 @@ import type {
 } from '../../model';
 import { fetchAlbumMeta as albumMeta, fetchArtist as artist } from './artist';
 import { fetchHome as home } from './home';
+import { fetchShowPage as showPage, fetchShows as shows } from './podcasts';
 import { fetchCollectionPage as page, fetchFollowedArtists as followed, fetchLibraryList as list, remember as rememberIn } from './library';
 import { fetchRadio as radio, radioSeeds as seeds } from './radio';
 import { fetchSearch as search } from './search';
@@ -33,6 +34,8 @@ export const keys = {
   libraryList: () => ['spotify', 'library'] as const,
   /** under the library's key: a follow / unfollow (setLiked) refetches it with the list */
   followedArtists: () => ['spotify', 'library', 'artists'] as const,
+  /** the followed shows, under the library's key as the artists are */
+  shows: () => ['spotify', 'library', 'shows'] as const,
   collection: (uri: string) => ['spotify', 'collection', uri] as const,
   collectionPage: (uri: string, offset: number) => ['spotify', 'collection', uri, offset] as const,
   search: (q: string, type: SearchType, offset = 0) => ['spotify', 'search', q.trim(), type, offset] as const,
@@ -55,8 +58,12 @@ export const savedKey = (uri: string) => ['spotify', 'saved', uri] as const;
 export const fetchLibraryList = (): Promise<LibraryItem[]> => list(bound());
 /** The followed artists (libraryV3, the Artists filter; up to 400) as { uri, name, image, kind: 'artist' }, in Spotify's order. */
 export const fetchFollowedArtists = (): Promise<LibraryItem[]> => followed(bound());
-/** One page of a playlist / album / Liked Songs (meta with offset 0); nextOffset absent = the end. */
-export const fetchCollectionPage = (uri: string, offset = 0): Promise<CollectionPage> => page(bound(), uri, offset);
+/** The followed shows (libraryV3, the Podcasts filter; up to 400) as { uri, name, image, owner: the publisher }, in Spotify's order. */
+export const fetchShows = (): Promise<LibraryItem[]> => shows(bound());
+/** One page of a playlist / album / Liked Songs (meta with offset 0), or of a show's episodes (no meta);
+ *  nextOffset absent = the end. */
+export const fetchCollectionPage = (uri: string, offset = 0): Promise<CollectionPage> =>
+  (uri.startsWith('spotify:show:') ? showPage(bound(), uri, offset) : page(bound(), uri, offset));
 /** Type 'all': SearchResults (every bucket's first page + top result); a typed search: one SearchPage. */
 export function fetchSearch(q: string, type: 'all', offset?: number, limit?: number): Promise<SearchResults>;
 export function fetchSearch(q: string, type: Exclude<SearchType, 'all'>, offset?: number, limit?: number): Promise<SearchPage<Track | LibraryItem>>;

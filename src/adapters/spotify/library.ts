@@ -136,7 +136,7 @@ export function remember(sp: Sp, tracks: Track[], list?: string, items: LibraryI
 
 /** libraryV3 as Your Library asks for it (filters [] = everything, ['Artists'] = the Artists chip),
  *  page by page in library order: 8 pages of 50 at most; folders are not opened. */
-async function libraryPages(sp: Sp, filters: string[], each: (L: any) => void): Promise<void> {
+export async function libraryPages(sp: Sp, filters: string[], each: (L: any) => void): Promise<void> {
   // ponytail: 8 pages (400 entries); folders are not opened.
   for (let offset = 0; offset < 400; offset += 50) {
     const d = await query(sp, 'libraryV3', { filters, order: null, textFilter: '',

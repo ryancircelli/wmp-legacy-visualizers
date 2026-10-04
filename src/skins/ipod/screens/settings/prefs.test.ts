@@ -7,15 +7,15 @@ import { resetMenu, setMenuItem, useLibraryView, useMenuVisibility } from './pre
 
 afterEach(() => localStorage.clear());
 
-it('shows every row and chip but Podcasts until it is turned on', () => {
+it('shows every row and chip until one is turned off', () => {
   const { result } = renderHook(() => useMenuVisibility());
   expect(result.current.main).toEqual({ home: true, search: true, library: true, radio: true, brick: true });
-  expect(result.current.music).toEqual({ playlists: true, albums: true, artists: true, podcasts: false });
-  act(() => setMenuItem('music', 'podcasts', true));
-  expect(result.current.music.podcasts).toBe(true);
-  expect(JSON.parse(localStorage.getItem('ipod.menus')!)).toEqual({ main: {}, music: { podcasts: true } });
-  act(() => resetMenu('music'));
+  expect(result.current.music).toEqual({ playlists: true, albums: true, artists: true, podcasts: true });
+  act(() => setMenuItem('music', 'podcasts', false));
   expect(result.current.music.podcasts).toBe(false);
+  expect(JSON.parse(localStorage.getItem('ipod.menus')!)).toEqual({ main: {}, music: { podcasts: false } });
+  act(() => resetMenu('music'));
+  expect(result.current.music.podcasts).toBe(true);
 });
 
 it('Library View is Grid until List is chosen', () => {

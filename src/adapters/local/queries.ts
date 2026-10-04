@@ -19,6 +19,7 @@ export const keys = {
   lyricsFallback: (trackId: string) => ['local', 'lyricsFallback', trackId] as const,
   saved: (uris: readonly string[]) => ['local', 'saved', ...uris] as const,
   followedArtists: () => ['local', 'library', 'artists'] as const,
+  shows: () => ['local', 'library', 'shows'] as const,
   canvas: (trackUri: string) => ['local', 'canvas', trackUri] as const,
 };
 export const savedKey = (uri: string) => ['local', 'saved', uri] as const;
@@ -42,6 +43,7 @@ export const fetchCanvas = (): Promise<null> => Promise.resolve(null);
 export const fetchTrack = (): Promise<null> => Promise.resolve(null);
 export const fetchSaved = (): Promise<Record<string, boolean>> => Promise.resolve({});
 export const fetchFollowedArtists = (): Promise<never[]> => Promise.resolve([]);
+export const fetchShows = (): Promise<never[]> => Promise.resolve([]);
 export const setInvalidator = (): void => {};
 export const membershipKey = (trackUri: string) => ['local', 'membership', trackUri] as const;
 export const fetchEditablePlaylists = (): Promise<LibraryItem[]> => Promise.resolve([]);

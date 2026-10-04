@@ -59,8 +59,8 @@ const rows = (labels: string[]) => labels.map((l) => [l.toLowerCase().replace(/\
 export const MAIN_MENU = rows(['Home', 'Search', 'Library', 'Radio', 'Brick']);
 /** the Library's filter chips (stored under `music`, the Library menu's old name) */
 export const LIBRARY_FILTERS = rows(['Playlists', 'Albums', 'Artists', 'Podcasts']);
-/** Off until turned on: Podcasts (the adapter lists no shows yet). */
-const OFF = new Set(['podcasts']);
+/** Off until turned on: none (Podcasts was, until the adapter listed the followed shows, 2026-10-03). */
+const OFF = new Set<string>();
 /** 'ipod.menus': which main-menu rows and Library chips show, by id (MAIN_MENU, LIBRARY_FILTERS), and
  *  Every listed id is present; an id not
  *  listed (Settings, Now Playing) is undefined: show it. Only the user's own choices are stored; a

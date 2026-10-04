@@ -371,7 +371,20 @@ Commands, page -> host:
     (not a skip, a load or a seek) the next track fades in over the last that many seconds of this one, equal-power,
     on the host's own speaker only (Spotify sends Connect devices no crossfade of its own). Taken whether or not the
     speaker is active or has a session; the host keeps it no longer than it runs, so the page sends it at its start and
-    at each change (`settings.crossfade`, `src/adapters/spotify/index.ts hostCrossfade`).
+    at each change (`settings.crossfade`, `src/adapters/spotify/index.ts hostSettings`).
+  - The sound (2026-10-03, the owner's parity with Spotify and the iPod), taken as `crossfade` is, and sent with it at
+    the page's start and at each change (`settings.eq` / `quality` / `normalise` / `audioCache`, the same `hostSettings`):
+    `eq:<json>` the equalizer, a JSON array of 10 gains in dB (−12…+12, clamped) for 32, 64, 125, 250, 500, 1k, 2k, 4k,
+    8k, 16k Hz (the page sends the chosen preset's, `src/model/eq.ts`); all zeros (or `eq:off`) is a bypass, no
+    processing at all; at once, without a click. `quality:<96|160|320>` the stream's bitrate in kbps (librespot's
+    Bitrate). `normalise:<0|1>` volume normalisation (librespot's own; the iPod's Sound Check). `cache:<0|1>` the audio
+    cache: played files kept on disk under the receiver's cache dir, about 1 GB at most, the oldest pruned; 0 turns it
+    off and deletes what is cached. Defaults: eq flat, 160, normalise off, cache on. The host keeps the last values
+    itself (a small file in its cache dir) and starts with them, so a command that changes nothing does nothing (no
+    restart; one quiet log line at most). A change needs no relaunch: `eq` is immediate; `quality` / `normalise` /
+    `cache` at the next track or by restarting the speaker's player or session, whichever is least disruptive and
+    correct, playback resuming by itself where it was. No state of them in `__wmpPlayer`: the page's settings are
+    the truth for display.
   - `play` / `pause` / `toggle` / `next` / `prev` / `seek:<ms>` keep any meaning the host already gives them elsewhere
     (the iOS app's Control Center); `play` gains the take-first rule.
 State, host -> page: `window.__wmpPlayer` with the event `wmp-player` on window at every change, and once more when the

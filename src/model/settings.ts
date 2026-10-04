@@ -1,11 +1,16 @@
 // Persisted settings: the SAME localStorage key and shape src/90-shell.js used, so upgrades keep
 // the user's choices. Nothing is renamed; `skin` is new (default 'wmp9').
+import { eqPreset } from './eq';
 import type { View, VisKind } from './types';
+
+export { EQ_PRESETS, eqPreset, type EqPreset } from './eq';
 
 export const LS_KEY = 'alchemy.settings';
 export const FPS_OPTS = [30, 45, 60, 75, 90, 120] as const;
 export const SCALE_OPTS = ['original', 'auto', 0.25, 0.5, 0.75, 1.0] as const;
 export type Scale = (typeof SCALE_OPTS)[number];
+/** the stream's bitrates in kbps (the host's player: Normal, High, Very High) */
+export const QUALITY_OPTS = [96, 160, 320] as const;
 
 export interface Settings {
   fps: number;
@@ -25,8 +30,14 @@ export interface Settings {
   lyrics: boolean;
   /** synced lyrics highlight word by word (off: the current line lit plainly) */
   karaoke: boolean;
-  /** seconds the next track fades in over the end of this one, 0 off (the host's own speaker only: auth.canCrossfade) */
+  /** seconds the next track fades in over the end of this one, 0 off (the host's own speaker only: auth.hostPlayer) */
   crossfade: number;
+  /** the host's own player's sound (auth.hostPlayer, CONTRACT v10): the EQ preset's id (EQ_PRESETS), the
+   *  stream's bitrate in kbps, volume normalisation (the iPod's Sound Check), the audio cache */
+  eq: string;
+  quality: (typeof QUALITY_OPTS)[number];
+  normalise: boolean;
+  audioCache: boolean;
   /** the clock shows remaining (-m:ss) instead of elapsed */
   remaining?: boolean;
   taskPane?: boolean;
@@ -41,7 +52,7 @@ export interface Settings {
 
 export const DEFAULTS: Settings = {
   fps: 60, scale: 'original', intended: false, bg: 0x000000, smoothing: 0, debug: false,
-  vis: 'alchemy', preset: 0, advanced: false, animate: true, volume: 100, muted: false, lyrics: true, karaoke: true, crossfade: 0, skin: 'wmp9', detailsPane: true, libraryView: 'details',
+  vis: 'alchemy', preset: 0, advanced: false, animate: true, volume: 100, muted: false, lyrics: true, karaoke: true, crossfade: 0, eq: 'off', quality: 160, normalise: false, audioCache: true, skin: 'wmp9', detailsPane: true, libraryView: 'details',
 };
 
 const clamp = (v: number, lo: number, hi: number) => (v < lo ? lo : v > hi ? hi : v);
@@ -65,6 +76,10 @@ export function normalize(raw: Record<string, unknown>, firstRun = false): Setti
   s.lyrics = s.lyrics !== false;
   s.karaoke = s.karaoke !== false;
   s.crossfade = clamp(Math.round(+s.crossfade || 0), 0, 12);
+  s.eq = eqPreset(String(s.eq)).id;
+  s.quality = QUALITY_OPTS.includes(s.quality) ? s.quality : DEFAULTS.quality;
+  s.normalise = s.normalise === true;
+  s.audioCache = s.audioCache !== false;
   if (typeof s.skin !== 'string' || !s.skin) s.skin = DEFAULTS.skin;
   s.detailsPane = s.detailsPane !== false;
   s.libraryView = s.libraryView === 'tiles' ? 'tiles' : 'details';

@@ -36,6 +36,8 @@ export interface Track {
   discNumber?: number;
   /** a playlist row's item uid (removeFromPlaylist needs it) */
   uid?: string;
+  /** a podcast episode Spotify says is not started yet (the iPod's blue dot); absent when it does not say */
+  unplayed?: boolean;
 }
 
 /** A playlist or album row (libraryV3, search, artist albums). */

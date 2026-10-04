@@ -369,7 +369,7 @@ describe('3a. the host speaker away and back (the app suspended while paused)', 
 
 describe('3c. the host\'s own player (CONTRACT v10: alchemyPlayer, __wmpPlayer)', () => {
   const SPK = { id: 'spk1', name: 'WMP Spotify (iOS)' };
-  const FADE0 = 'crossfade:0';                                        // the setting, sent to the host's player at the adapter's start
+  const SOUND0 = ['crossfade:0', 'eq:[0,0,0,0,0,0,0,0,0,0]', 'quality:160', 'normalise:0', 'cache:1'];   // the sound settings, sent to the host's player at the adapter's start
   const HP = (o: Record<string, unknown> = {}) => ({ v: 1, active: true, playing: true, uri: FX.playerState.track.uri, title: 'Wish I Knew You',
     artist: 'The Revivalists', album: 'Men Amongst Mountains', art: 'https://i.scdn.co/image/ab67616d00001e02c5214ee5d4300598a8a95264',
     duration: 274140, position: 10_000, at: T0 - 2000, shuffle: false, repeat: 'off', ...o });
@@ -413,7 +413,7 @@ describe('3c. the host\'s own player (CONTRACT v10: alchemyPlayer, __wmpPlayer)'
     env.C.cycleRepeat(); await settle();                              // repeat context: track
     env.C.cycleRepeat(); await settle();
     env.C.stop(); await settle();
-    expect(h.sent).toEqual([FADE0, 'pause', 'play', 'next', 'prev', 'seek:60000',
+    expect(h.sent).toEqual([...SOUND0, 'pause', 'play', 'next', 'prev', 'seek:60000',
       'load:{"context":"' + PL + '","track":"spotify:track:0gEyKnHvgkrkBM6fbeHdwK","shuffle":null,"position":0}',
       'load:{"context":"spotify:playlist:shelf","track":null,"shuffle":null,"position":0}',
       'shuffle:0', 'shuffle:1',
@@ -430,12 +430,12 @@ describe('3c. the host\'s own player (CONTRACT v10: alchemyPlayer, __wmpPlayer)'
     await settle();
     expect(env.S.playback.status).toBe('paused');                    // the cluster's memory of the last session
     void env.C.playPause(); await settle();
-    expect(h.sent).toEqual([FADE0, 'play']);
+    expect(h.sent).toEqual([...SOUND0, 'play']);
     void env.C.next(); void env.C.seek(5000); await settle();
-    expect(h.sent).toEqual([FADE0, 'play', 'take']);                  // one take for both
+    expect(h.sent).toEqual([...SOUND0, 'play', 'take']);                  // one take for both
     report(env, { active: true, playing: true });
     await settle();
-    expect(h.sent).toEqual([FADE0, 'play', 'take', 'next', 'seek:5000']);
+    expect(h.sent).toEqual([...SOUND0, 'play', 'take', 'next', 'seek:5000']);
     expect(cloud(env)).toEqual([]);                                   // no transfer first, no resume through the cloud
   });
 
@@ -452,7 +452,7 @@ describe('3c. the host\'s own player (CONTRACT v10: alchemyPlayer, __wmpPlayer)'
     env.C.cycleRepeat(); await settle();
     expect(env.cmds().map((c) => c.endpoint)).toEqual(['pause', 'skip_next', 'seek_to', 'play', 'set_shuffling_context', 'set_options']);
     expect(env.calls.filter((c) => /player\/command/.test(c.url)).every((c) => c.url.endsWith('/to/' + FX.activeDeviceId))).toBe(true);
-    expect(h.sent).toEqual([FADE0]);                                  // the setting only
+    expect(h.sent).toEqual(SOUND0);                                   // the settings only
   });
 
   it('the playback follows __wmpPlayer while it is in charge: paused at its position, playing on from its `at`, its track; the context and restrictions stay the cluster\'s', async () => {
@@ -520,7 +520,7 @@ describe('3c. the host\'s own player (CONTRACT v10: alchemyPlayer, __wmpPlayer)'
     await settle();
     expect([env.S.playback.status, env.S.playback.position]).toEqual(['paused', 4935]);
     void env.C.next(); await settle();                                // no report to wait on: sent at once
-    expect(h.sent).toEqual([FADE0, 'next']);
+    expect(h.sent).toEqual([...SOUND0, 'next']);
     expect(cloud(env)).toEqual([]);
   });
 
@@ -534,7 +534,7 @@ describe('3c. the host\'s own player (CONTRACT v10: alchemyPlayer, __wmpPlayer)'
     env.fire('wmp-spotify-devices', []); await settle();                     // the connection dropped
     env.fire('wmp-spotify-devices', [{ ...spk, active: false }]); await settle();   // back, idle
     env.fire('wmp-spotify-devices', [{ ...spk, active: false }]); await settle();
-    expect(h.sent).toEqual([FADE0, 'play']);
+    expect(h.sent).toEqual([...SOUND0, 'play']);
     expect(cloud(env)).toEqual([]);
     // this page's own player active (hidden, heard by nothing): a Connect transfer to the speaker, as before
     vi.setSystemTime(T0 + 60_000);
@@ -548,11 +548,12 @@ describe('3c. the host\'s own player (CONTRACT v10: alchemyPlayer, __wmpPlayer)'
     const env = boot({ loggedIn: true }, { crossfade: 5 });
     env.start();
     await settle();
-    expect([h.sent, env.S.auth.canCrossfade]).toEqual([['crossfade:5'], true]);
+    const fades = () => h.sent.filter((c) => c.startsWith('crossfade:'));   // the other sound settings: tests/adapters/sound.test.ts
+    expect([fades(), env.S.auth.hostPlayer]).toEqual([['crossfade:5'], true]);
     env.S.actions.setSettings({ crossfade: 0 });
     env.S.actions.setSettings({ volume: 40 });                       // another setting: nothing more
     env.S.actions.setSettings({ crossfade: 12 });
-    expect(h.sent).toEqual(['crossfade:5', 'crossfade:0', 'crossfade:12']);
+    expect(fades()).toEqual(['crossfade:5', 'crossfade:0', 'crossfade:12']);
     expect(h.log).toContain("spotify: crossfade:12 to the host's player");
     stops.forEach((s) => s()); stops = [];
     vi.unstubAllGlobals();
@@ -562,7 +563,7 @@ describe('3c. the host\'s own player (CONTRACT v10: alchemyPlayer, __wmpPlayer)'
     web.start();
     await settle();
     web.S.actions.setSettings({ crossfade: 8 });
-    expect([web.S.auth.canCrossfade, log.filter((l) => l.includes('crossfade'))]).toEqual([false, []]);
+    expect([web.S.auth.hostPlayer, log.filter((l) => l.includes('crossfade'))]).toEqual([false, []]);
   });
 });
 
