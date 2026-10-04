@@ -237,19 +237,40 @@ fn load_request(json: &str, shuffle: bool, repeat: (bool, bool)) -> Option<(Stri
 
 // The playback Spotify remembers, taken over to this device (Spirc::transfer(None)), and to play, a
 // resume once it has landed in case it comes back paused (the "resume" command, Spirc's own play).
-fn take(s: &Spirc, resume: bool) -> Result<(), librespot_core::Error> {
-    let done = s.transfer(None);
-    if let (true, Some(tx)) = (resume, lock(&COMMANDS).as_ref().cloned()) {
-        tokio::spawn(async move {
-            tokio::time::sleep(Duration::from_secs(4)).await;
-            let _ = tx.send("resume".into());
-        });
+// The playback taken over (Spotify's transfer to this device), the request sent from a task of its own.
+// Spirc::transfer awaits it inside Spirc's own loop, and the server first asks this very device for its
+// state: Spirc could not answer while it waited, so every play from idle sat 3 s until the server gave up
+// (410 Gone) and handed it over anyway; sent from elsewhere it is answered in 0.2-0.4 s (measured on the
+// desktop harness, 2026-10-04: "when i hit play it takes a second to start"). Spirc's own way if it fails.
+fn transfer(session: &Session) {
+    let (session, tx) = (session.clone(), lock(&COMMANDS).as_ref().cloned());
+    tokio::spawn(async move {
+        let id = session.device_id().to_owned();
+        if let Err(e) = session.spclient().transfer(&id, &id, None).await {
+            say(&format!("librespot: transfer: {e}: through Spirc instead"));
+            if let Some(tx) = tx {
+                let _ = tx.send("transfer".into());
+            }
+        }
+    });
+}
+
+// A take-over, with what is to follow it (`after`): a play ("resume", Spirc's own: nothing unless paused)
+// once the handed-over track has loaded, skips once its queue is in place too ("settled"). One transfer for
+// all asked within 15 s.
+fn take_over(session: &Session, taking: &mut Option<Instant>, after: &mut Vec<String>, resume: bool) -> Result<(), librespot_core::Error> {
+    if resume && !after.iter().any(|c| c == "resume") {
+        after.insert(0, "resume".into());
     }
-    done
+    if !taking.is_some_and(|t| t.elapsed() < Duration::from_secs(15)) {
+        *taking = Some(Instant::now());
+        transfer(session);
+    }
+    Ok(())
 }
 
 // librespot's own log (info and up) into the app's log: its errors are the only word on why a
-// connect failed.
+// connect failed. And one debug line read as a signal: Spirc's queue set up after a take-over (below).
 struct Forward;
 
 impl log::Log for Forward {
@@ -258,6 +279,16 @@ impl log::Log for Forward {
     }
 
     fn log(&self, r: &log::Record) {
+        // A transfer's queue in place (state/transfer.rs, once the context is resolved): the skips that
+        // waited for it can go ("settled"). Spirc says so nowhere else: no event, nothing public.
+        if r.level() == log::Level::Debug && r.target().starts_with("librespot_connect::state") {
+            if r.args().to_string().starts_with("setting up next and prev") {
+                if let Some(tx) = lock(&COMMANDS).as_ref() {
+                    let _ = tx.send("settled".into());
+                }
+            }
+            return;
+        }
         if !self.enabled(r.metadata()) {
             return;
         }
@@ -387,7 +418,7 @@ pub unsafe extern "C" fn wmp_ls_start(
         ctx: ctx as usize,
     });
     if log::set_logger(&Forward).is_ok() {
-        log::set_max_level(log::LevelFilter::Info);
+        log::set_max_level(log::LevelFilter::Debug); // for Forward's signal; the rest stays info and up
     }
     let (tx, rx) = oneshot::channel();
     let (token_tx, tokens) = mpsc::unbounded_channel();
@@ -572,7 +603,7 @@ async fn run(
     // not always there to do it (2026-10-03). Also after a rebuild (below), playing or paused as it was:
     // (when, to play).
     let mut lost: Option<(Instant, bool)> = None;
-    let mut after: Vec<String> = Vec::new(); // skips asked for before the taken playback is here: done once it is
+    let mut after: Vec<String> = Vec::new(); // a play and skips asked for before the taken playback is here: done once it is
     let mut taking: Option<Instant> = None; // the playback is being taken: until its track has loaded
     // A change of quality, normalisation or the cache (sound.rs), which librespot takes only into a new
     // player (its PlayerConfig is fixed at Player::new) and a new session (the Cache is fixed at
@@ -654,7 +685,13 @@ async fn run(
                             } else {
                                 "librespot: the last session ended under a paused song: taking the playback back, paused"
                             });
-                            if let Err(e) = take(&s, resume) {
+                            // Spirc's own transfer here: the device is not registered until its connection is
+                            // (Spirc holds commands till then); the play once the track has loaded, as any take's
+                            taking = Some(Instant::now());
+                            if resume {
+                                after.insert(0, "resume".into());
+                            }
+                            if let Err(e) = s.transfer(None) {
                                 say(&format!("librespot: transfer failed: {e}"));
                             }
                         }
@@ -844,26 +881,40 @@ async fn run(
                 let active = hp.active;
                 let settling = taking.is_some_and(|t| t.elapsed() < Duration::from_secs(15));
                 let done = match c.as_str() {
-                    "play" => if !active { taking = Some(Instant::now()); take(s, true) } else if playing { Ok(()) } else { play(s) },
+                    "play" => if !active { take_over(&session, &mut taking, &mut after, true) } else if playing { Ok(()) } else { play(s) },
                     "resume" => s.play(), // Spirc's own: nothing unless it is paused (after a take)
-                    "pause" => if playing { pause(s) } else { Ok(()) },
-                    "toggle" => if playing { pause(s) } else if active { play(s) } else { taking = Some(Instant::now()); take(s, true) },
+                    // and a play still waiting on a take-over is called off
+                    "pause" => { after.retain(|c| c != "resume"); if playing { pause(s) } else { Ok(()) } }
+                    "toggle" => if playing { pause(s) } else if active { play(s) } else { take_over(&session, &mut taking, &mut after, true) },
                     // A skip while it is not the active device: the playback is taken first and the skip
                     // done once it is here (Spirc drops it otherwise: from Control Center, after the app
                     // had been suspended, it did nothing). And a skip while paused plays, as in Spotify's
                     // own apps.
                     // The same while a take is still under way (the page takes, then skips the moment
-                    // the speaker is active: Spirc has no queue until the handed-over track has loaded).
+                    // the speaker is active: Spirc has no queue until the context is resolved, "settled").
                     "next" | "prev" if !active || settling => {
                         after.push(c.clone());
-                        if settling { Ok(()) } else { taking = Some(Instant::now()); take(s, false) }
+                        take_over(&session, &mut taking, &mut after, false)
                     }
                     // Play after it whatever the player was doing: Spirc loads the next track as *it*
                     // believes it was (paused, though the player played: "Use Me" loaded paused after a
                     // skip, 2026-10-04), and a play is nothing to it once it plays.
                     "next" => s.next().and_then(|_| s.play()),
                     "prev" => s.prev().and_then(|_| s.play()),
-                    "take" => if active || settling { Ok(()) } else { taking = Some(Instant::now()); take(s, false) },
+                    "take" => if active && !settling { Ok(()) } else { take_over(&session, &mut taking, &mut after, false) },
+                    "transfer" => s.transfer(None), // take_over's request failed: Spirc's own
+                    // the taken-over queue in place (Forward), or two seconds after the track came at the
+                    // latest: whatever waited on the take-over goes, in order
+                    "settled" => {
+                        if taking.take().is_some() {
+                            if let Some(tx) = lock(&COMMANDS).as_ref() {
+                                for c in after.drain(..) {
+                                    let _ = tx.send(c);
+                                }
+                            }
+                        }
+                        Ok(())
+                    }
                     "shuffle:0" | "shuffle:1" => s.shuffle(c == "shuffle:1"),
                     // Track is context and track, as Spotify's own clients set it.
                     "repeat:off" => s.repeat(false).and_then(|_| s.repeat_track(false)),
@@ -914,17 +965,16 @@ async fn run(
                 PlayerEvent::TrackChanged { audio_item } => {
                     hp.loading = None;
                     ended = false;
-                    // The skip that waited for the playback to be here (asked within fifteen seconds): now
-                    // that the handed-over track has loaded, and a moment later, Spirc having its queue
-                    // (at the activation itself it had none yet: "no more tracks left in queue", measured
-                    // on the desktop harness).
-                    let skips = std::mem::take(&mut after);
-                    if let (true, Some(tx)) = (taking.take().is_some_and(|t| t.elapsed() < Duration::from_secs(15)), lock(&COMMANDS).as_ref().cloned()) {
+                    // A take-over's track has loaded: its play now. Its skips wait for the queue ("settled":
+                    // at the activation, and with a fast load at the track too, Spirc had none yet: "no more
+                    // tracks left in queue", measured on the desktop harness), two seconds at most.
+                    if let (true, Some(tx)) = (taking.is_some_and(|t| t.elapsed() < Duration::from_secs(15)), lock(&COMMANDS).as_ref().cloned()) {
+                        if let Some(i) = after.iter().position(|c| c == "resume") {
+                            let _ = tx.send(after.remove(i));
+                        }
                         tokio::spawn(async move {
-                            for c in skips {
-                                tokio::time::sleep(Duration::from_millis(400)).await;
-                                let _ = tx.send(c);
-                            }
+                            tokio::time::sleep(Duration::from_secs(2)).await;
+                            let _ = tx.send("settled".into());
                         });
                     }
                     fresh = true;
