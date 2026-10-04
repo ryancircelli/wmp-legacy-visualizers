@@ -349,6 +349,59 @@ with the next one preloaded. No pairing, no prompt.
 and rodio, built for aarch64-apple-ios) is the only iOS build of librespot found. Its author opened
 #1477. No iOS Connect receiver built on librespot was found, nor any other open-source one.
 
+## Testing on a desktop
+
+`ios/librespot/examples/harness.rs` runs the speaker on Linux (WSL2 too) behind the same C ABI the app
+calls, as "WMP Spotify (harness)", a Connect device of its own. It writes the PCM to a WAV and prints
+every callback as a line. It compiles `src/lib.rs` in as a module, so `Cargo.toml` and `build.sh` are
+untouched (an rlib crate type would turn off the iPhone build's LTO).
+
+```sh
+cd ios/librespot
+export PATH=$HOME/.cargo/bin:$PATH PKG_CONFIG_PATH=$PWD/pkgconfig PKG_CONFIG_ALLOW_CROSS=1
+cargo build --example harness
+./target/debug/examples/harness --token-file token.json --out run.wav --script test.txt | tee run.log
+```
+
+- **Login.** As in the app, every connect needs the web player's access token, client id and client
+  token: `--token-file` with `{"accessToken": ..., "clientId": ..., "clientToken": ...}`
+  (open.spotify.com/api/token's two fields, plus the `client-token` header of the web player's requests),
+  or `--token`, `--client-id` and `--client-token`, which show in `ps`. A token lasts an hour, and
+  `token <file>` hands in a fresh one mid-run. The credentials a session caches in `--cache`
+  (default `target/harness-cache`, which git ignores) are used for later logins, but the speaker still
+  waits for a token before it connects. Nothing prints a token. Zeroconf is stubbed out: there is no
+  `libdns_sd` here, and WSL2's NAT keeps mDNS off the LAN anyway. `discovery failed` is expected.
+- **Commands**, one per line, from `--script` and then stdin (end of input quits; `#` lines are skipped).
+  Anything `wmp_ls_command` takes goes through as it is. The harness adds `wait <s>`, `mark <text>`,
+  `token <file>` and `quit`. `sound.json` in the cache dir keeps an `eq:` across runs, as on the phone;
+  `eq:off` clears it.
+- **Output.** Each line is `<seconds> <frame> <kind> <text>`. The kind is `log`, `state`, `np`,
+  `player` (the JSON as it is), `pcm` (`started`, `sink stopped`), `cmd`, `mark` or `harness`, and frame
+  is how many frames the WAV held at that moment, so every event finds its audio. The WAV is 16-bit
+  stereo 44.1 kHz, converted the way the app converts the int16 it hands the page. Its header is kept
+  current, so a killed run still opens.
+- **Pacing.** By default the `pcm` callback blocks while half a second is queued, as App.swift's does
+  in the foreground, so librespot and the crossfade queue get the phone's back-pressure. `harness: ran
+  dry` marks where the phone would have gone silent. `--fast` skips the pacing, which suits EQ captures
+  and command flows. Under `--fast` the crossfade never fades (its queue fills only against a host that
+  blocks, so every boundary logs `too little queued, gapless`), and positions and timings mean nothing,
+  since playback runs ahead of the clock.
+- **Analysis.** `examples/analyse.py` (Python 3 standard library, numpy when installed) reads `run.wav`
+  and `run.log` side by side. `crossfade run.wav` reports, for each `crossfade over L s` boundary, RMS
+  and peak in 0.5 s windows from 2 s before to 2 s after, with a verdict: a gap (silence in the fade),
+  a doubling (over 2 dB above both sides), clipping. `bands run.wav flat+10 bass+10` gives the ten bands'
+  levels over each range (the start is in seconds or is a mark's text) and their differences. A boost
+  brings the preamp, so Bass Booster (`eq:[5.5,4.25,3.5,2.5,1.25,0,0,0,0,0]`) shows as the low bands up
+  and the rest down by the preamp. To compare the same passage, `seek:` to the same place both times
+  and `mark` a few seconds after each seek. `selftest` runs both on synthetic audio and checks them.
+
+All of the crate's Rust is the code that runs on the phone: the session, the token bypass, Spirc, the
+commands, the player events, the crossfade, the equalizer, the sound settings with their rebuild, and
+the JSON to the host. None of the Swift is: AVAudioEngine (whose half-second queue is only modelled
+here; the phone's background queue is two seconds), the audio session and its interruptions,
+backgrounding and the network loss when the phone locks, Control Center, and the page. Zeroconf goes
+untested, and the build is a debug x86_64 one, not the phone's release aarch64 build.
+
 ## Building
 
 No Xcode project is checked in. `ios/project.yml` is an [XcodeGen](https://github.com/yonaskolb/XcodeGen)
