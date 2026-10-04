@@ -11,6 +11,12 @@
 //! nothing written after it, then a TrackChanged, is a natural end (the decoder ran off the track and
 //! the player went on); a TrackChanged without one (a skip, a load, a transfer), a Seeked or a Stopped
 //! makes what is queued stale: it is dropped, so the new audio is heard at once.
+//!
+//! What the app is told switches to the next track at the fade's midpoint, not as the next track's
+//! first samples come in under the old one's (the owner, 2026-10-03: "at 8 second fade it should be 4
+//! of song before and 4 of song after / and ui should switch at the original point of the song end
+//! (halfway through fade)"). The sink records where that is in the stream (`Switch`); lib.rs holds
+//! the new track's reports until the pump has handed it over (`Verdict`), so a pause holds them too.
 
 use std::{
     collections::VecDeque,
@@ -24,6 +30,7 @@ use std::{
 };
 
 use librespot_playback::player::{PlayerEvent, PlayerEventChannel};
+use tokio::sync::Notify;
 
 /// Samples a second: 44100 Hz, interleaved stereo.
 const SPS: usize = 44100 * 2;
@@ -141,6 +148,7 @@ pub struct Marks {
     ended: bool, // EndOfTrack, nothing written since: the decoder ran off the track's end
     asked: bool, // a load asked for since (PlayRequestIdChanged)
     next: Next,
+    tracks: u64, // TrackChanged events so far: lib.rs counts the same ones
 }
 
 impl Marks {
@@ -151,6 +159,7 @@ impl Marks {
             PlayerEvent::TrackChanged { .. } => {
                 self.next = if self.ended && self.next != Next::Flush { Next::Mix } else { Next::Flush };
                 self.ended = false;
+                self.tracks += 1;
             }
             PlayerEvent::Seeked { .. } | PlayerEvent::Stopped { .. } => (self.next, self.ended) = (Next::Flush, false),
             _ => {}
@@ -168,6 +177,60 @@ impl Marks {
     }
 }
 
+/// Where the app's reports switch to the track a crossfade brings in: the fade's window in the stream
+/// (the old track's tail it was mixed into) and the track change's number (Marks::tracks).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Switch {
+    track: u64,
+    start: u64,
+    len: usize,
+}
+
+impl Switch {
+    /// The midpoint, on a frame.
+    fn at(&self) -> u64 {
+        self.start + (self.len / 4 * 2) as u64
+    }
+}
+
+/// What lib.rs does with its `k`th track change, held while a crossfade may be bringing it in.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Verdict {
+    /// The sink has not acted on it yet (within milliseconds at a natural end).
+    Wait,
+    /// The fade's first half: the old track still shown, this much of it left to hear.
+    Hold { old_left_ms: u32, new_ms: u32 },
+    /// Shown now, at the new track's heard position (0 when it was not crossfaded).
+    Now { new_ms: u32 },
+}
+
+impl Verdict {
+    /// The new track's heard position, to show it at if it is let go early.
+    pub fn new_ms(self) -> u32 {
+        match self {
+            Verdict::Wait => 0,
+            Verdict::Hold { new_ms, .. } | Verdict::Now { new_ms } => new_ms,
+        }
+    }
+}
+
+/// The verdict, given the track changes the sink has acted on, its last switch and the queue's head.
+fn verdict(applied: u64, switch: Option<Switch>, head: u64, k: u64) -> Verdict {
+    if applied < k {
+        return Verdict::Wait;
+    }
+    match switch.filter(|s| s.track == k) {
+        Some(s) => {
+            let new_ms = ms(head.saturating_sub(s.start) as usize);
+            match head < s.at() {
+                true => Verdict::Hold { old_left_ms: ms((s.start + s.len as u64).saturating_sub(head) as usize), new_ms },
+                false => Verdict::Now { new_ms },
+            }
+        }
+        None => Verdict::Now { new_ms: 0 },
+    }
+}
+
 /// The pump's side of the queue, shared with the sink (librespot's player thread) and lib.rs (the
 /// positions it reports).
 #[derive(Default)]
@@ -175,6 +238,9 @@ pub struct Pump {
     state: Mutex<State>,
     cv: Condvar,
     events: Mutex<Option<PlayerEventChannel>>, // the sink's own channel, until the sink takes it
+    /// lib.rs's wake-up for a held track change: the sink has acted on one, or a fade's midpoint was
+    /// handed over.
+    pub wake: Notify,
 }
 
 #[derive(Default)]
@@ -183,7 +249,9 @@ struct State {
     run: Run,
     owed: bool, // samples handed over since the last stop: the host is owed one
     quit: bool,
-    held: usize, // the lead when the sink last stopped
+    held: usize,            // the lead when the sink last stopped
+    applied: u64,           // the track changes the sink has acted on (Marks::tracks)
+    switch: Option<Switch>, // the last crossfade's
 }
 
 #[derive(Default, Clone, Copy, PartialEq)]
@@ -217,6 +285,12 @@ impl Pump {
     pub fn held_ms(&self) -> u32 {
         ms(self.lock().held)
     }
+
+    /// What to do with lib.rs's `k`th track change (it counts them as Marks does).
+    pub fn verdict(&self, k: u64) -> Verdict {
+        let g = self.lock();
+        verdict(g.applied, g.switch, g.fifo.head, k)
+    }
 }
 
 /// The host's pcm callback: samples, or None for "the sink stopped".
@@ -233,7 +307,12 @@ fn pump(p: Arc<Pump>, hand: Hand) {
         } else if g.quit {
             break;
         } else if g.run != Run::Hold && !g.fifo.buf.is_empty() {
-            Some(g.fifo.pop(CHUNK))
+            let before = g.fifo.head;
+            let c = g.fifo.pop(CHUNK);
+            if g.switch.is_some_and(|s| before < s.at() && g.fifo.head >= s.at()) {
+                p.wake.notify_one(); // the fade's midpoint: the held track is shown
+            }
+            Some(c)
         } else {
             g = p.cv.wait(g).unwrap_or_else(PoisonError::into_inner);
             continue;
@@ -246,19 +325,30 @@ fn pump(p: Arc<Pump>, hand: Hand) {
     }
 }
 
-// What the events said, done to the queue at once (a stale queue is never heard); a crossfade's line
-// for the log, said once the lock is let go.
-fn apply(next: Next, fifo: &mut Fifo) -> Option<String> {
+// What the events said, done to the queue at once (a stale queue is never heard), and where the reports
+// switch for a crossfade (`track`: the change's number); a crossfade's line for the log, said once the
+// lock is let go.
+fn apply(next: Next, st: &mut State, track: u64) -> Option<String> {
     match next {
         Next::Append => None,
         Next::Flush => {
-            fifo.flush();
+            st.fifo.flush();
+            st.switch = None;
             None
         }
-        Next::Mix => Some(match fifo.boundary() {
-            0 => "librespot: crossfade: too little queued, gapless".into(),
-            n => format!("librespot: crossfade over {:.1} s", n as f32 / SPS as f32),
-        }),
+        Next::Mix => {
+            let start = st.fifo.head;
+            Some(match st.fifo.boundary() {
+                0 => {
+                    st.switch = None;
+                    "librespot: crossfade: too little queued, gapless".into()
+                }
+                len => {
+                    st.switch = Some(Switch { track, start, len });
+                    format!("librespot: crossfade over {:.1} s", len as f32 / SPS as f32)
+                }
+            })
+        }
     }
 }
 
@@ -270,11 +360,26 @@ pub struct Feed {
     thread: Option<JoinHandle<()>>, // the pump, while there is a queue
     hand: Hand,
     say: Say,
+    told: u64, // the track changes lib.rs was last told the sink has acted on
 }
 
 impl Feed {
     pub fn new(pump: Arc<Pump>, hand: Hand, say: Say) -> Self {
-        Feed { pump, events: None, marks: Marks::default(), thread: None, hand, say }
+        Feed { pump, events: None, marks: Marks::default(), thread: None, hand, say, told: 0 }
+    }
+
+    // The track changes acted on, to lib.rs (State::applied, then its wake-up): only when there are new
+    // ones, so off the lock costs nothing per packet. With `g`, under the lock already held.
+    fn tell(&mut self, g: Option<&mut State>) {
+        if self.marks.tracks == self.told {
+            return;
+        }
+        self.told = self.marks.tracks;
+        match g {
+            Some(g) => g.applied = self.told,
+            None => self.pump.lock().applied = self.told,
+        }
+        self.pump.wake.notify_one();
     }
 
     fn drain(&mut self) {
@@ -292,6 +397,7 @@ impl Feed {
         if self.thread.is_none() {
             self.marks.take(); // no queue to act on
             self.marks.ended = false;
+            self.tell(None);
             if secs == 0 {
                 (self.hand)(Some(s));
                 return;
@@ -309,14 +415,15 @@ impl Feed {
             }
         }
         let max = secs * SPS;
-        let mut g = self.pump.lock();
-        let line = apply(self.marks.take(), &mut g.fifo);
+        let pump = self.pump.clone();
+        let mut g = pump.lock();
+        let line = apply(self.marks.take(), &mut g, self.marks.tracks);
+        self.tell(Some(&mut g));
         self.marks.ended = false;
         g.fifo.push(s);
         g.run = Run::Play;
-        self.pump.cv.notify_all();
-        let (g, _) = self
-            .pump
+        pump.cv.notify_all();
+        let (g, _) = pump
             .cv
             .wait_timeout_while(g, WAIT, |st| st.fifo.lead() > max)
             .unwrap_or_else(PoisonError::into_inner);
@@ -334,14 +441,17 @@ impl Feed {
     pub fn stop(&mut self) {
         self.drain();
         if self.thread.is_none() {
+            self.tell(None);
             (self.hand)(None);
             return;
         }
-        let mut g = self.pump.lock();
-        let line = apply(self.marks.take(), &mut g.fifo);
+        let pump = self.pump.clone();
+        let mut g = pump.lock();
+        let line = apply(self.marks.take(), &mut g, self.marks.tracks);
+        self.tell(Some(&mut g));
         g.run = if self.marks.ran_out() { Run::PlayOut } else { Run::Hold };
         g.held = g.fifo.lead();
-        self.pump.cv.notify_all();
+        pump.cv.notify_all();
         drop(g);
         if let Some(l) = line {
             (self.say)(&l);
@@ -566,5 +676,74 @@ mod tests {
         feed.write(&vec![70.0; CHUNK]);
         assert_eq!(heard()[heard().len() - 2 * CHUNK..], packets(60..61).into_iter().chain(packets(70..71)).collect::<Vec<_>>()[..]);
         assert_eq!((p.lead_ms(), stops()), (0, 1));
+    }
+
+    #[test]
+    fn the_display_switches_at_the_fade_s_midpoint_and_a_pause_holds_it() {
+        let mut st = State::default();
+        st.fifo.push(&vec![1.0; 9 * S]);
+        st.fifo.pop(S); // 8 s of the old track queued, the head a second in
+        apply(Next::Mix, &mut st, 3); // the third track change, crossfaded over 8 s
+        let v = |st: &State, k| verdict(st.applied, st.switch, st.fifo.head, k);
+        assert_eq!(v(&st, 3), Verdict::Wait); // not told yet that the sink acted on it
+        st.applied = 3;
+        assert_eq!(v(&st, 3), Verdict::Hold { old_left_ms: 8000, new_ms: 0 });
+        st.fifo.push(&vec![0.0; 8 * S]); // the new track, mixed in
+        st.fifo.pop(2 * S); // 2 s heard; then a pause: nothing handed over, nothing moves
+        assert_eq!(v(&st, 3), Verdict::Hold { old_left_ms: 6000, new_ms: 2000 });
+        assert_eq!(v(&st, 3), Verdict::Hold { old_left_ms: 6000, new_ms: 2000 });
+        st.fifo.pop(2 * S - 2); // resumed, a frame short of the midpoint
+        assert!(matches!(v(&st, 3), Verdict::Hold { .. }));
+        st.fifo.pop(2);
+        assert_eq!(v(&st, 3), Verdict::Now { new_ms: 4000 }); // 4 s of song before, 4 s after
+        assert_eq!(v(&st, 2), Verdict::Now { new_ms: 0 }); // any other change: shown at once
+        assert_eq!(Verdict::Hold { old_left_ms: 1, new_ms: 7 }.new_ms(), 7); // let go early: where it is
+    }
+
+    #[test]
+    fn a_flush_or_a_gapless_end_holds_nothing() {
+        let mut st = State { applied: 2, ..Default::default() };
+        st.fifo.push(&vec![1.0; 4 * S]);
+        apply(Next::Mix, &mut st, 1);
+        assert!(matches!(verdict(1, st.switch, st.fifo.head, 1), Verdict::Hold { .. }));
+        apply(Next::Flush, &mut st, 1); // a seek, a skip, a load, a stop
+        assert_eq!(verdict(1, st.switch, st.fifo.head, 1), Verdict::Now { new_ms: 0 });
+        st.fifo.push(&vec![1.0; MIN_FADE - 2]);
+        apply(Next::Mix, &mut st, 2); // too little queued: gapless
+        assert_eq!(verdict(2, st.switch, st.fifo.head, 2), Verdict::Now { new_ms: 0 });
+    }
+
+    #[test]
+    fn the_pump_wakes_lib_rs_at_the_midpoint() {
+        use std::sync::atomic::AtomicBool;
+        let _one = SERIAL.lock().unwrap_or_else(PoisonError::into_inner);
+        static OPEN: AtomicBool = AtomicBool::new(false);
+        fn hand(_: Option<&[f32]>) {
+            while !OPEN.load(Relaxed) {
+                std::thread::sleep(Duration::from_millis(1));
+            }
+            std::thread::sleep(Duration::from_millis(1)); // a host faster than real time, not instant
+        }
+        let rt = tokio::runtime::Builder::new_current_thread().enable_time().build().unwrap();
+        let woken = |p: &Pump, ms: u64| rt.block_on(async { tokio::time::timeout(Duration::from_millis(ms), p.wake.notified()).await.is_ok() });
+        SECS.store(1, Relaxed);
+        let p = Arc::new(Pump::default());
+        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+        p.listen(rx);
+        let mut feed = Feed::new(p.clone(), hand, |_| {});
+        (0..20).for_each(|_| feed.write(&[1.0; CHUNK])); // 0.93 s of the old track; the pump holds one chunk
+        let t = || librespot_core::SpotifyUri::from_uri("spotify:track:4uLU6hMCjMI75M1A2tKUQC").unwrap();
+        tx.send(PlayerEvent::EndOfTrack { play_request_id: 1, track_id: t() }).unwrap();
+        tx.send(PlayerEvent::PlayRequestIdChanged { play_request_id: 2 }).unwrap();
+        tx.send(PlayerEvent::TrackChanged { audio_item: Box::new(item()) }).unwrap();
+        feed.write(&[0.0; CHUNK]); // the new track's first: the boundary
+        assert!(matches!(p.verdict(1), Verdict::Hold { new_ms: 0, .. }), "{:?}", p.verdict(1));
+        assert!(woken(&p, 50)); // told the sink acted on it
+        (0..20).for_each(|_| feed.write(&[0.0; CHUNK]));
+        OPEN.store(true, Relaxed);
+        assert!(woken(&p, 2000)); // the midpoint handed over
+        let Verdict::Now { new_ms } = p.verdict(1) else { panic!("{:?}", p.verdict(1)) };
+        let half = ms(19 * CHUNK) / 2; // the window: what was queued behind the chunk in the host's hands
+        assert!((half..half + 2 * ms(CHUNK)).contains(&new_ms), "{new_ms} vs {half}");
     }
 }

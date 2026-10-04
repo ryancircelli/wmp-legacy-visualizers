@@ -5,6 +5,8 @@
 
 mod crossfade;
 
+use crossfade::Verdict;
+
 use std::{
     ffi::{CStr, CString, c_char, c_void},
     future::Future,
@@ -201,6 +203,39 @@ impl HostPlayer {
             self.at,
             self.shuffle,
         )
+    }
+}
+
+// The next track at a crossfade, held to the fade's midpoint (crossfade.rs Verdict; the owner,
+// 2026-10-03: "ui should switch at the original point of the song end (halfway through fade)"): its
+// reports wait, the old track's state standing, until half the fade has been heard.
+struct Held {
+    k: u64, // its track change's number, as the sink counts them (crossfade.rs Marks)
+    track: Track,
+    first: bool,  // its own Playing (or Paused) is still to come
+    played: bool, // its own Playing came: said at the release
+}
+
+// The held track shown, at `position`: what its TrackChanged and Playing would have said.
+fn release(h: Held, track: &mut Track, hp: &mut HostPlayer, playing: bool, position: u32) {
+    *track = h.track;
+    say(&format!("librespot: now playing: {} \u{2014} {}", track.title, track.artist));
+    if h.played {
+        say("librespot: playing");
+    }
+    now_playing(track, playing, position);
+    hp.send(track, playing, Some(position));
+}
+
+// The held track shown once the sink says so (the fade's midpoint heard, or no crossfade after all);
+// with `now`, at once whatever it says (a seek, another track change, the session's end).
+fn settle(held: &mut Option<Held>, fade: &crossfade::Pump, now: bool, track: &mut Track, hp: &mut HostPlayer, playing: bool) {
+    if let Some(h) = held.take() {
+        match fade.verdict(h.k) {
+            Verdict::Now { new_ms } => release(h, track, hp, playing, new_ms),
+            v if now => release(h, track, hp, playing, v.new_ms()),
+            _ => *held = Some(h),
+        }
     }
 }
 
@@ -519,6 +554,9 @@ async fn run(
     // the next Playing: the sink drops its queue at its next write or stop (or the track is new), so the
     // event's own position is the one heard.
     let mut fresh = false;
+    let mut changes = 0u64; // TrackChanged events so far, counted as the sink counts them
+    let mut ended = false; // an EndOfTrack since the last track change, seek or stop: the next may be crossfaded
+    let mut held: Option<Held> = None;
 
     loop {
         tokio::select! {
@@ -624,7 +662,9 @@ async fn run(
                 }
                 state(None);
                 // No Spirc, nothing to command: not the active device, and not playing to the page
-                // (the player may still play out what it has buffered).
+                // (the player may still play out what it has buffered). A track held for a fade's
+                // midpoint is shown first.
+                settle(&mut held, &fade, true, &mut track, &mut hp, playing);
                 hp.active = false;
                 hp.send(&track, false, None);
                 if !session.is_invalid() {
@@ -728,42 +768,90 @@ async fn run(
                     say(&format!("librespot: {c} failed: {e}"));
                 }
             },
-            Some(e) = events.recv() => match e {
+            // A held track's moment: the sink has acted on its change, or the fade's midpoint was heard.
+            _ = fade.wake.notified(), if held.is_some() => settle(&mut held, &fade, false, &mut track, &mut hp, playing),
+            Some(e) = events.recv() => { match e {
                 PlayerEvent::TrackChanged { audio_item } => {
+                    changes += 1;
                     fresh = true;
-                    track = Track::new(&audio_item);
-                    say(&format!("librespot: now playing: {} \u{2014} {}", track.title, track.artist));
-                    now_playing(&track, playing, 0);
-                    hp.send(&track, playing, Some(0));
+                    settle(&mut held, &fade, true, &mut track, &mut hp, playing); // one still held (a very short track): not lost
+                    if std::mem::take(&mut ended) && crossfade::SECS.load(Relaxed) > 0 {
+                        // a natural end with a crossfade set: shown at the fade's midpoint (or at once if
+                        // the sink did not fade it)
+                        held = Some(Held { k: changes, track: Track::new(&audio_item), first: true, played: false });
+                    } else {
+                        track = Track::new(&audio_item);
+                        say(&format!("librespot: now playing: {} \u{2014} {}", track.title, track.artist));
+                        now_playing(&track, playing, 0);
+                        hp.send(&track, playing, Some(0));
+                    }
                 }
                 PlayerEvent::Playing { position_ms, .. } => {
-                    say("librespot: playing");
                     playing = true;
-                    let position_ms = if std::mem::take(&mut fresh) { position_ms } else { position_ms.saturating_sub(fade.held_ms()) };
-                    now_playing(&track, playing, position_ms);
-                    hp.send(&track, playing, Some(position_ms));
+                    let was_fresh = std::mem::take(&mut fresh);
+                    let first = held.as_mut().map(|h| std::mem::replace(&mut h.first, false));
+                    match (first, held.as_ref().map(|h| fade.verdict(h.k))) {
+                        // the held track's own: said at its release
+                        (Some(true), _) => held.iter_mut().for_each(|h| h.played = true),
+                        // a resume in the fade's first half: the old track plays on where it was heard
+                        (_, Some(Verdict::Hold { old_left_ms, .. })) => {
+                            say("librespot: playing");
+                            now_playing(&track, playing, track.duration.saturating_sub(old_left_ms));
+                            hp.send(&track, playing, Some(track.duration.saturating_sub(old_left_ms)));
+                        }
+                        _ => {
+                            settle(&mut held, &fade, true, &mut track, &mut hp, playing);
+                            say("librespot: playing");
+                            let position_ms = if was_fresh { position_ms } else { position_ms.saturating_sub(fade.held_ms()) };
+                            now_playing(&track, playing, position_ms);
+                            hp.send(&track, playing, Some(position_ms));
+                        }
+                    }
                 }
                 PlayerEvent::Paused { position_ms, .. } => {
                     say("librespot: paused");
                     playing = false;
-                    let position_ms = if fresh { position_ms } else { position_ms.saturating_sub(fade.held_ms()) };
-                    now_playing(&track, playing, position_ms);
-                    hp.send(&track, playing, Some(position_ms));
+                    held.iter_mut().for_each(|h| h.first = false);
+                    match held.as_ref().map(|h| fade.verdict(h.k)) {
+                        // in the fade's first half: the old track paused where it was heard (the sink
+                        // holds the queue, so the hold waits with it)
+                        Some(Verdict::Hold { old_left_ms, .. }) => {
+                            now_playing(&track, playing, track.duration.saturating_sub(old_left_ms));
+                            hp.send(&track, playing, Some(track.duration.saturating_sub(old_left_ms)));
+                        }
+                        _ => {
+                            settle(&mut held, &fade, true, &mut track, &mut hp, playing);
+                            let position_ms = if fresh { position_ms } else { position_ms.saturating_sub(fade.held_ms()) };
+                            now_playing(&track, playing, position_ms);
+                            hp.send(&track, playing, Some(position_ms));
+                        }
+                    }
                 }
                 PlayerEvent::Seeked { position_ms, .. } => {
+                    ended = false;
+                    settle(&mut held, &fade, true, &mut track, &mut hp, playing); // the queue dropped: the new track's
                     fresh |= !playing; // playing, the sink's next write drops the queue: the next pause's stop sees it
                     now_playing(&track, playing, position_ms);
                     hp.send(&track, playing, Some(position_ms));
                 }
-                PlayerEvent::PositionCorrection { position_ms, .. } => {
+                // the held track's own (its decoder fell behind): the old track's state stands
+                PlayerEvent::PositionCorrection { position_ms, .. } => if held.is_none() {
                     hp.send(&track, playing, Some(position_ms.saturating_sub(fade.lead_ms())))
-                }
+                },
                 // Not a pause: the next track's Playing follows at once, and Control Center flickered to
                 // paused at every track change. A session that ends here says Paused or Stopped itself.
-                // The decoder's end, which is heard as much later as it has queued.
-                PlayerEvent::EndOfTrack { .. } => now_playing(&track, playing, track.duration.saturating_sub(fade.lead_ms())),
+                // The decoder's end, which is heard as much later as it has queued; while a track is
+                // held, that track's own (a very short one), of which nothing is shown yet.
+                PlayerEvent::EndOfTrack { .. } => {
+                    ended = true;
+                    if held.is_none() {
+                        now_playing(&track, playing, track.duration.saturating_sub(fade.lead_ms()));
+                    }
+                }
                 PlayerEvent::Stopped { .. } => {
                     fresh = true;
+                    ended = false;
+                    held = None; // the stop shown at once, nothing of a track it cut short
                     say("librespot: stopped");
                     playing = false;
                     track = Track::default();
@@ -795,6 +883,9 @@ async fn run(
                 }
                 PlayerEvent::Unavailable { track_id, .. } => say(&format!("librespot: unavailable: {track_id:?}")),
                 _ => {}
+            }
+            // the sink may have acted already (its write came before this event was read)
+            settle(&mut held, &fade, false, &mut track, &mut hp, playing);
             },
         }
     }

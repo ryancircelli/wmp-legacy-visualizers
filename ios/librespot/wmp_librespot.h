@@ -18,7 +18,9 @@ typedef void (*wmp_ls_state_cb)(void *ctx, const char *device_id);
 // one whole JSON object (UTF-8), {"playing":bool,"position":ms,"title":"","artist":"" (", "-joined),
 // "album":"","art":"" (the largest cover's url, or ""),"duration":ms,"uri":"spotify:track:..."}. A stop
 // sends playing false, position 0 and the track fields empty. Positions here and in the player callback
-// are what is heard (with a crossfade, the player's less what the sink has queued ahead).
+// are what is heard (with a crossfade, the player's less what the sink has queued ahead). At a
+// crossfade both switch to the next track at the fade's midpoint, at its heard position then (half the
+// fade under each song; until then, and through a pause in the first half, the old track's state).
 typedef void (*wmp_ls_np_cb)(void *ctx, const char *json);
 // The host's player (the page's window.__wmpPlayer, as it is: the host only forwards it), from
 // librespot's thread, at each track change, play, pause, seek, position correction, stop, shuffle or

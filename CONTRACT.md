@@ -369,7 +369,9 @@ Commands, page -> host:
     "shuffle":true|false|null,"position":0}` (`shuffle: null` leaves it as it is); not the active device: activate first.
   - `crossfade:<seconds>` an integer, 0 (off, the host's default) to 12, out of range clamped: at a track's natural end
     (not a skip, a load or a seek) the next track fades in over the last that many seconds of this one, equal-power,
-    on the host's own speaker only (Spotify sends Connect devices no crossfade of its own). Taken whether or not the
+    on the host's own speaker only (Spotify sends Connect devices no crossfade of its own). The host's reports switch to
+    the next track at the fade's midpoint, at its heard position then (half the fade shown under each song; the owner,
+    2026-10-03), the old track's state standing until then, through a pause in the first half too. Taken whether or not the
     speaker is active or has a session; the host keeps it no longer than it runs, so the page sends it at its start and
     at each change (`settings.crossfade`, `src/adapters/spotify/index.ts hostCrossfade`).
   - `play` / `pause` / `toggle` / `next` / `prev` / `seek:<ms>` keep any meaning the host already gives them elsewhere
