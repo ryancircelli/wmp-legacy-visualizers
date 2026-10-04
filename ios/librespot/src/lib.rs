@@ -828,10 +828,10 @@ async fn run(
                 let active = hp.active;
                 let settling = taking.is_some_and(|t| t.elapsed() < Duration::from_secs(15));
                 let done = match c.as_str() {
-                    "play" => if !active { take(s, true) } else if playing { Ok(()) } else { play(s) },
+                    "play" => if !active { taking = Some(Instant::now()); take(s, true) } else if playing { Ok(()) } else { play(s) },
                     "resume" => s.play(), // Spirc's own: nothing unless it is paused (after a take)
                     "pause" => if playing { pause(s) } else { Ok(()) },
-                    "toggle" => if playing { pause(s) } else if active { play(s) } else { take(s, true) },
+                    "toggle" => if playing { pause(s) } else if active { play(s) } else { taking = Some(Instant::now()); take(s, true) },
                     // A skip while it is not the active device: the playback is taken first and the skip
                     // done once it is here (Spirc drops it otherwise: from Control Center, after the app
                     // had been suspended, it did nothing). And a skip while paused plays, as in Spotify's
