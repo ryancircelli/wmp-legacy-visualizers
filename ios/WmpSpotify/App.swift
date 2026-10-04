@@ -1285,8 +1285,10 @@ final class Librespot {
                 }
             case .ended:
                 let opts = AVAudioSession.InterruptionOptions(rawValue: n.userInfo?[AVAudioSessionInterruptionOptionKey] as? UInt ?? 0)
+                // the session first, here, where iOS allows an app in the background to take it back
                 let resume = self.interrupted && opts.contains(.shouldResume)
-                HostLog.shared.log("audio: interruption over\(resume ? ", resuming" : "")")
+                    && (try? AVAudioSession.sharedInstance().setActive(true)) != nil
+                HostLog.shared.log("audio: interruption over\(resume ? ", resuming" : self.interrupted ? " (not resuming: \(opts.contains(.shouldResume) ? "no session" : "iOS did not say to"))" : "")")
                 self.interrupted = false
                 if resume { wmp_ls_command("play") }
             @unknown default: break
@@ -1315,6 +1317,10 @@ final class Librespot {
             let ours = DeviceState.shared.scene == "active"
             quiet = ours || !AVAudioSession.sharedInstance().isOtherAudioPlaying ? quiet + 1 : 0
             guard quiet >= 2 else { return }
+            // The session must really be had before the speaker is told to play: in the background iOS
+            // refuses it while the other session stands ("Session activation failed", 2026-10-04: the
+            // speaker "played" into nothing for a minute and a half). Refused, it is asked again next second.
+            guard (try? AVAudioSession.sharedInstance().setActive(true)) != nil else { return }
             HostLog.shared.log("audio: \(ours ? "in front" : "the other audio is silent") and iOS has not said it is over: resuming")
             self.interrupted = false
             wmp_ls_command("play")
@@ -1500,6 +1506,15 @@ final class Librespot {
             if !outputFailed {  // once per outage, not once per packet
                 outputFailed = true
                 HostLog.shared.log("librespot: output failed: \(error.localizedDescription)")
+                // No session to play into (another app holds it and iOS will not give it to an app in the
+                // background): the speaker pauses and waits it out as for an interruption, instead of
+                // playing on unheard with the queue started over every two seconds.
+                DispatchQueue.main.async {
+                    guard !self.interrupted else { return }
+                    self.interrupted = true
+                    wmp_ls_command("pause")
+                    self.waitOut()
+                }
             }
         }
     }
