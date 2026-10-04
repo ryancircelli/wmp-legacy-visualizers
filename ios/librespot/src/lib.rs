@@ -556,7 +556,8 @@ async fn run(
     // not always there to do it (2026-10-03). Also after a rebuild (below), playing or paused as it was:
     // (when, to play).
     let mut lost: Option<(Instant, bool)> = None;
-    let mut after: Option<(String, Instant)> = None; // a skip asked for while not active: done once it is
+    let mut after: Vec<String> = Vec::new(); // skips asked for before the taken playback is here: done once it is
+    let mut taking: Option<Instant> = None; // the playback is being taken: until its track has loaded
     // A change of quality, normalisation or the cache (sound.rs), which librespot takes only into a new
     // player (its PlayerConfig is fixed at Player::new) and a new session (the Cache is fixed at
     // Session::new, and a session connects once, so Spirc, which holds the player, needs a new one):
@@ -825,6 +826,7 @@ async fn run(
                 // Spirc ignores all but activate and transfer while it is not the active device: to play,
                 // it takes the playback first; to load, it activates first.
                 let active = hp.active;
+                let settling = taking.is_some_and(|t| t.elapsed() < Duration::from_secs(15));
                 let done = match c.as_str() {
                     "play" => if !active { take(s, true) } else if playing { Ok(()) } else { play(s) },
                     "resume" => s.play(), // Spirc's own: nothing unless it is paused (after a take)
@@ -834,13 +836,15 @@ async fn run(
                     // done once it is here (Spirc drops it otherwise: from Control Center, after the app
                     // had been suspended, it did nothing). And a skip while paused plays, as in Spotify's
                     // own apps.
-                    "next" | "prev" if !active => {
-                        after = Some((c.clone(), Instant::now()));
-                        take(s, false)
+                    // The same while a take is still under way (the page takes, then skips the moment
+                    // the speaker is active: Spirc has no queue until the handed-over track has loaded).
+                    "next" | "prev" if !active || settling => {
+                        after.push(c.clone());
+                        if settling { Ok(()) } else { taking = Some(Instant::now()); take(s, false) }
                     }
                     "next" => s.next().and_then(|_| if playing { Ok(()) } else { s.play() }),
                     "prev" => s.prev().and_then(|_| if playing { Ok(()) } else { s.play() }),
-                    "take" => if active { Ok(()) } else { take(s, false) },
+                    "take" => if active || settling { Ok(()) } else { taking = Some(Instant::now()); take(s, false) },
                     "shuffle:0" | "shuffle:1" => s.shuffle(c == "shuffle:1"),
                     // Track is context and track, as Spotify's own clients set it.
                     "repeat:off" => s.repeat(false).and_then(|_| s.repeat_track(false)),
@@ -879,13 +883,14 @@ async fn run(
                     // that the handed-over track has loaded, and a moment later, Spirc having its queue
                     // (at the activation itself it had none yet: "no more tracks left in queue", measured
                     // on the desktop harness).
-                    if let Some((c, at)) = after.take() {
-                        if let (true, Some(tx)) = (at.elapsed() < Duration::from_secs(15), lock(&COMMANDS).as_ref().cloned()) {
-                            tokio::spawn(async move {
+                    let skips = std::mem::take(&mut after);
+                    if let (true, Some(tx)) = (taking.take().is_some_and(|t| t.elapsed() < Duration::from_secs(15)), lock(&COMMANDS).as_ref().cloned()) {
+                        tokio::spawn(async move {
+                            for c in skips {
                                 tokio::time::sleep(Duration::from_millis(400)).await;
                                 let _ = tx.send(c);
-                            });
-                        }
+                            }
+                        });
                     }
                     fresh = true;
                     track = Track::new(&audio_item);
