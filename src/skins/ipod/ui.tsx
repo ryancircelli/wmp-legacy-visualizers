@@ -444,7 +444,7 @@ export function Bar({ value, className, onSeek }: { value: number; className?: s
  *  own, never the screen's swipe-back; a light haptic each. */
 /** One line that marquees when too long, as the nano's do (§2.2): after 1 s, at 30 units a second, a
  *  second's rest at each end. `unit`: the box's unit in px (Now Playing's lines are 224 units wide). */
-export function Marquee({ className, text, unit }: { className?: string; text?: string; unit?: (box: HTMLElement) => number }) {
+export function Marquee({ className, text, unit, children }: { className?: string; text?: string; unit?: (box: HTMLElement) => number; children?: ReactNode }) {
   const box = useRef<HTMLDivElement>(null), of = useRef(unit);
   useLayoutEffect(() => { of.current = unit; });
   useLayoutEffect(() => {
@@ -463,7 +463,8 @@ export function Marquee({ className, text, unit }: { className?: string; text?: 
     ro.observe(b);
     return () => { ro.disconnect(); a?.cancel(); };
   }, [text]);
-  return <div ref={box} className={className}><span style={{ display: 'inline-block' }}>{text}</span></div>;
+  // children: the line's own markup (its text is still `text`, which restarts the measure when it changes)
+  return <div ref={box} className={className}><span style={{ display: 'inline-block' }}>{children ?? text}</span></div>;
 }
 /** the Now Playing bar is the screen's 240 units wide */
 const barUnit = (b: HTMLElement) => (b.closest('[aria-label="Now Playing"]')?.getBoundingClientRect().width ?? 0) / 240;
@@ -473,7 +474,8 @@ export function NowPlayingBar({ onOpen }: { onOpen: () => void }) {
   // the device only when it plays somewhere else (not this page's player, nor the host's own speaker), as
   // Spotify's own mini player names one (the owner, 2026-10-04: "should it even include wmp spotify iOS if
   // it's the own device?")
-  const line = useApp((x) => x.devices.list.find((d) => d.active && d.id !== x.devices.self && d.id !== window.__wmpSpeaker?.id)?.name || '');
+  const line = useApp((x) => x.devices.list.find((d) => d.active && d.id !== x.devices.self && d.id !== window.__wmpSpeaker?.id)?.name
+    || x.playback.from || '');   // else what it plays from: the playlist, album or radio
   const f = usePosition((_, st) => Math.round(Math.max(0, seekFraction(st)) * 500) / 500);
   const swipe = useRef<{ id: number; x: number; y: number; done: boolean } | null>(null);
   if (!t) return null;
@@ -501,10 +503,12 @@ export function NowPlayingBar({ onOpen }: { onOpen: () => void }) {
          }}>
       <Art src={t.art || t.image} className={s.nparts} />
       <div className={s.nptext}>
-        {/* the title alone, then the artist before the device (the owner, 2026-10-04: the "…" that cut the
-            artist short on the title's line was the title's own dark one); each marquees when too long */}
-        <Marquee className={s.nptitle} text={t.title} unit={barUnit} />
-        {(t.artist || line) && <Marquee className={s.npline} text={[t.artist, line].filter(Boolean).join(' • ')} unit={barUnit} />}
+        {/* the title and, grey, the artist; under it what it plays from (the device when that is another
+            one). Each marquees when too long: no "…" (the title's own dark one cut the grey artist short) */}
+        <Marquee className={s.nptitle} text={t.title + ' ' + (t.artist ?? '')} unit={barUnit}>
+          {t.title}{t.artist && <span className={s.npartist}> • {t.artist}</span>}
+        </Marquee>
+        {line && <Marquee className={s.npline} text={line} unit={barUnit} />}
       </div>
       <div className={s.npbtn} role="button" aria-label={playing ? 'Pause' : 'Play'}
            onClick={(e) => { e.stopPropagation(); window.alchemyHaptic?.('light'); void cmd().playPause(); }}>
