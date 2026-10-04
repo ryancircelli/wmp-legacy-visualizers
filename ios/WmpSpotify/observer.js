@@ -42,29 +42,44 @@ window.alchemyElectron = { loopback: false, mode: 'app' };
 // muted media (the Canvas clip) plays as ever.
 // WebKit runs the page's audio in a process of its own, which iOS takes for another app: a session coming
 // up there (silent) interrupted the app's speaker with nothing to see or hear (2026-10-03: "audio:
-// interrupted (reason 0, other audio silent)", every other app closed). Web Audio is logged when the page
-// starts a context, to say what it was.
+// interrupted (reason 0, other audio silent)", every other app closed).
 // (navigator.audioSession.type = 'ambient' was set here for a day: taken out, the app's own audio stalling
 // after a pause with it in place; the block on the page's media below is what stops the interruptions.)
+// What the web view itself does with audio, into the host's log with its times, to set beside the app's
+// "audio: interrupted" lines (the owner, 2026-10-04, no other app having taken the audio: "any way to
+// confirm self interference…?"): WebKit's own audio session as it changes state (navigator.audioSession,
+// where WebKit has it), every Web Audio context made and each change of its state, and every media
+// element asked to play, allowed or not. A web-view line a moment before an interruption names it.
 (function () {
+  var n = 0, say = function (m) { if (n++ < 200) log('web audio: ' + m); };
+  try {
+    var as = navigator.audioSession;
+    if (!as) say('no navigator.audioSession here');
+    else {
+      say('session ' + as.type + ', ' + as.state);
+      as.addEventListener('statechange', function () { say('session ' + as.type + ', ' + as.state); });
+    }
+  } catch (e) { say('session: ' + e); }
   ['AudioContext', 'webkitAudioContext'].forEach(function (name) {
     var C = window[name];
     if (!C || C.__wmp) return;
-    var resume = C.prototype.resume, seen = 0;
-    C.prototype.resume = function () {
-      if (seen++ < 3) log('the page started a Web Audio context (' + this.state + ')');
-      return resume.apply(this, arguments);
+    var W = function () {
+      var c = arguments.length ? new C(arguments[0]) : new C();
+      say('a context made (' + c.state + ')');
+      try { c.addEventListener('statechange', function () { say('context ' + c.state); }); } catch (e) {}
+      return c;
     };
-    C.__wmp = true;
+    W.prototype = C.prototype; W.__wmp = true;
+    try { window[name] = W; } catch (e) {}
   });
-})();
-(function () {
-  var play = HTMLMediaElement.prototype.play, told = false;
+  var play = HTMLMediaElement.prototype.play;
   HTMLMediaElement.prototype.play = function () {
+    var where = this.getRootNode() instanceof ShadowRoot ? 'the overlay\'s' : this.isConnected ? 'the page\'s' : 'the page\'s, unattached';
+    var what = this.tagName.toLowerCase() + (this.muted ? ' muted' : ' with sound') + ' ' + String(this.currentSrc || this.src || '').slice(-28);
     // the overlay's own (in its shadow root) and anything muted; Spotify's player element is in no
     // document at all (made and never attached), so "not in the document" let it through
-    if (this.muted || this.getRootNode() instanceof ShadowRoot) return play.apply(this, arguments);
-    if (!told) { told = true; log('the page tried to play media: blocked (the speaker plays)'); }
+    if (this.muted || this.getRootNode() instanceof ShadowRoot) { say('play: ' + where + ' ' + what); return play.apply(this, arguments); }
+    say('play blocked (the speaker plays): ' + where + ' ' + what);
     return Promise.resolve();
   };
 })();
