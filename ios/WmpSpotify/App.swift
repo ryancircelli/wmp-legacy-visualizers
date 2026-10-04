@@ -1481,7 +1481,7 @@ final class Librespot {
             // the next start though both said they ran (two seconds of silence at every resume, until
             // the stalled queue was started over: 2026-10-03, twice in one log).
             self.node.stop()
-            if self.engine.isRunning { self.engine.stop() }
+            self.engine.stop()   // paused already (take): stopped for good before the session goes
             try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
             HostLog.shared.log("audio: idle, the session given up", quiet: true)
         }
