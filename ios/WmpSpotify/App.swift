@@ -818,7 +818,10 @@ struct WebView: UIViewRepresentable {
                      preferences: WKWebpagePreferences,
                      decisionHandler: @escaping (WKNavigationActionPolicy, WKWebpagePreferences) -> Void) {
             preferences.preferredContentMode = PageLayout.viewport == "mobile" ? .mobile : .desktop
-            decisionHandler(.allow, preferences)
+            // Allow, without handing the address to an app that claims it: Spotify's own app claims
+            // open.spotify.com, so the step from the sign-in page back to the player would leave for it.
+            // (allow + 2 is WebKit's "allow without trying an app link", as other iOS browsers use it.)
+            decisionHandler(WKNavigationActionPolicy(rawValue: WKNavigationActionPolicy.allow.rawValue + 2) ?? .allow, preferences)
         }
 
         func userContentController(_ userContentController: WKUserContentController,
