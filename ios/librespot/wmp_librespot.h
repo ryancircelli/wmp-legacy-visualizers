@@ -42,7 +42,7 @@ int32_t wmp_ls_start(const char *name, const char *id, const char *cache_dir, wm
 void wmp_ls_token(const char *token, const char *client_id, const char *client_token);
 // A command (UTF-8) to the live session, from Control Center or the page (as it sent it): "play" (not
 // the active device: Spotify's remembered playback taken over first, then resumed), "pause", "toggle",
-// "next", "prev", "seek:<ms>", "shuffle:0|1", "repeat:off|context|track", "take" (taken over, not
+// "next", "prev" (not the active device: taken over first and skipped once the handed-over track has loaded; paused: the skip plays), "seek:<ms>", "shuffle:0|1", "repeat:off|context|track", "take" (taken over, not
 // resumed) or "load:{"context":uri,"track":uri|null,"shuffle":bool|null,"position":ms}" (activated
 // first when not active; always plays; shuffle null leaves it). Dropped, with a log line, while no
 // session is up; an unknown one is logged and ignored. Also "crossfade:<s>", taken with or without a

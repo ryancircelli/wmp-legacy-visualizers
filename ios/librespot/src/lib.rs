@@ -556,6 +556,7 @@ async fn run(
     // not always there to do it (2026-10-03). Also after a rebuild (below), playing or paused as it was:
     // (when, to play).
     let mut lost: Option<(Instant, bool)> = None;
+    let mut after: Option<(String, Instant)> = None; // a skip asked for while not active: done once it is
     // A change of quality, normalisation or the cache (sound.rs), which librespot takes only into a new
     // player (its PlayerConfig is fixed at Player::new) and a new session (the Cache is fixed at
     // Session::new, and a session connects once, so Spirc, which holds the player, needs a new one):
@@ -829,8 +830,16 @@ async fn run(
                     "resume" => s.play(), // Spirc's own: nothing unless it is paused (after a take)
                     "pause" => if playing { pause(s) } else { Ok(()) },
                     "toggle" => if playing { pause(s) } else if active { play(s) } else { take(s, true) },
-                    "next" => s.next(),
-                    "prev" => s.prev(),
+                    // A skip while it is not the active device: the playback is taken first and the skip
+                    // done once it is here (Spirc drops it otherwise: from Control Center, after the app
+                    // had been suspended, it did nothing). And a skip while paused plays, as in Spotify's
+                    // own apps.
+                    "next" | "prev" if !active => {
+                        after = Some((c.clone(), Instant::now()));
+                        take(s, false)
+                    }
+                    "next" => s.next().and_then(|_| if playing { Ok(()) } else { s.play() }),
+                    "prev" => s.prev().and_then(|_| if playing { Ok(()) } else { s.play() }),
                     "take" => if active { Ok(()) } else { take(s, false) },
                     "shuffle:0" | "shuffle:1" => s.shuffle(c == "shuffle:1"),
                     // Track is context and track, as Spotify's own clients set it.
@@ -866,6 +875,18 @@ async fn run(
             },
             Some(e) = events.recv() => match e {
                 PlayerEvent::TrackChanged { audio_item } => {
+                    // The skip that waited for the playback to be here (asked within fifteen seconds): now
+                    // that the handed-over track has loaded, and a moment later, Spirc having its queue
+                    // (at the activation itself it had none yet: "no more tracks left in queue", measured
+                    // on the desktop harness).
+                    if let Some((c, at)) = after.take() {
+                        if let (true, Some(tx)) = (at.elapsed() < Duration::from_secs(15), lock(&COMMANDS).as_ref().cloned()) {
+                            tokio::spawn(async move {
+                                tokio::time::sleep(Duration::from_millis(400)).await;
+                                let _ = tx.send(c);
+                            });
+                        }
+                    }
                     fresh = true;
                     track = Track::new(&audio_item);
                     say(&format!("librespot: now playing: {} \u{2014} {}", track.title, track.artist));
