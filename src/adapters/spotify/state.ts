@@ -223,8 +223,8 @@ export function onState(sp: Sp, ps: PlayerState | null | undefined, replay = fal
     // its cover too (the web player sends image_url with the first queued track): the Queue's tile and rows show it
     const pic = img(m.image_small_url || m.image_url) ?? k?.image;
     const row: Track | null = m.title ? { uri: t.uri, title: m.title, artist: artistName(sp, t.uri, ctx, m), album: m.album_title || k?.album || '', duration: 0,
-                                          ctx: ctx ?? null, ...(pic ? { image: pic } : {}) }
-      : k ? { ...k, ctx: ctx ?? null } : null;
+                                          ctx: ctx ?? null, ...(pic ? { image: pic, art: bigCover(pic) } : {}) }
+      : k ? { ...k, ctx: ctx ?? null, ...(k.art || !k.image ? {} : { art: bigCover(k.image) }) } : null;
     if (row) { next.push(row); at.push(i); } else if (ask && n-- > 0) want(sp, t.uri);
     if (next.length === 30) break;
   }

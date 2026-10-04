@@ -6,7 +6,7 @@
 // (hold ⏯ sleeps, hold ⏮ / ⏭ scan: ui.tsx scan). docs/ipod-skin.md §3.
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent, type PointerEvent } from 'react';
 import { useStore } from 'zustand';
-import { useApp, useShell, useWindowControls } from '../../ui';
+import { useApp, usePreloadNext, useShell, useWindowControls } from '../../ui';
 import { Boot } from './Boot';
 import { ClickWheel } from './ClickWheel';
 import { useHostChrome, useHostGlobal, useDesktopViewport } from './host';
@@ -31,6 +31,7 @@ type Plain = 'onPlay' | 'onPrev' | 'onNext' | 'onHoldPlay';
 
 export function Root() {
   const sh = useShell(), [ipod] = useIpodSettings();
+  usePreloadNext();   // the next songs' covers and Canvas clips, from any screen
   // the app's icon in the body's colour (the iOS app; the owner, 2026-10-03), once the colour has stood
   // three seconds (Custom's drags; iOS announces every change). The app does nothing when it is the one it has.
   const icon = iconFor(ipod);

@@ -3,7 +3,7 @@
 // ones). The store keeps only the selection (ui.libNode, ui.libSel, ui.searchQ); lists, pages,
 // search results, home, radio and artists are queries, cached per key across view switches.
 import { infiniteQueryOptions, queryOptions, useInfiniteQuery, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useEffect } from 'react';
+import { useEffect, useMemo } from 'react';
 import { LIKED, type CollectionMeta, type HomeFeed, type HomeItem, type HomeSection, type LibraryItem, type RadioSeed, type SearchPage, type SearchType, type Track } from '../model';
 import { forgetQueries } from './persist';
 import { useApp, useShell } from './shell';
@@ -269,10 +269,57 @@ export function useLyricsFor(trackUri: string | null | undefined, imageUrl?: str
 }
 
 /** The track's Canvas (Spotify's looping clip behind Now Playing): { url, type } or null (none, not
- *  known yet, logged out). A track's canvas rarely changes: kept a day. */
+ *  known yet, logged out). A track's canvas rarely changes: kept a day. A clip fetched ahead
+ *  (usePreloadNext) is shown from memory; one that arrives while its track already shows is not swapped in. */
 export function useCanvas(trackUri?: string | null): { url: string; type: 'video' | 'image' } | null {
   const q = useQ(), on = useApp((s) => s.auth.loggedIn === true) && !!trackUri;
-  const day = 24 * 60 * 60_000;
-  const r = useQuery({ queryKey: q.keys.canvas(trackUri ?? ''), queryFn: () => q.fetchCanvas(trackUri!), enabled: on, staleTime: day, gcTime: day });
-  return (on && r.data) || null;
+  const r = useQuery({ queryKey: q.keys.canvas(trackUri ?? ''), queryFn: () => q.fetchCanvas(trackUri!), enabled: on, staleTime: DAY, gcTime: DAY });
+  const d = (on && r.data) || null, remote = d?.url ?? '', gen = clipsGen;
+  // chosen once per track (and again after clipFailed): a clip that arrives later would restart the video
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const url = useMemo(() => clip(remote) ?? remote, [remote, gen]);
+  return d ? { url, type: d.type } : null;
+}
+const DAY = 24 * 60 * 60_000;
+
+// Canvas clips fetched ahead, by their address: the file in memory (a blob: address), the last CLIPS used.
+// ponytail: whole files in memory (0.3–3 MB each), CLIPS at most; a disk cache if that ever weighs.
+const CLIPS = 6, clips = new Map<string, string>();
+let clipsOk = true, clipsGen = 0;
+const clip = (remote: string): string | undefined => {
+  const b = clips.get(remote);
+  if (b) { clips.delete(remote); clips.set(remote, b); }   // used last: dropped last
+  return b;
+};
+async function keepClip(remote: string): Promise<void> {
+  if (!clipsOk || clips.has(remote)) return;
+  const r = await fetch(remote);
+  if (!r.ok || clips.has(remote)) return;
+  clips.set(remote, URL.createObjectURL(await r.blob()));
+  for (const [k, v] of clips) { if (clips.size <= CLIPS) break; clips.delete(k); URL.revokeObjectURL(v); }
+}
+/** A clip shown from memory failed to play: no more of them this launch (the files' own addresses again).
+ *  True when `url` was one of them, the caller drawing again to get the address itself. */
+export function clipFailed(url: string): boolean {
+  if (!url.startsWith('blob:')) return false;
+  clipsOk = false; clipsGen++;
+  clips.clear();   // not revoked: one may still be on screen until the redraw
+  return true;
+}
+
+/** The next two songs of the queue made ready before they play: the cover (the browser's cache) and the
+ *  Canvas (its lookup, kept as any; a video's file into memory), so a skip or a track's end shows them at
+ *  once. The songs before need nothing: what has played is still held (the cover, the lookup, the clip). */
+export function usePreloadNext(): void {
+  const q = useQ(), c = useQueryClient(), on = useApp((s) => s.auth.loggedIn === true);
+  const next = useApp((s) => s.queue.next.slice(0, 2).map((t) => `${t.uri} ${t.art ?? ''}`).join('\n'));
+  useEffect(() => {
+    if (!on || !next) return;
+    for (const line of next.split('\n')) {
+      const [uri = '', art] = line.split(' ');
+      if (art) new Image().src = art;
+      void c.fetchQuery({ queryKey: q.keys.canvas(uri), queryFn: () => q.fetchCanvas(uri), staleTime: DAY, gcTime: DAY })
+        .then((cv) => (cv?.type === 'video' ? keepClip(cv.url) : undefined)).catch(() => {});
+    }
+  }, [on, next, q, c]);
 }

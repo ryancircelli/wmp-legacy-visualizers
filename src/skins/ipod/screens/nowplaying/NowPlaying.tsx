@@ -26,7 +26,7 @@ import { createStore } from 'zustand/vanilla';
 import { Visualizer } from '../../../../app/Visualizer';
 import { lyricsShown, positionNow, type Track } from '../../../../model';
 import {
-  artOk, cx, deviceName, isPlaying, isSpotify, Karaoke, playingTrack, useAddTo, useApp, useArtist, useCanvas, useCollection, useDevices, useLyricScroll,
+  artOk, clipFailed, cx, deviceName, isPlaying, isSpotify, Karaoke, playingTrack, useAddTo, useApp, useArtist, useCanvas, useCollection, useDevices, useLyricScroll,
   usePlainLyrics, usePosition, useRadioSeeds, useShell, type MenuEntry,
 } from '../../../../ui';
 import { useHostGlobal } from '../../host';
@@ -296,7 +296,8 @@ function NowPlaying() {
   // the Canvas, unless the cover is chosen or its file failed to load (then the cover, as without one)
   const [failed, setFailed] = useState('');
   const fetched = useCanvas(show === 'video' ? uri : null), canvas = fetched && fetched.url !== failed ? fetched : null;
-  const fail = () => setFailed(canvas?.url ?? '');
+  // (a clip shown from memory that failed: its own address instead, by the redraw)
+  const fail = () => setFailed(canvas && clipFailed(canvas.url) ? `again ${Date.now()}` : canvas?.url ?? '');
   // The overlay (Visualizer… > Visualizer): over the whole area under the status row, the cover and the
   // black round it, or the Canvas (with no cover, the black: the ♪ tile left out then). Black (the
   // tap's third art): WMP's own look, no art and no reflection, the visualization opaque in its own
