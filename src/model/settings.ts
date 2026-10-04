@@ -1,5 +1,5 @@
 // Persisted settings: the SAME localStorage key and shape src/90-shell.js used, so upgrades keep
-// the user's choices. Nothing is renamed; `skin` is new (default 'wmp9').
+// the user's choices. Nothing is renamed; `skin` is new (default 'wmp9'; 'ipod' on a touch device).
 import { eqPreset } from './eq';
 import type { View, VisKind } from './types';
 
@@ -94,6 +94,8 @@ export function loadSettings(): Settings {
   let parsed: Record<string, unknown> = {};
   try { parsed = (JSON.parse(raw || '{}') as Record<string, unknown>) || {}; } catch { /* corrupt blob */ }
   const host = typeof window !== 'undefined' && !!(window as { alchemyElectron?: unknown }).alchemyElectron;
+  // No skin chosen yet, on a touch device (a phone, the iOS app): the iPod, which is drawn for one.
+  if (typeof parsed.skin !== 'string' && typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches) parsed.skin = 'ipod';
   return normalize(parsed, !raw && host);
 }
 
