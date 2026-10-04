@@ -57,6 +57,7 @@ pub struct Fifo {
     buf: VecDeque<f32>,
     head: u64, // samples handed over so far: buf[0] is the stream's sample `head`
     fade: Option<Fade>,
+    said: Option<String>, // a finished fade's levels, for the log (`report`)
 }
 
 #[derive(Clone, Copy)]
@@ -64,6 +65,17 @@ struct Fade {
     start: u64, // the window [start, start + len): the old track's tail at the boundary
     len: usize,
     at: u64, // where the new track's next sample goes
+    // How loud each side of it was, for the log: the old tail's sum of squares before it was faded, the
+    // new head's as it is mixed in (the owner, 2026-10-03: "not sure it blended" — a quiet ending over a
+    // quiet opening is a fade that cannot be heard, and the log should say which it was).
+    old: f64,
+    new: f64,
+    mixed: usize,
+}
+
+/// A sum of squares over n samples as dB below full scale (-99 for silence).
+fn db(sum: f64, n: usize) -> f64 {
+    if n == 0 || sum <= 0.0 { -99.0 } else { (10.0 * (sum / n as f64).log10()).max(-99.0) }
 }
 
 impl Fifo {
@@ -89,12 +101,13 @@ impl Fifo {
             return 0;
         }
         let frames = len / 2;
+        let old = self.buf.iter().map(|x| (*x as f64) * (*x as f64)).sum();
         for i in 0..frames {
             let g = gains(i, frames).0;
             self.buf[2 * i] *= g;
             self.buf[2 * i + 1] *= g;
         }
-        self.fade = Some(Fade { start: self.head, len, at: self.head });
+        self.fade = Some(Fade { start: self.head, len, at: self.head, old, new: 0.0, mixed: 0 });
         len
     }
 
@@ -108,14 +121,25 @@ impl Fifo {
             let (base, off, frames) = ((f.at - self.head) as usize, (f.at - f.start) as usize, f.len / 2);
             for (k, x) in s[..n].iter().enumerate() {
                 self.buf[base + k] += x * gains((off + k) / 2, frames).1;
+                f.new += (*x as f64) * (*x as f64);
             }
+            f.mixed += n;
             f.at += n as u64;
             s = &s[n..];
             if f.at >= end {
+                self.said = Some(format!(
+                    "librespot: crossfade mixed {:.1} s of the new song ({:.0} dB) over {:.1} s of the old ({:.0} dB)",
+                    f.mixed as f32 / SPS as f32, db(f.new, f.mixed), f.len as f32 / SPS as f32, db(f.old, f.len)
+                ));
                 self.fade = None;
             }
         }
         self.buf.extend(s);
+    }
+
+    /// A fade just finished: its line for the log, once.
+    pub fn report(&mut self) -> Option<String> {
+        self.said.take()
     }
 
     /// Up to `max` samples off the head, for the host.
@@ -313,6 +337,7 @@ impl Feed {
         let line = apply(self.marks.take(), &mut g.fifo);
         self.marks.ended = false;
         g.fifo.push(s);
+        let mixed = g.fifo.report();
         g.run = Run::Play;
         self.pump.cv.notify_all();
         let (g, _) = self
@@ -323,6 +348,9 @@ impl Feed {
         let done = secs == 0 && g.fifo.buf.is_empty();
         drop(g);
         if let Some(l) = line {
+            (self.say)(&l);
+        }
+        if let Some(l) = mixed {
             (self.say)(&l);
         }
         // Switched off and played out: the pump goes, and the next packet is handed over directly.
