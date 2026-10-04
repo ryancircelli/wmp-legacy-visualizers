@@ -5,6 +5,7 @@
 // is in charge (CONTRACT v10), with the same optimistic patches.
 import { LIKED, positionNow, type Playback, type RepeatMode } from '../../model';
 import { optimistic, pausedPatch } from '../host/media';
+import * as hostPlayer from '../host/player';
 import { query } from './pathfinder';
 import { player } from './player';
 import { W, post, status, type Sp } from './sp';
@@ -33,7 +34,7 @@ export type Cmd = { endpoint: string; value?: unknown } & Record<string, unknown
  *  An active device that is this page counts as none, for the same reason. */
 export function target(w: ReturnType<typeof W>): string | null | undefined {
   const active = w.activeDeviceId && w.activeDeviceId !== w.deviceId ? w.activeDeviceId : '';
-  return active || window.__wmpSpeaker?.id || w.deviceId;
+  return active || hostPlayer.speaker() || w.deviceId;
 }
 
 export async function command(sp: Sp, cmd: Cmd, orElse?: (() => void) | null, retried = false): Promise<boolean> {

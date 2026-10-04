@@ -6,8 +6,11 @@ import type { HostPlayer } from './globals';
 
 /** The host takes player commands. */
 export const available = (): boolean => typeof window.alchemyPlayer === 'function';
-/** Its speaker's Connect device id while its session is up. */
-export const speaker = (): string | null => window.__wmpSpeaker?.id || null;
+/** Its speaker's Connect device id: while its session is up, and the last one while it reconnects (a
+ *  connection lost in the background; it holds commands until it is back). Without this a play pressed
+ *  in that gap went through Spotify's cloud and left the speaker stopped (2026-10-04). */
+let last: string | null = null;
+export const speaker = (): string | null => (last = window.__wmpSpeaker?.id || (available() ? last : null));
 /** Its last report, if it sends them. */
 export const state = (): HostPlayer | null => window.__wmpPlayer ?? null;
 

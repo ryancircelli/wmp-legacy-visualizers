@@ -481,6 +481,16 @@ describe('3c. the host\'s own player (CONTRACT v10: alchemyPlayer, __wmpPlayer)'
     expect([env.S.playback.position, env.S.playback.repeat]).toEqual([30091 + 5000, 'context']);
   });
 
+  it('the speaker reconnecting (its session down, no id for now): a play still goes to the host, not through the cloud', async () => {
+    const h = host(HP({ active: false, playing: false }));
+    const env = setup({ activeDeviceId: '' });
+    await settle();
+    vi.stubGlobal('__wmpSpeaker', { id: null, name: SPK.name });
+    void env.C.playPause(); await settle();
+    expect(h.sent).toEqual([...SOUND0, 'play']);
+    expect(cloud(env)).toEqual([]);
+  });
+
   it('a track still loading (a skip): shown at once, named from the queue\'s row, its position standing until it plays', async () => {
     host(HP());
     const env = setup({ activeDeviceId: 'spk1' });

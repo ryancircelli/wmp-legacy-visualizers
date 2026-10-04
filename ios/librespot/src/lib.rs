@@ -246,10 +246,19 @@ fn transfer(session: &Session) {
     let (session, tx) = (session.clone(), lock(&COMMANDS).as_ref().cloned());
     tokio::spawn(async move {
         let id = session.device_id().to_owned();
-        if let Err(e) = session.spclient().transfer(&id, &id, None).await {
-            say(&format!("librespot: transfer: {e}: through Spirc instead"));
-            if let Some(tx) = tx {
-                let _ = tx.send("transfer".into());
+        // A session just made is not a Connect device until Spirc has registered it (a moment): tried
+        // again for two seconds, then Spirc's own, which waits for that.
+        for n in 0.. {
+            match session.spclient().transfer(&id, &id, None).await {
+                Ok(_) => return,
+                Err(_) if n < 4 => tokio::time::sleep(Duration::from_millis(500)).await,
+                Err(e) => {
+                    say(&format!("librespot: transfer: {e}: through Spirc instead"));
+                    if let Some(tx) = tx {
+                        let _ = tx.send("transfer".into());
+                    }
+                    return;
+                }
             }
         }
     });
@@ -605,6 +614,7 @@ async fn run(
     let mut lost: Option<(Instant, bool)> = None;
     let mut after: Vec<String> = Vec::new(); // a play and skips asked for before the taken playback is here: done once it is
     let mut taking: Option<Instant> = None; // the playback is being taken: until its track has loaded
+    let mut held: Vec<String> = Vec::new(); // playback commands that came with no session, for the next
     // A change of quality, normalisation or the cache (sound.rs), which librespot takes only into a new
     // player (its PlayerConfig is fixed at Player::new) and a new session (the Cache is fixed at
     // Session::new, and a session connects once, so Spirc, which holds the player, needs a new one):
@@ -697,6 +707,11 @@ async fn run(
                         }
                         spirc = Some(s);
                         task = Some(Box::pin(t));
+                        if let Some(tx) = lock(&COMMANDS).as_ref() {
+                            for c in held.drain(..) {
+                                let _ = tx.send(c);
+                            }
+                        }
                     }
                     Err(e) => {
                         say(&format!("librespot: connect failed ({via}): {e}"));
@@ -867,7 +882,15 @@ async fn run(
                     continue;
                 }
                 let Some(s) = spirc.as_ref() else {
-                    say(&format!("librespot: {c}: no session"));
+                    // Between sessions (a connection lost in the background, being made again): the
+                    // playback commands kept for the next one, run once it is up. Dropped, a play pressed
+                    // on return did nothing (2026-10-04).
+                    if matches!(c.as_str(), "play" | "pause" | "toggle" | "next" | "prev" | "take") {
+                        held.push(c.clone());
+                        say(&format!("librespot: {c}: no session yet, kept for it"));
+                    } else {
+                        say(&format!("librespot: {c}: no session"));
+                    }
                     continue;
                 };
                 // By what the player is doing (`playing`, its own events), not by what Spirc believes: the
