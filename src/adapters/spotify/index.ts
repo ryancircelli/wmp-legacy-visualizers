@@ -47,7 +47,8 @@ export function spotifyCommands(sp: Sp, host: HostLink | null) {
     play: () => C.transport(sp, 'play'),
     pause: () => C.transport(sp, 'pause'),
     next: () => { const p = store.getState().playback; return p.status !== 'none' && p.canNext ? C.transport(sp, 'next') : Promise.resolve(); },
-    prev: () => { const p = store.getState().playback; return p.status !== 'none' && p.canPrev ? C.transport(sp, 'prev') : Promise.resolve(); },
+    // no previous track (the context's first): back to the start, as Spotify's own back button does
+    prev: () => { const p = store.getState().playback; return p.status === 'none' ? Promise.resolve() : p.canPrev ? C.transport(sp, 'prev') : p.canSeek ? C.transport(sp, 'seek', 0) : Promise.resolve(); },
     seek: (ms: number) => {
       const p = store.getState().playback;
       return p.status === 'none' || !p.canSeek ? Promise.resolve() : C.transport(sp, 'seek', ms);

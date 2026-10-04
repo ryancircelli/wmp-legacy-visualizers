@@ -481,6 +481,18 @@ describe('3c. the host\'s own player (CONTRACT v10: alchemyPlayer, __wmpPlayer)'
     expect([env.S.playback.position, env.S.playback.repeat]).toEqual([30091 + 5000, 'context']);
   });
 
+  it('a track still loading (a skip): shown at once, named from the queue\'s row, its position standing until it plays', async () => {
+    host(HP());
+    const env = setup({ activeDeviceId: 'spk1' });
+    await settle();
+    const q = env.S.queue.next[0]!;
+    expect(q.title).toBeTruthy();
+    report(env, { uri: q.uri, title: '', artist: '', album: '', art: '', duration: 0, position: 0, at: T0 - 5000, loading: true });
+    const p = env.S.playback;
+    expect([p.track!.uri, p.track!.title, p.track!.artist, p.status, p.position]).toEqual([q.uri, q.title, q.artist, 'playing', 0]);
+    expect(positionNow(env.S, T0 + 3000)).toBe(0);
+  });
+
   it('shuffle and repeat: whichever source changed them last (the host\'s are stale after it takes the playback; right after a toggle from here)', async () => {
     const h = host(HP({ shuffle: false, repeat: 'off' }));
     const env = setup({ state: { ...FX.playerState, options: { shuffling_context: false, repeating_context: false } }, activeDeviceId: 'spk1' });

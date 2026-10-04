@@ -391,7 +391,10 @@ State, host -> page: `window.__wmpPlayer` with the event `wmp-player` on window 
 page asks (`alchemyHost()`), from the player's own events:
   `{ v: 1, active, playing, uri ('' when nothing is loaded), title, artist, album, art (as __wmpSpeakerTrack has them),
   duration (ms), position (ms, true at `at`: what is heard, behind what a crossfade has queued), at (epoch ms; the page extrapolates while playing), shuffle,
-  repeat: 'off'|'context'|'track' }` — `active`: its speaker is the active Connect device. No context uri, queue or
+  repeat: 'off'|'context'|'track', loading }` — `active`: its speaker is the active Connect device. `loading` (added
+  2026-10-04; absent from older builds): the track at `uri` is being fetched (a skip, a load): its title, artist, album
+  and art '' (the page names it from the cluster or its queue row), its position standing until it plays; a skip also
+  stops the old song at once (not when the new one has come). No context uri, queue or
   restrictions: the page keeps taking those from Spotify's cluster. `__wmpSpeakerTrack` / `wmp-speaker-track` (v9) stay
   as they are for an older page; the page reads them still on a host without `__wmpPlayer`.
 Who is in charge (the page, per command, `src/adapters/spotify/player/index.ts`): the host's player, when

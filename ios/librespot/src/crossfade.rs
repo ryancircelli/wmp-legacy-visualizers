@@ -208,6 +208,8 @@ struct State {
     owed: bool, // samples handed over since the last stop: the host is owed one
     quit: bool,
     held: usize, // the lead when the sink last stopped
+    pumping: bool, // the pump thread runs: it hands everything over, a cut included
+    cut: bool,     // a cut owed the host (`Pump::cut`), handed over by the pump after any chunk in its hands
 }
 
 #[derive(Default, Clone, Copy, PartialEq)]
@@ -237,6 +239,23 @@ impl Pump {
         ms(self.lock().fifo.lead())
     }
 
+    /// A skip under way (lib.rs, at the player's Loading): what is queued is the old track's, dropped now,
+    /// and the host told to drop what it holds (an empty hand), not at the new track's first samples: a
+    /// slow fetch played on up to the crossfade's seconds of the old song (the owner, 2026-10-04: "should
+    /// we also stop current playback on a skip"). Through the pump while it runs, so it follows any chunk
+    /// already in its hands.
+    pub fn cut(&self, hand: Hand) {
+        let mut g = self.lock();
+        g.fifo.flush();
+        if g.pumping {
+            g.cut = true;
+            self.cv.notify_all();
+        } else {
+            drop(g);
+            hand(Some(&[]));
+        }
+    }
+
     /// The lead when the sink last stopped (a pause), in ms: a Paused's, and the Playing's that resumes.
     pub fn held_ms(&self) -> u32 {
         ms(self.lock().held)
@@ -251,6 +270,12 @@ pub type Say = fn(&str);
 fn pump(p: Arc<Pump>, hand: Hand) {
     let mut g = p.lock();
     loop {
+        if std::mem::take(&mut g.cut) {
+            drop(g);
+            hand(Some(&[]));
+            g = p.lock();
+            continue;
+        }
         let stopped = g.run != Run::Play && g.owed && (g.quit || g.run == Run::Hold || g.fifo.buf.is_empty());
         let chunk = if stopped {
             None
@@ -324,7 +349,10 @@ impl Feed {
             self.pump.lock().owed = true;
             let (p, hand) = (self.pump.clone(), self.hand);
             match std::thread::Builder::new().name("crossfade".into()).spawn(move || pump(p, hand)) {
-                Ok(t) => self.thread = Some(t),
+                Ok(t) => {
+                self.thread = Some(t);
+                self.pump.lock().pumping = true;
+            }
                 Err(e) => {
                     (self.say)(&format!("librespot: crossfade: no thread: {e}"));
                     (self.hand)(Some(s));
@@ -383,7 +411,7 @@ impl Feed {
         let _ = t.join();
         let mut g = self.pump.lock();
         g.fifo.flush();
-        (g.quit, g.run, g.held) = (false, Run::Play, 0);
+        (g.quit, g.run, g.held, g.pumping, g.cut) = (false, Run::Play, 0, false, false);
     }
 }
 
@@ -596,5 +624,41 @@ mod tests {
         feed.write(&vec![70.0; CHUNK]);
         assert_eq!(heard()[heard().len() - 2 * CHUNK..], packets(60..61).into_iter().chain(packets(70..71)).collect::<Vec<_>>()[..]);
         assert_eq!((p.lead_ms(), stops()), (0, 1));
+    }
+
+    #[test]
+    fn a_cut_drops_the_queue_and_tells_the_host_after_the_chunk_in_flight() {
+        use std::sync::atomic::AtomicBool;
+        let _one = SERIAL.lock().unwrap_or_else(PoisonError::into_inner);
+        static OUT: Mutex<Vec<Option<Vec<f32>>>> = Mutex::new(vec![]);
+        static OPEN: AtomicBool = AtomicBool::new(true);
+        fn hand(s: Option<&[f32]>) {
+            while !OPEN.load(Relaxed) {
+                std::thread::sleep(Duration::from_millis(1));
+            }
+            OUT.lock().unwrap().push(s.map(<[f32]>::to_vec));
+        }
+        let cuts = || OUT.lock().unwrap().iter().filter(|x| x.as_ref().is_some_and(Vec::is_empty)).count();
+        SECS.store(1, Relaxed);
+        let p = Arc::new(Pump::default());
+        let mut feed = Feed::new(p.clone(), hand, |_| {});
+        OPEN.store(false, Relaxed);
+        (0..4).for_each(|k| feed.write(&vec![k as f32; CHUNK]));
+        p.cut(hand);
+        assert_eq!(p.lead_ms(), 0);
+        OPEN.store(true, Relaxed);
+        for _ in 0..1000 {
+            if cuts() == 1 { break }
+            std::thread::sleep(Duration::from_millis(2));
+        }
+        // the chunk in the host's hands at most, then the cut, and nothing more of the old track
+        let out = OUT.lock().unwrap().clone();
+        assert!(out.len() <= 2 && out.last() == Some(&Some(vec![])), "{}", out.len());
+        // no pump (crossfade off): handed over at once
+        SECS.store(0, Relaxed);
+        feed.write(&[9.0; CHUNK]);
+        assert!(feed.thread.is_none());
+        p.cut(hand);
+        assert_eq!(cuts(), 2);
     }
 }

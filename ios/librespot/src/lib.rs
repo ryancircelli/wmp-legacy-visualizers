@@ -165,6 +165,10 @@ struct HostPlayer {
     repeat: (bool, bool), // context, track
     position: u32,        // ms, true at `at`
     at: u64,              // epoch ms
+    // A track being loaded (a skip, a load): its uri, shown at once in place of the one before (Spotify's
+    // own apps switch on the press; a slow fetch took 7 s, 2026-10-04); its title and the rest are the
+    // page's to fill (the queue knows them). Until its TrackChanged, or a stop.
+    loading: Option<String>,
 }
 
 impl HostPlayer {
@@ -184,13 +188,18 @@ impl HostPlayer {
     }
 
     fn json(&self, t: &Track) -> String {
+        let bare;
+        let t = match &self.loading {
+            Some(uri) => { bare = Track { uri: uri.clone(), ..Default::default() }; &bare }
+            None => t,
+        };
         let repeat = match self.repeat {
             (_, true) => "track",
             (true, _) => "context",
             _ => "off",
         };
         format!(
-            r#"{{"v":1,"active":{},"playing":{},"uri":{},"title":{},"artist":{},"album":{},"art":{},"duration":{},"position":{},"at":{},"shuffle":{},"repeat":"{repeat}"}}"#,
+            r#"{{"v":1,"active":{},"playing":{},"uri":{},"title":{},"artist":{},"album":{},"art":{},"duration":{},"position":{},"at":{},"shuffle":{},"repeat":"{repeat}","loading":{}}}"#,
             self.active,
             self.playing,
             quote(&t.uri),
@@ -202,6 +211,7 @@ impl HostPlayer {
             self.position,
             self.at,
             self.shuffle,
+            self.loading.is_some(),
         )
     }
 }
@@ -260,7 +270,8 @@ impl log::Log for Forward {
     fn flush(&self) {}
 }
 
-// The app's pcm callback: samples (interleaved stereo frames), or None for "the sink stopped". Both of
+// The app's pcm callback: samples (interleaved stereo frames), none (empty) for "drop what is queued: a
+// skip, more follows" (crossfade.rs Pump::cut), or None for "the sink stopped". Both of
 // the sink's paths (crossfade off: each packet; on: the queue's pump) come through here, so the
 // equalizer and its limiter are here: flat, it hands over the very slice; on, the limiter's 4 ms of
 // look-ahead go out with the next packet, or before the stop.
@@ -268,6 +279,10 @@ fn hand(samples: Option<&[f32]>) {
     if let Some(h) = host() {
         let pcm = |s: &[f32]| (h.pcm)(h.ctx as *mut c_void, s.as_ptr(), s.len() / 2);
         match samples {
+            Some([]) => {
+                eq::stop(&eq::EQ, pcm);
+                pcm(&[])
+            }
             Some(f) => eq::through(&eq::EQ, f, pcm),
             None => {
                 eq::stop(&eq::EQ, pcm);
@@ -549,6 +564,7 @@ async fn run(
     let mut reconnects: Vec<Instant> = vec![];
     let mut track = Track::default(); // the now-playing messages' track and state
     let mut playing = false;
+    let mut ended = false; // the decoder ran off the track's end (EndOfTrack) and nothing has followed yet
     let mut hp = HostPlayer::default(); // the rest of the host's player, for the `player` messages
     // When the session ended under a playing song (the connection to Spotify closed: seen as the app
     // went to the background, several times a day): the next session takes the playback back itself.
@@ -842,8 +858,11 @@ async fn run(
                         after.push(c.clone());
                         if settling { Ok(()) } else { taking = Some(Instant::now()); take(s, false) }
                     }
-                    "next" => s.next().and_then(|_| if playing { Ok(()) } else { s.play() }),
-                    "prev" => s.prev().and_then(|_| if playing { Ok(()) } else { s.play() }),
+                    // Play after it whatever the player was doing: Spirc loads the next track as *it*
+                    // believes it was (paused, though the player played: "Use Me" loaded paused after a
+                    // skip, 2026-10-04), and a play is nothing to it once it plays.
+                    "next" => s.next().and_then(|_| s.play()),
+                    "prev" => s.prev().and_then(|_| s.play()),
                     "take" => if active || settling { Ok(()) } else { taking = Some(Instant::now()); take(s, false) },
                     "shuffle:0" | "shuffle:1" => s.shuffle(c == "shuffle:1"),
                     // Track is context and track, as Spotify's own clients set it.
@@ -878,7 +897,23 @@ async fn run(
                 }
             },
             Some(e) = events.recv() => match e {
+                // Not a preloaded one (no Loading: crossfade's next track switches at TrackChanged as ever).
+                PlayerEvent::Loading { track_id, position_ms, .. } => {
+                    if let Ok(uri) = track_id.to_uri() {
+                        if uri != track.uri {
+                            // and the old song stops now (a skip), not when the new one has come; at a
+                            // natural end (the next track not preloaded in time) its tail plays out
+                            if !ended {
+                                fade.cut(hand);
+                            }
+                            hp.loading = Some(uri);
+                            hp.send(&track, playing, Some(position_ms));
+                        }
+                    }
+                }
                 PlayerEvent::TrackChanged { audio_item } => {
+                    hp.loading = None;
+                    ended = false;
                     // The skip that waited for the playback to be here (asked within fifteen seconds): now
                     // that the handed-over track has loaded, and a moment later, Spirc having its queue
                     // (at the activation itself it had none yet: "no more tracks left in queue", measured
@@ -923,9 +958,14 @@ async fn run(
                 // Not a pause: the next track's Playing follows at once, and Control Center flickered to
                 // paused at every track change. A session that ends here says Paused or Stopped itself.
                 // The decoder's end, which is heard as much later as it has queued.
-                PlayerEvent::EndOfTrack { .. } => now_playing(&track, playing, track.duration.saturating_sub(fade.lead_ms())),
+                PlayerEvent::EndOfTrack { .. } => {
+                    ended = true;
+                    now_playing(&track, playing, track.duration.saturating_sub(fade.lead_ms()))
+                }
                 PlayerEvent::Stopped { .. } => {
                     fresh = true;
+                    hp.loading = None;
+                    ended = false;
                     say("librespot: stopped");
                     playing = false;
                     track = Track::default();

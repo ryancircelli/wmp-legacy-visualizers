@@ -88,9 +88,10 @@ fn wav_file(path: &str) -> std::io::Result<File> {
 
 extern "C" fn pcm(_: *mut c_void, samples: *const f32, frames: usize) {
     if samples.is_null() || frames == 0 {
-        // the app stops its player node: what was queued is dropped, and the clock starts again
+        // the app stops its player node: what was queued is dropped, and the clock starts again (a skip's
+        // cut, samples not NULL, keeps the engine running in the app: here the same, but said apart)
         out().clock = None;
-        line("pcm", "sink stopped");
+        line("pcm", if samples.is_null() { "sink stopped" } else { "cut (a skip)" });
         return;
     }
     let s = unsafe { std::slice::from_raw_parts(samples, frames * 2) };

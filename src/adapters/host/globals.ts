@@ -38,6 +38,9 @@ export interface HostPlayer {
   at: number;
   shuffle: boolean;
   repeat: 'off' | 'context' | 'track';
+  /** the track at `uri` is being fetched (a skip, a load): its title and the rest '' (the page names it
+   *  from what it holds), its position standing still until it plays; absent from older builds */
+  loading?: boolean;
 }
 
 declare global {

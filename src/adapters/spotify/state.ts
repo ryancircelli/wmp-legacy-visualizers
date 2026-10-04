@@ -148,14 +148,17 @@ const hostWins = (sp: Sp, f: string) => (sp.opts['host.' + f]?.at ?? -1) > (sp.o
 function hostOver(sp: Sp, p: Partial<Playback>, ctx: string | null): Partial<Playback> {
   const h = hostLive();
   if (!h) return p;
-  const same = p.track?.uri === h.uri ? p.track : null, now = Date.now(), paused = !h.playing;
-  const dur = h.duration || same?.duration || 0, pos = h.position + (paused ? 0 : now - h.at);
+  // a track still loading comes bare (its uri alone): named from the cluster's state, else the queue's row
+  const same: Partial<Track> | null = p.track?.uri === h.uri ? p.track : h.loading ? rowFor(sp, h.uri) ?? null : null;
+  const now = Date.now(), paused = !h.playing;
+  const dur = h.duration || same?.duration || 0, pos = h.position + (paused || h.loading ? 0 : now - h.at);
   return {
-    ...p, status: !h.uri ? 'stopped' : paused ? 'paused' : 'playing', paused, at: now,
+    // loading: still 'playing' to the eye, its clock held (paused) until the track plays
+    ...p, status: !h.uri ? 'stopped' : paused ? 'paused' : 'playing', paused: paused || !!h.loading, at: now,
     position: Math.max(0, dur ? Math.min(pos, dur) : pos),
     shuffle: hostWins(sp, 'shuffle') ? h.shuffle : p.shuffle, repeat: hostWins(sp, 'repeat') ? h.repeat : p.repeat,
     track: h.uri ? { uri: h.uri, title: h.title || same?.title || '', artist: h.artist || same?.artist || '',
-                     album: h.album || same?.album || '', duration: dur, art: bigCover(h.art || same?.art || null), ctx } : null,
+                     album: h.album || same?.album || '', duration: dur, art: bigCover(h.art || same?.art || same?.image || null), ctx } : null,
     ...(p.track ? {} : { canSeek: !!h.uri, canNext: !!h.uri, canPrev: !!h.uri }),
   };
 }

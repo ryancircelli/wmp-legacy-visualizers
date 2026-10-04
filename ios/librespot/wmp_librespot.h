@@ -8,6 +8,7 @@
 // the sink's own pump thread instead: one thread at a time either way). It may block: that is the
 // back-pressure that paces playback. frames 0 (samples NULL): the sink stopped (a pause, a stop; with a
 // crossfade, after what was already handed over, and at the end of the context after what was queued).
+// frames 0 with samples not NULL: a skip: drop what is queued (the old song), more follows; not a stop.
 typedef void (*wmp_ls_pcm_cb)(void *ctx, const float *samples, size_t frames);
 // A UTF-8 log line, "librespot: ...", from any thread.
 typedef void (*wmp_ls_log_cb)(void *ctx, const char *line);

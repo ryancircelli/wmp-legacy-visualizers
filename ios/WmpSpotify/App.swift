@@ -21,7 +21,7 @@ struct WmpSpotifyApp: App {
         // (UIBackgroundModes audio) and with the mute switch on. Not active yet: the speaker takes the
         // session when it has samples and gives it up when idle (Librespot.output / idle).
         try? AVAudioSession.sharedInstance().setCategory(.playback)
-        HostLog.shared.log("host: build \(Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "?")")
+        HostLog.shared.log("host: build \(appBuild)")
         Librespot.shared.start()
         DeviceState.shared.start()
     }
@@ -197,9 +197,12 @@ final class HostLog: ObservableObject {
     func clear() {
         queue.async { try? self.file?.truncate(atOffset: 0) }
         lines = []
-        log("log cleared")
+        log("log cleared, build \(appBuild)")
     }
 }
+
+/// This build's number (TestFlight's), as the log names it.
+let appBuild = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "?"
 
 // The app's window scene (it has one).
 func windowScene() -> UIWindowScene? {
@@ -528,9 +531,10 @@ struct Player: View {
                     // Copy: this launch's lines (from its "---- launch" marker), what a report needs; Copy All: the file.
                     Button("Copy") {
                         let from = shown.lastIndex { $0.contains("---- launch ") } ?? shown.startIndex
-                        UIPasteboard.general.string = shown[from...].joined(separator: "\n")
+                        UIPasteboard.general.string = (["build \(appBuild)"] + shown[from...]).joined(separator: "\n")
                     }
-                    Button("Copy All") { UIPasteboard.general.string = shown.joined(separator: "\n") }
+                    // headed by the build (the owner: a report pasted without its launch line said none)
+                    Button("Copy All") { UIPasteboard.general.string = (["build \(appBuild)"] + shown).joined(separator: "\n") }
                     Button("Clear") { HostLog.shared.clear() }
                     Spacer()
                 }
@@ -1541,6 +1545,17 @@ final class Librespot {
     // librespot's player thread. No samples: the sink stopped (a pause, a stop), so what is queued is
     // dropped and the page goes dark.
     private func take(_ samples: UnsafePointer<Float>?, _ frames: Int) {
+        // A skip (no frames, samples not NULL): the old song's audio still queued is dropped now, so it
+        // stops at the press and not when the new song has been fetched; the engine and the session
+        // stay up for its first packet (no pause to iOS, no idle: a slow fetch in the background must
+        // not lose the session). Quiet to the page until then.
+        if samples != nil, frames == 0 {
+            playing = false
+            Forwarder.shared.stopped()
+            node.stop()
+            if engine.isRunning { node.play() }
+            return
+        }
         guard let samples, frames > 0 else {
             playing = false
             // The node and then the engine, at once: a running engine is "playing" to iOS, and Control

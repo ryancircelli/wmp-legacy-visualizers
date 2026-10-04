@@ -26,6 +26,7 @@ declare global {
 export async function mount(): Promise<void> {
   window.alchemyMarks?.push('mount=' + Math.round(performance.now()));
   window.__wmpPageBuild = BUILD;   // the iOS observer's update check compares it with the site's
+  window.alchemyLog?.('build ' + BUILD);   // in the host's log: which page a report came from
   const store = createAppStore();
   const { actions } = store.getState();
   const spotify = window.alchemyEngine === 'spotify';
