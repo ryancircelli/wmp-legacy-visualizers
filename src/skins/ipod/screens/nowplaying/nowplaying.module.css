@@ -201,11 +201,9 @@
 .root[data-quiet] .info::before { opacity: .35; }
 /* the foot's shade thins too (the owner: "less aggressive in the minimize just like the header does"):
    the band's to .4, and the lyrics' one gradient to about half its strength */
-/* quiet, the controls band is the info band's own light one (the owner, 2026-10-04: "a light background on
-   the progress like the header"), with or without lyrics; the lyrics stay where they are awake (12 above
-   the band: nothing moves), their shade running on down under the band, which lies over it (ended at the
-   band's top it left the band a lighter strip under a dark shade: "apply the darkness band on top of the
-   gradient") */
+/* quiet, the controls band thins as the info band does, with or without lyrics; the lyrics stay where
+   they are awake (12 above the band: nothing moves), their shade running on down under the band, which
+   lies over it ("apply the darkness band on top of the gradient") */
 .root[data-quiet] .controls::before { opacity: .35; }
 .root[data-quiet] .lyrics { background: linear-gradient(to top, rgb(0 0 0 / .45), rgb(0 0 0 / .3) calc(var(--unit) * 123), transparent calc(var(--unit) * 176)); }
 .root[data-quiet]:not(:has(.of)) .lyrics { background: linear-gradient(to top, rgb(0 0 0 / .45), rgb(0 0 0 / .3) calc(var(--unit) * 105), transparent calc(var(--unit) * 158)); }
