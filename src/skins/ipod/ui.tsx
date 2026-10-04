@@ -454,7 +454,9 @@ export function Marquee({ className, text, unit, children }: { className?: strin
     // re-measured on resize, so a line set while the screen was hidden starts once it shows
     const ro = new ResizeObserver(() => {
       a?.cancel();
-      const over = el.offsetWidth - b.clientWidth, u = of.current ? of.current(b) : b.clientWidth / 224;
+      // the room for the text is the box less its own fade margins (.marquee's padding)
+      const cs = getComputedStyle(b), room = b.clientWidth - (parseFloat(cs.paddingLeft) || 0) - (parseFloat(cs.paddingRight) || 0);
+      const over = el.offsetWidth - room, u = of.current ? of.current(b) : room / 224;
       if (over <= 0 || !u) return;
       const move = (over / u / 30) * 1000, T = 2 * move + 2000, x = `translateX(${-over}px)`;
       a = el.animate([{ transform: 'none' }, { transform: 'none', offset: 1000 / T }, { transform: x, offset: (1000 + move) / T },
@@ -464,7 +466,7 @@ export function Marquee({ className, text, unit, children }: { className?: strin
     return () => { ro.disconnect(); a?.cancel(); };
   }, [text]);
   // children: the line's own markup (its text is still `text`, which restarts the measure when it changes)
-  return <div ref={box} className={className}><span style={{ display: 'inline-block' }}>{children ?? text}</span></div>;
+  return <div ref={box} className={cx(s.marquee, className)}><span style={{ display: 'inline-block' }}>{children ?? text}</span></div>;
 }
 /** the Now Playing bar is the screen's 240 units wide */
 const barUnit = (b: HTMLElement) => (b.closest('[aria-label="Now Playing"]')?.getBoundingClientRect().width ?? 0) / 240;

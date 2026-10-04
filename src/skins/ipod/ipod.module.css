@@ -566,7 +566,17 @@
 }
 .nparts { flex: none; width: calc(var(--unit) * 28); border: var(--unit) solid #4A4A4A; border-radius: 0; }
 .nptext { flex: auto; min-width: 0; }
-.nptitle, .npline { overflow: hidden; white-space: nowrap; }   /* too long: it marquees (ui.tsx Marquee), no "…" */
+/* A marquee's own margins (ui.tsx Marquee): the box reaches 6 units past its text on each side, into the
+   space around it, and fades there, so a line sliding by fades out instead of being cut at the text's
+   edge, and the spacing is the text's own (the owner, 2026-10-04: "add faded edges… move where spacing is
+   so the text controls the space"). The text at rest sits wholly inside, untouched. */
+.marquee {
+  overflow: hidden; white-space: nowrap;
+  margin-left: calc(var(--unit) * -6); margin-right: calc(var(--unit) * -6);
+  padding-left: calc(var(--unit) * 6); padding-right: calc(var(--unit) * 6);
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 calc(var(--unit) * 6), #000 calc(100% - var(--unit) * 6), transparent);
+  mask-image: linear-gradient(90deg, transparent, #000 calc(var(--unit) * 6), #000 calc(100% - var(--unit) * 6), transparent);
+}
 .nptitle { font-size: calc(var(--unit) * 14); line-height: 1.25; }
 .npartist, .npline { font-size: calc(var(--unit) * 11); font-weight: 400; color: var(--ipod-dim); }
 .npline { line-height: 1.3; }
