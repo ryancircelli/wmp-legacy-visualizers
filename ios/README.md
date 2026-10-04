@@ -195,13 +195,7 @@ overlay, plays as ever).
   a channel of its own on the player thread, in order with the samples; a skip, seek or stop drops the
   queue, a pause keeps it (resuming where it was heard), the end of a context plays it out. Positions
   to the page and Control Center are what is heard; Spotify's other clients see Spirc's own, which is
-  right but after a pause and resume, when it runs ahead by what was queued. What the page and Control
-  Center are told switches to the next track at the fade's midpoint (the owner, 2026-10-03: "at 8
-  second fade it should be 4 of song before and 4 of song after / and ui should switch at the original
-  point of the song end (halfway through fade)"): the sink notes where that is in the stream, the pump
-  wakes lib.rs as it hands it over, and lib.rs holds the next track's reports until then, so a pause in
-  the first half pauses the old track and the hold with it. Spotify's own clients and the page's
-  context and queue (the cluster's) still move on at the fade's start.
+  right but after a pause and resume, when it runs ahead by what was queued.
 - **Name, id, and which device plays.** The speaker is "WMP Spotify (iOS)": the phone's own name
   ("Ryan's iPhone") is "iPhone" or "iPad" to apps since iOS 16 without an entitlement Apple grants on
   request. The page can rename it (`alchemySpeakerName(name)`, the "speaker" message; a rename
