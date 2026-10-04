@@ -143,6 +143,8 @@ export async function libraryPages(sp: Sp, filters: string[], each: (L: any) => 
       features: ['LIKED_SONGS', 'YOUR_EPISODES_V2', 'PRERELEASES', 'EVENTS'], limit: 50, offset, flatten: false,
       expandedFolders: [], folderUri: null, includeFoldersWhenFlattening: true });
     const L = d && d.me && d.me.libraryV3;
+    // a filter id Spotify does not know answers 200 with a LibraryInvalidFilterIdError in the page's place
+    if (L && /Error$/.test(L.__typename || '')) throw new Error('libraryV3: ' + (L.message || L.__typename));
     if (!L) break;
     each(L);
     if (offset + 50 >= (L.totalCount || 0)) break;

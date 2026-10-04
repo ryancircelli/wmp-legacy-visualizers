@@ -1,5 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-return */
-// Podcasts: the followed shows (libraryV3 under Your Library's Podcasts filter, paged as the Artists
+// Podcasts: the followed shows (libraryV3 under Your Library's filter id "Podcasts & Shows", named
+// "Podcasts": confirmed against the live API 2026-10-04, where the id "Podcasts" answers a
+// LibraryInvalidFilterIdError and the items are PodcastResponseWrapper { _uri, data: Podcast }; paged as the Artists
 // chip is) and a show's episodes (pathfinder queryPodcastEpisodes with { uri, offset, limit }, read at
 // data.podcastUnionV2.episodesV2 { totalCount, items }, as github.com/Aran404/SpotAPI spotapi/podcast.py
 // sends and reads it). Neither shape is in our own captures: both are read defensively and the host's
@@ -11,7 +13,7 @@ import { hashFor, query, rescan, visitRoute } from './pathfinder';
 import { RateLimitError, type Sp } from './sp';
 
 const log = (s: string) => window.alchemyLog?.('spotify: ' + s);
-const SHOWS = 'Podcasts', EPISODES = 'queryPodcastEpisodes';
+const SHOWS = 'Podcasts & Shows', EPISODES = 'queryPodcastEpisodes';
 const sources = (d: any) => (d.coverArt && d.coverArt.sources) || (d.images && d.images.items && d.images.items[0] && d.images.items[0].sources);
 
 /** A followed show (libraryV3's Podcast): a row that opens to its episodes; `owner` its publisher. */
@@ -33,7 +35,7 @@ export async function fetchShows(sp: Sp): Promise<LibraryItem[]> {
     await libraryPages(sp, filters, (L) => {
       if (Array.isArray(L.availableFilters)) offered = L.availableFilters;
       for (const i of L.items || []) {
-        const r = showRow(i && i.item && i.item.data);
+        const r = showRow(i && i.item && i.item.data && { uri: i.item._uri, ...i.item.data });
         if (r) acc.push(r); else kinds.add(String(i && i.item && i.item.__typename));
       }
     });

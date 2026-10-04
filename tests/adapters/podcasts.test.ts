@@ -19,7 +19,7 @@ afterEach(() => { stops.forEach((s) => s()); stops = []; vi.useRealTimers(); vi.
 const SHOW = 'spotify:show:5CfCWKI5pZ28U0uOzXkDHe', SHA = 'e'.repeat(64);
 const pics = (id: string) => ({ sources: [{ url: 'https://i.scdn.co/image/' + id + '64', width: 64 }, { url: 'https://i.scdn.co/image/' + id + '300', width: 300 }] });
 /** libraryV3's Podcasts filter: one show in libraryV3's item wrapper, and Your Episodes (not a show) */
-const showsPage = (filters: object[] = [{ id: 'Playlists', name: 'Playlists' }, { id: 'Podcasts', name: 'Podcasts & Shows' }]) => ({ data: { me: { libraryV3: {
+const showsPage = (filters: object[] = [{ id: 'Playlists', name: 'Playlists' }, { id: 'Podcasts & Shows', name: 'Podcasts' }]) => ({ data: { me: { libraryV3: {
   __typename: 'LibraryPage', totalCount: 2, availableFilters: filters, items: [
     { item: { __typename: 'LibraryPseudoPlaylistResponseWrapper', _uri: 'spotify:collection:your-episodes', data: { uri: 'spotify:collection:your-episodes', name: 'Your Episodes' } } },
     { item: { __typename: 'PodcastResponseWrapper', _uri: SHOW, data: { __typename: 'Podcast', uri: SHOW, name: 'Hard Fork', coverArt: pics('show'), publisher: { name: 'The New York Times' } } } },
@@ -54,7 +54,7 @@ describe('the followed shows', () => {
     const env = setup();
     expect(await Q.fetchShows()).toEqual([{ uri: SHOW, name: 'Hard Fork', image: 'https://i.scdn.co/image/show300', owner: 'The New York Times' }]);
     const lv = env.ops('libraryV3');
-    expect(JSON.stringify(lv[0]!.body.variables)).toBe(JSON.stringify({ ...FX.libraryV3.request.variables, filters: ['Podcasts'] }));
+    expect(JSON.stringify(lv[0]!.body.variables)).toBe(JSON.stringify({ ...FX.libraryV3.request.variables, filters: ['Podcasts & Shows'] }));
     expect(Q.keys.shows()).toEqual([...Q.keys.libraryList(), 'shows']);
     expect(env.log).not.toHaveBeenCalled();
   });
@@ -62,7 +62,7 @@ describe('the followed shows', () => {
     const env = setup({ library: (f) => (f[0] === 'Shows' ? showsPage([{ id: 'Shows', name: 'Podcasts' }])
       : { data: { me: { libraryV3: { totalCount: 0, availableFilters: [{ id: 'Shows', name: 'Podcasts' }], items: [] } } } }) });
     expect((await Q.fetchShows()).map((s) => s.name)).toEqual(['Hard Fork']);
-    expect(env.ops('libraryV3').map((c) => c.body.variables.filters)).toEqual([['Podcasts'], ['Shows']]);
+    expect(env.ops('libraryV3').map((c) => c.body.variables.filters)).toEqual([['Podcasts & Shows'], ['Shows']]);
     const none = setup({ library: () => FX.libraryV3.response });                            // the captured library: no Podcasts filter
     expect(await Q.fetchShows()).toEqual([]);
     expect(none.log).toHaveBeenCalledWith('spotify: libraryV3: no followed shows (filters offered: Playlists, Artists, Albums; '
