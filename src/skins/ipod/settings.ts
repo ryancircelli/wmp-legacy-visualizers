@@ -23,6 +23,9 @@ export const COLORS: Record<Preset, readonly [number, number, number]> = {
   // gold (the owner, 2026-10-03): the owner's mustard sweater, sampled at 40° 65% 43% in its mid tones and about 41° 69% 46% where lit (after two guesses at a brighter gold, #d4af37's neighbourhood), so its
   // base is that over LOOK, the cylinder's lights lifting it back
   gold: [41, 60, 40],
+  // navy (the owner, 2026-10-05): his washed-navy tee, #2C3A5B (222° 34% 26%) in an evenly lit listing photo (a
+  // first photo under a train's warm light had read grey); as gold, its base is that over LOOK
+  navy: [222, 31, 24],
 };
 /** Custom's lightness range: the body's lights top out at 72 % (ipod.module.css --hi), so past 75 the
  *  cylinder goes flat (its centre as bright as its bands); under 15 its edge and shade go black */

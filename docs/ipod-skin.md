@@ -104,6 +104,7 @@ in the render are duller than real photos, so the suggested values are saturated
 | Espresso Brown (owner's, not Apple's; darkened 2026-10-02) | — | `22 36% 17%` | — | — | white / #8e8e93 |
 | Crimson (owner's, 2026-10-02, "add this red": his Custom pick hue 0, saturation 100, lightness 29, kept as its base over LOOK) | — | `0 87% 25%` | — | — | white / #8e8e93 |
 | Gold (owner's, 2026-10-03, "add a gold color, make sure to adjust for metallic sheen": then "this color", a photo of a mustard sweater sampled near `41 69% 46%`; kept as that over LOOK) | — | `41 60% 40%` | — | — | white / #8e8e93 |
+| Navy (owner's, 2026-10-05, his washed-navy tee: a listing photo in even light sampled `#2C3A5B`, `222 34% 26%`; his first photo under a train's warm light read grey; kept as that over LOOK) | — | `222 31% 24%` | — | — | white / #8e8e93 |
 
 ### 1.3 The aluminium in CSS: one hue knob
 
