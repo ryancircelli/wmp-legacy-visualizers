@@ -73,19 +73,27 @@ pub fn alive(h: isize) -> bool {
 /// XP title bar — the strip the Deno host removed by hand in `WM_NCCALCSIZE`. Painted the title
 /// bar's own top colour it is part of the title bar. Windows 10 refuses all three and keeps the
 /// square window it always had.
-pub fn chrome(h: isize) {
+///
+/// `top` (0xRRGGBB) instead of the Luna blue while the page draws its own window (host.rs
+/// `win_chrome`): the rows are then above the page's own top row, and painted its colour they are
+/// part of that.
+pub fn chrome(h: isize, top: Option<u32>) {
     let set = |attr, v: u32| unsafe {
         let _ = DwmSetWindowAttribute(hwnd(h), attr, &v as *const u32 as _, 4);
     };
     set(DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_ROUND.0 as u32);
     set(DWMWA_BORDER_COLOR, DWMWA_COLOR_NONE);
-    set(DWMWA_CAPTION_COLOR, 0x00EB_6314); // COLORREF 0x00BBGGRR: #1463EB
+    // COLORREF is 0x00BBGGRR
+    let caption = top.map_or(0x00EB_6314, |c| {
+        ((c & 0xFF) << 16) | (c & 0xFF00) | ((c >> 16) & 0xFF)
+    });
+    set(DWMWA_CAPTION_COLOR, caption);
 }
 
 /// `chrome` for this process's window of `class` the moment it exists. The main thread is inside
 /// the window builder until WebView2 is up, half a second after the window is on screen, and
 /// until then the frame would show Windows' own grey caption rows; this thread is not.
-pub fn chrome_when_created(class: &'static str) {
+pub fn chrome_when_created(class: &'static str, top: Option<u32>) {
     std::thread::spawn(move || {
         let (pid, class) = (std::process::id(), HSTRING::from(class));
         for _ in 0..2000 {
@@ -94,7 +102,7 @@ pub fn chrome_when_created(class: &'static str) {
                 let mut owner = 0;
                 unsafe { GetWindowThreadProcessId(h, Some(&mut owner)) };
                 if owner == pid {
-                    return chrome(h.0 as isize);
+                    return chrome(h.0 as isize, top);
                 }
                 after = Some(h);
             }

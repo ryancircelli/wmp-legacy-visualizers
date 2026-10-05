@@ -31,6 +31,19 @@
 //! a thread-local CBT hook around the builder (`hook`, win.rs `on_create`), which is how MFC
 //! subclasses its windows — and the first `WM_PAINT` is already the title bar.
 //!
+//! **Why it can step aside.** A skin that is not WMP 9 may draw a window of its own (iTunes 10, its
+//! menu row the caption and its own caption buttons: src/skins/itunes/desktop/Chrome.tsx), and the
+//! XP strip and frame round it would be two windows in one. `native` takes them away while that
+//! skin is up (host.rs `win_chrome`): the strip's height becomes 0, as in full screen, so the same
+//! `inner`, `place` and hit test that full screen already goes through give the web view the whole
+//! client area and leave every hit to tao. Nothing is lost by it: the sides and the bottom of a
+//! frameless window with a shadow are real non-client borders (tao's `WM_NCCALCSIZE` insets, the
+//! invisible resize band DWM keeps outside the visible edge), the top rows resize through tao's
+//! `HTTOP` and Tauri's own drag-resize child above the web view, and the page's caption drags
+//! (`startDragging`, the system's move loop, Aero Snap with it) and maximizes on a double-click.
+//! What the page's caption cannot have is what only `WM_NCHITTEST` gives: Snap Layouts on its
+//! maximize button and the system menu on a right-click (Alt+Space still opens it).
+//!
 //! **macOS** has none of this yet: the page draws its title bar there (host.js sets the flag on
 //! Windows only). The equivalent is an `NSView` of the same height pinned to the top of the content
 //! view (drawn with Core Graphics and Core Text, the SVGs through resvg into a `CGImage`) with the
@@ -686,6 +699,8 @@ fn frame_px(look: &Look, w: i32, h: i32, s: f32, x: i32, y: i32) -> u32 {
 
 #[derive(Default)]
 struct Strip {
+    /// the page draws the window itself (`native`): no strip and no frame
+    off: bool,
     hot: Option<Btn>,
     down: Option<Btn>,
     tracking: bool,
@@ -717,10 +732,11 @@ fn dpi(h: HWND) -> u32 {
 }
 
 /// The strip's height in `h` now: none in full screen, where tao drops the frame styles
-/// (`WS_OVERLAPPEDWINDOW`) that a frameless window otherwise keeps.
+/// (`WS_OVERLAPPEDWINDOW`) that a frameless window otherwise keeps, and none while the page draws
+/// the window (`native`).
 fn height(h: HWND) -> i32 {
     let style = unsafe { GetWindowLongW(h, GWL_STYLE) } as u32;
-    if style & WS_CAPTION.0 != WS_CAPTION.0 {
+    if style & WS_CAPTION.0 != WS_CAPTION.0 || with(h, |st| st.off) == Some(true) {
         return 0;
     }
     bar_height(dpi(h) as f32 / 96.0)
@@ -752,10 +768,16 @@ fn inner(h: HWND) -> RECT {
 
 /// While it lives, every `CLASS` window this thread makes has the strip from its creation on: put
 /// it round the window builder. `max`: the window is being created maximized (win.rs `maximized`).
-pub fn hook(max: bool) -> Option<crate::win::OnCreate> {
+/// `native`: false when its page last drew the window itself (host.rs `own_chrome`), so a window
+/// whose skin is iTunes opens without a frame of XP strip before the page takes it away.
+pub fn hook(max: bool, native: bool) -> Option<crate::win::OnCreate> {
     warm();
     crate::win::on_create(CLASS, move |h, _| {
-        STRIPS.with(|s| s.borrow_mut().push((h.0 as isize, RefCell::default())));
+        let st = Strip {
+            off: !native,
+            ..Default::default()
+        };
+        STRIPS.with(|s| s.borrow_mut().push((h.0 as isize, RefCell::new(st))));
         let _ = unsafe { SetWindowSubclass(h, Some(window), ID, 0) };
         if max {
             crate::win::maximized(h);
@@ -770,6 +792,17 @@ pub fn adopt(h: isize, controller: ICoreWebView2Controller) {
     let _ = unsafe { controller.ParentWindow(&mut container) };
     if with(h, |st| st.views.push(controller)).is_some() {
         fit(container);
+    }
+}
+
+/// The XP window round the page in `h`, or none while the page draws its own (host.rs
+/// `win_chrome`): the web views refitted to what they now go inside, and the strip and frame
+/// painted when they come back. On the main thread, where the strips are.
+pub fn native(h: isize, on: bool) {
+    let h = HWND(h as _);
+    if with(h, |st| std::mem::replace(&mut st.off, !on) == on) == Some(true) {
+        place(h);
+        repaint(h);
     }
 }
 

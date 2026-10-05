@@ -1,5 +1,5 @@
 // What the desktop host gives the page, before any page script, on every document (host.rs
-// `script` calls this with H = {mode, hostUpdate}). The same globals the Deno host's
+// `script` calls this with H = {mode, hostUpdate, chrome, nativeTitle}). The same globals the Deno host's
 // init script set (its main.ts initScript; src/adapters/host/globals.ts), implemented
 // with Tauri's IPC and window API instead of webview bindings.
 (function (H) {
@@ -85,6 +85,18 @@
   // skin's status-bar grip is the resize handle. The corners are DWM's (win.rs chrome), so the page
   // draws its own square, as template.html does when maximized.
   window.alchemyNativeTitle = H.nativeTitle === true;
+  // A skin that draws a window of its own (iTunes) takes the host's away while it is up, and gives
+  // it back as it goes: on = the XP title bar and frame, off = the page fills the window. edge is
+  // the colour of the page's top row ('#RRGGBB', needed when off): Windows 11 keeps a row or two of
+  // frame above the page and paints it so. The host remembers the last word for the window's next
+  // launch, whose alchemyNativeTitle then says what it opened with (host.rs win_chrome).
+  if (H.chrome) {
+    window.alchemyNativeChrome = function (on, edge) {
+      call('win_chrome', { native: on === true, edge: edge }).catch(function (e) {
+        window.alchemyLog('native chrome refused (' + e + ')');
+      });
+    };
+  }
   addEventListener('DOMContentLoaded', function () {
     var q = document.createElement('style');
     q.textContent = '#chrome,#titlebar{border-radius:0!important}';

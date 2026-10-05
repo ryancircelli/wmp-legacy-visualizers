@@ -130,7 +130,8 @@ verified page update when there is one (below). Every answer is `Cache-Control: 
 exe or page is never shown an older cached copy; a missing file is a 404.
 
 The data folder is `%LOCALAPPDATA%\WmpLegacyVisualizers\tauri\`: `WebView2\` (the profile, with
-Spotify's inside it), `window-state.json`, `alchemy.log`, `update\` and `lyrics\`. Two decisions are in
+Spotify's inside it), `window-state.json`, `chrome.json` (the windows whose skin draws its own frame,
+below), `alchemy.log`, `update\` and `lyrics\`. Two decisions are in
 that path:
 
 - **It is read from the `LOCALAPPDATA` variable, as the Deno host always did,** not through Tauri's
@@ -459,6 +460,27 @@ mean is 4.9, and all of it is the (−9, 0, +5) shift WebView2's colour manageme
 GDI does not. Driven by synthetic input: drag, double-click, both snaps, Snap Layouts, the three buttons,
 both system menus, the top edge, a live resize (12 frames mid-drag), F and Esc; the page keeps the
 keyboard focus throughout. The exe grows by 0.86 MB, resvg.
+
+**It steps aside for a skin with a window of its own.** The iTunes 10 skin draws iTunes for
+Windows' own caption, its menu row with the caption buttons, and inside the XP strip and the blue
+frame it would be one window drawn inside another. While that skin is up the page calls
+`alchemyNativeChrome(false, '#F3F3F4')` (the `win_chrome` command), and `true` as it goes. Off, the
+strip's height is 0, as in full screen, so the web views get the whole client area through the same
+`inner` and `place`, nothing is painted, and every hit falls through to tao. Nothing a window needs
+goes with it: the sides and the bottom of a frameless window with a shadow are real non-client
+borders (tao's `WM_NCCALCSIZE` insets, the invisible band DWM keeps outside the visible edge), the
+top rows resize through tao's `HTTOP` and Tauri's drag-resize child above the web view, and the
+page's caption drags through `startDragging` (the system's move loop, so Aero Snap) and maximizes on
+a double-click (two mousedowns, `useWindowControls`). The second argument is the page's top row:
+Windows 11's row or two of frame above the page (above) is painted in it instead of Luna blue. The
+last word per window is kept in `chrome.json` (`{"player":"#F3F3F4"}`; on removes the entry), and the
+next launch creates that window without the strip, its caption rows and its fill in that colour, and
+tells the page (`alchemyNativeTitle` false), so an iTunes window never opens with a frame of XP strip.
+What the page's caption cannot have is what only the top-level window's `WM_NCHITTEST` gives: Snap
+Layouts on hovering its maximize button (Win+Z and dragging to the screen's top still offer them) and
+the system menu on a right-click (Alt+Space still opens it). An exe from before the binding, given the
+new page by a page update, keeps the strip, and the skin then leaves out its own title and caption
+buttons, as it did before.
 
 **The page half went to master first.** The page change (the artwork moved into shared SVG files, and
 `#titlebar` hidden when `alchemyNativeTitle` is set) reached master, and so the website, before the host

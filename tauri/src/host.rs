@@ -8,15 +8,90 @@ use tauri::{
     AppHandle, Manager, PhysicalPosition, PhysicalSize, Runtime, WebviewWindow, WindowEvent,
 };
 
-/// The init script every document gets before its own.
-pub fn script(mode: Mode, host_update: bool) -> String {
+/// The init script every document gets before its own. `native`: the window opens with the host's
+/// title bar, not without it for a page that draws its own (`own_chrome`).
+pub fn script(mode: Mode, host_update: bool, native: bool) -> String {
+    let chrome = cfg!(windows) && mode != Mode::Saver;
     let h = serde_json::json!({
         "mode": if mode == Mode::Saver { "screensaver" } else { "config" },
         "hostUpdate": host_update,
-        // the host draws the title bar (titlebar.rs): the page hides its own
-        "nativeTitle": cfg!(windows) && mode != Mode::Saver,
+        // the host can draw the title bar (titlebar.rs) and take it away (`win_chrome`)
+        "chrome": chrome,
+        // it does now: the page hides its own
+        "nativeTitle": chrome && native,
     });
     format!("{}({h});", include_str!("host.js"))
+}
+
+/// `alchemyNativeChrome(on, edge)`: the host's XP window round the page (titlebar.rs), or none for a
+/// skin that draws a window of its own (iTunes), whose top row is `edge` ('#RRGGBB': Windows 11's
+/// row or two of frame above the page is painted in it, win.rs `chrome`). The page says so as the
+/// skin comes and goes; the last word is kept (`chrome.json`), so the window opens the way that
+/// skin wants it next time, rather than with a frame of XP strip until the page takes it away.
+#[tauri::command]
+pub fn win_chrome<R: Runtime>(
+    window: WebviewWindow<R>,
+    native: bool,
+    edge: Option<String>,
+) -> Result<(), String> {
+    let edge = match native {
+        true => None,
+        false => Some(edge.filter(|e| rgb(e).is_some()).ok_or("edge: not #RRGGBB")?),
+    };
+    #[cfg(windows)]
+    {
+        let hwnd = window.hwnd().map(|h| h.0 as isize).unwrap_or_default();
+        let top = edge.as_deref().and_then(rgb);
+        // the strips live on the main thread (titlebar.rs)
+        let _ = window.run_on_main_thread(move || {
+            crate::titlebar::native(hwnd, native);
+            crate::win::chrome(hwnd, top);
+        });
+    }
+    if let Some(f) = chrome_file() {
+        remember(&f, window.label(), edge.as_deref());
+    }
+    log::info!("{}: native chrome {native}", window.label());
+    Ok(())
+}
+
+/// The windows whose page draws its own (`win_chrome`), by label, each with its top row's colour.
+fn chrome_file() -> Option<std::path::PathBuf> {
+    crate::data_root().map(|r| r.join("chrome.json"))
+}
+
+fn saved(f: &std::path::Path) -> std::collections::BTreeMap<String, String> {
+    std::fs::read(f)
+        .ok()
+        .and_then(|b| serde_json::from_slice(&b).ok())
+        .unwrap_or_default()
+}
+
+fn remember(f: &std::path::Path, label: &str, edge: Option<&str>) {
+    let mut all = saved(f);
+    let before = all.clone();
+    match edge {
+        Some(e) => all.insert(label.into(), e.into()),
+        None => all.remove(label),
+    };
+    if all != before
+        && let Err(e) = std::fs::write(f, serde_json::to_vec(&all).unwrap_or_default())
+    {
+        log::error!("{}: {e}", f.display());
+    }
+}
+
+/// The top row's colour (0xRRGGBB) of window `label` if its page last drew the window itself.
+pub fn own_chrome(label: &str) -> Option<u32> {
+    saved(&chrome_file()?).get(label).and_then(|e| rgb(e))
+}
+
+/// '#RRGGBB' as 0xRRGGBB.
+fn rgb(s: &str) -> Option<u32> {
+    let hex = s
+        .strip_prefix('#')
+        .filter(|h| h.len() == 6 && h.bytes().all(|b| b.is_ascii_hexdigit()))?;
+    u32::from_str_radix(hex, 16).ok()
 }
 
 /// Whether the player window is covered (win.rs `occluded`); the page is told on each change and
@@ -39,12 +114,15 @@ fn seen<R: Runtime>(w: &WebviewWindow<R>, hwnd: isize) {
     }
 }
 
-/// Everything a window needs beyond what its builder set.
-pub fn attach<R: Runtime>(w: &WebviewWindow<R>, mode: Mode) {
+/// Everything a window needs beyond what its builder set. `top`: its page draws the window, its
+/// top row this colour (`own_chrome`).
+pub fn attach<R: Runtime>(w: &WebviewWindow<R>, mode: Mode, top: Option<u32>) {
     #[cfg(windows)]
     let hwnd = w.hwnd().map(|h| h.0 as isize).unwrap_or_default();
     #[cfg(windows)]
-    crate::win::chrome(hwnd);
+    crate::win::chrome(hwnd, top);
+    #[cfg(not(windows))]
+    let _ = top;
     #[cfg(windows)]
     crate::win::animate(hwnd); // off while it was created maximized (win.rs `maximized`)
     if mode == Mode::Saver {
@@ -196,8 +274,27 @@ pub async fn check_update<R: Runtime>(app: AppHandle<R>) -> crate::update::Check
 
 #[cfg(test)]
 mod tests {
-    use super::span;
+    use super::{remember, rgb, saved, span};
     use tauri::{PhysicalPosition as P, PhysicalSize as S};
+
+    /// What the page last said of each window's chrome is what the next launch reads, one window's
+    /// word leaving the other's alone; a colour that is not '#RRGGBB' is none.
+    #[test]
+    fn own_chrome() {
+        let f = std::env::temp_dir().join(format!("wmp-chrome-test-{}.json", std::process::id()));
+        let _ = std::fs::remove_file(&f);
+        let of = |label: &str| saved(&f).get(label).and_then(|e| rgb(e));
+        assert_eq!(of("player"), None);
+        remember(&f, "player", Some("#F3F3F4"));
+        remember(&f, "spotify", Some("#000000"));
+        assert_eq!((of("player"), of("spotify")), (Some(0xF3F3F4), Some(0)));
+        remember(&f, "player", None);
+        assert_eq!((of("player"), of("spotify")), (None, Some(0)));
+        std::fs::remove_file(&f).unwrap();
+        for bad in ["F3F3F4", "#F3F3F", "#F3F3F44", "#+3F3F4", "#GGGGGG", ""] {
+            assert_eq!(rgb(bad), None, "{bad}");
+        }
+    }
 
     fn of(boxes: &[(i32, i32, u32, u32)]) -> Option<(i32, i32, u32, u32)> {
         span(

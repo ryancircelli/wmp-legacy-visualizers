@@ -149,6 +149,7 @@ fn builder<'a, R: Runtime>(
     app: &'a AppHandle<R>,
     label: &str,
     mode: Mode,
+    native: bool,
 ) -> WebviewWindowBuilder<'a, R, AppHandle<R>> {
     let query = if mode == Mode::Saver {
         "mode=screensaver&ss=1"
@@ -169,7 +170,7 @@ fn builder<'a, R: Runtime>(
         // On screen at once, at its final box and in the skin's colour, before WebView2 is started
         // (which `build` then waits for): the window a native app gives, filled in a moment later.
         .visible(true)
-        .initialization_script(host::script(mode, host_update));
+        .initialization_script(host::script(mode, host_update, native));
     let b = match browser_args() {
         Some(args) => b.additional_browser_args(&args),
         None => b,
@@ -239,6 +240,8 @@ fn open<R: Runtime>(app: &AppHandle<R>, mode: Mode) -> tauri::Result<()> {
         w.show()?;
         return w.set_focus();
     }
+    // its page draws the window itself (an iTunes skin), its top row this colour (host.rs win_chrome)
+    let own = host::own_chrome(label);
     let w = match mode {
         // One window over every monitor, topmost and off the taskbar.
         // ponytail: one spanning window, as the Deno host; one per monitor if per-display framing is wanted.
@@ -247,7 +250,7 @@ fn open<R: Runtime>(app: &AppHandle<R>, mode: Mode) -> tauri::Result<()> {
             // over the virtual screen from its creation; a key or a click ends it from then on
             #[cfg(target_os = "windows")]
             let _input = win::saver("AlchemySaver", (pos.x, pos.y, size.width, size.height));
-            let b = builder(app, label, mode)
+            let b = builder(app, label, mode, true)
                 .window_classname("AlchemySaver")
                 .decorations(false)
                 .resizable(false)
@@ -266,20 +269,25 @@ fn open<R: Runtime>(app: &AppHandle<R>, mode: Mode) -> tauri::Result<()> {
             w
         }
         // The player: no frame of its own. The XP title bar is the host's on Windows (titlebar.rs,
-        // from the window's first frame) and the page's elsewhere (host.js).
+        // from the window's first frame) and the page's elsewhere (host.js); none from the host
+        // for a page that draws its own window.
         _ => {
             let at = remembered(app, label);
             #[cfg(target_os = "windows")]
-            win::chrome_when_created("AlchemyHost");
+            win::chrome_when_created("AlchemyHost", own);
             #[cfg(target_os = "windows")]
-            let _title_bar = titlebar::hook(at.is_some_and(|(_, _, max)| max));
-            let b = builder(app, label, mode)
+            let _title_bar = titlebar::hook(at.is_some_and(|(_, _, max)| max), own.is_none());
+            // under the title bar until the page paints (and WebView2's own background): the menu
+            // bar's face, the first row of the skin (docs/history/deno-webview.md); the page's own
+            // top row when it draws the window
+            let fill = own.map_or(Color(0xEC, 0xE9, 0xD8, 255), |c| {
+                Color((c >> 16) as u8, (c >> 8) as u8, c as u8, 255)
+            });
+            let b = builder(app, label, mode, own.is_none())
                 .window_classname("AlchemyHost") // the Deno host's class, for whatever looks for it
                 .decorations(false)
                 .min_inner_size(480.0, 360.0)
-                // under the title bar until the page paints (and WebView2's own background): the
-                // menu bar's face, the first row of the skin (docs/history/deno-webview.md)
-                .background_color(Color(0xEC, 0xE9, 0xD8, 255));
+                .background_color(fill);
             let b = if mode == Mode::Spotify {
                 b.initialization_script(spotify::INIT_JS)
             } else {
@@ -295,7 +303,7 @@ fn open<R: Runtime>(app: &AppHandle<R>, mode: Mode) -> tauri::Result<()> {
             .build()?
         }
     };
-    host::attach(&w, mode);
+    host::attach(&w, mode, own);
     if mode == Mode::Spotify {
         spotify::attach(&w);
     }
@@ -413,6 +421,7 @@ fn main() {
             host::host_log,
             host::dismiss,
             host::win_full,
+            host::win_chrome,
             host::check_update,
             spotify::sp_snapshot,
             spotify::sp_request,
