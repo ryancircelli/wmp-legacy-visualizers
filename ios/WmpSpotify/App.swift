@@ -1009,6 +1009,27 @@ func notify(_ body: String) {
 // Inside the safe area they are all 0; edge to edge they are the notch's and the home indicator's.
 // They are the window's, where the web view overlaps them, and never the keyboard's: SwiftUI counts
 // the keyboard in a hosted view's own safeAreaInsets while it shows, and the page would pad itself by it.
+/// Three fingers held on the screen open the log, whatever the page shows: a page that went blank
+/// left no way to it (the owner, 2026-10-05: "i didn't have ui to access them"). A shake is the
+/// page's (the iPod's shuffle), so it is not this. Alongside the page's own touches, never instead.
+final class LogPress: NSObject, UIGestureRecognizerDelegate {
+    static let shared = LogPress()
+    func recognizer() -> UILongPressGestureRecognizer {
+        let g = UILongPressGestureRecognizer(target: self, action: #selector(pressed(_:)))
+        g.numberOfTouchesRequired = 3
+        g.minimumPressDuration = 0.8
+        g.cancelsTouchesInView = false
+        g.delegate = self
+        return g
+    }
+    @objc func pressed(_ g: UILongPressGestureRecognizer) {
+        guard g.state == .began else { return }
+        HostLog.shared.log("log: opened by three fingers", quiet: true)
+        PageLayout.shared.showLog = true
+    }
+    func gestureRecognizer(_ g: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool { true }
+}
+
 final class InsetWebView: WKWebView {
     override func safeAreaInsetsDidChange() {
         super.safeAreaInsetsDidChange()
@@ -1021,6 +1042,9 @@ final class InsetWebView: WKWebView {
         // The first responder, so that a shake reaches motionEnded (WebKit hands this on to its
         // content view, which passes the motion up to here).
         if window != nil { becomeFirstResponder() }
+        if window != nil, gestureRecognizers?.contains(where: { $0.delegate === LogPress.shared }) != true {
+            addGestureRecognizer(LogPress.shared.recognizer())
+        }
     }
 
     override var canBecomeFirstResponder: Bool { true }

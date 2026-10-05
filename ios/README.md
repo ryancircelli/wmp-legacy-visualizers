@@ -69,7 +69,8 @@ noted), posted with `webkit.messageHandlers.<name>.postMessage(<string>)` and wr
 - `awake`: `"on"` keeps the screen from sleeping, `"off"` lets it.
 - `statusbar`, `homeindicator`: `"hidden"` or `"shown"`.
 - `band`: `"hidden"` or `"shown"` (the default), the log band under the web view in the safe layout;
-  hidden, the web view takes its place and the log opens by `showlog`.
+  hidden, the web view takes its place and the log opens by `showlog`, or natively by holding three
+  fingers on the screen (`LogPress`), which works whatever the page shows, a blank one included.
 - `background`: a CSS hex color, `"#rrggbb"` or `"#rgb"`, behind the web view and in the safe layout's
   bars (black by default); anything else is ignored.
 - `keyboard`: `"ignore"` (the default: the keyboard covers the page) or `"avoid"` (the layout shrinks to
