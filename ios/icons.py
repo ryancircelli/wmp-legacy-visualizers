@@ -8,8 +8,8 @@ for Custom a grid the page snaps to (src/skins/ipod/icon.ts: the same HUES, LIGH
   python3 ios/icons.py            writes ios/WmpSpotify/Assets.xcassets/Icon-<name>.appiconset/ and, in the
                                   default body colour (green), AppIcon.appiconset's own
 Needs Pillow."""
-import colorsys, json, os, re, sys
-from PIL import Image
+import colorsys, json, math, os, re, sys
+from PIL import Image, ImageFilter
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 ASSETS = os.path.join(ROOT, 'WmpSpotify', 'Assets.xcassets')
@@ -45,6 +45,39 @@ def recolour(src, ref, h, s, l):
         out.append(memo[p])
     return out
 
+def chrome_map(w):
+    """The orb as coloured chrome (the owner, 2026-10-05: "more metallic", "anodized/colored chrome"): the
+    lightness a polished dome takes from what it mirrors, 0..255 over the orb (`w`, its mask): a sky
+    brightest at the top fading to a horizon bowed by the dome, the darkest band just under it, a ground
+    lit again toward the rim, a window's reflection right of centre in the sky, a shade at the rim and a
+    glint upper left. Position only, so made once and laid over every colour."""
+    l, t, r, b = w.point(lambda v: 255 if v > 128 else 0).getbbox()
+    cx, cy, rad = (l + r) / 2, (t + b) / 2, (r - l) / 2
+    n, out = w.size[0], []
+    for y in range(n):
+        v = (y - cy) / rad
+        for x in range(n):
+            u = (x - cx) / rad
+            r2, e = u * u + v * v, v - 0.14 + 0.35 * u * u          # e > 0: below the horizon
+            g = 0.60 + 0.30 * min(1.0, -e) ** 0.6 + 0.25 * math.exp(-((u - 0.52) / 0.09) ** 2) if e < 0 \
+                else 0.20 + 0.52 * min(1.0, e / 0.85) ** 0.8
+            if r2 > 0.72: g *= 1 - 0.35 * (r2 - 0.72) / 0.28
+            g += 0.5 * math.exp(-(((u + 0.38) / 0.22) ** 2 + ((v + 0.42) / 0.10) ** 2))
+            out.append(round(255 * max(0.0, min(1.0, g))))
+    m = Image.new('L', w.size)
+    m.putdata(out)
+    return m.filter(ImageFilter.GaussianBlur(1.2))
+
+def chrome(base, w, g, h, s, l):
+    """`base` with its orb in chrome of the colour: its hue throughout (anodized: the glints tinted too, paler
+    only at their brightest), its lightness the chrome's, scaled to the colour's own value."""
+    r, gr, b = colorsys.hls_to_rgb(h / 360, l / 100, s / 100)
+    hh, ss, vv = colorsys.rgb_to_hsv(r, gr, b)
+    sat = g.point(lambda q: round(255 * ss * (1 - 0.55 * max(0.0, (q / 255 - 0.8) / 0.2))))
+    val = g.point(lambda q: round(255 * min(1.0, 0.04 + q / 255 * (0.35 + 0.95 * vv))))
+    lay = Image.merge('HSV', (Image.new('L', base.size, round(255 * hh)), sat, val)).convert('RGB')
+    return Image.composite(lay, base, w)
+
 def main():
     im = Image.open(SRC).convert('RGB')
     src = list(im.getdata())
@@ -53,6 +86,10 @@ def main():
     col = [x for x in hls if x[2] > 0.5]
     mid = lambda i: sorted(x[i] for x in col)[len(col) // 2]
     ref = (mid(0) * 360, mid(2) * 100, mid(1) * 100)
+    # the orb: where the source is coloured, weighted as recolour weights it
+    w = Image.new('L', im.size)
+    w.putdata([round(255 * min(1.0, colorsys.rgb_to_hls(p[0] / 255, p[1] / 255, p[2] / 255)[2] / 0.4)) for p in src])
+    g = chrome_map(w)
     want = {name: (h, min(100, s * LOOK), min(72, l * LOOK)) for name, (h, s, l) in presets().items()}
     for h in HUES:
         for l in LIGHTS: want['c-h%03d-l%d' % (h, l)] = (h, 80, l)
@@ -62,6 +99,7 @@ def main():
         os.makedirs(d, exist_ok=True)
         out = Image.new('RGB', im.size)
         out.putdata(recolour(src, ref, h, s, l))
+        out = chrome(out, w, g, h, s, l)
         out.save(os.path.join(d, 'icon-1024.png'), optimize=True)
         json.dump({'images': [{'filename': 'icon-1024.png', 'idiom': 'universal', 'platform': 'ios', 'size': '1024x1024'}],
                    'info': {'author': 'xcode', 'version': 1}}, open(os.path.join(d, 'Contents.json'), 'w'), indent=2)
