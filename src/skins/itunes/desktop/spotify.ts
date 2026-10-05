@@ -1,13 +1,14 @@
 // Spotify's features iTunes 10 had no place for, as the window's own small pieces (docs/itunes-skin.md
 // §3.1): radio from any collection (Genius from an album, a playlist, an artist), a shuffled play, a link
 // copied, saving to Your Library, the songs this window has played (iTunes DJ's history above Up Next),
-// the Canvas's place in the artwork pane, and the song Get Info opens on.
+// the Canvas's place in the artwork pane, the song Get Info opens on, and a playlist made or deleted.
 import { useEffect } from 'react';
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { LIKED, type Track } from '../../../model';
 import { canSave, shareUrl, useAddTo, useLibraryList, useShell, type Shell } from '../../../ui';
 import { playUri } from '../shared/content';
+import { itunesView, viewActions } from '../shared/state';
 
 /** Radio from a song, album, playlist or artist (Spotify's "Go to radio"; the iPod's Start Radio): the
  *  station seeded from it, played; the status note says when there is none. */
@@ -91,3 +92,37 @@ export function openInfo(sh: Shell, t: Track | null): void {
   if (t) sh.store.getState().actions.setUi({ dialog: 'info' });
 }
 export const infoTrack = (): Track | null => info;
+
+// ---- New Playlist, Delete ------------------------------------------------------------------------------
+
+/** iTunes' new playlist: an "untitled playlist" row at the end of the source list, its name being typed. */
+export const naming = create<{ on: boolean }>(() => ({ on: false }));
+
+/** File > New Playlist (Ctrl+N), the bottom bar's +: the name row in the source list (the library shown,
+ *  the narrow window's sidebar over the content). */
+export function newPlaylist(sh: Shell): void {
+  const s = sh.store.getState();
+  if (!s.commands.createPlaylist) return;
+  if (s.ui.view === 'now') s.actions.setView('library');
+  viewActions.setSidebarOpen(true);
+  naming.setState({ on: true });
+}
+
+/** The name typed: the playlist made (Spotify puts it first in the library), then selected. */
+export async function makePlaylist(sh: Shell, name: string): Promise<void> {
+  const uri = await sh.store.getState().commands.createPlaylist?.(name);
+  if (uri) viewActions.select(uri);
+}
+
+let doomed: { uri: string; name: string } | null = null;
+/** A playlist's Delete (its right-click in the source list): asked first, as iTunes asked. */
+export function askDelete(sh: Shell, uri: string, name: string): void {
+  doomed = { uri, name };
+  sh.store.getState().actions.setUi({ dialog: 'deletePlaylist' });
+}
+export const doomedPlaylist = () => doomed;
+
+/** Deleted (Spotify's Delete: off the library), and Music selected if it was the one showing. */
+export async function deletePlaylist(sh: Shell, uri: string): Promise<void> {
+  if (await sh.store.getState().commands.deletePlaylist?.(uri) && itunesView.getState().source === uri) viewActions.select('music');
+}

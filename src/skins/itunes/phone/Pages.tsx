@@ -11,7 +11,7 @@ import { create } from 'zustand';
 import { mss, type Track } from '../../../model';
 import {
   canSave, cx, isAlbum, SearchScope, useAddTo, useApp, useDebounced, useLibraryList, usePlayback, useSearchResults, useShell,
-  type TileItem, type TileSection,
+  type Shell, type TileItem, type TileSection,
 } from '../../../ui';
 import {
   AlbumGrid, albumsOf, COLUMNS, CoverFlow, Icon, opensPage, playRow, playUri, queueOrder, SourceList, statusLine, styles, TrackTable, useItunesView,
@@ -164,15 +164,31 @@ const pick = (id: string) => {
   nav.source();
 };
 
+/** PLAYLISTS' first row while the engine makes playlists: the iPhone Music app's Add Playlist…, its name
+ *  asked in the system's alert (window.prompt: the iOS app shows it as one), the new playlist then opened. */
+const ADD: Source = { id: 'newplaylist', label: 'Add Playlist…', icon: 'add', kind: 'playlist' };
+async function addPlaylist(sh: Shell): Promise<void> {
+  const name = window.prompt('New Playlist', '')?.trim();
+  const uri = name ? await sh.store.getState().commands.createPlaylist?.(name) : null;
+  if (uri) nav.source(uri);
+}
+
 export function SourcesPage({ sel }: { sel: Selection }) {
-  const sections = sel.src.sections.map((x) => (x.id === 'library' ? { ...x, items: [x.items[0]!, ...SHORTCUTS, ...x.items.slice(1)] } : x));
+  const sh = useShell(), add = useApp((s) => !!s.commands.createPlaylist);
+  const sections = sel.src.sections.map((x) => (x.id === 'library' ? { ...x, items: [x.items[0]!, ...SHORTCUTS, ...x.items.slice(1)] }
+    : x.id === 'playlists' && add ? { ...x, items: [ADD, ...x.items] } : x));
+  // a playlist's long press: its sheet (Delete Playlist among its choices for the user's own)
+  const lp = useLongPress((el) => {
+    const x = sel.src.find(el.getAttribute('data-source') ?? ''), uri = x?.kind === 'playlist' ? x.uri : undefined;
+    if (x && uri) openSheet(<TileSheet uri={uri} name={x.label} open={() => nav.source(uri)} />);
+  }, '[data-source]');
   return (
     <>
     <Strip title="iTunes" />
     <div className="flex-auto min-h-0 overflow-y-auto overscroll-contain bg-itunes-side" id="sidebar">
       <SearchBar go />
       {sections.length
-        ? <SourceList sections={sections} selected={sel.source?.id ?? ''} onSelect={pick} className={SIDEBAR} />
+        ? <div {...lp}><SourceList sections={sections} selected={sel.source?.id ?? ''} onSelect={(id) => (id === ADD.id ? void addPlaylist(sh) : pick(id))} className={SIDEBAR} /></div>
         : <div className="pt-60 text-center text-12 text-itunes-dim">{sel.src.loading ? 'Loading…' : ''}</div>}
     </div>
     </>
@@ -194,11 +210,21 @@ export function SourcePage({ sel, back, backLabel }: { sel: Selection; back: () 
     : <Note text={c.kind === 'none' ? c.note : ''} />;
   return (
     <>
-      <Strip title={c.title} back={back} backLabel={backLabel} right={songs && <ViewSwitch mode={mode} />} />
+      <Strip title={c.title} back={back} backLabel={backLabel} right={songs ? <ViewSwitch mode={mode} /> : c.kind === 'tracks' && c.queue && <ClearQueue />} />
       {c.kind === 'search' && <SearchBar />}
       {browse && <GridTabs tab={tab} />}
       {body}
     </>
+  );
+}
+
+/** iTunes DJ's Clear in its strip (iTunes DJ's bar had Refresh; the iPhone's On-The-Go playlist a Clear in
+ *  its own), while songs the user queued are in Up Next: those out, the playing list's own left. */
+function ClearQueue() {
+  const sh = useShell(), clear = useApp((s) => !!s.commands.clearQueue && s.queue.next.some((t) => t.queued));
+  return clear && (
+    <button type="button" id="djclear" onClick={() => void sh.store.getState().commands.clearQueue?.()} aria-label="Clear the songs you queued"
+            className={'relative h-26 px-10 rounded-sm border border-itunes-rim bg-itunes-seg text-11 font-bold text-[#333] shadow-[0_1px_0_rgba(255,255,255,.55)] active:bg-itunes-btn-down after:absolute after:-inset-y-5 after:-inset-x-4 after:content-[""]'}>Clear</button>
   );
 }
 
@@ -479,9 +505,9 @@ function Tiles({ sections, empty, heads, onOpen, onPlay, more, className }: {
   return (
     <div className={cx('flex-auto min-h-0 flex flex-col', className)} {...lp}
          onClick={(e) => { const it = find((e.target as Element).closest('button[data-uri]')?.getAttribute('data-uri') ?? null); if (it) open(it); }}>
-      {/* the shared grid's round ▶ sits in a cover's middle, shown on a pointer's hover: on a touch
-          screen it was an invisible target where a finger lands, playing what was meant to open. Only
-          the playing cover keeps it (❚❚ / ▶); a list's head and a cover's long press play */}
+      {/* the shared grid's round ▶ (a cover's corner, shown on a pointer's hover) is no touch screen's: iOS
+          keeps a tap's :hover, which would leave it shown and a target. Only the playing cover keeps it
+          (❚❚ / ▶); a list's head and a cover's long press play */}
       <AlbumGrid id="grid" className="flex-auto overscroll-contain [&_[role=button]:not([data-current])]:hidden" size="small"
                  sections={heads ? sections : sections.map((s) => ({ items: s.items }))}
                  more={more} onOpen={open} onPlay={onPlay ?? ((it) => playUri(sh, it.uri))} />

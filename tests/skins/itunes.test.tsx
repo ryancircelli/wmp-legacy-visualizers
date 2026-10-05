@@ -1,10 +1,11 @@
 // The iTunes 10 skin: Spotify mapped onto the source list, the view switcher (per source, kept), the
 // LCD's lines and times, iTunes DJ's edits as Up Next orders, and Spotify's features in the desktop
 // window's iTunes places (the ♥ column, iTunes DJ's played songs, podcast dots, the search's kinds, a
-// page's radio, the host player's sound, Get Info). Mounted over the harness's fake catalogue.
+// page's radio, the host player's sound, Get Info; New Playlist and Delete, Mark as Played, iTunes DJ's
+// Clear, Smart Shuffle), and a cover's single click playing nothing. Mounted over the harness's fake catalogue.
 import { act, cleanup, fireEvent } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { LIKED, type Track } from '../../src/model';
+import { LIKED, type ShuffleMode, type Track } from '../../src/model';
 // the harness first: it loads the app, and so the skin registry, before the skin (the registry and the
 // skins' View > Skin import each other; the app's own load order is registry first)
 import { emptyResults, fakeData, mountSkinNow, settle, type FakeData } from './harness';
@@ -26,7 +27,7 @@ afterEach(() => { cleanup(); vi.useRealTimers(); });
 async function mount(o: Partial<FakeData> = {}) {
   const m = mountSkinNow('spotify', fakeData({
     ...o,
-    list: [{ uri: PL, name: 'Road Trip' }, { uri: 'spotify:album:9', name: 'Saved LP', artist: 'Band' }],
+    list: [{ uri: PL, name: 'Road Trip', editable: true }, { uri: 'spotify:album:9', name: 'Saved LP', artist: 'Band' }],
     collections: { [PL]: { tracks: [1, 2, 3].map((n) => track(n)), meta: { kind: 'playlist', name: 'Road Trip', total: 3 } }, ...o.collections },
   }), <div data-testid="itunes"><Root /></div>);
   await settle();
@@ -210,5 +211,116 @@ describe('Spotify in the window\'s iTunes places', () => {
     expect(dlg.textContent).toContain('1,234');
     fireEvent.click(dlg.querySelector('[data-tab="lyrics"]')!);
     expect(document.querySelector('#infolyrics [data-on]')!.textContent).toBe('Line two');
+  });
+});
+
+describe('the app\'s newer commands in the window, and a cover\'s click', () => {
+  const rows = (m: Awaited<ReturnType<typeof mount>>) => [...m.box.querySelectorAll<HTMLElement>('[id="tracks"] tbody tr')];
+  // the pointer menus and the menu bar portal to the body; Radix opens the menu bar's on a pointerdown
+  const menu = (d = 0) => document.querySelector<HTMLElement>(`[role=menu][data-depth="${d}"]`)!;
+  const items = (d = 0) => [...menu(d).querySelectorAll<HTMLElement>('[role^=menuitem]')];
+  const item = (label: string, d = 0) => items(d).find((b) => b.children[1]!.textContent === label)!;
+  const plays = (m: Awaited<ReturnType<typeof mount>>) => (['playContext', 'playItem', 'playAll', 'playPause', 'play'] as const).filter((k) => m.cmd[k].mock.calls.length);
+
+  it('a single click on a cover selects it and plays nothing (the ▶ is the corner\'s, and no target until shown); a double-click opens it', async () => {
+    const m = await mount();
+    act(() => { viewActions.setMode('grid', 'music'); });
+    await m.source('music');
+    const tile = m.q('[id="grid"] [data-uri="spotify:album:9"]')!;
+    fireEvent.click(tile.querySelector('span')!, { detail: 1 });     // the cover (no image: the skin's box)
+    fireEvent.click(tile, { detail: 1 });
+    expect(tile.hasAttribute('data-sel')).toBe(true);
+    expect(tile.querySelector('[role=button]')!.className).toMatch(/\bpointer-events-none\b/);
+    fireEvent.doubleClick(tile);
+    expect(itunesView.getState().stack).toEqual(['spotify:album:9']);
+    expect(plays(m)).toEqual([]);
+  });
+
+  it('New Playlist: the + and Ctrl+N name "untitled playlist" at the end of the source list; Enter makes it and selects it, Esc drops it', async () => {
+    const m = await mount(), createPlaylist = vi.fn(() => Promise.resolve('spotify:playlist:new'));
+    expect((m.q('#bnew') as HTMLButtonElement).disabled).toBe(true);    // no such command: greyed
+    act(() => m.S().actions.setCommands({ ...m.S().commands, createPlaylist }));
+    act(() => { fireEvent.click(m.q('#bnew')!); });
+    const field = () => m.q('#newplaylist input') as HTMLInputElement | null;
+    expect(field()!.value).toBe('untitled playlist');
+    fireEvent.change(field()!, { target: { value: 'Road Mix' } });
+    act(() => { fireEvent.keyDown(field()!, { key: 'Enter' }); });
+    await settle();
+    expect(createPlaylist).toHaveBeenCalledExactlyOnceWith('Road Mix');
+    expect(field()).toBeNull();
+    expect(itunesView.getState().source).toBe('spotify:playlist:new');
+    act(() => { runShortcut(m.sh, new KeyboardEvent('keydown', { key: 'n', ctrlKey: true, cancelable: true }), itunes.shortcuts); });
+    act(() => { fireEvent.keyDown(field()!, { key: 'Escape' }); });
+    expect(field()).toBeNull();
+    expect(createPlaylist).toHaveBeenCalledOnce();
+  });
+
+  it('Delete on one of the user\'s playlists (its right-click in the source list), asked first; Music shows after', async () => {
+    const m = await mount(), deletePlaylist = vi.fn(() => Promise.resolve(true));
+    act(() => m.S().actions.setCommands({ ...m.S().commands, deletePlaylist }));
+    await m.source(PL);
+    act(() => { fireEvent.contextMenu(m.q(`[data-source="${PL}"]`)!); });
+    act(() => { fireEvent.click(item('Delete')); });
+    const dlg = document.getElementById('dlgDelete')!;
+    expect(dlg.textContent).toContain('“Road Trip”');
+    expect(deletePlaylist).not.toHaveBeenCalled();
+    act(() => { fireEvent.click(dlg.querySelector('[id="delOK"]')!); });
+    await settle();
+    expect(deletePlaylist).toHaveBeenCalledExactlyOnceWith(PL);
+    expect(itunesView.getState().source).toBe('music');
+  });
+
+  it('an episode\'s right-click marks it played or unplayed (the dot follows); Get Info\'s Played too', async () => {
+    const SHOW = 'spotify:show:s', ep = (n: number, unplayed: boolean) => track(n, { uri: 'spotify:episode:' + n, ctx: SHOW, unplayed });
+    const m = await mount({ collections: { [SHOW]: { tracks: [ep(1, true), ep(2, false)], meta: { kind: 'playlist', name: 'A Show', total: 2 } } } });
+    const markPlayed = vi.fn((uri: string, on: boolean) => { m.S().actions.setPlayed(uri, on); return Promise.resolve(); });
+    act(() => m.S().actions.setCommands({ ...m.S().commands, markPlayed }));
+    await m.source('music');
+    act(() => { viewActions.open(SHOW); });
+    await settle();
+    act(() => { fireEvent.contextMenu(rows(m)[0]!); });
+    act(() => { fireEvent.click(item('Mark as Played')); });
+    expect(markPlayed).toHaveBeenLastCalledWith('spotify:episode:1', true);
+    expect(rows(m)[0]!.children[1]!.textContent).toBe('');
+    act(() => { fireEvent.contextMenu(rows(m)[1]!); });
+    act(() => { fireEvent.click(item('Mark as Unplayed')); });
+    expect(markPlayed).toHaveBeenLastCalledWith('spotify:episode:2', false);
+    act(() => openInfo(m.sh, ep(2, false)));
+    const played = document.querySelector<HTMLInputElement>('#dlgInfo #infoplayed')!;
+    expect(played.checked).toBe(false);                                 // the mark made here, over the row's
+    act(() => { fireEvent.click(played); });
+    expect(markPlayed).toHaveBeenLastCalledWith('spotify:episode:2', true);
+  });
+
+  it('iTunes DJ\'s Clear, only while songs the user queued are in Up Next', async () => {
+    const m = await mount(), clearQueue = vi.fn(() => Promise.resolve());
+    act(() => { m.S().actions.setCommands({ ...m.S().commands, clearQueue }); m.S().actions.setQueue([track(4), track(5)]); });
+    await m.source('dj');
+    expect(m.q('#djclear')).toBeNull();
+    act(() => m.S().actions.setQueue([track(4, { queued: true }), track(5)]));
+    act(() => { fireEvent.click(m.q('#djclear')!); });
+    expect(clearQueue).toHaveBeenCalledOnce();
+  });
+
+  it('the shuffle button cycles Off, Shuffle, Smart Shuffle (where offered: a sparkle), Off; Controls > Shuffle names the three', async () => {
+    const m = await mount();
+    const setShuffleMode = vi.fn((mode: ShuffleMode) => { m.S().actions.setPlayback({ shuffle: mode !== 'off', shuffleMode: mode }); return Promise.resolve(); });
+    act(() => { m.S().actions.setCommands({ ...m.S().commands, setShuffleMode }); m.S().actions.setPlayback({ canSmartShuffle: true }); });
+    const b = () => m.q('#bshuffle')!, click = () => act(() => { fireEvent.click(b()); });
+    click();
+    expect([setShuffleMode.mock.lastCall?.[0], b().getAttribute('data-mode'), b().querySelectorAll('svg').length]).toEqual(['shuffle', 'shuffle', 1]);
+    click();
+    expect([setShuffleMode.mock.lastCall?.[0], b().getAttribute('data-mode'), b().querySelectorAll('svg').length]).toEqual(['smart', 'smart', 2]);
+    click();
+    expect(setShuffleMode).toHaveBeenLastCalledWith('off');
+    // where the player has none (the phone's own speaker, a context that allows none): Shuffle, then Off
+    act(() => m.S().actions.setPlayback({ canSmartShuffle: false }));
+    click();
+    click();
+    expect(setShuffleMode.mock.calls.slice(-2).map((c) => c[0])).toEqual(['shuffle', 'off']);
+    act(() => { fireEvent.pointerDown(m.q('[data-menu="controls"]')!, { button: 0, ctrlKey: false, pointerType: 'mouse' }); });
+    act(() => { fireEvent.click(item('Shuffle')); });
+    expect(items(1).map((x) => [x.children[1]!.textContent, x.getAttribute('aria-checked'), x.hasAttribute('data-disabled')]))
+      .toEqual([['Off', 'true', false], ['Shuffle', 'false', false], ['Smart Shuffle', 'false', true]]);
   });
 });

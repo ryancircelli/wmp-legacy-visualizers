@@ -3,12 +3,12 @@
 // a Dropdown on a fixed point at the pointer, built as it opens.
 import { useState, type MouseEvent } from 'react';
 import { LIKED, type Track } from '../../../model';
-import { canSave, Dropdown, isCollectionUri, useAddTo, useApp, useShell, type MenuEntry, type TileItem } from '../../../ui';
-import { opensPage, playRow, playUri, startGenius, type TracksContent } from '../shared/content';
+import { canSave, Dropdown, isCollectionUri, useAddTo, useApp, useLibraryList, useShell, type MenuEntry, type TileItem } from '../../../ui';
+import { isUnplayed, opensPage, playRow, playUri, startGenius, type TracksContent } from '../shared/content';
 import type { Source } from '../shared/sources';
 import { viewActions } from '../shared/state';
 import { MENU } from './Chrome';
-import { copyLink, openInfo, radioFrom, radioLabel, shufflePlay, useSave } from './spotify';
+import { askDelete, copyLink, openInfo, radioFrom, radioLabel, shufflePlay, useSave } from './spotify';
 
 const SEP = { sep: true } as const;
 
@@ -30,19 +30,22 @@ function usePointerMenu<T>(owner: string) {
 export interface QueueEdits { move: (a: number, b: number) => void; remove: (i: number) => void; from: number }
 
 /** A song's menu: Play, Play Next (iTunes DJ's Up Next rows: Move to Top, Remove from Up Next), Like and
- *  Add to Playlist, Show Album, Show Artist, Start Genius, Get Info, Copy Spotify Link. */
+ *  Add to Playlist (an episode: Mark as Played / Unplayed), Show Album, Show Artist, Start Genius, Get Info,
+ *  Copy Spotify Link. */
 export function useRowMenu(queue?: QueueEdits) {
   const sh = useShell(), m = usePointerMenu<{ t: Track; i: number }>('row');
   const addTo = useAddTo(m.it && canSave(m.it.t.uri) ? m.it.t.uri : null), queues = useApp((s) => !!s.commands.addToQueue);
   const items = (): MenuEntry[] => {
     if (!m.it) return [];
-    const { t, i } = m.it, c = sh.store.getState().commands, artist = t.artistUris?.[0], album = t.albumUri, up = !!queue && i >= queue.from;
+    const { t, i } = m.it, s = sh.store.getState(), c = s.commands, artist = t.artistUris?.[0], album = t.albumUri, up = !!queue && i >= queue.from;
+    const unplayed = isUnplayed(t, s.played), mark = c.markPlayed && t.uri.startsWith('spotify:episode:');
     return [
       { label: 'Play', act: () => playRow(sh, { kind: 'tracks', ctx: t.ctx ?? null } as TracksContent, t) },
       ...(queues && !up ? [{ label: 'Play Next', act: () => c.addToQueue?.(t.uri) }] : []),
       ...(up ? [{ label: 'Move to Top', disabled: i === queue.from, act: () => queue.move(i, queue.from) }, { label: 'Remove from Up Next', act: () => queue.remove(i) }] : []),
       SEP,
       ...(addTo.uri ? [{ label: addTo.saved ? 'Unlike' : 'Like', act: addTo.toggle }, addTo.playlistMenu('Add to Playlist'), SEP] : []),
+      ...(mark ? [{ label: unplayed ? 'Mark as Played' : 'Mark as Unplayed', act: () => void c.markPlayed?.(t.uri, unplayed) }, SEP] : []),
       { label: 'Show Album', disabled: !album, act: () => { if (album) viewActions.open(album); } },
       { label: 'Show Artist', disabled: !artist, act: () => { if (artist) viewActions.open(artist); } },
       { label: 'Start Genius', disabled: !t.uri.startsWith('spotify:track:'), act: () => startGenius(sh, t.uri) },
@@ -81,18 +84,20 @@ export function useTileMenu() {
   return { onContextMenu, menu: m.render(items) };
 }
 
-/** A source's menu: a playlist (Play, Shuffle, Playlist Radio, Copy Spotify Link) or Music (Liked Songs:
- *  Play, Shuffle). */
+/** A source's menu: a playlist (Play, Shuffle, Playlist Radio, Copy Spotify Link; Delete for the user's
+ *  own, asked first) or Music (Liked Songs: Play, Shuffle). */
 export function useSourceMenu(find: (id: string) => Source | undefined) {
-  const sh = useShell(), m = usePointerMenu<Source>('source');
+  const sh = useShell(), m = usePointerMenu<Source>('source'), lib = useLibraryList();
   const items = (): MenuEntry[] => {
-    const uri = m.it?.uri;
+    const uri = m.it?.uri, name = m.it?.label ?? 'Playlist';
     if (!uri || !isCollectionUri(uri)) return [];
+    const del = !!sh.store.getState().commands.deletePlaylist && !!lib.items.find((x) => x.uri === uri)?.editable;
     return [
       { label: 'Play', act: () => sh.store.getState().commands.playAll(uri) },
       { label: 'Shuffle', act: () => shufflePlay(sh, uri) },
-      ...(uri !== LIKED ? [SEP, { label: 'Start Playlist Radio', act: () => void radioFrom(sh, uri, m.it?.label ?? 'Playlist') },
+      ...(uri !== LIKED ? [SEP, { label: 'Start Playlist Radio', act: () => void radioFrom(sh, uri, name) },
                            { label: 'Copy Spotify Link', act: () => copyLink(sh, uri) }] : []),
+      ...(del ? [SEP, { label: 'Delete', act: () => askDelete(sh, uri, name) }] : []),
     ];
   };
   const onContextMenu = (e: MouseEvent) => {

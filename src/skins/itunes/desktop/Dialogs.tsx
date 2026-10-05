@@ -1,15 +1,16 @@
 // The dialogs, in Windows 7's look as iTunes for Windows had them (a light frame, the pane tabs of
 // iTunes' Preferences, push buttons): Preferences (with the host player's sound), the Equalizer, Get
 // Info (a song's summary and, playing, its lyrics), About, Keyboard Shortcuts, Open Stream (a Spotify
-// link), and the update notes. The frame and closing are src/ui's Dialog / DialogHost.
+// link), a playlist's Delete, and the update notes. The frame and closing are src/ui's Dialog / DialogHost.
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { EQ_PRESETS, eqPreset, FPS_OPTS, lineAt, lyricsShown, mss, QUALITY_OPTS, SCALE_OPTS, type Scale, type Settings, type UpdateCheck } from '../../../model';
 import {
   appDownload, artOk, canSave, cx, Dialog, DialogHost, LINKS, LYRICS_SOURCE, openLink, restartApp, shareUrl, useAlbumMeta, useApp, useCloseDialog, usePosition, useShell,
   useShortcuts, type DialogClasses,
 } from '../../../ui';
+import { isUnplayed } from '../shared/content';
 import { Icon, type IconName } from '../shared/icons';
-import { copyLink, infoTrack, useSave } from './spotify';
+import { copyLink, deletePlaylist, doomedPlaylist, infoTrack, useSave } from './spotify';
 
 const DLG: DialogClasses = {
   title: 'flex-none flex items-center gap-6 h-28 pl-10 pr-5 bg-itunes-dlg border-b border-[#B9B9B9] text-12 text-black',
@@ -29,7 +30,8 @@ function Dlg(p: { id: string; title: string; label: string; buttons: [string, ()
 export function Dialogs() {
   return (
     <DialogHost id="modal" className="fixed inset-0 z-80 grid place-items-center bg-black/25"
-                dialogs={{ options: Preferences, eq: Equalizer, info: GetInfo, about: About, keys: Shortcuts, link: OpenStream, update: UpdateAvailable, checkUpdates: CheckUpdates }} />
+                dialogs={{ options: Preferences, eq: Equalizer, info: GetInfo, about: About, keys: Shortcuts, link: OpenStream, update: UpdateAvailable, checkUpdates: CheckUpdates,
+                         deletePlaylist: DeletePlaylist }} />
   );
 }
 
@@ -158,12 +160,14 @@ function Equalizer() {
 type InfoTab = 'summary' | 'lyrics';
 /** File > Get Info, a song's right-click Get Info: iTunes' Get Info as Spotify knows the song. Summary:
  *  the cover, the names, the length, release, track and disc, Spotify's play count, the album's label
- *  and copyright, ♥ (Like) and its link; Lyrics (the playing song only: lyrics are fetched for it): every
- *  line, the one sung now lit and kept in view, as Spotify's lyrics view. */
+ *  and copyright, ♥ (Like), Played (an episode: Mark as Played / Unplayed) and its link; Lyrics (the
+ *  playing song only: lyrics are fetched for it): every line, the one sung now lit and kept in view, as
+ *  Spotify's lyrics view. */
 function GetInfo() {
   const close = useCloseDialog(), [t] = useState(infoTrack), [tab, setTab] = useState<InfoTab>('summary');
   const save = useSave(t && canSave(t.uri) ? t.uri : null), album = useAlbumMeta(t?.albumUri), sh = useShell();
-  const playing = useApp((s) => !!t && s.playback.track?.uri === t.uri);
+  const playing = useApp((s) => !!t && s.playback.track?.uri === t.uri), marks = useApp((s) => s.played);
+  const mark = useApp((s) => !!t?.uri.startsWith('spotify:episode:') && !!s.commands.markPlayed);
   if (!t) return null;
   const art = artOk(t.image ?? t.art), link = shareUrl(t.uri);
   const rows = ([['Time', t.duration ? mss(t.duration) : ''], ['Release Date', t.releaseDate ?? album?.releaseDate ?? ''],
@@ -194,6 +198,7 @@ function GetInfo() {
             {rows.map(([k, v]) => <tr key={k}><td className="py-1 pr-10 w-100 text-right text-itunes-dim align-top">{k}:</td><td className="py-1 break-words">{v}</td></tr>)}
           </tbody></table>
           {save.can && <Check id="infolike" label="♥ Liked" checked={!!save.saved} onChange={save.toggle} />}
+          {mark && <Check id="infoplayed" label="Played" checked={!isUnplayed(t, marks)} onChange={(v) => void sh.store.getState().commands.markPlayed?.(t.uri, v)} />}
           {link && (
             <div className={ROW}>
               <span className="flex-auto min-w-0 truncate text-11 text-itunes-dim" title={link}>{link}</span>
@@ -269,6 +274,23 @@ function OpenStream() {
         <input id="linkq" type="text" className="w-full h-23 px-4 border border-[#ABADB3] bg-white text-black" value={q}
                onChange={(e) => setQ(e.currentTarget.value)} onKeyDown={(e) => { if (e.key === 'Enter') ok(); }} />
         <p className="m-0 mt-6 text-11 text-[#B0302A] min-h-16" id="linkerr">{err}</p>
+      </div>
+    </Dlg>
+  );
+}
+
+/** A playlist's Delete, asked as iTunes asked it (the right-click's Delete in the source list). */
+function DeletePlaylist() {
+  const sh = useShell(), close = useCloseDialog(), [p] = useState(doomedPlaylist);
+  if (!p) return null;
+  return (
+    <Dlg id="dlgDelete" title="iTunes" label="Delete Playlist" buttons={[['Delete', () => { close(); void deletePlaylist(sh, p.uri); }, 'delOK'], ['Cancel', close, 'delCancel']]}>
+      <div className={cx(BODY, 'flex gap-14 items-start')}>
+        <span className="flex-none grid place-items-center w-32 h-32 rounded-full bg-[#F2C94C] text-black text-20 font-bold shadow-[0_1px_2px_rgba(0,0,0,.3)]" aria-hidden="true">!</span>
+        <div>
+          <p className="m-0 mb-6 font-bold">Are you sure you want to delete the playlist “{p.name}”?</p>
+          <p className="m-0 text-itunes-dim">It is deleted from your Spotify library.</p>
+        </div>
       </div>
     </Dlg>
   );

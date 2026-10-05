@@ -1,6 +1,6 @@
 // iTunes 10 for Windows' menu bar as data: File Edit View Controls Store Advanced Help, each built as
 // it opens (as src/skins/menus.ts builds WMP 9's), onto the app's own actions. iTunes' entries with
-// no Spotify meaning (New Playlist, Import, Burn, Sync, Authorize…) are left out rather than greyed;
+// no Spotify meaning (Import, Burn, Sync, Authorize…) are left out rather than greyed;
 // Spotify's own sit where iTunes kept their kin (Get Info, the Canvas and the Equalizer under View, a
 // playlist's radio beside Start Genius, the log and Refresh Player under Help).
 import { FPS_OPTS } from '../../../model';
@@ -9,9 +9,10 @@ import { visMenu } from '../../menus';
 // a cycle (registry -> itunes -> here), safe: `skins` is read only when a menu opens
 import { skinFor, skins } from '../../registry';
 import { showPlaying } from '../shared/content';
+import { SHUFFLE_NAMES } from '../shared/Transport';
 import { itunesView, VIEW_MODES, VIEW_NAMES, viewActions } from '../shared/state';
 import { focusSearch, toggleVisualizer } from '../shortcuts';
-import { desk, openInfo, radioFrom, radioLabel } from './spotify';
+import { desk, newPlaylist, openInfo, radioFrom, radioLabel } from './spotify';
 
 export type ItunesMenu = 'file' | 'edit' | 'view' | 'controls' | 'store' | 'advanced' | 'help';
 export const MENUS: readonly [ItunesMenu, string][] = [
@@ -38,6 +39,7 @@ export function menuItems(name: ItunesMenu, sh: Shell, m: MenuContext): MenuEntr
   switch (name) {
     case 'file':
       return [
+        ...(c.createPlaylist ? [{ label: 'New Playlist', accel: 'Ctrl+N', act: () => newPlaylist(sh) }] : []),
         ...(spotify ? [{ label: 'Open Spotify Link...', accel: 'Ctrl+U', act: dialog('link') },
                        { label: 'Get Info', disabled: !playingTrack(s), act: () => openInfo(sh, s.playback.track) }, SEP] : []),
         { label: 'Close Window', accel: 'Ctrl+W', act: () => (s.auth.hostWindow ? c.win('close') : window.close()) },
@@ -76,7 +78,11 @@ export function menuItems(name: ItunesMenu, sh: Shell, m: MenuContext): MenuEntr
       return [...base,
         { label: 'Go to Current Song', accel: 'Ctrl+L', disabled: !s.playback.track, act: () => showPlaying(sh) },
         SEP,
-        { label: 'Shuffle', check: s.playback.shuffle, act: () => c.toggleShuffle() },
+        // Spotify's three: Smart Shuffle where the player offers it (or while it is on)
+        c.setShuffleMode
+          ? { label: 'Shuffle', sub: (['off', 'shuffle', 'smart'] as const).map((x) => ({ label: SHUFFLE_NAMES[x], radio: true, check: s.playback.shuffleMode === x,
+              disabled: x === 'smart' && !s.playback.canSmartShuffle && s.playback.shuffleMode !== 'smart', act: () => void c.setShuffleMode?.(x) })) }
+          : { label: 'Shuffle', check: s.playback.shuffle, act: () => c.toggleShuffle() },
         { label: 'Repeat', sub: ([['off', 'Off'], ['context', 'All'], ['track', 'One']] as const).map(([r, label]) => ({
           label, radio: true, check: s.playback.repeat === r, act: () => c.setRepeat(r) })) },
         SEP,

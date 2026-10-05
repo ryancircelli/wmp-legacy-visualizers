@@ -3,6 +3,7 @@
 // Ctrl+L here is Go to Current Song (the app's lyrics toggle is View > Lyrics in this skin). Rows with no
 // `match` are the app's own keys (Space, Ctrl+K) or the lists', listed for Help > Keyboard Shortcuts.
 import { prevNext, VOL_STEP, type Shell, type Shortcut } from '../../ui';
+import { newPlaylist } from './desktop/spotify';
 import { showPlaying } from './shared/content';
 import { viewActions, VIEW_MODES } from './shared/state';
 
@@ -43,6 +44,7 @@ export const ITUNES_SHORTCUTS: readonly Shortcut[] = [
     match: (e) => e.ctrlKey && e.altKey && !e.shiftKey && '3456'.includes(e.key) && e.key.length === 1,
     run: (_, e) => viewActions.setMode(VIEW_MODES['3456'.indexOf(e.key)]!) },
   { keys: 'Ctrl+G', label: 'Show / hide the artwork', match: (e) => key(e, 'g'), run: () => viewActions.toggleArtwork() },
+  { keys: 'Ctrl+N', label: 'New playlist', match: (e) => key(e, 'n'), run: newPlaylist },
   { keys: 'Ctrl+U', label: 'Open a Spotify link (Open Stream)', match: (e) => key(e, 'u'), run: (sh) => st(sh).actions.setUi({ dialog: 'link' }) },
   { keys: 'Ctrl+,', label: 'Preferences', match: (e) => key(e, ','), run: (sh) => st(sh).actions.setUi({ dialog: 'options' }) },
   { keys: 'Ctrl+K', label: 'Karaoke word highlight on / off' },

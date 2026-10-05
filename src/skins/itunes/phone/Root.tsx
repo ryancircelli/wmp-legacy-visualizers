@@ -13,7 +13,7 @@
 import { Component, useEffect, type CSSProperties, type MouseEvent, type ReactNode } from 'react';
 import { Visualizer } from '../../../app/Visualizer';
 import { cx, deviceName, isAlbum, isSpotify, TransportButton, useApp, useDevices, useLibraryList, usePlayback, useShell } from '../../../ui';
-import { albumsOf, Icon, itunesView, Lcd, playRow, playUri, TransportCluster } from '../shared';
+import { albumsOf, Icon, itunesView, Lcd, playRow, playUri, ShuffleButton, TransportCluster } from '../shared';
 import { haptic, useFit, useHostChrome, useHostGlobal } from './host';
 import { nav, phoneNav, topPage, type Page } from './nav';
 import { NowPlayingPage, NowPlayingSide, useKeepPlayed } from './NowPlaying';
@@ -127,9 +127,9 @@ function MiniPlayer() {
 const BAR_BTN = 'relative flex-none flex items-center justify-center w-40 h-36 p-0 border-0 bg-transparent text-itunes-bar-glyph [filter:drop-shadow(0_1px_0_rgba(255,255,255,.55))] active:bg-black/10 disabled:opacity-40 data-on:text-itunes-lit';
 
 /** iTunes' bottom bar on a phone, what a list does not hold itself: Preferences in the place of + (a new
- *  playlist, which Spotify playlists do not get here), shuffle, repeat (a small 1 for one song), and at
- *  the right AirPlay (Play On: the Connect devices, lit and naming the one that plays when it is not
- *  this phone, as iTunes named its speakers). */
+ *  playlist is PLAYLISTS' Add Playlist…, as the iPhone's Music app had it), shuffle (Off, Shuffle, Smart
+ *  Shuffle: a sparkle), repeat (a small 1 for one song), and at the right AirPlay (Play On: the Connect
+ *  devices, lit and naming the one that plays when it is not this phone, as iTunes named its speakers). */
 function BottomBar({ pad }: { pad: number }) {
   const repeat = usePlayback().repeat, elsewhere = useDevices(() => '').elsewhere, page = topPage(phoneNav((s) => s.pages));
   const away = useApp((s) => { const d = s.devices.list.find((x) => x.active && x.id !== s.devices.self); return d ? deviceName(d) : ''; });
@@ -138,7 +138,7 @@ function BottomBar({ pad }: { pad: number }) {
       <div className="flex items-center h-36 px-4">
         <button type="button" className={BAR_BTN} id="bprefs" aria-label="Preferences" data-on={page === 'prefs' || undefined}
                 onClick={() => (page === 'prefs' ? nav.back() : nav.push('prefs'))}><Icon name="smart" /></button>
-        <TransportButton action="shuffle" id="bshuffle" className={BAR_BTN}><Icon name="shuffle" /></TransportButton>
+        <ShuffleButton className={BAR_BTN} sparkle="right-7 top-7" />
         <TransportButton action="repeat" id="brepeat" className={BAR_BTN}>
           <Icon name="repeat" />
           {repeat === 'track' && <span className="absolute right-7 top-7 text-[8px] leading-none font-bold">1</span>}

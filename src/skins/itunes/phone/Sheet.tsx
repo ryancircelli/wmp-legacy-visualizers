@@ -6,8 +6,8 @@
 import { useEffect, useRef, type MouseEvent, type PointerEvent, type ReactNode } from 'react';
 import { create } from 'zustand';
 import type { Track } from '../../../model';
-import { canSave, cx, Slider, TransportButton, useAddTo, useApp, useDevices, usePlayback, useShell, type MenuEntry } from '../../../ui';
-import { Icon, playRow, playUri, showPlaying, startGenius, viewActions, type Content } from '../shared';
+import { canSave, cx, Slider, TransportButton, useAddTo, useApp, useDevices, useLibraryList, usePlayback, useShell, type MenuEntry } from '../../../ui';
+import { Icon, isUnplayed, itunesView, playRow, playUri, showPlaying, SHUFFLE_NAMES, startGenius, useShuffle, viewActions, type Content } from '../shared';
 import { haptic } from './host';
 import { nav, nowView, setNowView } from './nav';
 
@@ -90,12 +90,14 @@ export function useLongPress(onLong: (el: Element) => void, sel: string) {
 /** Up Next's edits on a row (iTunes DJ): a move from one place to another, a removal. */
 export interface QueueEdit { move: (from: number, to: number) => void; remove: (i: number) => void; n: number }
 
-/** A song's sheet: Play, Play Next, Up Next's moves (iTunes DJ), Like, Add to Playlist, the album and the
- *  artist, Start Genius. `from` 'now' is Now Playing's (the playing song: its album and artist open in
- *  Music, Go to Current Song, Play On); a row's open inside the source it is in. */
+/** A song's sheet: Play, Play Next, Up Next's moves (iTunes DJ), Like, Add to Playlist (an episode: Mark as
+ *  Played / Unplayed), the album and the artist, Start Genius. `from` 'now' is Now Playing's (the playing
+ *  song: its album and artist open in Music, Go to Current Song, Shuffle's three, Play On); a row's open
+ *  inside the source it is in. */
 export function TrackSheet({ t, i = 0, c, queue, from = 'row' }: { t: Track; i?: number; c?: Content; queue?: QueueEdit; from?: 'row' | 'now' }) {
   const sh = useShell(), addTo = useAddTo(canSave(t.uri) ? t.uri : null), queues = useApp((s) => !!s.commands.addToQueue);
-  const album = t.albumUri, artist = t.artistUris?.[0], now = from === 'now';
+  const album = t.albumUri, artist = t.artistUris?.[0], now = from === 'now', shuffle = useShuffle();
+  const mark = useApp((s) => t.uri.startsWith('spotify:episode:') && !!s.commands.markPlayed), marks = useApp((s) => s.played), unplayed = isUnplayed(t, marks);
   const show = (uri: string) => { if (now) viewActions.reveal('music', uri); else { viewActions.open(uri); nav.source(); } };
   const items: (SheetItem | false)[] = [
     !now && { label: 'Play', act: () => playRow(sh, c ?? ({ kind: 'tracks', ctx: t.ctx ?? null } as Content), t) },
@@ -108,15 +110,25 @@ export function TrackSheet({ t, i = 0, c, queue, from = 'row' }: { t: Track; i?:
     ] : []),
     !!addTo.uri && { label: addTo.saved ? 'Unlike' : 'Like', act: addTo.toggle },
     !!addTo.uri && t.uri.startsWith('spotify:track:') && { label: 'Add to Playlist…', act: () => openSheet(<PlaylistSheet uri={t.uri} title={t.title} />) },
+    mark && { label: unplayed ? 'Mark as Played' : 'Mark as Unplayed', act: () => void sh.store.getState().commands.markPlayed?.(t.uri, unplayed) },
     { label: 'Show Album', disabled: !album, act: () => { if (album) show(album); } },
     { label: 'Show Artist', disabled: !artist, act: () => { if (artist) show(artist); } },
     now && { label: 'Go to Current Song', act: () => showPlaying(sh) },
     { label: 'Start Genius', disabled: !t.uri.startsWith('spotify:track:'), act: () => startGenius(sh, t.uri) },
+    now && shuffle.three && { label: 'Shuffle: ' + SHUFFLE_NAMES[shuffle.mode] + '…', act: () => openSheet(<ShuffleSheet />) },
     now && { label: 'Play On…', act: () => openSheet(<DeviceSheet />) },
     now && { label: nowView.getState().vis ? 'Hide Visualizer' : 'Show Visualizer', act: () => setNowView('vis', !nowView.getState().vis) },
     now && { label: 'Visualizer Style…', act: () => openSheet(<VisSheet />) },
   ];
   return <SheetFrame title={t.title + (t.artist ? ' — ' + t.artist : '')} items={items.filter((x): x is SheetItem => !!x)} />;
+}
+
+/** Shuffle's three, the one on checked: Smart Shuffle where the player offers it (not on the phone's own
+ *  speaker; a playlist or Liked Songs playing). The bottom bar's button cycles them; this names them. */
+function ShuffleSheet() {
+  const u = useShuffle();
+  return <SheetFrame title="Shuffle" items={(['off', 'shuffle', 'smart'] as const).map((m) => ({ label: SHUFFLE_NAMES[m], check: u.mode === m,
+    disabled: m === 'smart' && !u.smart && u.mode !== 'smart', act: () => u.set(m) }))} />;
 }
 
 /** Add to Playlist: the playlists the user can add to, a check on those holding the song (asked as it opens). */
@@ -193,6 +205,11 @@ export function collectionRadio(sh: ReturnType<typeof useShell>, uri: string, ti
   });
 }
 
+/** Deleted (Spotify's Delete: off the library), Music selected if it was the source showing. */
+async function deletePlaylist(sh: ReturnType<typeof useShell>, uri: string): Promise<void> {
+  if (await sh.store.getState().commands.deletePlaylist?.(uri) && itunesView.getState().source === uri) viewActions.select('music');
+}
+
 /** Play a collection whole, shuffled (Spotify's shuffle turned on first: the player starts it shuffled). */
 export function shufflePlay(sh: ReturnType<typeof useShell>, uri: string): void {
   const s = sh.store.getState();
@@ -200,16 +217,20 @@ export function shufflePlay(sh: ReturnType<typeof useShell>, uri: string): void 
   playUri(sh, uri);
 }
 
-/** A cover's sheet (a long press on an album, playlist, artist or show): Open, Play, Shuffle, Save to
- *  the library (Follow an artist), Genius (its radio). A song tile gets the song's own. */
-export function TileSheet({ uri, name }: { uri: string; name: string }) {
+/** A cover's sheet (a long press on an album, playlist, artist or show; on a playlist in the source list,
+ *  `open` its own): Open, Play, Shuffle, Save to the library (Follow an artist), Genius (its radio), and
+ *  Delete Playlist for the user's own (asked again, red). A song tile gets the song's own. */
+export function TileSheet({ uri, name, open }: { uri: string; name: string; open?: () => void }) {
   const sh = useShell(), save = useAddTo(canSave(uri) ? uri : null), artist = uri.startsWith('spotify:artist:');
+  const lib = useLibraryList(), del = useApp((s) => !!s.commands.deletePlaylist) && !!lib.items.find((x) => x.uri === uri)?.editable;
   const items: (SheetItem | false)[] = [
-    { label: 'Open', act: () => { viewActions.open(uri); nav.source(); } },
+    { label: 'Open', act: open ?? (() => { viewActions.open(uri); nav.source(); }) },
     { label: 'Play', act: () => playUri(sh, uri) },
     !uri.startsWith('spotify:show:') && { label: 'Shuffle', act: () => shufflePlay(sh, uri) },
     !!save.uri && { label: artist ? (save.saved ? 'Unfollow' : 'Follow') : save.saved ? 'Remove from Library' : 'Save to Library', act: save.toggle },
     /^spotify:(playlist|album|artist):/.test(uri) && { label: 'Start Genius', act: () => collectionRadio(sh, uri, name) },
+    del && { label: 'Delete Playlist', danger: true, act: () => openSheet(<SheetFrame title={'Delete “' + name + '” from your Spotify library?'}
+      items={[{ label: 'Delete Playlist', danger: true, act: () => void deletePlaylist(sh, uri) }]} />) },
   ];
   return <SheetFrame title={name} items={items.filter((x): x is SheetItem => !!x)} />;
 }

@@ -5,7 +5,7 @@
 // Rating, the right-click menus (Pointer.tsx), the Canvas in the artwork pane, iTunes DJ's played songs
 // above Up Next, podcast episodes' blue dots, the search's kinds as the store's filter, and a page's
 // Play / Shuffle / ♥ / radio on its strip.
-import { useEffect, useState, type MouseEvent, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type MouseEvent, type ReactNode } from 'react';
 import { LIKED, type Track } from '../../../model';
 import {
   artOk, canSave, clipFailed, cx, Dropdown, SearchScope, toggleSaved, TransportButton, useApp, useCanvas, useDevices, usePlayback, useSaved,
@@ -17,12 +17,13 @@ import { albumsOf, opensPage, playRow, playUri, queueOrder, showPlaying, statusL
 import { CoverFlow } from '../shared/CoverFlow';
 import { Icon } from '../shared/icons';
 import { SourceList } from '../shared/SourceList';
+import { ShuffleButton } from '../shared/Transport';
 import { useSources, type Source } from '../shared/sources';
 import { useItunesView, viewActions, type ViewMode } from '../shared/state';
 import { COLUMNS, listColumns, TrackTable, type TrackColumn } from '../shared/TrackTable';
 import { MENU, useGenius, withAirPlay } from './Chrome';
 import { useRowMenu, useSourceMenu, useTileMenu, type QueueEdits } from './Pointer';
-import { desk, played, radioFrom, radioLabel, shufflePlay, useSave } from './spotify';
+import { desk, makePlaylist, naming, newPlaylist, played, radioFrom, radioLabel, shufflePlay, useSave } from './spotify';
 
 /** The selected source (Music while the selection resolves to nothing: a playlist deleted, a device
  *  gone), what was opened in it, and what that shows. */
@@ -52,12 +53,36 @@ export function Browser({ narrow }: { narrow: boolean }) {
   );
 }
 function Sidebar({ src, selected, className }: { src: ReturnType<typeof useSources>; selected: string; className?: string }) {
-  const artwork = useItunesView((s) => s.artwork), sm = useSourceMenu(src.find);
+  const artwork = useItunesView((s) => s.artwork), sm = useSourceMenu(src.find), name = naming((x) => x.on);
   return (
     <div className={cx('flex flex-col min-h-0 bg-itunes-side', className)} id="sidebar" onContextMenu={sm.onContextMenu}>
       {sm.menu}
-      <SourceList sections={src.sections} selected={selected} onSelect={viewActions.select} className="flex-auto min-h-0 overflow-y-auto overflow-x-hidden pb-8" />
+      <SourceList sections={src.sections} selected={selected} onSelect={viewActions.select} className="flex-auto min-h-0 overflow-y-auto overflow-x-hidden pb-8">
+        {name && <NameRow />}
+      </SourceList>
       {artwork && <ArtworkPane />}
+    </div>
+  );
+}
+
+/** iTunes' new playlist: "untitled playlist" in an edit field at the end of PLAYLISTS, selected to type
+ *  over; Enter or leaving the field makes the playlist (an empty name, none), Esc drops it. The keys are the
+ *  field's (not the list's arrows, the window's shortcuts). */
+function NameRow() {
+  const sh = useShell(), left = useRef(false);
+  const done = (name: string) => {
+    if (left.current) return;                      // once: the field's removal may blur it again
+    left.current = true;
+    naming.setState({ on: false });
+    if (name.trim()) void makePlaylist(sh, name.trim());
+  };
+  return (
+    <div className="flex items-center gap-6 h-20 pl-18 pr-8 bg-itunes-side-sel-on" id="newplaylist">
+      <Icon name="playlist" className="flex-none text-white" />
+      <input autoFocus defaultValue="untitled playlist" aria-label="New playlist name" spellCheck={false} onFocus={(e) => e.currentTarget.select()}
+             className="flex-auto min-w-0 h-17 px-2 border border-[#3B6FB6] bg-white text-12 text-black outline-none select-text"
+             onKeyDown={(e) => { e.stopPropagation(); if (e.key === 'Enter') done(e.currentTarget.value); else if (e.key === 'Escape') done(''); }}
+             onBlur={(e) => done(e.currentTarget.value)} />
     </div>
   );
 }
@@ -235,6 +260,7 @@ function Tracks({ c, mode, source }: { c: TracksContent; mode: ViewMode; source:
     remove: (i) => { if (i >= from) reorder(queueOrder(n, { remove: i - from })); },
   } : undefined;
   const rm = useRowMenu(queue), key = (source?.id ?? '') + '|' + c.title, show = isShow(c.ctx), likes = useLikes(rows, c.ctx === LIKED);
+  const clear = useApp((s) => !!c.queue && !!s.commands.clearQueue && s.queue.next.some((t) => t.queued));
   const play = (t: Track) => playRow(sh, c, t);
   // "show the current song": the playing row selected
   const [shown, setShown] = useState(0), at = reveal !== shown && now ? rows.findIndex((t) => t.uri === now) : -1;
@@ -253,7 +279,17 @@ function Tracks({ c, mode, source }: { c: TracksContent; mode: ViewMode; source:
   else if (mode === 'grid') body = <SongGrid c={c} />;
   else if (mode === 'flow') body = <Flow c={c} table={table} />;
   else body = table('flex-auto');
-  return <>{rm.menu}{body}</>;
+  return (
+    <>
+      {rm.menu}{body}
+      {/* iTunes DJ's bar under its list, where its Refresh was: Clear, while songs the user queued are in Up Next */}
+      {clear && (
+        <div id="djbar" className="flex-none flex items-center justify-end h-26 px-8 border-t border-itunes-rule bg-itunes-head">
+          <button type="button" id="djclear" className={STRIP_BTN()} title="Remove the songs you queued from Up Next" onClick={() => void sh.store.getState().commands.clearQueue?.()}>Clear</button>
+        </div>
+      )}
+    </>
+  );
 }
 
 /** Grid of a list of songs: their albums (Music: the saved albums or the followed artists, under its
@@ -374,8 +410,8 @@ function SearchBody() {
 
 const BAR_BTN = 'grid place-items-center w-34 h-20 p-0 border-0 rounded-xs bg-transparent text-itunes-bar-glyph [filter:drop-shadow(0_1px_0_rgba(255,255,255,.55))] hover:bg-white/25 disabled:opacity-55';
 
-/** + (a new playlist: not on Spotify here, greyed), shuffle, repeat (a small 1 for one song), the
- *  artwork pane; the status text; the AirPlay menu (the Connect devices; the playing one's name beside
+/** + (New Playlist), shuffle (Off, Shuffle, Smart Shuffle: a sparkle), repeat (a small 1 for one song),
+ *  the artwork pane; the status text; the AirPlay menu (the Connect devices; the playing one's name beside
  *  it when it is not this window) and Genius. */
 function BottomBar({ content, mode }: { content: Content; mode: ViewMode }) {
   const tab = useItunesView((s) => s.gridTab), browse = content.kind === 'tracks' && mode === 'grid' ? content.browse : undefined;
@@ -384,10 +420,11 @@ function BottomBar({ content, mode }: { content: Content; mode: ViewMode }) {
   const status = browse ? n.toLocaleString('en-US') + ' ' + (tab === 'artists' ? (n === 1 ? 'artist' : 'artists') : n === 1 ? 'album' : 'albums')
     : episodes ? line.replace(/\bsong(s?)\b/, 'episode$1') : line;
   const devices = useDevices(() => ''), genius = useGenius(), repeat = usePlayback().repeat, others = useApp((s) => s.devices.list.find((d) => d.active && d.id !== s.devices.self)?.name ?? '');
+  const sh = useShell(), create = useApp((s) => !!s.commands.createPlaylist);
   return (
     <div id="bottombar" className="flex-none flex items-center gap-5 h-25 px-14 border-t border-itunes-bar-edge bg-itunes-bar bare:hidden">
-      <button type="button" className={BAR_BTN} disabled title="New playlist (not available for Spotify playlists here)" aria-label="New playlist"><Icon name="add" size={18} /></button>
-      <TransportButton action="shuffle" id="bshuffle" className={cx(BAR_BTN, 'data-on:text-itunes-lit')}><Icon name="shuffle" size={18} /></TransportButton>
+      <button type="button" className={BAR_BTN} id="bnew" disabled={!create} title="New Playlist" aria-label="New Playlist" onClick={() => newPlaylist(sh)}><Icon name="add" size={18} /></button>
+      <ShuffleButton className={cx(BAR_BTN, 'relative data-on:text-itunes-lit')} size={18} sparkle="right-3 top-0" />
       <TransportButton action="repeat" id="brepeat" className={cx(BAR_BTN, 'relative data-on:text-itunes-lit')}>
         <Icon name="repeat" size={18} />
         {repeat === 'track' && <span className="absolute right-3 top-0 text-[8px] leading-none font-bold">1</span>}

@@ -165,6 +165,10 @@ export function playUri(sh: Shell, uri: string): void {
   else cmd.playItem({ uri });
 }
 
+/** A podcast episode to offer Mark as Played for: marked unplayed here (`marks`, the store's `played`), else
+ *  as Spotify says, and one it says nothing of (an episode outside its show's list). */
+export const isUnplayed = (t: Track, marks: Record<string, boolean>): boolean => (t.uri in marks ? !marks[t.uri] : t.unplayed !== false);
+
 /** "Show the current song" (Ctrl+L, the LCD's ➜): the source the song plays from selected, its row
  *  shown — Music for Liked Songs, a library playlist as itself, iTunes DJ when it was queued, and
  *  anything else (an album, an artist, a station) opened inside Music. */

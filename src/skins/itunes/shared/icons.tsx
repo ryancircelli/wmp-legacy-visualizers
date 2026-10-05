@@ -41,6 +41,8 @@ const P = {
   add: 'M7.1 2.5h1.8v4.6h4.6v1.8H8.9v4.6H7.1V8.9H2.5V7.1h4.6Z',
   shuffle: 'M1 4h2.6c2.4 0 3.4 1.4 4.4 3l.6 1c.8 1.3 1.6 2.4 3.4 2.4V8.8L15 11.1l-3 2.3v-1.6c-2.5 0-3.6-1.5-4.6-3.1l-.6-1C6 6.4 5.2 5.4 3.6 5.4H1Zm11 0V2.6L15 4.9l-3 2.3V5.4c-1.2 0-2 .6-2.6 1.4l-.8-1.2C9.4 4.7 10.4 4 12 4ZM1 10.6h2.6c1.1 0 1.8-.5 2.4-1.2l.8 1.2c-.8.9-1.8 1.4-3.2 1.4H1Z',
   repeat: 'M3 6.5a2.5 2.5 0 0 1 2.5-2.5H11V2l3.2 2.7L11 7.4V5.4H5.5a1.1 1.1 0 0 0-1.1 1.1V8H3Zm10 3a2.5 2.5 0 0 1-2.5 2.5H5V14l-3.2-2.7L5 8.6v2h5.5a1.1 1.1 0 0 0 1.1-1.1V8H13Z',
+  // Smart Shuffle's mark on the shuffle glyph (Spotify draws its smart shuffle with a sparkle)
+  sparkle: 'M8 .5 9.7 6.3 15.5 8 9.7 9.7 8 15.5 6.3 9.7.5 8l5.8-1.7Z',
   artwork: 'M1.5 2.5h13v11h-13Zm1.3 1.3v8.4h10.4V3.8ZM8 5.5l3.2 4H4.8Z',
   airplay: 'M1.5 2h13v8.5h-3.1l-1-1.2h2.8V3.2H2.8v6.1h2.8l-1 1.2H1.5ZM8 8l4.2 5.5H3.8Z',
   // the LCD: the idle glyph (a pair of quavers: no logo) and "show the playing song"

@@ -1,13 +1,15 @@
 // The sidebar's list (REFERENCE §Sidebar): bold grey section headers, 20 px rows with a grey
 // monochrome icon, the selection a full-width bar (blue-grey; blue while the list has focus) with the
 // label bold white, count pills and the playing device's speaker at the right. ↑ / ↓ walk it.
-import type { KeyboardEvent } from 'react';
+import type { KeyboardEvent, ReactNode } from 'react';
 import { cx, useWarm } from '../../../ui';
 import { Icon } from './icons';
 import type { Source, SourceSection } from './sources';
 
-export function SourceList({ sections, selected, onSelect, className }: {
+export function SourceList({ sections, selected, onSelect, className, children }: {
   sections: SourceSection[]; selected: string; onSelect: (id: string) => void; className?: string;
+  /** after the last row (the desktop's new playlist's name field, at the end of PLAYLISTS) */
+  children?: ReactNode;
 }) {
   const warm = useWarm(); // a resting pointer loads the playlist before the click
   const flat = sections.flatMap((s) => s.items);
@@ -25,6 +27,7 @@ export function SourceList({ sections, selected, onSelect, className }: {
           {sec.items.map((x) => <Row key={x.id} x={x} on={x.id === selected} onSelect={onSelect} warm={warm} />)}
         </div>
       ))}
+      {children}
     </div>
   );
 }

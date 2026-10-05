@@ -1,6 +1,6 @@
 // Grid view (REFERENCE §Grid): covers on white, the name bold black and the artist grey under each,
-// centred; a click selects, a double-click (or Enter) opens, the round ▶ over a cover (on hover, and
-// always on the playing one) plays it where it stands. src/ui's TileGrid is the behaviour.
+// centred; a click selects, a double-click (or Enter) opens, the round ▶ in a cover's corner (on hover,
+// and always on the playing one) plays it where it stands. src/ui's TileGrid is the behaviour.
 import { useState } from 'react';
 import { cx, TileGrid, usePlayingContext, type TileItem, type TileSection } from '../../../ui';
 import { Icon } from './icons';
@@ -35,8 +35,11 @@ export function AlbumGrid({ sections, onOpen, onPlay, more, className, id, size 
         img: cx(cover, 'block object-cover bg-itunes-side shadow-[0_2px_5px_rgba(0,0,0,.38)]'),
         name: 'mt-7 w-full truncate text-11 leading-[14px] font-bold text-black',
         sub: 'w-full truncate text-11 leading-[14px] text-itunes-dim empty:hidden',
-        play: cx('absolute left-1/2 -translate-x-1/2 -translate-y-1/2 grid place-items-center w-32 h-32 rounded-full border-2 border-white/85 bg-black/55 text-white text-12 leading-none opacity-0 shadow-[0_1px_4px_rgba(0,0,0,.5)] group-hover/tile:opacity-100 group-focus-visible/tile:opacity-100 data-current:opacity-100 hover:bg-black/75',
-                 small ? 'top-[54px]' : 'top-[68px]'),
+        // the cover's lower left corner, never its middle: a click on a cover is a click on the cover (the
+        // ▶ once sat in the middle, where a click aimed at the cover landed, and played it); and no target
+        // while it is not shown
+        play: cx('absolute grid place-items-center rounded-full border-2 border-white/85 bg-black/55 text-white leading-none opacity-0 pointer-events-none shadow-[0_1px_4px_rgba(0,0,0,.5)] group-hover/tile:opacity-100 group-hover/tile:pointer-events-auto group-focus-visible/tile:opacity-100 group-focus-visible/tile:pointer-events-auto data-current:opacity-100 data-current:pointer-events-auto hover:bg-black/75',
+                 small ? 'w-24 h-24 left-[calc(50%-44px)] top-[74px] text-[9px]' : 'w-26 h-26 left-[calc(50%-57px)] top-[99px] text-10'),
         more: cx(cover, 'self-start mt-6 justify-self-center rounded-md border border-[#C8C8C8] bg-[#F4F4F4] text-12 text-itunes-dim hover:bg-[#EAEAEA]'),
       }} />
   );

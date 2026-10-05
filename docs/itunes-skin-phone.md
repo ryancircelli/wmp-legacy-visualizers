@@ -94,7 +94,9 @@ build's (REFERENCE.md, the desktop agent's scratch notes from the 2010 captures)
   seek groove taking a finger above and below. A tap anywhere else on the LCD opens Now Playing
   **(chosen)**. Hidden on Now Playing, whose scrubber and big transport take over, as Spotify's Now
   Playing covers its mini player.
-- **Bottom bar**: Preferences (in the place of iTunes' `+`), shuffle, repeat (a small 1 for one song), and
+- **Bottom bar**: Preferences (in the place of iTunes' `+`: a new playlist is PLAYLISTS' Add Playlist…, §3),
+  shuffle (Off → Shuffle → Smart Shuffle where the player offers it → Off, lit while on, a sparkle at the glyph's
+  corner for Smart: the shared `ShuffleButton`), repeat (a small 1 for one song), and
   **AirPlay**: Play On, lit while another device plays, its name after the glyph as iTunes named its
   chosen speaker (iLounge 16b).
 - **Pages** (`nav.ts`): the app opens on the selected source (the shared view state's, persisted), ‹
@@ -119,7 +121,11 @@ strips went with the ruling of 2026-10-05: one top).
 STORE Spotify / Search Results; GENIUS Genius / Genius Mixes; PLAYLISTS iTunes DJ with Up Next's count /
 Recently Played / the library's playlists) at the phone's row height (class overrides: §7). Albums and
 Artists are the phone's own (the iPhone Music app had them among its tabs; iTunes reached them by Music's
-Grid): each opens Music in Grid on its tab, answering the owner's "how do i play an album". Above the list,
+Grid): each opens Music in Grid on its tab, answering the owner's "how do i play an album". PLAYLISTS starts
+with **Add Playlist…** (the iPhone Music app's own first row there) while the engine makes playlists: the name is
+asked in the system's alert (`window.prompt`; the iOS app shows it as a native alert with a text field), then the
+playlist is made (`createPlaylist`) and its page opened. A **long press on a playlist** is its sheet (§5: Open,
+Play, Shuffle, Save, Start Genius, and **Delete Playlist** for the user's own, asked again in a red sheet). Above the list,
 scrolling with it, **the search bar**: typing searches Spotify 400 ms after the last key (Search Results
 appears under STORE); the keyboard's Search key opens the results **(chosen)**.
 
@@ -135,9 +141,9 @@ seeds from it). A show's head has Play alone.
 | Content | On the phone |
 |---|---|
 | Songs | the strip's view switch, small: **List / Album List / Grid** (Cover Flow is the phone on its side). **List**: the shared `TrackTable` (Name / Time / Artist, 36 px rows in iTunes' stripes, the speaker on the playing row, a header tap sorts); the page scrolls, not the table, so the header sticks and the **status line** ("15 songs, 1.0 hours") is the last row with the stripes running on under it, as the Music app ended its lists. **Album List**: the album column narrowed to 96 px (the cover, its name, the artist), its songs beside it. **Grid**: the shared `AlbumGrid`, small; Music's has iTunes' Albums | Artists pills under the strip |
-| iTunes DJ (Up Next) | the table with a **grip (≡)** at each row's end: a row dragged by it lands where it is let go (one `reorderQueue`, the iPhone's reorder control of 2010); a long press adds Move to Top / Up / Down and Remove from Up Next |
+| iTunes DJ (Up Next) | the table with a **grip (≡)** at each row's end: a row dragged by it lands where it is let go (one `reorderQueue`, the iPhone's reorder control of 2010); a long press adds Move to Top / Up / Down and Remove from Up Next. **Clear** in the strip (the iPhone's On-The-Go playlist had one in its bar; iTunes DJ a Refresh under its list) while songs the user queued are in Up Next: those out (`clearQueue`), the playing list's own left |
 | A show's episodes | newest first, the **blue dot** on one Spotify says is not started, Name / Date / Time, "4 episodes" last; List alone |
-| Covers (the store's front page, Podcasts, Genius Mixes, Recently Played, an artist's albums) | the shared `AlbumGrid`, small. A tap opens; a **long press** is the cover's sheet (§5). The shared grid's round ▶ (shown on a pointer's hover) sat invisibly in each cover's middle on a touch screen, where a finger lands, playing what was meant to open: hidden here but on the playing cover |
+| Covers (the store's front page, Podcasts, Genius Mixes, Recently Played, an artist's albums) | the shared `AlbumGrid`, small. A tap opens; a **long press** is the cover's sheet (§5). The shared grid's round ▶ (shown on a pointer's hover) once sat invisibly in each cover's middle, where a finger lands, playing what was meant to open; it is now in the cover's lower-left corner (both layouts), and hidden here but on the playing cover (iOS keeps a tap's `:hover`) |
 | An artist | its head, the top songs (Name / Time / Plays), its albums as covers |
 | Radio | the stations as a table (Stream / Comments) |
 | Search Results | the search bar again (clearing it goes back to the source list), the songs as rows, then Artists / Albums / Playlists as headed covers |
@@ -164,7 +170,8 @@ scrollbar off: §7); each song keeps its key as the order moves past it, so a tr
   on release as the LCD's); and a big **Previous / Play-Pause / Next** row under the thumb. No volume slider
   here (the phone's buttons; a Connect speaker's is Play On's: §5).
 - **•••**, the song's sheet: Like, Add to Playlist…, Show Album, Show Artist, Go to Current Song, Start
-  Genius, Play On…, **Show / Hide Visualizer** (iTunes' View > Show Visualizer: the app's visualizer in the
+  Genius, **Shuffle: <mode>…** (Off, Shuffle, Smart Shuffle checked by name; Smart greyed where the player has
+  none: the phone's own speaker, a context other than a playlist or Liked Songs), Play On…, **Show / Hide Visualizer** (iTunes' View > Show Visualizer: the app's visualizer in the
   stage's place, at its shape, opaque in its own colours) and **Visualizer Style…** (the engines, then a
   preset). Off at first; kept (`localStorage 'itunes.phone.vis'`).
 - **On its side**: the same play order full size, its scrollbar under it.
@@ -174,10 +181,12 @@ scrollbar off: §7); each song keeps its key as the order moves past it, so a tr
 - **Action sheets** (`Sheet.tsx`, iOS 4's): the blue-grey translucent panel, white glossy buttons, the
   destructive one red, Cancel dark; a choice closes it, then acts. iOS sends no `contextmenu` for a long
   press, so the layout times its own (500 ms, 10 px of slack) and swallows the tap that ends it.
-  - A song's (a long press on a row): Play, Play Next, Like / Unlike, Add to Playlist…, Show Album, Show
-    Artist, Start Genius; on iTunes DJ the moves and Remove.
-  - A cover's (a long press on an album, playlist, artist or show): Open, Play, Shuffle, Save to Library /
-    Remove (Follow / Unfollow an artist), Start Genius.
+  - A song's (a long press on a row): Play, Play Next, Like / Unlike, Add to Playlist…, **Mark as Played /
+    Unplayed** (an episode; the blue dot follows at once), Show Album, Show Artist, Start Genius; on iTunes DJ
+    the moves and Remove.
+  - A cover's (a long press on an album, playlist, artist or show; a playlist's row in the source list): Open,
+    Play, Shuffle, Save to Library / Remove (Follow / Unfollow an artist), Start Genius, **Delete Playlist**
+    (the user's own, `LibraryItem.editable`; asked again: "Delete “…” from your Spotify library?").
   - **Play On** (the AirPlay button): **the volume** of what plays over the devices, as iTunes' AirPlay
     window had its Master Volume over its speakers (a Connect speaker's volume has no other place: the
     phone's buttons turn only the phone); the Connect devices (`useDevices`: the playing one checked,
@@ -200,7 +209,10 @@ scrollbar off: §7); each song keeps its key as the order moves past it, so a tr
 | Play / pause, previous, next | the mini player at the foot (every page but Now Playing); Now Playing's big row |
 | Seek | the mini player's LCD groove; Now Playing's scrubber |
 | Now Playing | a tap on the mini player's LCD |
-| Shuffle, repeat | the bottom bar; a list's Shuffle plays it shuffled |
+| Shuffle (and Smart Shuffle), repeat | the bottom bar (shuffle cycles the three, a sparkle for Smart); Now Playing's ••• names the three; a list's Shuffle plays it shuffled |
+| New playlist, delete one | PLAYLISTS' Add Playlist…; a playlist's long press (the source list or a cover) |
+| Mark as Played | an episode's long press |
+| Clear Up Next | iTunes DJ's strip |
 | Play a list or album whole | its head's Play / Shuffle; a cover's long press |
 | View switch | a song list's strip (List / Album List / Grid); Cover Flow is the phone on its side |
 | Status line | a song list's last row |
@@ -220,7 +232,10 @@ covers within 7 of the front and moves by CSS transitions. The Canvas and the vi
 chosen (the ticker's loop runs only while the visualizer's canvas is mounted).
 
 Changed in `shared/` for the phone: `CoverFlow`'s `size` / `top` (the front cover's, else from the stage's
-height) and `bar` (its scrollbar); the `album` and `artist` glyphs; `statusLine` counts a show's episodes.
+height) and `bar` (its scrollbar); the `album` and `artist` glyphs; `statusLine` counts a show's episodes;
+for the app's four commands of 2026-10-05, `ShuffleButton` / `useShuffle` / `SHUFFLE_NAMES` (the three-way
+shuffle, both layouts' bottom bars), `isUnplayed`, the `sparkle` glyph, `SourceList`'s children slot (the
+desktop's name row), and `AlbumGrid`'s ▶ moved to the cover's corner.
 Still wanted there: a row-height prop for `SourceList` (the phone overrides its 20 px rows with `!`
 classes), a tap-to-play / tap-to-open option for `TrackTable` and `AlbumGrid` (the phone plays from
 `onSelect`, opens tiles from a wrapper's click, hides the grid's ▶ by a class), a footer slot in
@@ -235,10 +250,10 @@ Follow a playlist, album or artist; Add to Playlist; lyrics, and karaoke on / of
 visualizer, its engine and preset; podcasts (followed shows; episodes newest first with the unplayed dot);
 radio stations; Recently Played; the home feed (STORE > Spotify); Genius Mixes (Spotify's made-for-you
 mixes); search; artist pages; Play On with AirPlay… and a device's volume; the host player's EQ, quality,
-Sound Check, crossfade and audio cache; about, updates, refresh, the log, logout.
+Sound Check, crossfade and audio cache; about, updates, refresh, the log, logout; and since 2026-10-05 Smart
+Shuffle, a new playlist and a playlist's delete, Mark as Played / Unplayed, and Clear Up Next.
 
 Left out, and why:
-- **Smart Shuffle**: the engine has no command for it (`toggleShuffle` only), nor the iPod.
 - **Add a whole album or playlist to Up Next**: `addToQueue` takes one track and commands go unordered, so
   an album added track by track could land out of order (wanted: an ordered multi-add in the engine).
 - **Hold Previous / Next to scan**: an iPod click-wheel act; the scrubber does it by drag.

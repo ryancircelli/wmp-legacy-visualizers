@@ -37,6 +37,7 @@
 //   albumsOf(tracks)    the songs grouped by album (AlbumGroup: name, artist, img, tracks, index, first)
 //   statusLine(content), spanText(ms)  the status text ("12 songs, 47 minutes")
 //   opensPage(uri)      a uri that opens a page (playlist, album, artist, show, Liked Songs)
+//   isUnplayed(track, played)  an episode to offer Mark as Played for (the store's marks over Spotify's)
 //   types Content, TracksContent, TilesContent, ArtistContent, StationsContent, SearchContent,
 //         DeviceContent, NoContent, AlbumGroup
 //
@@ -47,7 +48,10 @@
 //   useLcd(), lcdSub(track, turn), lcdTimes(ms, length, total), LCD_TURN  its text, for a layout of its own
 //   TransportCluster({ compact?, className })  Previous / Play-Pause / Next (#bprev #bplay #bnext)
 //   Volume({ className, sliderClassName })   the speakers and the slider (#vol)
-//   SourceList({ sections, selected, onSelect, className })  the sidebar list (↑ / ↓ walk it)
+//   ShuffleButton({ className, size?, sparkle })  the bottom bar's shuffle (#bshuffle): Off → Shuffle → Smart
+//                       Shuffle (where offered) → Off, a sparkle for Smart; useShuffle() its state and moves,
+//                       SHUFFLE_NAMES the modes' names (a menu's, a sheet's)
+//   SourceList({ sections, selected, onSelect, className, children? })  the sidebar list (↑ / ↓ walk it; children after the last row)
 //   TrackTable(props)   the striped, sortable song table (TrackTableProps: rows, columns?, now, playing,
 //                       onPlay, onSelect?, more?, resetKey?, queue? {move, remove}, onContextMenu?, reveal?,
 //                       empty?, row? (px; 20 = Windows)); COLUMNS, listColumns(rows), sorted(); TrackColumn
@@ -62,12 +66,12 @@
 export { DEFAULT_VIEW, itunesView, modeOf, useItunesView, VIEW_MODES, VIEW_NAMES, viewActions, type ItunesView, type ViewMode } from './state';
 export { buildSources, useSources, type Source, type SourceInput, type SourceKind, type SourceSection } from './sources';
 export {
-  albumsOf, opensPage, playRow, playUri, queueOrder, showPlaying, spanText, startGenius, statusLine, useSourceContent,
+  albumsOf, isUnplayed, opensPage, playRow, playUri, queueOrder, showPlaying, spanText, startGenius, statusLine, useSourceContent,
   type AlbumGroup, type ArtistContent, type Content, type NoContent, type SearchContent, type StationsContent,
   type TilesContent, type TracksContent,
 } from './content';
 export { Lcd, LCD_TURN, lcdSub, lcdTimes, useLcd } from './Lcd';
-export { TransportCluster, Volume } from './Transport';
+export { SHUFFLE_NAMES, ShuffleButton, TransportCluster, useShuffle, Volume } from './Transport';
 export { SourceList } from './SourceList';
 export { COLUMNS, listColumns, sorted, TrackTable, type TrackColumn, type TrackTableProps } from './TrackTable';
 export { AlbumList } from './AlbumList';
