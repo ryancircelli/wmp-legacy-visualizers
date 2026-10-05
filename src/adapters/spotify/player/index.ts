@@ -21,10 +21,14 @@ export interface Player {
   setRepeat(m: RepeatMode): Promise<boolean>;
 }
 
-/** The host's player is in charge: the host takes commands and they go to its speaker. */
+/** The host's player is in charge: the host takes commands and they go to its speaker. Its speaker not
+ *  known yet (its first session still logging in: 28 s once, 2026-10-04), the host all the same unless
+ *  another device plays: it keeps the command for its session, where through the cloud a play went to
+ *  this page's own player, which nothing hears, until the speaker came up and took it 20 s later. */
 export function hostInCharge(): boolean {
-  const spk = hostPlayer.speaker();
-  return hostPlayer.available() && !!spk && target(W()) === spk;
+  if (!hostPlayer.available()) return false;
+  const spk = hostPlayer.speaker(), w = W(), other = !!w.activeDeviceId && w.activeDeviceId !== w.deviceId;
+  return spk ? target(w) === spk : !other;
 }
 
 export const player = (sp: Sp): Player => (hostInCharge() ? host(sp) : cloud(sp));
