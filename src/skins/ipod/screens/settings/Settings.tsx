@@ -8,6 +8,8 @@
 import { useEffect, useState, type CSSProperties } from 'react';
 import { EQ_PRESETS, eqPreset, LIKED, QUALITY_OPTS, type Settings, type UpdateCheck } from '../../../../model';
 import { appDownload, isAlbum, LINKS, openLink, restartApp, useApp, useCollection, useLibraryList, useShell } from '../../../../ui';
+// a cycle (registry -> ipod -> here), safe: `skins` is read only when the Skin page opens
+import { skins } from '../../../registry';
 import { useHostGlobal } from '../../host';
 import { bodyHsl, DEFAULTS } from '../../settings';
 import { MenuScreen, Spinner, useIpodSettings, useNav, useWheel } from '../../ui';
@@ -41,9 +43,10 @@ function SettingsMenu() {
   const set = (p: Partial<Settings>) => sh.store.getState().actions.setSettings(p);
   return <MenuScreen items={shown([
     header('Appearance'),
-    { id: 'skin', label: 'Skin', right: 'iPod', chevron: true, onSelect: to(nav, menu('settings/skin', 'Skin', () => [
-      { id: 'ipod', label: 'iPod', right: '✓' },
-      { id: 'wmp9', label: 'Windows Media Player 9', onSelect: () => sh.store.getState().actions.setSettings({ skin: 'wmp9' }) }])) },
+    // the registry's skins, this one checked (registry.ts: the same list as View > Skin)
+    { id: 'skin', label: 'Skin', right: 'iPod', chevron: true, onSelect: to(nav, menu('settings/skin', 'Skin', () => Object.values(skins).map((k) => (k.id === 'ipod'
+      ? { id: k.id, label: 'iPod', right: '✓' }
+      : { id: k.id, label: k.name, onSelect: () => sh.store.getState().actions.setSettings({ skin: k.id }) })))) },
     { id: 'color', label: 'Color', right: <Swatch bg={swatch(ip)} />, chevron: true, onSelect: to(nav, page('settings/color', 'Color', Color)) },
     { id: 'wheel', label: 'Click Wheel', right: ip.wheel === 'black' ? 'Black' : 'White', onSelect: () => patch({ wheel: ip.wheel === 'black' ? 'white' : 'black' }) },
     { id: 'clicker', label: 'Clicker', right: onOff(ip.clicker), onSelect: () => patch({ clicker: !ip.clicker }) },

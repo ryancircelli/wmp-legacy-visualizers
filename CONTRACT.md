@@ -218,6 +218,13 @@ Globals (tauri/src/host.js, on every document of every Tauri window, before any 
     the host draws the XP title bar itself (tauri/src/titlebar.rs). The page hides `#titlebar`
     (`auth.nativeTitle` -> `#chrome[data-nativetitle]` -> the `nativetitle:` variant, as `bare:` does); the
     alchemyWin* calls stay (the status-bar grip, full screen). The website and the Deno host never set it.
+  - NEW, optional: `alchemyNativeChrome(on: boolean, edge?: string)` (where `alchemyNativeTitle` can be
+    set: Windows, never the saver): on = the host's XP title bar and frame, off = none, the web view fills
+    the window, for a skin that draws its own (iTunes 10 while it is mounted; true again as it unmounts,
+    then `auth.nativeTitle` true). `edge` ('#RRGGBB', required when off) is the page's top row, which
+    Windows 11's row or two of frame above the page is painted in. The host keeps the last word per
+    window (`chrome.json`) and the next launch opens that window as it was left, `alchemyNativeTitle`
+    then false. Absent (older exes), a skin with its own caption leaves its title and caption buttons out.
   - `window.__TAURI__` (withGlobalTauri) exists in every Tauri window, so in our page; it NEVER exists in
     Spotify's page (below). Not provided: `alchemyReady` (host.js reports the first painted frame
     itself), `alchemySpotifyLogout` (the bridge's `sp_logout`), `alchemyQuit`, `alchemyCarried`.

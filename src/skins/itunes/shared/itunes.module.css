@@ -1,0 +1,61 @@
+/* What utilities cannot say for the iTunes skin (ARCHITECTURE "Tailwind": each rule sets only
+   properties no utility sets on that element):
+   - .vol: the volume slider, a native range: its vendor track and thumb pseudo-elements;
+   - .stripes: the table's stripes running on below the last row (a background that scrolls with
+     the rows, its period the row height, offset by the header);
+   - .reflect: a Cover Flow cover's mirror image fading out (a mask with a gradient; the image is
+     flipped after its mask, so the mask runs bottom to top). */
+
+.vol {
+  appearance: none;
+  -webkit-appearance: none;
+  background: transparent;
+  height: 15px;
+  margin: 0;
+}
+.vol::-webkit-slider-runnable-track {
+  height: 10px;
+  border-radius: 5px;
+  border: 1px solid;
+  border-color: #444444 #6A6A6A #7C7C7C;
+  background: linear-gradient(180deg, #F1F2F2, #DCDEDF 30%, #C5C7C9 62%, #A6A9AB);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, .45);
+}
+.vol::-moz-range-track {
+  height: 8px;
+  border-radius: 5px;
+  border: 1px solid;
+  border-color: #444444 #6A6A6A #7C7C7C;
+  background: linear-gradient(180deg, #F1F2F2, #DCDEDF 30%, #C5C7C9 62%, #A6A9AB);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, .45);
+}
+.vol::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 13px;
+  height: 13px;
+  margin-top: -2.5px;
+  border-radius: 50%;
+  border: 1px solid #5A5B5C;
+  background: radial-gradient(circle, rgba(90, 91, 92, .55) 0 1.2px, transparent 1.6px),
+              linear-gradient(180deg, #FBFBFB, #E2E4E5 48%, #C9CBCC 52%, #B1B4B7);
+  box-shadow: 0 1px 1px rgba(0, 0, 0, .25);
+}
+.vol::-moz-range-thumb {
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  border: 1px solid #5A5B5C;
+  background: radial-gradient(circle, rgba(90, 91, 92, .55) 0 1.2px, transparent 1.6px),
+              linear-gradient(180deg, #FBFBFB, #E2E4E5 48%, #C9CBCC 52%, #B1B4B7);
+}
+
+.stripes {
+  background-image: repeating-linear-gradient(180deg, #FFFFFF 0 var(--row, 20px), var(--color-itunes-stripe) var(--row, 20px) calc(2 * var(--row, 20px)));
+  background-position: 0 var(--head, 22px);
+  background-attachment: local;
+}
+
+.reflect {
+  -webkit-mask-image: linear-gradient(0deg, rgba(0, 0, 0, .4), transparent 45%);
+  mask-image: linear-gradient(0deg, rgba(0, 0, 0, .4), transparent 45%);
+}

@@ -162,6 +162,57 @@
   /* XP Luna's push button face (white top fading to the face colour) */
   --background-image-xp-button: linear-gradient(180deg, #FFFFFF, #F4F3EE 45%, #ECEBE6 85%, #D6D0C5);
   --background-image-dlg-close: linear-gradient(#F09A7A, #D6502A 50%, #A82B10);
+
+  /* ---- iTunes 10 (src/skins/itunes, docs/itunes-skin.md): the Windows build's palette, sampled from
+          2010 captures (the Windows grey sidebar and stripes; the toolbar, LCD and buttons the Mac
+          build's, which Windows drew the same) ------------------------------------------------- */
+  --font-itunes: "Segoe UI", "Lucida Grande", Tahoma, Verdana, sans-serif;
+  --color-itunes-side: #ECECEC;          /* the source list (Windows; the Mac's was #DADFE6) */
+  --color-itunes-side-head: #637180;     /* LIBRARY, STORE, … */
+  --color-itunes-side-icon: #7D8691;     /* the monochrome source icons */
+  --color-itunes-split: #B4B4B4;         /* the sidebar / content splitter's edge */
+  --color-itunes-badge: #98A6C8;         /* a count pill */
+  --color-itunes-rule: #A6A6A6;          /* under the table header, the Cover Flow divider */
+  --color-itunes-col: #D9D9D9;           /* between header cells */
+  --color-itunes-stripe: #F2F5F9;        /* every other row (white between) */
+  --color-itunes-group: #DFDFDF;         /* between albums in Album List */
+  --color-itunes-sel: #5295E3;           /* the selected row, focused */
+  --color-itunes-sel-dim: #D4D4D4;       /* the selected row, unfocused */
+  --color-itunes-dim: #6D6D6D;           /* second lines: an artist under an album, counts */
+  --color-itunes-glyph: #525252;         /* transport glyphs */
+  --color-itunes-bar-glyph: #4A4B4E;     /* bottom-bar glyphs */
+  --color-itunes-lit: #1F78EC;           /* shuffle / repeat on */
+  --color-itunes-rim: #838383;           /* buttons', the search field's and the view switcher's rim */
+  --color-itunes-rim-dark: #6E6E6E;
+  --color-itunes-hint: #807F80;          /* the search placeholder */
+  --color-itunes-edge: #555555;          /* under the toolbar */
+  --color-itunes-bar-edge: #727579;      /* over the bottom bar */
+  --color-itunes-lcd-ink: #34362E;
+  --color-itunes-lcd-dim: #5D5F55;
+  --color-itunes-lcd-rim: #939786;
+  --color-itunes-menu: #F0F0F0;          /* Windows 7 menus and dialogs */
+  --color-itunes-menu-edge: #979797;
+  --color-itunes-menu-hot: #DCE9F9;
+  --color-itunes-menu-hot-edge: #A4C6F0;
+  --color-itunes-menu-dim: #8D8D8D;
+  --color-itunes-close-hot: #D9443A;     /* the close caption button under the pointer */
+  --color-itunes-flow-ink: #BDBDBD;      /* Cover Flow's second caption line */
+  --color-itunes-store: #2B2B2B;         /* the store's dark navigation bar */
+  --background-image-itunes-chrome: linear-gradient(180deg, #F3F3F4, #DCDDDF 26%, #C4C6C9 60%, #A3A6A9);
+  --background-image-itunes-bar: linear-gradient(180deg, #C9CBCC, #939597);
+  --background-image-itunes-head: linear-gradient(180deg, #E5E5E5, #FBFBFB);
+  --background-image-itunes-side-sel: linear-gradient(180deg, #C6D0E3, #A5B3CD);
+  --background-image-itunes-side-sel-on: linear-gradient(180deg, #6AA0E2, #3871C6);
+  --background-image-itunes-btn: linear-gradient(180deg, #F7F8F9, #FDFDFD 44%, #E1E4E4 52%, #B8BBBE);
+  --background-image-itunes-btn-down: linear-gradient(180deg, #C9CBCD, #DADCDD 50%, #A9ACAF);
+  --background-image-itunes-seg: linear-gradient(180deg, #F8F8F8, #E2E3E4 50%, #C0C1C2);
+  --background-image-itunes-seg-on: linear-gradient(180deg, #3B3B3B, #555555 50%, #7A7A7A);
+  --background-image-itunes-search: linear-gradient(180deg, #E4E5E8, #FEFEFE 55%);
+  --background-image-itunes-lcd: linear-gradient(180deg, #EDEFE0, #E6EAD6 49%, #DFE3C8 50%, #E5EACF 72%, #F6F8DF);
+  --background-image-itunes-flow: linear-gradient(180deg, #050505, #111111 12%, #000000 58%);
+  --background-image-itunes-store: linear-gradient(180deg, #4A4A4A, #262626);
+  --background-image-itunes-dlg: linear-gradient(180deg, #F9F9F9, #E4E4E4);
+  --background-image-itunes-push: linear-gradient(180deg, #F6F6F6, #E7E7E7 48%, #DCDCDC 52%, #CFCFCF);
 }
 
 /* :hover as the skin always meant it (Tailwind's default also requires @media (hover: hover)). */

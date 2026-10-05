@@ -60,6 +60,9 @@ declare global {
     alchemyWinFull?: (on: boolean) => void;
     /** the host draws the window's title bar itself (the Tauri host on Windows): the page hides its own */
     alchemyNativeTitle?: boolean;
+    /** the Tauri host on Windows: its title bar and frame on, or off for a skin that draws its own
+     *  window, whose top row is `edge` ('#RRGGBB', needed when off); remembered for the next launch */
+    alchemyNativeChrome?: (on: boolean, edge?: string) => void;
     /** set by the ticker; the desktop host calls it when its window stops or starts being seen */
     alchemyOccluded?: (on: boolean) => void;
     alchemySpotifyLogout?: () => void;
