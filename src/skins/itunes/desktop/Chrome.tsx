@@ -4,7 +4,7 @@
 // title bar away while this skin is up, useOwnWindow; the row is the caption, #titlebar); under it
 // the toolbar: the transport, the volume, the LCD, the view switcher and the search field.
 import { useEffect, useState } from 'react';
-import { cx, MenuBar, playingTrack, useAddTo, useApp, useDebounced, useDevices, useShell, useWindowControls, type MenuClasses } from '../../../ui';
+import { cx, MenuBar, playingTrack, useAddTo, useApp, useDebounced, useDevices, useShell, useWindowControls, type MenuClasses, type MenuEntry } from '../../../ui';
 import { Icon, type IconName } from '../shared/icons';
 import { Lcd } from '../shared/Lcd';
 import { showPlaying, startGenius } from '../shared/content';
@@ -24,6 +24,11 @@ export const MENU: MenuClasses = {
 
 /** the AirPlay menu's icon class per device kind (none: the label says it) */
 const noIcon = () => '';
+
+/** The AirPlay menu's entries: the Connect devices, then AirPlay… where the host has the system's own
+ *  route picker (the iOS app, on an iPad: the iPod's and the phone's AirPlay…). */
+export const withAirPlay = (devices: () => MenuEntry[]) => (): MenuEntry[] =>
+  [...devices(), ...(window.alchemyRoutePicker ? [{ sep: true } as const, { label: 'AirPlay…', act: () => window.alchemyRoutePicker?.() }] : [])];
 
 /** The playing song's song radio (Advanced > Start Genius, the bottom bar's ⚛), or null. */
 export const useGenius = () => {
@@ -57,7 +62,7 @@ export function useOwnWindow() {
 export function CaptionRow({ narrow, views }: { narrow: boolean; views: boolean }) {
   const sh = useShell(), w = useWindowControls(), addTo = useAddTo(useApp(playingTrack)), devices = useDevices(noIcon), genius = useGenius();
   const native = useNativeTitle();
-  const ctx = { addTo, views, narrow, devices: devices.items, genius };
+  const ctx = { addTo, views, narrow, devices: withAirPlay(devices.items), genius };
   const cap = 'flex-none grid place-items-center w-28 h-20 p-0 border border-transparent rounded-xs bg-transparent text-[#3A3A3A] hover:bg-white/45 hover:border-[#8E8F91]';
   return (
     <div id="titlebar" className="relative flex-none flex items-center h-22 pl-2 pr-3 bare:hidden" onMouseDown={w.onCaptionMouseDown}>

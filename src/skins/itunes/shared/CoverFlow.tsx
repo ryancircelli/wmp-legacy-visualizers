@@ -25,8 +25,13 @@ export function flowPlace(d: number, size: number): [number, number, number] {
   return [k * (size * 0.85 + (n - 1) * size * 0.15), k * 45, -size * (0.42 + (n - 1) * 0.04)];
 }
 
-export function CoverFlow({ covers, index, onIndex, onActivate, className, id }: {
+export function CoverFlow({ covers, index, onIndex, onActivate, className, id, size: fixed, top: at0, bar = true }: {
   covers: FlowCover[]; index: number; onIndex: (i: number) => void; onActivate: (i: number) => void; className?: string; id?: string;
+  /** the front cover's size and top in px (default: from the stage's height); a narrow stage gives a
+   *  smaller cover so the ones beside it show (the phone's Now Playing) */
+  size?: number; top?: number;
+  /** the scrollbar under the caption (off where another bar is just under the stage) */
+  bar?: boolean;
 }) {
   const stage = useRef<HTMLDivElement>(null), [h, setH] = useState(300), wheel = useRef({ acc: 0, at: 0 });
   const drag = useRef<{ x: number; at: number; moved: boolean } | null>(null);
@@ -39,7 +44,7 @@ export function CoverFlow({ covers, index, onIndex, onActivate, className, id }:
   }, []);
   const n = covers.length, at = Math.max(0, Math.min(n - 1, index));
   const go = (i: number) => { const j = Math.max(0, Math.min(n - 1, i)); if (j !== at) onIndex(j); };
-  const size = Math.max(60, Math.min(Math.round(h * 0.72), 360)), top = Math.round(h * 0.045);
+  const size = fixed ?? Math.max(60, Math.min(Math.round(h * 0.72), 360)), top = at0 ?? Math.round(h * 0.045);
   const onKey = (e: KeyboardEvent) => {
     const step = { ArrowLeft: -1, ArrowRight: 1, Home: -n, End: n, PageUp: -SPAN, PageDown: SPAN }[e.key];
     if (step) { e.preventDefault(); go(at + step); } else if (e.key === 'Enter' && n) { e.preventDefault(); onActivate(at); }
@@ -89,7 +94,7 @@ export function CoverFlow({ covers, index, onIndex, onActivate, className, id }:
           <div className="truncate text-12 leading-[15px] text-itunes-flow-ink">{front.sub}</div>
         </div>
       )}
-      {n > 1 && (
+      {bar && n > 1 && (
         <div className="absolute left-1/2 -translate-x-1/2 bottom-10 z-200 w-[min(74%,640px)] flex items-center h-15 rounded-full border border-[#B3B3B3]/80 bg-[linear-gradient(180deg,#3A3A39,#5C5C5B_45%,#5C5C5B)]"
              onPointerDown={(e) => e.stopPropagation()}>
           <button type="button" className="flex-none w-16 h-full p-0 border-0 bg-transparent text-[#D8D8D8] text-[8px]" aria-label="Previous cover" onClick={() => go(at - 1)}>◀</button>

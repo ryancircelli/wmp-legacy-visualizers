@@ -6,16 +6,20 @@
 // the status line ("15 songs, 1.0 hours") a row at the list's end as that Music app counted its lists.
 // A tap plays a song or opens a cover (the phone's way; iTunes' was a double-click); a long press opens
 // the song's sheet.
-import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type MouseEvent, type PointerEvent, type ReactNode } from 'react';
+import { create } from 'zustand';
 import { mss, type Track } from '../../../model';
-import { cx, SearchScope, useApp, useDebounced, usePlayback, useSearchResults, useShell, type TileItem, type TileSection } from '../../../ui';
 import {
-  AlbumGrid, albumsOf, COLUMNS, CoverFlow, Icon, playRow, playUri, queueOrder, SourceList, statusLine, styles, TrackTable, useItunesView,
+  canSave, cx, isAlbum, SearchScope, useAddTo, useApp, useDebounced, useLibraryList, usePlayback, useSearchResults, useShell,
+  type TileItem, type TileSection,
+} from '../../../ui';
+import {
+  AlbumGrid, albumsOf, COLUMNS, CoverFlow, Icon, opensPage, playRow, playUri, queueOrder, SourceList, statusLine, styles, TrackTable, useItunesView,
   useSourceContent, useSources, VIEW_NAMES, viewActions, type Content, type FlowCover, type IconName, type Source, type TrackColumn,
   type TracksContent, type ViewMode,
 } from '../shared';
 import { nav } from './nav';
-import { openSheet, TrackSheet, useLongPress, type QueueEdit } from './Sheet';
+import { collectionRadio, openSheet, shufflePlay, TileSheet, TrackSheet, useLongPress, type QueueEdit } from './Sheet';
 
 /** a row a finger can hit: 36 px is 44 points on a 390-point phone (host.ts NARROW) */
 export const ROW = 36;
@@ -69,6 +73,10 @@ export const Note = ({ text, dark }: { text: string; dark?: boolean }) => (
  *  results (the source list's bar), else it puts the keyboard away (the results page's own). The
  *  field's text is 16 px drawn at 13: iOS zooms the page into a field whose text is smaller than 16.
  *  Marked data-search-box (Ctrl+F). */
+/** Whether one of the layout's search fields has the focus: the host's keyboard report counts only
+ *  then (Root.tsx). */
+export const searchFocus = create<{ on: boolean }>(() => ({ on: false }));
+
 function SearchBar({ go }: { go?: boolean }) {
   const sh = useShell(), q = useApp((s) => s.ui.searchQ), [text, setText] = useState(q);
   const run = useDebounced((v) => sh.store.getState().commands.search(v));
@@ -82,6 +90,7 @@ function SearchBar({ go }: { go?: boolean }) {
         <input data-search-box="" type="search" enterKeyHint="search" autoCapitalize="none" autoCorrect="off" spellCheck={false}
                aria-label="Search Spotify" placeholder="Search" value={text}
                className="absolute left-28 top-0 h-[34px] w-[calc((100%-54px)/.8125)] origin-top-left scale-[.8125] p-0 border-0 bg-transparent text-[16px] text-black outline-none appearance-none placeholder:text-itunes-hint [&::-webkit-search-cancel-button]:appearance-none select-text"
+               onFocus={() => searchFocus.setState({ on: true })} onBlur={() => searchFocus.setState({ on: false })}
                onChange={(e) => { setText(e.currentTarget.value); run(e.currentTarget.value); }}
                onKeyDown={(e) => {
                  if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
@@ -110,12 +119,24 @@ const SIDEBAR = cx('pb-16',
   '[&_[role=treeitem]]:h-36! [&_[role=treeitem]]:pl-14! [&_[role=treeitem]]:pr-12! [&_[role=treeitem]]:gap-9! [&_[role=treeitem]]:text-13!',
   '[&_[role=treeitem]>svg:first-child]:size-18! [&_[role=group]>div:first-child]:h-30! [&_[role=group]>div:first-child]:pt-13! [&_[role=group]>div:first-child]:pl-12!');
 
+/** LIBRARY's two rows of the phone's own (the iPhone Music app of 2010 had Albums and Artists among its
+ *  tabs; iTunes reached them by Music's Grid): each opens Music in Grid on its tab. */
+const SHORTCUTS: Source[] = [{ id: 'albums', label: 'Albums', icon: 'album', kind: 'music' }, { id: 'artists', label: 'Artists', icon: 'artist', kind: 'music' }];
+const pick = (id: string) => {
+  if (id !== 'albums' && id !== 'artists') { nav.source(id); return; }
+  viewActions.select('music');
+  viewActions.setMode('grid', 'music');
+  viewActions.setGridTab(id);
+  nav.source();
+};
+
 export function SourcesPage({ sel }: { sel: Selection }) {
+  const sections = sel.src.sections.map((x) => (x.id === 'library' ? { ...x, items: [x.items[0]!, ...SHORTCUTS, ...x.items.slice(1)] } : x));
   return (
     <div className="flex-auto min-h-0 overflow-y-auto overscroll-contain bg-itunes-side" id="sidebar">
       <SearchBar go />
-      {sel.src.sections.length
-        ? <SourceList sections={sel.src.sections} selected={sel.source?.id ?? ''} onSelect={nav.source} className={SIDEBAR} />
+      {sections.length
+        ? <SourceList sections={sections} selected={sel.source?.id ?? ''} onSelect={pick} className={SIDEBAR} />
         : <div className="pt-60 text-center text-12 text-itunes-dim">{sel.src.loading ? 'Loading…' : ''}</div>}
     </div>
   );
@@ -127,7 +148,8 @@ export function SourcesPage({ sel }: { sel: Selection }) {
 export function SourcePage({ sel, back, backLabel }: { sel: Selection; back: () => void; backLabel: string }) {
   const { content: c, source, mode } = sel;
   const store = source?.kind === 'store' || source?.kind === 'search';
-  const songs = c.kind === 'tracks' && !c.queue, tab = useItunesView((s) => s.gridTab), browse = songs && !!c.browse && mode === 'grid';
+  // a show's episodes have no albums to group or cover: List alone
+  const songs = c.kind === 'tracks' && !c.queue && !c.ctx?.startsWith('spotify:show:'), tab = useItunesView((s) => s.gridTab), browse = songs && !!c.browse && mode === 'grid';
   const body = c.kind === 'tracks' ? <Tracks c={c} mode={mode} source={source} />
     : c.kind === 'tiles' ? <Tiles sections={c.sections} empty={c.loading ? 'Loading…' : c.empty} heads={source?.kind === 'store'} />
     : c.kind === 'artist' ? <Artist c={c} />
@@ -190,6 +212,20 @@ function usePlayOnce(play: (t: Track) => void): (t: Track) => void {
 
 /** The table's columns on a phone: the name, its length, the artist (the album shows as Album List). */
 const PHONE_COLUMNS: TrackColumn[] = [COLUMNS.name, { ...COLUMNS.time, width: 44 }, COLUMNS.artist];
+/** An episode's date as the Music app wrote it: "Sep 29", the year too when it is not this one. */
+export const episodeDay = (d?: string): string => {
+  if (!d) return '';
+  const x = new Date(d.length === 10 ? d + 'T00:00' : d);
+  return isNaN(+x) ? d : x.toLocaleDateString([], { month: 'short', day: 'numeric', ...(x.getFullYear() !== new Date().getFullYear() ? { year: 'numeric' } : {}) });
+};
+/** A show's episodes: iTunes' podcast list, the blue dot on one Spotify says is not started, then the
+ *  name, the date and the length (newest first: Tracks). */
+const EPISODE_COLUMNS: TrackColumn[] = [{ key: 'new', header: '', cell: (t) => (t.unplayed ? '●' : ''), width: 18 }, COLUMNS.name,
+  { key: 'date', header: 'Date', cell: (t) => episodeDay(t.releaseDate), width: 84, sort: (t) => t.releaseDate ?? '' }, { ...COLUMNS.time, width: 44 }];
+const DOTS = '[&_tbody_td:nth-child(2)]:px-0! [&_tbody_td:nth-child(2)]:text-center [&_tbody_td:nth-child(2)]:text-[#2E7FD8]';
+/** Up Next's rows end in a grip a finger drags them by (the iPhone's reorder control of 2010) */
+const QUEUE_COLUMNS: TrackColumn[] = [...PHONE_COLUMNS, { key: 'grip', header: '', cell: () => '≡', width: 34 }];
+const GRIPS = '[&_tbody_td:last-child]:touch-none [&_tbody_td:last-child]:text-center [&_tbody_td:last-child]:text-17 [&_tbody_td:last-child]:text-[#9A9A9A]';
 
 /** The rows' long press: the song's sheet (Up Next's moves on iTunes DJ). */
 function useRowSheet(rows: readonly Track[], c?: Content, queue?: QueueEdit) {
@@ -199,17 +235,86 @@ function useRowSheet(rows: readonly Track[], c?: Content, queue?: QueueEdit) {
   }, '[data-i]');
 }
 
+/** Up Next's drag: a row taken by its grip follows the finger and lands where it is let go (one
+ *  reorderQueue). The page does not scroll under the grip (touch-none); a tap on it plays nothing. */
+function useQueueDrag(queue: QueueEdit | undefined) {
+  const g = useRef<{ i: number; y: number; k: number; to: number; cells: HTMLElement[] } | null>(null);
+  const grip = (e: { target: EventTarget }) => (queue ? (e.target as Element).closest('tr[data-i] > td:last-child') : null);
+  const end = (commit: boolean) => {
+    const d = g.current;
+    if (!d) return;
+    g.current = null;
+    for (const c of d.cells) c.style.cssText = '';
+    if (commit && queue && d.to !== d.i) queue.move(d.i, d.to);
+  };
+  return {
+    onPointerDownCapture: (e: PointerEvent) => {
+      const td = grip(e), tr = td?.parentElement;
+      if (!tr) return;
+      e.stopPropagation();                       // not the row's long press
+      e.currentTarget.setPointerCapture?.(e.pointerId);
+      const i = Number(tr.getAttribute('data-i')), cells = [...tr.children] as HTMLElement[];
+      // the layout px per CSS px the finger moves in (the layout is scaled: host.ts)
+      g.current = { i, to: i, y: e.clientY, k: ROW / Math.max(1, tr.getBoundingClientRect().height), cells };
+      for (const c of cells) Object.assign(c.style, { position: 'relative', zIndex: '2', background: '#FFFFFF', boxShadow: '0 3px 6px rgba(0,0,0,.25)' });
+    },
+    onPointerMoveCapture: (e: PointerEvent) => {
+      const d = g.current;
+      if (!d || !queue) return;
+      const dy = (e.clientY - d.y) * d.k;
+      d.to = Math.max(0, Math.min(queue.n - 1, d.i + Math.round(dy / ROW)));
+      for (const c of d.cells) c.style.transform = 'translateY(' + dy + 'px)';
+    },
+    onPointerUpCapture: () => end(true),
+    onPointerCancelCapture: () => end(false),
+    onMouseDownCapture: (e: MouseEvent) => { if (grip(e)) e.stopPropagation(); },
+  };
+}
+
+const PILL = 'relative flex items-center gap-5 h-26 px-10 rounded-full border border-itunes-rim bg-itunes-seg text-11 font-bold text-[#2E2F31] shadow-[0_1px_0_rgba(255,255,255,.6)] active:bg-itunes-btn-down data-on:bg-itunes-seg-on data-on:text-white disabled:opacity-60 after:absolute after:-inset-y-7 after:inset-x-0 after:content-[""]';
+
+/** A list's head (Spotify's collection header in iTunes' pills, as the iPod has it; the iPhone Music app
+ *  of 2010 led a list with Shuffle): Play (Pause while it is what plays), Shuffle (the whole list
+ *  shuffled, lit while it plays so), Save to the library (a playlist or album the user does not own,
+ *  "Saved" one they do; Follow an artist), Genius (its radio). It scrolls away with the list. */
+function ListActions({ ctx, title }: { ctx: string; title: string }) {
+  const sh = useShell(), lib = useLibraryList(), listed = lib.items.find((x) => x.uri === ctx), artist = ctx.startsWith('spotify:artist:');
+  const here = useApp((s) => s.playback.context?.uri === ctx), playing = useApp((s) => s.playback.status === 'playing'), shuffled = useApp((s) => s.playback.shuffle);
+  const save = useAddTo(canSave(ctx) ? ctx : null, isAlbum(ctx) || artist ? undefined : !!listed), radio = /^spotify:(playlist|album|artist):/.test(ctx);
+  return (
+    <div className="flex items-center justify-center gap-7 h-40 px-6 bg-[#F4F4F4] border-b border-[#D5D5D5]" id="listacts">
+      <button type="button" className={PILL} data-on={(here && playing) || undefined} onClick={() => (here ? void sh.store.getState().commands.playPause() : playUri(sh, ctx))}>
+        <Icon name={here && playing ? 'pause' : 'play'} size={10} />{here && playing ? 'Pause' : 'Play'}
+      </button>
+      {!ctx.startsWith('spotify:show:') && (
+        <button type="button" className={PILL} data-on={(here && shuffled) || undefined} onClick={() => shufflePlay(sh, ctx)} aria-label={'Shuffle ' + title}>
+          <Icon name="shuffle" size={12} />Shuffle
+        </button>
+      )}
+      {save.uri && (
+        <button type="button" className={PILL} data-on={save.saved || undefined} disabled={!!listed?.editable} onClick={save.toggle}
+                aria-label={artist ? (save.saved ? 'Unfollow' : 'Follow') : save.saved ? 'Remove from your library' : 'Save to your library'}>
+          <svg width="11" height="11" viewBox="0 0 16 16" aria-hidden="true">
+            <path d="M8 14.2 2.3 8.6A3.4 3.4 0 0 1 8 3.9a3.4 3.4 0 0 1 5.7 4.7Z" fill={save.saved ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
+          </svg>{artist ? (save.saved ? 'Following' : 'Follow') : save.saved ? 'Saved' : 'Save'}
+        </button>
+      )}
+      {radio && <button type="button" className={PILL} onClick={() => collectionRadio(sh, ctx, title)}><Icon name="genius" size={12} />Genius</button>}
+    </div>
+  );
+}
+
 /** A list of songs scrolled with its status line after the last row (the stripes running on under it):
  *  the page scrolls, not the table, so the line is the list's end; the next page is asked here. */
-function ListPage({ c, resetKey, lp, id, className, style, children }: {
-  c: TracksContent; resetKey: string; lp: ReturnType<typeof useLongPress>; id?: string; className?: string; style?: CSSProperties; children: ReactNode;
+function ListPage({ c, resetKey, on, id, className, style, children }: {
+  c: TracksContent; resetKey: string; on: Record<string, unknown>; id?: string; className?: string; style?: CSSProperties; children: ReactNode;
 }) {
   const box = useRef<HTMLDivElement>(null), line = statusLine(c);
   useLayoutEffect(() => { if (box.current) box.current.scrollTop = 0; }, [resetKey]);
   const nearEnd = () => { const b = box.current; if (c.more && b && b.scrollTop + b.clientHeight > b.scrollHeight - ROW * 10) c.more(); };
   useEffect(nearEnd, [c.tracks.length]); // eslint-disable-line react-hooks/exhaustive-deps -- a short first page asks for the next at once
   return (
-    <div ref={box} id={id} onScroll={nearEnd} {...lp} className={cx('flex-auto min-h-0 overflow-y-auto overscroll-contain bg-white', className)} style={style}>
+    <div ref={box} id={id} onScroll={nearEnd} {...on} className={cx('flex-auto min-h-0 overflow-y-auto overscroll-contain bg-white', className)} style={style}>
       {children}
       {line && <div id="listfoot" className="flex items-center justify-center text-12 text-itunes-dim" style={{ height: ROW }}>{line}</div>}
     </div>
@@ -222,21 +327,31 @@ function Tracks({ c, mode, source }: { c: TracksContent; mode: ViewMode; source:
   const reorder = (order: number[]) => sh.store.getState().commands.reorderQueue?.(order);
   const queue: QueueEdit | undefined = c.queue && edits
     ? { n, move: (a, b) => reorder(queueOrder(n, { move: [a, b] })), remove: (i) => reorder(queueOrder(n, { remove: i })) } : undefined;
-  const key = (source?.id ?? '') + '|' + c.title, play = usePlayOnce((t) => playRow(sh, c, t)), lp = useRowSheet(c.tracks, c, queue);
+  // a show's episodes newest first, as the iPod and the Music app listed them
+  const show = !!c.ctx?.startsWith('spotify:show:');
+  const rows = show ? [...c.tracks].sort((a, b) => (b.releaseDate ?? '').localeCompare(a.releaseDate ?? '')) : c.tracks;
+  const key = (source?.id ?? '') + '|' + c.title, play = usePlayOnce((t) => playRow(sh, c, t)), lp = useRowSheet(rows, c, queue), drag = useQueueDrag(queue);
+  const on = queue ? { ...lp, ...drag, onMouseDownCapture: (e: MouseEvent) => { drag.onMouseDownCapture(e); if (!e.isPropagationStopped()) lp.onMouseDownCapture(e); } } : lp;
   // "show the current song": the playing row selected, once per bump
-  const [shown, setShown] = useState(0), at = reveal !== shown && now ? c.tracks.findIndex((t) => t.uri === now) : -1;
+  const [shown, setShown] = useState(0), at = reveal !== shown && now ? rows.findIndex((t) => t.uri === now) : -1;
   useEffect(() => { if (at >= 0) setShown(reveal); }, [at, reveal]); // eslint-disable-line react-hooks/set-state-in-effect -- once shown, the next reveal waits for a new bump
-  const empty = c.loading ? 'Loading…' : c.empty;
+  const empty = c.loading ? 'Loading…' : c.empty, acts = !c.queue && !!c.ctx && rows.length > 0;
   if (mode === 'grid' && !c.queue) return <SongGrid c={c} />;
-  if (mode === 'album' && !c.queue) {
-    if (!c.tracks.length) return <Note text={empty} />;
-    return <ListPage c={c} resetKey={key + '|album'} lp={lp} id="albumlist" className="text-12 select-none"><AlbumRows rows={c.tracks} now={now} playing={p.playing} onPlay={play} /></ListPage>;
+  if (mode === 'album' && !c.queue && !show) {
+    if (!rows.length) return <Note text={empty} />;
+    return (
+      <ListPage c={c} resetKey={key + '|album'} on={lp} id="albumlist" className="text-12 select-none">
+        {acts && <ListActions ctx={c.ctx!} title={c.title} />}
+        <AlbumRows rows={rows} now={now} playing={p.playing} onPlay={play} />
+      </ListPage>
+    );
   }
   return (
-    <ListPage c={c} resetKey={key} lp={lp} className={styles.stripes} style={{ '--row': ROW + 'px', '--head': '23px' } as CSSProperties}>
+    <ListPage c={c} resetKey={key} on={on} className={styles.stripes} style={{ '--row': ROW + 'px', '--head': (acts ? 64 : 23) + 'px' } as CSSProperties}>
+      {acts && <ListActions ctx={c.ctx!} title={c.title} />}
       {/* the table does not scroll: the page does, the table's header sticking at its top */}
-      <TrackTable id="tracks" className="overflow-visible!" rows={c.tracks} columns={PHONE_COLUMNS} now={now} playing={p.playing} onPlay={play} onSelect={play}
-                  resetKey={key} reveal={at >= 0 ? at : null} empty={empty} row={ROW} />
+      <TrackTable id="tracks" className={cx('overflow-visible!', show && DOTS, queue && GRIPS)} rows={rows} now={now} playing={p.playing} onPlay={play} onSelect={play}
+                  columns={show ? EPISODE_COLUMNS : queue ? QUEUE_COLUMNS : PHONE_COLUMNS} resetKey={key} reveal={at >= 0 ? at : null} empty={empty} row={ROW} />
     </ListPage>
   );
 }
@@ -318,13 +433,21 @@ function Tiles({ sections, empty, heads, onOpen, onPlay, more, className }: {
   more?: { label: string; load: () => void } | null; className?: string;
 }) {
   const sh = useShell();
+  const find = (uri: string | null) => sections.flatMap((s) => s.items).find((x) => x.uri === uri);
+  const lp = useLongPress((el) => {
+    const it = find(el.getAttribute('data-uri'));
+    if (it && opensPage(it.uri)) openSheet(<TileSheet uri={it.uri} name={it.name} />);
+  }, 'button[data-uri]');
   if (!sections.some((s) => s.items.length)) return <Note text={empty} />;
   const open = onOpen ?? ((it: TileItem) => (it.openable ? viewActions.open(it.uri) : playUri(sh, it.uri)));
-  const find = (uri: string | null) => sections.flatMap((s) => s.items).find((x) => x.uri === uri);
   return (
-    <div className={cx('flex-auto min-h-0 flex flex-col', className)}
+    <div className={cx('flex-auto min-h-0 flex flex-col', className)} {...lp}
          onClick={(e) => { const it = find((e.target as Element).closest('button[data-uri]')?.getAttribute('data-uri') ?? null); if (it) open(it); }}>
-      <AlbumGrid id="grid" className="flex-auto overscroll-contain" size="small" sections={heads ? sections : sections.map((s) => ({ items: s.items }))}
+      {/* the shared grid's round ▶ sits in a cover's middle, shown on a pointer's hover: on a touch
+          screen it was an invisible target where a finger lands, playing what was meant to open. Only
+          the playing cover keeps it (❚❚ / ▶); a list's head and a cover's long press play */}
+      <AlbumGrid id="grid" className="flex-auto overscroll-contain [&_[role=button]:not([data-current])]:hidden" size="small"
+                 sections={heads ? sections : sections.map((s) => ({ items: s.items }))}
                  more={more} onOpen={open} onPlay={onPlay ?? ((it) => playUri(sh, it.uri))} />
     </div>
   );
@@ -334,7 +457,8 @@ function Artist({ c }: { c: Extract<Content, { kind: 'artist' }> }) {
   const sh = useShell(), p = usePlayback(), play = usePlayOnce((t) => playRow(sh, c, t)), lp = useRowSheet(c.tracks, c);
   return (
     <div className="flex-auto min-h-0 flex flex-col">
-      <div className="flex-none max-h-[45%] min-h-0 flex flex-col" {...lp}>
+      <div className="flex-none"><ListActions ctx={c.ctx} title={c.title} /></div>
+      <div className="flex-none max-h-[40%] min-h-0 flex flex-col" {...lp}>
         <TrackTable id="tracks" className="flex-auto" rows={c.tracks} columns={[COLUMNS.name, { ...COLUMNS.time, width: 44 }, { ...COLUMNS.plays, width: 76 }]}
                     now={p.track?.uri ?? null} playing={p.playing} onPlay={play} onSelect={play} resetKey={c.ctx} row={ROW}
                     empty={c.loading ? 'Loading…' : 'No songs.'} />

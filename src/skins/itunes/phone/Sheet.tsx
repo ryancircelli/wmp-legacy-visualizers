@@ -6,10 +6,10 @@
 import { useEffect, useRef, type MouseEvent, type PointerEvent, type ReactNode } from 'react';
 import { create } from 'zustand';
 import type { Track } from '../../../model';
-import { canSave, cx, useAddTo, useApp, useDevices, useShell, type MenuEntry } from '../../../ui';
-import { playRow, showPlaying, startGenius, viewActions, type Content } from '../shared';
+import { canSave, cx, Slider, TransportButton, useAddTo, useApp, useDevices, usePlayback, useShell, type MenuEntry } from '../../../ui';
+import { Icon, playRow, playUri, showPlaying, startGenius, viewActions, type Content } from '../shared';
 import { haptic } from './host';
-import { nav } from './nav';
+import { nav, nowView, setNowView } from './nav';
 
 const sheets = create<{ node: ReactNode }>(() => ({ node: null }));
 export const openSheet = (node: ReactNode) => sheets.setState({ node });
@@ -28,12 +28,13 @@ const RED = 'border-[#6E1414] bg-[linear-gradient(180deg,#F49A9A,#E0393A_50%,#CE
 const DARK = 'mt-4 border-[#23272E] bg-[linear-gradient(180deg,#8A919C,#5E6570_50%,#4A515C_51%,#565E69)] text-white [text-shadow:0_-1px_0_rgba(0,0,0,.45)]';
 
 /** The sheet: its title, the choices (a choice closes it, then acts), Cancel. */
-export function SheetFrame({ title, items }: { title?: string; items: SheetItem[] }) {
+export function SheetFrame({ title, items, head }: { title?: string; items: SheetItem[]; head?: ReactNode }) {
   return (
     <div className="absolute inset-0 z-50 flex flex-col justify-end bg-black/40" onClick={closeSheet} id="sheet">
       <div role="menu" aria-label={title || 'Options'} onClick={(e) => e.stopPropagation()}
            className="flex flex-col max-h-[88%] px-16 pt-12 pb-[calc(var(--sb,0px)+8px)] border-t border-[#2A2F38] bg-[linear-gradient(180deg,rgba(104,115,133,.95),rgba(50,57,69,.97))] shadow-[inset_0_1px_0_rgba(255,255,255,.35)]">
         {title && <div className="flex-none mb-10 px-6 text-center text-12 leading-[15px] text-[#E8ECF2] line-clamp-2 [text-shadow:0_-1px_0_rgba(0,0,0,.5)]">{title}</div>}
+        {head}
         <div className="flex-auto min-h-0 overflow-y-auto overscroll-contain">
           {items.map((x, i) => (
             <button key={i} type="button" role="menuitem" aria-disabled={x.disabled || undefined} className={cx(BTN, x.danger ? RED : WHITE)}
@@ -112,6 +113,8 @@ export function TrackSheet({ t, i = 0, c, queue, from = 'row' }: { t: Track; i?:
     now && { label: 'Go to Current Song', act: () => showPlaying(sh) },
     { label: 'Start Genius', disabled: !t.uri.startsWith('spotify:track:'), act: () => startGenius(sh, t.uri) },
     now && { label: 'Play On…', act: () => openSheet(<DeviceSheet />) },
+    now && { label: nowView.getState().vis ? 'Hide Visualizer' : 'Show Visualizer', act: () => setNowView('vis', !nowView.getState().vis) },
+    now && { label: 'Visualizer Style…', act: () => openSheet(<VisSheet />) },
   ];
   return <SheetFrame title={t.title + (t.artist ? ' — ' + t.artist : '')} items={items.filter((x): x is SheetItem => !!x)} />;
 }
@@ -124,10 +127,89 @@ function PlaylistSheet({ uri, title }: { uri: string; title: string }) {
   return <SheetFrame title={'Add “' + title + '” to'} items={fromMenu(m.sub ?? [])} />;
 }
 
-/** Play On (iTunes' AirPlay menu): the Spotify Connect devices, the playing one checked, then the
- *  phone's own AirPlay picker where the app has it. */
+/** Play On (iTunes' AirPlay menu): the volume of what plays (iTunes' AirPlay window had its Master
+ *  Volume over the speakers: a Connect speaker's volume has no other place on the phone, whose own
+ *  buttons turn only the phone), the Spotify Connect devices, the playing one checked, then the phone's
+ *  own AirPlay picker where the app has it. */
 export function DeviceSheet() {
   const d = useDevices(() => '');
-  return <SheetFrame title="Play On" items={[...fromMenu(d.items()),
+  return <SheetFrame title="Play On" head={<SheetVolume />} items={[...fromMenu(d.items()),
     ...(window.alchemyRoutePicker ? [{ label: 'AirPlay…', act: () => window.alchemyRoutePicker?.() }] : [])]} />;
+}
+
+/** ms between the volumes a drag sends (the iPod's: the host turns the phone's own volume for it) */
+const VOLUME_SEND_MS = 50;
+
+/** The volume between its speakers on the sheet: a drag anywhere on the groove sets it, a tap on the
+ *  quiet speaker mutes, as iTunes' did. */
+function SheetVolume() {
+  const sh = useShell(), { spotify, volume, muted } = usePlayback(), max = spotify ? 100 : 200;
+  const sent = useRef({ at: 0, timer: 0, v: -1 });
+  useEffect(() => () => clearTimeout(sent.current.timer), []);
+  const set = (f: number, now = false) => {
+    const S = sent.current, go = () => { S.at = Date.now(); S.timer = 0; sh.store.getState().actions.setVolume(S.v); };
+    S.v = Math.round(Math.max(0, Math.min(1, f)) * max);
+    clearTimeout(S.timer);
+    if (now || Date.now() - S.at >= VOLUME_SEND_MS) go(); else S.timer = window.setTimeout(go, VOLUME_SEND_MS);
+  };
+  const v = muted ? 0 : Math.min(1, volume / max);
+  return (
+    <div className="flex-none flex items-center gap-8 h-36 mb-8 px-4 text-[#E8ECF2]" id="sheetvol">
+      <TransportButton action="mute" className="relative flex-none grid place-items-center w-26 h-26 p-0 border-0 bg-transparent text-inherit data-on:text-[#9FD0FF] after:absolute after:-inset-5 after:content-['']">
+        <Icon name="vol-low" size={14} />
+      </TransportButton>
+      <span className="relative flex-auto min-w-0">
+        <span className="absolute inset-x-0 top-1/2 h-9 -mt-[4.5px] rounded-full border border-[#2A2F38] bg-[linear-gradient(180deg,#C9CED6,#F4F6F9)] overflow-hidden pointer-events-none">
+          <span className="block h-full bg-[linear-gradient(180deg,#6AA0E2,#3871C6)]" style={{ width: v > 0 ? 'calc(10px + (100% - 20px) * ' + v + ')' : 0 }} />
+        </span>
+        <Slider id="vol" label="Volume" inset={10} value={v} onMove={(f) => set(f)} onCommit={(f) => set(f, true)}
+                onStep={(dir) => set(v + dir * 0.05, true)} className="relative block w-full h-34 touch-none outline-none"
+                thumbClassName="absolute top-1/2 w-20 h-20 -mt-10 left-[calc((100%-20px)*var(--seek,0))] rounded-full border border-[#5A5B5C] shadow-[0_1px_2px_rgba(0,0,0,.45)] bg-[radial-gradient(circle,rgba(90,91,92,.55)_0_1.5px,transparent_2px),linear-gradient(180deg,#FBFBFB,#E2E4E5_48%,#C9CBCC_52%,#B1B4B7)]" />
+      </span>
+      <Icon name="vol-high" size={16} className="flex-none" />
+    </div>
+  );
+}
+
+/** View > Visualizer: the engines (Alchemy, Bars and Waves, Battery), the one holding the choice checked,
+ *  each opening its presets (an engine of one preset picked at its own row); a pick shows the visualizer. */
+function VisSheet() {
+  const sh = useShell(), cur = useApp((s) => s.vis.kind + ':' + s.vis.preset);
+  const pick = (p: (typeof sh.presets)[number]) => () => { sh.store.getState().actions.setVis(p.vis, p.preset); setNowView('vis', true); };
+  const groups = [...new Set(sh.presets.map((p) => p.group))].map((g) => sh.presets.filter((p) => p.group === g));
+  return <SheetFrame title="Visualizer" items={groups.map((ps) => ps.length === 1
+    ? { label: ps[0]!.group, check: cur === ps[0]!.vis + ':' + ps[0]!.preset, act: pick(ps[0]!) }
+    : { label: ps[0]!.group, check: ps.some((p) => cur === p.vis + ':' + p.preset),
+        act: () => openSheet(<SheetFrame title={ps[0]!.group} items={ps.map((p) => ({ label: p.name, check: cur === p.vis + ':' + p.preset, act: pick(p) }))} />) })} />;
+}
+
+/** Radio from a playlist, album or artist (the iPod's Start Radio; iTunes made a Genius playlist from
+ *  what was chosen): the station Spotify seeds from it, played; the LCD says when there is none. */
+export function collectionRadio(sh: ReturnType<typeof useShell>, uri: string, title: string): void {
+  const name = title + ' Radio';
+  void sh.queries.fetchRadio([{ seed: uri, name, sub: '' }]).catch(() => []).then((st) => {
+    const s = sh.store.getState(), hit = st.find((x) => x.name === name) ?? (uri.startsWith('spotify:artist:') ? st[0] : undefined);
+    if (hit) s.commands.playContext(hit.uri, null); else s.actions.setStatus('No Genius radio for ' + title);
+  });
+}
+
+/** Play a collection whole, shuffled (Spotify's shuffle turned on first: the player starts it shuffled). */
+export function shufflePlay(sh: ReturnType<typeof useShell>, uri: string): void {
+  const s = sh.store.getState();
+  if (!s.playback.shuffle) s.commands.toggleShuffle();
+  playUri(sh, uri);
+}
+
+/** A cover's sheet (a long press on an album, playlist, artist or show): Open, Play, Shuffle, Save to
+ *  the library (Follow an artist), Genius (its radio). A song tile gets the song's own. */
+export function TileSheet({ uri, name }: { uri: string; name: string }) {
+  const sh = useShell(), save = useAddTo(canSave(uri) ? uri : null), artist = uri.startsWith('spotify:artist:');
+  const items: (SheetItem | false)[] = [
+    { label: 'Open', act: () => { viewActions.open(uri); nav.source(); } },
+    { label: 'Play', act: () => playUri(sh, uri) },
+    !uri.startsWith('spotify:show:') && { label: 'Shuffle', act: () => shufflePlay(sh, uri) },
+    !!save.uri && { label: artist ? (save.saved ? 'Unfollow' : 'Follow') : save.saved ? 'Remove from Library' : 'Save to Library', act: save.toggle },
+    /^spotify:(playlist|album|artist):/.test(uri) && { label: 'Start Genius', act: () => collectionRadio(sh, uri, name) },
+  ];
+  return <SheetFrame title={name} items={items.filter((x): x is SheetItem => !!x)} />;
 }

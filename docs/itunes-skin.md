@@ -25,6 +25,11 @@ shortcuts in iTunes on PC".
 > **Status (2026-10-04).** Built: `src/skins/itunes/` (View > Skin in WMP 9 and here; Settings > Skin on the
 > iPod, which now lists the registry). The shared core and the desktop layout are done; `phone/` is a
 > placeholder for the phone layout (its own agent's).
+>
+> **2026-10-05: every Spotify feature has a place in the desktop window** (the owner, 2026-10-04: "remember
+> these are inspired themes not 1-1 always and we want to fit all spotify features"). Where iTunes had no
+> place for one, it is drawn in iTunes' own idioms (a column, a context menu, the strip, the artwork pane, a
+> Get Info sheet, the Equalizer window): §3.1. What still cannot be built, and the app command each needs: §3.2.
 
 ## 0. At a glance
 
@@ -34,8 +39,8 @@ shortcuts in iTunes on PC".
 | Layout pick | a touch screen whose narrow side is under 600 CSS px is a phone (the screen's size, not the viewport's: the iOS app draws a desktop-wide viewport); anything else is the desktop window |
 | Fonts | the system stack `"Segoe UI", "Lucida Grande", Tahoma, Verdana, sans-serif` (`--font-itunes`); no font files |
 | Tokens | `--color-itunes-*`, `--background-image-itunes-*` in `src/ui/theme.css` |
-| Own state | `localStorage['itunes.view']`: the selected source, each source's view, the artwork pane, the Grid's tab, the LCD's time (zustand persist) |
-| Not built | Ping, Movies, TV Shows, iTunes U, Books, Apps, Ringtones, Purchased, SHARED, the column browser, the MiniPlayer, ratings, the checkbox column, the spectrum mode of the LCD, new playlists |
+| Own state | `localStorage['itunes.view']`: the selected source, each source's view, the artwork pane, the Grid's tab, the LCD's time (zustand persist); `localStorage['itunes.desktop']`: View > Show Canvas |
+| Not built | Ping, Movies, TV Shows, iTunes U, Books, Apps, Ringtones, Purchased, SHARED, the column browser, the MiniPlayer, star ratings (the ♥ column is in their place), the checkbox column, the spectrum mode of the LCD; and, for want of an app command (§3.2), new playlists, Smart Shuffle, Mark as Played |
 
 ## 1. Spotify on iTunes' sidebar (`shared/sources.ts`)
 
@@ -51,7 +56,7 @@ iTunes 10's sections in its order, each holding what Spotify has in that place:
 | (no DEVICES) | — | iTunes 10's DEVICES held the synced iPods; its speakers were the AirPlay menu's (the bottom bar's), where the Connect devices are. Both was the same list twice (the owner, 2026-10-04: "redundant ui on a tight screen space") |
 | GENIUS | **Genius** | the playing song's radio, as a playlist ("Based on …") |
 | | **Genius Mixes** | Spotify's made-for-you mixes on the home feed (Daily Mix, Discover Weekly, Release Radar, …) |
-| PLAYLISTS | **iTunes DJ** | Up Next (`queue.next`), its length as the badge: rows drag to a new place, Delete removes, right-click Move to Top / Remove (`commands.reorderQueue`) |
+| PLAYLISTS | **iTunes DJ** | Up Next (`queue.next`), its length as the badge: rows drag to a new place, Delete removes, right-click Move to Top / Remove (`commands.reorderQueue`). The desktop window puts the songs it has played this session (grey) and the playing one above it, as iTunes did (§3.1) |
 | | **Recently Played** | the home feed's recently-played shelves, as covers (a smart playlist's gear) |
 | | the library's playlists | in library order (the saved albums are Music's Grid, not rows) |
 
@@ -128,13 +133,15 @@ File Edit View Controls Store Advanced Help          iTunes                     
   Not available from the page's caption: Snap Layouts on hovering maximize, and the right-click system
   menu (Alt+Space opens it). An exe without `alchemyNativeChrome` keeps its strip, and the title and
   caption buttons stay hidden as above.
-- **Menus** (`desktop/menus.ts`, Windows 7's look): **File** Open Spotify Link…, Close Window, Exit; **Edit**
-  Preferences…; **View** (Show Sidebar on a narrow window) as List / Album List / Grid / Cover Flow
-  (Ctrl+Alt+3–6), Show Artwork, Show Visualizer, Visualizer ▸, Refresh Rate ▸, Lyrics, Karaoke Highlight,
-  Full Screen, Skin ▸ (the registry); **Controls** Play/Pause, Next, Previous, Go to Current Song, Shuffle,
-  Repeat ▸ Off / All / One, the volume, Mute, Play On ▸ (the devices), Like, Add to Playlist ▸; **Store**
-  Spotify Home, Search Spotify, Log Out; **Advanced** Open Stream…, Start Genius; **Help** Keyboard
-  Shortcuts, Check for Updates, About.
+- **Menus** (`desktop/menus.ts`, Windows 7's look): **File** Open Spotify Link…, Get Info (the playing song),
+  Close Window, Exit; **Edit** Preferences…; **View** (Show Sidebar on a narrow window) as List / Album List /
+  Grid / Cover Flow (Ctrl+Alt+3–6), Show Artwork, Show Canvas, Show Visualizer, Visualizer ▸, Refresh Rate ▸,
+  Lyrics, Karaoke Highlight, Show Equalizer (the host's player only), Full Screen, Skin ▸ (the registry);
+  **Controls** Play/Pause, Next, Previous, Go to Current Song, Shuffle, Repeat ▸ Off / All / One, the volume,
+  Mute, Play On ▸ (the devices; AirPlay… where the host has the system's picker), Like, Add to Playlist ▸;
+  **Store** Spotify Home, Search Spotify, Log Out; **Advanced** Open Stream…, Start Genius, Start Playlist /
+  Album / Artist Radio (the playing context's); **Help** Keyboard Shortcuts, Source Code on GitHub, Report a
+  Problem, Show Log (the iOS app's), Check for Updates, Refresh Player (the iOS app's), About.
 - **Toolbar**: the transport, the volume, the LCD (up to 560 px, centred), the view switcher (greyed where a
   source has one view, and while the visualizer shows), the search field (400 ms after the last key, Enter at
   once; ⓧ or Esc clears; marked `data-search-box` for Ctrl+F).
@@ -145,8 +152,12 @@ File Edit View Controls Store Advanced Help          iTunes                     
   Grid; no GB: Spotify has no files); the **AirPlay menu** (the Connect devices, this window as "WMP Spotify
   (This Device)"; the playing device's name beside it when it is elsewhere) and **Genius** (the playing song's
   radio).
-- **Right-click on a song**: Play, Play Next (`addToQueue`), Like / Add to Playlist, Show Album, Show Artist,
-  Start Genius; on iTunes DJ Move to Top and Remove from Up Next.
+- **Right-click** (`desktop/Pointer.tsx`): **a song** Play, Play Next (`addToQueue`), Like / Add to Playlist,
+  Show Album, Show Artist, Start Genius, Get Info, Copy Spotify Link; on iTunes DJ's Up Next rows Move to Top
+  and Remove from Up Next instead of Play Next. **A cover** (any grid: the store, Music's Grid, Podcasts, Genius
+  Mixes, Recently Played, search results, an artist's albums) Play, Shuffle, Open, Save to Your Library /
+  Follow (not the user's own playlists), Start Album / Playlist / Artist Radio, Copy Spotify Link. **A source**
+  (a playlist, Music) Play, Shuffle, Start Playlist Radio, Copy Spotify Link.
 - **The visualizer** is the app's Now Playing view: View > Show Visualizer (Ctrl+T) puts it in the window under
   the toolbar (the sidebar, the content and the bottom bar give way), with the lyrics over it while they are on;
   a double-click is full screen. iTunes opens on the library: the skin turns a restored Now Playing into the
@@ -154,7 +165,49 @@ File Edit View Controls Store Advanced Help          iTunes                     
 - **Narrow windows**: under 760 px the sidebar folds away (View > Show Sidebar lays it over the content) and the
   view switcher goes (View has the four); the volume and the search field shorten down to 640 px.
 - **Dialogs** (Windows 7's frame): Preferences (iTunes' General / Playback / Advanced pane bar over the app's
-  settings; Cancel restores), About, Keyboard Shortcuts, Open Stream, and the update notes.
+  settings, and the host player's sound, §3.1; Cancel restores), the Equalizer, Get Info, About, Keyboard
+  Shortcuts, Open Stream, and the update notes.
+
+### 3.1 Spotify's features in the window
+
+Every feature the iPod and WMP 9 skins expose, and where it lives here. The pieces iTunes had no place for are
+`desktop/spotify.ts` (the logic) and `desktop/Pointer.tsx` (the right-click menus).
+
+| Spotify's | where in the window |
+|---|---|
+| Like | the **♥ column**, last, where iTunes had Rating: ♥ where liked, ♡ on the row under the pointer or selected; a click likes / unlikes (src/ui's batched saved flags; Liked Songs' rows liked without asking). Also a song's right-click, Controls > Like, Get Info's ♥ Liked |
+| Save to Your Library, Follow | a cover's right-click; ♥ on an opened page's strip |
+| Add to Playlist (✓ where it is; a pick toggles, so also removal) | a song's right-click, Controls |
+| Play Next (the queue) | a song's right-click |
+| Shuffle play | an opened page's strip, a cover's and a source's right-click (shuffle on, then the collection) |
+| Song radio | Start Genius (the bottom bar's ⚛, Advanced, a song's right-click), as before |
+| Playlist / Album / Artist Radio | Advanced (the playing context's), a source's and a cover's right-click, the genius atom on an opened page's strip: the station seeded from it (`fetchRadio`, the iPod's Start Radio), played; the LCD's note when there is none |
+| Canvas | the **artwork pane**, where iTunes played a video: the clip muted and looping (an image Canvas still), the cover when it has none or it fails; View > Show Canvas |
+| Lyrics, karaoke | over the visualizer, as before; and **Get Info > Lyrics** for the playing song: every line, the one sung now lit and kept in view (Spotify's lyrics view); View > Lyrics, Karaoke Highlight |
+| Podcasts | Podcasts' covers; a show's episodes with **iTunes' blue dot** where unplayed (Name, Time, Release Date), counted as episodes |
+| Radio stations | Radio (Stream / Comments), as before |
+| Recently Played | the source (the home feed's shelves), as before; and iTunes DJ's played songs |
+| iTunes DJ | the songs played in this window this session, grey (the last 10, iTunes' default; Spotify gives the app no song history), the playing one, then Up Next; only Up Next drags, leaves with Delete, Moves to Top |
+| Play On (Connect) | the AirPlay menu and Controls > Play On; **AirPlay…** after the devices where the host has the system's route picker (the iOS app on an iPad) |
+| Artist, album pages | opened in a source (‹ back), the strip with Play, Shuffle, ♥ and the radio |
+| Search buckets | Search Results' strip: All · Songs · Artists · Albums · Playlists, as the iTunes Store filtered its results by kind; one kind alone pages on |
+| Home shelves | STORE > Spotify, the shelves as the store's sections, as before |
+| Share | Copy Spotify Link (iTunes' Copy iTunes Store URL) in every right-click menu and Get Info |
+| Track details | **Get Info** (File, a song's right-click): the cover, names, explicit, length, release, track / disc, Spotify's play count, the album's label and copyright, ♥, the link |
+| The host player's sound | **Preferences > Playback**: Crossfade Songs (1–12 s), Sound Check, Audio quality; **Advanced**: the audio cache; **View > Show Equalizer**: iTunes' Equalizer window (On, the presets applied at once, the ten bands showing the preset's curve). Only while the host plays itself (`auth.hostPlayer`) |
+| Updates, log, refresh | Help: Check for Updates (and the new download), Show Log, Refresh Player (the iOS app's), Report a Problem |
+| Log out | Store > Log Out of Spotify, as before |
+
+### 3.2 Not here: the app has no command for it
+
+| feature | the command it needs |
+|---|---|
+| Smart Shuffle (the bottom bar's ⤨ cycling In Order → Shuffle → Smart Shuffle, Controls > Shuffle ▸) | `playback.shuffle` as `'off' \| 'on' \| 'smart'` (read from the player's state) and `setShuffle(mode)`; the iPod has a plain toggle too |
+| New playlist (the greyed +) | `createPlaylist(name): Promise<string>` (the new uri); rename and delete beside it |
+| Mark as Played (an episode's right-click) | `markPlayed(episodeUri, played)` |
+| Clear Up Next | `reorderQueue([])` would also drop the playing context's own next songs (it edits queued and context rows alike): a `clearQueue()` that leaves the context's is wanted |
+| Song history in iTunes DJ beyond this window's session | a recently-played-tracks query (Spotify's player history) |
+
 
 ## 4. Keys (`shortcuts.ts`)
 
@@ -182,7 +235,11 @@ File Edit View Controls Store Advanced Help          iTunes                     
   repository). Glyphs are drawn as SVG paths of what the captures show.
 - The Windows build's own pixels are known only at thumbnail size: the caption buttons and the menu row are
   Windows 7's ordinary ones **(memory)**, the toolbar and LCD the Mac capture's (the two builds drew them alike).
-- No checkbox column (its meaning, "skip this song", has no Spotify counterpart), no ratings, no "GB".
-- The + button is greyed: there is no command to make a playlist.
-- iTunes DJ lists Up Next only (iTunes showed the playing song and history above it).
+- No checkbox column (its meaning, "skip this song", has no Spotify counterpart), no "GB". Star ratings are
+  Spotify's ♥ (one heart, not five stars).
+- The + button is greyed: there is no command to make a playlist (§3.2).
+- iTunes DJ's history is this window's own (Spotify gives the app no song history); it starts empty each launch.
+- The Equalizer's band sliders show a preset's curve but do not move: the host player takes presets, not bands.
+- Get Info's Lyrics is the playing song's only (lyrics are fetched for it alone).
+- Album List rows have no right-click menu and no ♥ column (the shared table there takes neither yet).
 - The LCD's left button (the spectrum display) is not drawn: the page has no spectrum of Spotify's audio there.

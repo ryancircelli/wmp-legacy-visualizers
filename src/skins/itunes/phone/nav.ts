@@ -34,3 +34,15 @@ export const nav = {
     else if (s.length > 1) phoneNav.setState({ pages: s.slice(0, -1) });
   },
 };
+
+/** Now Playing's two switches, kept across launches (localStorage 'itunes.phone.canvas' / '.vis'): the
+ *  song's Spotify Canvas in the centre cover's place, and the visualizer in the stage's (iTunes' View >
+ *  Show Visualizer). Both off at first: each costs the phone more than a picture. */
+type NowView = { canvas: boolean; vis: boolean };
+const KEY: Record<keyof NowView, string> = { canvas: 'itunes.phone.canvas', vis: 'itunes.phone.vis' };
+const read = (k: keyof NowView) => { try { return localStorage.getItem(KEY[k]) === '1'; } catch { return false; } };
+export const nowView = create<NowView>(() => ({ canvas: read('canvas'), vis: read('vis') }));
+export const setNowView = (k: keyof NowView, on: boolean) => {
+  nowView.setState({ [k]: on });
+  try { localStorage.setItem(KEY[k], on ? '1' : '0'); } catch { /* blocked storage: the session's */ }
+};

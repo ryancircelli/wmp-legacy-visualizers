@@ -1,22 +1,28 @@
 // The window's body under the toolbar (REFERENCE §Window layout): the source list (with the artwork
 // pane at its foot) and, beside it, what the selected source shows in its view, then the bottom bar.
 // A narrow window (under 760 px) folds the sidebar away; View > Show Sidebar lays it over the content.
+// Spotify's features in iTunes' places (docs/itunes-skin.md §3.1): the ♥ column where iTunes had
+// Rating, the right-click menus (Pointer.tsx), the Canvas in the artwork pane, iTunes DJ's played songs
+// above Up Next, podcast episodes' blue dots, the search's kinds as the store's filter, and a page's
+// Play / Shuffle / ♥ / radio on its strip.
 import { useEffect, useState, type MouseEvent, type ReactNode } from 'react';
-import type { Track } from '../../../model';
+import { LIKED, type Track } from '../../../model';
 import {
-  artOk, canSave, cx, Dropdown, SearchScope, TransportButton, useAddTo, useApp, useDevices, usePlayback, useSearchResults, useShell,
-  type MenuEntry, type TileItem, type TileSection,
+  artOk, canSave, clipFailed, cx, Dropdown, SearchScope, toggleSaved, TransportButton, useApp, useCanvas, useDevices, usePlayback, useSaved,
+  useSearchResults, useShell, type Bucket, type TileItem, type TileSection,
 } from '../../../ui';
 import { AlbumGrid } from '../shared/AlbumGrid';
 import { AlbumList } from '../shared/AlbumList';
-import { albumsOf, playRow, playUri, queueOrder, showPlaying, startGenius, statusLine, useSourceContent, type Content, type TracksContent } from '../shared/content';
+import { albumsOf, opensPage, playRow, playUri, queueOrder, showPlaying, statusLine, useSourceContent, type Content, type TracksContent } from '../shared/content';
 import { CoverFlow } from '../shared/CoverFlow';
 import { Icon } from '../shared/icons';
 import { SourceList } from '../shared/SourceList';
 import { useSources, type Source } from '../shared/sources';
 import { useItunesView, viewActions, type ViewMode } from '../shared/state';
-import { COLUMNS, TrackTable, type TrackColumn } from '../shared/TrackTable';
-import { MENU, useGenius } from './Chrome';
+import { COLUMNS, listColumns, TrackTable, type TrackColumn } from '../shared/TrackTable';
+import { MENU, useGenius, withAirPlay } from './Chrome';
+import { useRowMenu, useSourceMenu, useTileMenu, type QueueEdits } from './Pointer';
+import { desk, played, radioFrom, radioLabel, shufflePlay, useSave } from './spotify';
 
 /** The selected source (Music while the selection resolves to nothing: a playlist deleted, a device
  *  gone), what was opened in it, and what that shows. */
@@ -36,7 +42,7 @@ export function Browser({ narrow }: { narrow: boolean }) {
   return (
     <div className="flex-auto min-h-0 flex flex-col">
       <div className="relative flex-auto min-h-0 flex">
-        <Sidebar sources={sel.src.sections} selected={sel.source?.id ?? ''}
+        <Sidebar src={sel.src} selected={sel.source?.id ?? ''}
                  className={cx('w-188 flex-none', narrow && (open ? 'absolute left-0 top-0 bottom-0 z-30 shadow-[4px_0_10px_rgba(0,0,0,.3)]' : 'hidden'))} />
         <div className="flex-none w-4 bg-[linear-gradient(90deg,#D1D1D1,#BABABA_60%,#D8D8D8)] border-l border-itunes-split max-[759px]:hidden" aria-hidden="true" />
         <Main sel={sel} />
@@ -45,26 +51,34 @@ export function Browser({ narrow }: { narrow: boolean }) {
     </div>
   );
 }
-function Sidebar({ sources, selected, className }: { sources: ReturnType<typeof useSources>['sections']; selected: string; className?: string }) {
-  const artwork = useItunesView((s) => s.artwork);
+function Sidebar({ src, selected, className }: { src: ReturnType<typeof useSources>; selected: string; className?: string }) {
+  const artwork = useItunesView((s) => s.artwork), sm = useSourceMenu(src.find);
   return (
-    <div className={cx('flex flex-col min-h-0 bg-itunes-side', className)} id="sidebar">
-      <SourceList sections={sources} selected={selected} onSelect={viewActions.select} className="flex-auto min-h-0 overflow-y-auto overflow-x-hidden pb-8" />
+    <div className={cx('flex flex-col min-h-0 bg-itunes-side', className)} id="sidebar" onContextMenu={sm.onContextMenu}>
+      {sm.menu}
+      <SourceList sections={src.sections} selected={selected} onSelect={viewActions.select} className="flex-auto min-h-0 overflow-y-auto overflow-x-hidden pb-8" />
       {artwork && <ArtworkPane />}
     </div>
   );
 }
 
-/** The artwork pane: "Now Playing" over the playing song's cover, a click shows the song. */
+/** The artwork pane: "Now Playing" over the playing song's cover, or its Canvas (Spotify's looping
+ *  clip, muted, where iTunes played a video; View > Show Canvas); a click shows the song. A clip that
+ *  fails to load gives way to the cover (a clip kept in memory: its own address first). */
 function ArtworkPane() {
-  const sh = useShell(), { art, has } = useApp((s) => ({ art: artOk(s.playback.track?.art), has: !!s.playback.track }));
+  const sh = useShell(), { art, has, uri } = useApp((s) => ({ art: artOk(s.playback.track?.art), has: !!s.playback.track, uri: s.playback.track?.uri ?? null }));
+  const cv = useCanvas(desk((x) => x.canvas) ? uri : null), [failed, setFailed] = useState(''), canvas = cv && cv.url !== failed ? cv : null;
+  const fail = () => setFailed(canvas && clipFailed(canvas.url) ? 'again ' + Date.now() : canvas?.url ?? '');
+  const fill = 'block w-full h-full object-cover';
   return (
     <div className="flex-none border-t border-itunes-split bg-[#E2E2E2]" id="artwork">
       <div className="h-18 px-8 text-11 leading-[18px] font-bold text-itunes-side-head text-center border-b border-[#CACACA] bg-itunes-head">{has ? 'Now Playing' : 'Nothing Playing'}</div>
-      <button type="button" className="block w-full aspect-square p-0 border-0 bg-[#D6D6D6] cursor-default" title={has ? 'Show the current song' : undefined}
+      <button type="button" className="block w-full aspect-square p-0 border-0 bg-[#D6D6D6] cursor-default overflow-hidden" title={has ? 'Show the current song' : undefined}
               onClick={() => showPlaying(sh)}>
-        {art ? <img src={art} alt="Album art" className="block w-full h-full object-cover" />
-             : <span className="grid place-items-center h-full text-[#B4B4B4]"><Icon name="music" size={56} /></span>}
+        {canvas?.type === 'video' ? <video key={canvas.url} id="canvas" src={canvas.url} poster={art || undefined} muted autoPlay loop playsInline onError={fail} className={fill} />
+          : canvas ? <img id="canvas" src={canvas.url} alt="" onError={fail} className={fill} />
+          : art ? <img src={art} alt="Album art" className={fill} />
+          : <span className="grid place-items-center h-full text-[#B4B4B4]"><Icon name="music" size={56} /></span>}
       </button>
     </div>
   );
@@ -92,11 +106,61 @@ function Strip({ dark, back, title, children }: {
     </div>
   );
 }
+/** a strip's small push button (Play, Shuffle, ♥, radio): the ‹ button's face, or the store's dark one */
+const STRIP_BTN = (dark?: boolean) => cx('flex-none flex items-center gap-4 h-18 px-7 rounded-sm border text-11',
+  dark ? 'border-[#111] bg-[linear-gradient(180deg,#5A5A5A,#333)] text-white' : 'border-itunes-rim bg-itunes-seg text-[#333] active:bg-itunes-btn-down');
+
+/** A strip's segmented switch (the Grid's Albums | Artists, the search's kinds), one segment pressed. */
+function Seg<T extends string | null>({ items, value, onChange, dark }: { items: readonly (readonly [T, string])[]; value: T; onChange: (v: T) => void; dark?: boolean }) {
+  return (
+    <div className={cx('flex-none flex h-18 rounded-full border overflow-hidden text-11', dark ? 'border-[#111]' : 'border-itunes-rim')} role="tablist">
+      {items.map(([v, label], i) => (
+        <button key={label} type="button" role="tab" aria-selected={value === v} onClick={() => onChange(v)}
+                className={cx('px-10 border-0', i > 0 && (dark ? 'border-l border-[#111]' : 'border-l border-itunes-rim'),
+                              value === v ? (dark ? 'bg-[#141414] text-white' : 'bg-itunes-seg-on text-white')
+                                          : dark ? 'bg-[linear-gradient(180deg,#5A5A5A,#333)] text-white/90' : 'bg-itunes-seg text-black')}>{label}</button>
+      ))}
+    </div>
+  );
+}
+
+/** The heart: outlined, filled once liked / saved (currentColor). */
+const Heart = ({ on, size = 11 }: { on: boolean; size?: number }) => (
+  <svg width={size} height={size} viewBox="0 0 12 12" aria-hidden="true">
+    <path d="M6 10.4C3.3 8.4 1.3 6.8 1.3 4.5 1.3 3 2.5 1.9 3.8 1.9c1 0 1.7.5 2.2 1.3.5-.8 1.2-1.3 2.2-1.3 1.3 0 2.5 1.1 2.5 2.6 0 2.3-2 3.9-4.7 5.9Z"
+          fill={on ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" />
+  </svg>
+);
+
+/** A page's own buttons on its strip (an album, playlist, artist or show opened): Play, Shuffle, ♥ (save
+ *  to Your Library, follow) and its radio (the genius atom: Album / Playlist / Artist Radio). */
+function PageActions({ uri, title, dark }: { uri: string; title: string; dark?: boolean }) {
+  const sh = useShell(), save = useSave(uri), radio = radioLabel(uri), btn = STRIP_BTN(dark);
+  return (
+    <div className="flex-none flex items-center gap-5" id="pageacts">
+      <button type="button" className={btn} onClick={() => playUri(sh, uri)}><Icon name="play" size={9} />Play</button>
+      {!uri.startsWith('spotify:show:') && <button type="button" className={btn} onClick={() => shufflePlay(sh, uri)}><Icon name="shuffle" size={12} />Shuffle</button>}
+      {save.can && (
+        <button type="button" id="pagesave" className={btn} title={save.label} aria-label={save.label} aria-pressed={!!save.saved} onClick={save.toggle}><Heart on={!!save.saved} /></button>
+      )}
+      {radio && (
+        <button type="button" id="pageradio" className={btn} title={'Start ' + radio} aria-label={'Start ' + radio} onClick={() => void radioFrom(sh, uri, title)}><Icon name="genius" size={12} /></button>
+      )}
+    </div>
+  );
+}
+
+const BUCKETS: readonly (readonly [Bucket | null, string])[] = [[null, 'All'], ['tracks', 'Songs'], ['artists', 'Artists'], ['albums', 'Albums'], ['playlists', 'Playlists']];
+/** Search Results' kinds, as the iTunes Store's results filtered by kind: one kind alone pages on. */
+function Buckets() {
+  const sh = useShell(), only = useApp((s) => s.ui.searchOnly);
+  return <Seg items={BUCKETS} value={only} dark onChange={(b) => sh.store.getState().actions.setUi({ searchOnly: b })} />;
+}
 
 type Sel = ReturnType<typeof useSelection>;
 
 function Main({ sel }: { sel: Sel }) {
-  const { content: c, source, depth, mode } = sel;
+  const { content: c, source, depth, mode, opened } = sel;
   const back = depth ? viewActions.back : undefined;
   const store = source?.kind === 'store' || source?.kind === 'search';
   const body = c.kind === 'tracks' ? <Tracks c={c} mode={mode} source={source} />
@@ -107,7 +171,12 @@ function Main({ sel }: { sel: Sel }) {
     : <Note text={c.note} />;
   return (
     <div className="flex-auto min-w-0 min-h-0 flex flex-col bg-white" id="content">
-      {(store || depth > 0) && <Strip dark={store} back={store ? back ?? null : back} title={c.title} />}
+      {(store || depth > 0) && (
+        <Strip dark={store} back={store ? back ?? null : back} title={c.title}>
+          {opened && opensPage(opened) && <PageActions uri={opened} title={c.title} dark={store} />}
+          {source?.kind === 'search' && !depth && <Buckets />}
+        </Strip>
+      )}
       {body}
     </div>
   );
@@ -117,56 +186,73 @@ const Note = ({ text }: { text: string }) => <div className="flex-auto grid plac
 
 // ---- songs ------------------------------------------------------------------------------------------
 
-/** The row's right-click menu: Play, Play Next, Like, Add to Playlist, the album and the artist,
- *  Start Genius; iTunes DJ's rows Move to Top and Remove. A menu at the pointer: a Dropdown on a
- *  fixed point. */
-function useRowMenu(queue?: { move: (a: number, b: number) => void; remove: (i: number) => void }) {
-  const sh = useShell(), [at, setAt] = useState<{ x: number; y: number; t: Track; i: number } | null>(null);
-  const addTo = useAddTo(at && canSave(at.t.uri) ? at.t.uri : null), queues = useApp((s) => !!s.commands.addToQueue);
-  const items = (): MenuEntry[] => {
-    if (!at) return [];
-    const { t, i } = at, c = sh.store.getState().commands, artist = t.artistUris?.[0], album = t.albumUri;
-    return [
-      { label: 'Play', act: () => playRow(sh, { kind: 'tracks', ctx: t.ctx ?? null } as TracksContent, t) },
-      ...(queues && !queue ? [{ label: 'Play Next', act: () => c.addToQueue?.(t.uri) }] : []),
-      ...(queue ? [{ label: 'Move to Top', disabled: i === 0, act: () => queue.move(i, 0) }, { label: 'Remove from Up Next', act: () => queue.remove(i) }] : []),
-      { sep: true },
-      ...(addTo.uri ? [{ label: addTo.saved ? 'Unlike' : 'Like', act: addTo.toggle }, addTo.playlistMenu('Add to Playlist'), { sep: true as const }] : []),
-      { label: 'Show Album', disabled: !album, act: () => { if (album) viewActions.open(album); } },
-      { label: 'Show Artist', disabled: !artist, act: () => { if (artist) viewActions.open(artist); } },
-      { label: 'Start Genius', disabled: !t.uri.startsWith('spotify:track:'), act: () => startGenius(sh, t.uri) },
-    ];
+/** The ♥ column, in iTunes' Rating column's place (last): ♥ where the song is liked, ♡ on the row under
+ *  the pointer or selected (CSS), a click on it likes or unlikes. The flags are src/ui's batched saved
+ *  queries; Liked Songs' own rows are liked without asking.
+ *  ponytail: the shared table's cells are text, so the ♡ is the cell's ::after and the click is caught
+ *  on a wrapper by cell position; ReactNode cells (docs: wanted in shared/) would make both plain. */
+function useLikes(rows: readonly Track[], liked = false) {
+  const sh = useShell(), saved = useSaved(rows.map((t) => t.uri), !liked);
+  const is = (t: Track) => saved(t.uri) ?? (liked || undefined);
+  const column: TrackColumn = { key: 'like', header: '♥', width: 26, cell: (t) => (canSave(t.uri) && is(t) ? '♥' : ''), sort: (t) => (is(t) ? 0 : 1) };
+  const hit = (e: MouseEvent): Track | undefined => {
+    const td = (e.target as Element).closest('tbody td'), tr = td?.parentElement;
+    return td && tr && td === tr.lastElementChild ? rows[Number(tr.getAttribute('data-i'))] : undefined;
   };
   return {
-    onContextMenu: (t: Track, i: number, e: MouseEvent) => { setAt({ x: e.clientX, y: e.clientY, t, i }); sh.store.getState().actions.setUi({ menu: 'row' }); },
-    menu: (
-      <Dropdown owner="row" items={items} classes={MENU}>
-        <span className="fixed w-1 h-1 pointer-events-none" style={{ left: at?.x ?? 0, top: at?.y ?? 0 }} aria-hidden="true" />
-      </Dropdown>
-    ),
+    column,
+    wrap: {
+      onClickCapture: (e: MouseEvent) => {
+        const t = hit(e);
+        if (!t || !canSave(t.uri)) return;
+        e.stopPropagation();
+        const v = is(t);
+        void (v === undefined ? toggleSaved(sh, t.uri) : sh.store.getState().commands.addTo(t.uri, LIKED, !v));
+      },
+      onDoubleClickCapture: (e: MouseEvent) => { if (hit(e)) e.stopPropagation(); },
+    },
   };
 }
+const LIKE_CELLS = "[&_tbody_td:last-child]:px-0 [&_tbody_td:last-child]:text-center [&_tbody_td:last-child]:after:opacity-55 [&_tbody_tr:hover_td:last-child:empty]:after:content-['♡'] [&_tbody_tr[data-sel]_td:last-child:empty]:after:content-['♡']";
+
+/** a podcast episode not played yet: iTunes' blue dot, in the column before its name */
+const UNPLAYED: TrackColumn = { key: 'new', header: '', width: 18, cell: (t) => (t.unplayed ? '●' : ''), sort: (t) => (t.unplayed ? 0 : 1) };
+const EPISODES = [UNPLAYED, COLUMNS.name, COLUMNS.time, COLUMNS.date];
+const DOT_CELLS = '[&_tbody_td:nth-child(2)]:px-0 [&_tbody_td:nth-child(2)]:text-center [&_tbody_td:nth-child(2)]:text-[9px] [&_tbody_td:nth-child(2)]:text-[#3E7FDB] [&_tbody_tr[data-sel]_td:nth-child(2)]:text-inherit';
+
+const isShow = (uri: string | null | undefined) => !!uri?.startsWith('spotify:show:');
 
 function Tracks({ c, mode, source }: { c: TracksContent; mode: ViewMode; source: Source | undefined }) {
   const sh = useShell(), p = usePlayback(), now = p.track?.uri ?? null, reveal = useItunesView((s) => s.reveal);
-  const edits = useApp((s) => !!s.commands.reorderQueue), n = c.tracks.length;
+  const edits = useApp((s) => !!s.commands.reorderQueue), n = c.tracks.length, history = played((x) => x.list);
+  // iTunes DJ: the songs played here, then the playing one, then Up Next (the only rows that move)
+  const past = c.queue ? history.filter((t) => t.uri !== now) : [], head = c.queue ? [...past, ...(p.media && p.track ? [p.track] : [])] : [];
+  const rows = head.length ? [...head, ...c.tracks] : c.tracks, from = head.length;
   const reorder = (order: number[]) => sh.store.getState().commands.reorderQueue?.(order);
-  const queue = c.queue && edits ? { move: (a: number, b: number) => reorder(queueOrder(n, { move: [a, b] })), remove: (i: number) => reorder(queueOrder(n, { remove: i })) } : undefined;
-  const rm = useRowMenu(queue), key = (source?.id ?? '') + '|' + c.title;
+  const queue: QueueEdits | undefined = c.queue && edits ? {
+    from,
+    move: (a, b) => { if (a >= from) reorder(queueOrder(n, { move: [a - from, Math.max(0, b - from)] })); },
+    remove: (i) => { if (i >= from) reorder(queueOrder(n, { remove: i - from })); },
+  } : undefined;
+  const rm = useRowMenu(queue), key = (source?.id ?? '') + '|' + c.title, show = isShow(c.ctx), likes = useLikes(rows, c.ctx === LIKED);
   const play = (t: Track) => playRow(sh, c, t);
   // "show the current song": the playing row selected
-  const [shown, setShown] = useState(0), at = reveal !== shown && now ? c.tracks.findIndex((t) => t.uri === now) : -1;
+  const [shown, setShown] = useState(0), at = reveal !== shown && now ? rows.findIndex((t) => t.uri === now) : -1;
   useEffect(() => { if (at >= 0) setShown(reveal); }, [at, reveal]); // eslint-disable-line react-hooks/set-state-in-effect -- once shown, the next reveal waits for a new bump
-  const table = (cls?: string, cols?: TrackColumn[]) => (
-    <TrackTable id="tracks" className={cls} rows={c.tracks} columns={cols} now={now} playing={p.playing} onPlay={play} more={c.more} resetKey={key}
-                queue={queue} onContextMenu={rm.onContextMenu} reveal={at >= 0 ? at : null} empty={c.loading ? 'Loading…' : c.empty} />
+  const cols = show ? EPISODES : [...(c.queue ? [COLUMNS.name, COLUMNS.time, COLUMNS.artist, COLUMNS.album] : listColumns(rows)), likes.column];
+  const table = (cls?: string) => (
+    <div className="contents" {...(show ? {} : likes.wrap)} data-dj={c.queue || undefined}>
+      {/* iTunes DJ's played songs in grey (ponytail: by row position, the shared table having no row classes) */}
+      {past.length > 0 && <style>{`[data-dj] tbody tr:nth-child(-n+${past.length}):not([data-sel]){color:#8C8C8C}`}</style>}
+      <TrackTable id="tracks" className={cx(cls, show ? DOT_CELLS : LIKE_CELLS)} rows={rows} columns={cols} now={now} playing={p.playing} onPlay={play} more={c.more} resetKey={key}
+                  queue={queue} onContextMenu={rm.onContextMenu} reveal={at >= 0 ? at : null} empty={c.loading ? 'Loading…' : c.empty} />
+    </div>
   );
-  const cols = c.queue ? [COLUMNS.name, COLUMNS.time, COLUMNS.artist, COLUMNS.album] : undefined;
   let body: ReactNode;
   if (mode === 'album') body = <AlbumList rows={c.tracks} now={now} playing={p.playing} onPlay={play} more={c.more} resetKey={key} className="flex-auto" empty={c.loading ? 'Loading…' : c.empty} />;
   else if (mode === 'grid') body = <SongGrid c={c} />;
   else if (mode === 'flow') body = <Flow c={c} table={table} />;
-  else body = table('flex-auto', cols);
+  else body = table('flex-auto');
   return <>{rm.menu}{body}</>;
 }
 
@@ -184,12 +270,7 @@ function SongGrid({ c }: { c: TracksContent }) {
     <>
       {c.browse && (
         <Strip title={tab === 'artists' ? 'Artists' : 'Albums'}>
-          <div className="flex h-18 rounded-full border border-itunes-rim overflow-hidden text-11" role="tablist">
-            {(['albums', 'artists'] as const).map((t) => (
-              <button key={t} type="button" role="tab" aria-selected={tab === t} onClick={() => viewActions.setGridTab(t)}
-                      className={cx('px-10 border-0', tab === t ? 'bg-itunes-seg-on text-white' : 'bg-itunes-seg text-black')}>{t === 'albums' ? 'Albums' : 'Artists'}</button>
-            ))}
-          </div>
+          <Seg items={[['albums', 'Albums'], ['artists', 'Artists']] as const} value={tab} onChange={viewActions.setGridTab} />
         </Strip>
       )}
       <Tiles sections={[{ items: tiles }]} empty={c.loading ? 'Loading…' : c.browse ? (tab === 'artists' ? 'No artists followed.' : 'No albums saved.') : c.empty}
@@ -215,29 +296,34 @@ function Flow({ c, table }: { c: TracksContent; table: (cls?: string) => ReactNo
   );
 }
 
-// ---- covers, artists, stations, search, devices -----------------------------------------------------
+// ---- covers, artists, stations, search --------------------------------------------------------------
 
 function Tiles({ sections, empty, heads, onOpen, onPlay, more }: {
   sections: TileSection[]; empty: string; heads?: boolean;
   onOpen?: (it: TileItem) => void; onPlay?: (it: TileItem) => void; more?: { label: string; load: () => void } | null;
 }) {
-  const sh = useShell(), any = sections.some((s) => s.items.length);
+  const sh = useShell(), tm = useTileMenu(), any = sections.some((s) => s.items.length);
   if (!any) return <Note text={empty} />;
   return (
-    <AlbumGrid id="grid" className="flex-auto" sections={heads ? sections : sections.map((s) => ({ items: s.items }))} more={more}
-               onOpen={onOpen ?? ((it) => (it.openable ? viewActions.open(it.uri) : playUri(sh, it.uri)))}
-               onPlay={onPlay ?? ((it) => playUri(sh, it.uri))} />
+    <div className="contents" onContextMenu={tm.onContextMenu(sections.flatMap((s) => s.items))}>
+      {tm.menu}
+      <AlbumGrid id="grid" className="flex-auto" sections={heads ? sections : sections.map((s) => ({ items: s.items }))} more={more}
+                 onOpen={onOpen ?? ((it) => (it.openable ? viewActions.open(it.uri) : playUri(sh, it.uri)))}
+                 onPlay={onPlay ?? ((it) => playUri(sh, it.uri))} />
+    </div>
   );
 }
 
 function Artist({ c }: { c: Extract<Content, { kind: 'artist' }> }) {
-  const sh = useShell(), p = usePlayback(), rm = useRowMenu();
+  const sh = useShell(), p = usePlayback(), rm = useRowMenu(), likes = useLikes(c.tracks);
   return (
     <div className="flex-auto min-h-0 flex flex-col">
       {rm.menu}
-      <TrackTable rows={c.tracks} columns={[COLUMNS.name, COLUMNS.time, COLUMNS.album, COLUMNS.plays]} now={p.track?.uri ?? null} playing={p.playing}
-                  onPlay={(t) => playRow(sh, c, t)} onContextMenu={rm.onContextMenu} resetKey={c.ctx} className="flex-none max-h-[45%]" empty={c.loading ? 'Loading…' : 'No songs.'}
-                  id="tracks" />
+      <div className="contents" {...likes.wrap}>
+        <TrackTable rows={c.tracks} columns={[COLUMNS.name, COLUMNS.time, COLUMNS.album, COLUMNS.plays, likes.column]} now={p.track?.uri ?? null} playing={p.playing}
+                    onPlay={(t) => playRow(sh, c, t)} onContextMenu={rm.onContextMenu} resetKey={c.ctx} className={cx('flex-none max-h-[45%]', LIKE_CELLS)}
+                    empty={c.loading ? 'Loading…' : 'No songs.'} id="tracks" />
+      </div>
       <div className="flex-none h-22 px-10 text-12 leading-[22px] font-bold bg-itunes-head border-y border-itunes-rule">Albums</div>
       <Tiles sections={[{ items: c.albums }]} empty={c.loading ? 'Loading…' : 'No albums.'} />
     </div>
@@ -253,7 +339,8 @@ function Stations({ c }: { c: Extract<Content, { kind: 'stations' }> }) {
 }
 
 /** STORE > Search Results: the songs first (as rows), then the artists, albums and playlists (as
- *  covers); a result opens inside the source, ‹ back to the results. */
+ *  covers); the strip's kinds show one alone, paged on (More); a result opens inside the source, ‹ back
+ *  to the results. */
 function SearchResults() {
   return (
     <SearchScope.Provider value={{ node: 'search', open: viewActions.open }}>
@@ -263,7 +350,7 @@ function SearchResults() {
 }
 function SearchBody() {
   const sh = useShell(), r = useSearchResults(), p = usePlayback(), rm = useRowMenu();
-  const songs = r.sections.find((x) => x.type === 'tracks'), rest = r.sections.filter((x) => x.type !== 'tracks');
+  const songs = r.sections.find((x) => x.type === 'tracks'), rest = r.sections.filter((x) => x.type !== 'tracks'), likes = useLikes(songs?.tracks ?? []);
   if (r.note) return <Note text={r.note.replace(' (Ctrl+E)', ' (Ctrl+F)')} />;
   const tiles: TileSection[] = rest.map((x) => ({ title: x.title + ' (' + x.count + ')', items: x.rows.map((row) => ({
     key: row.uri, uri: row.uri, name: row.name, sub: row.sub, img: row.img, openable: true })) }));
@@ -271,11 +358,14 @@ function SearchBody() {
     <div className="flex-auto min-h-0 flex flex-col">
       {rm.menu}
       {songs?.tracks && (
-        <TrackTable id="tracks" className="flex-none max-h-[50%]" rows={songs.tracks} now={p.track?.uri ?? null} playing={p.playing}
-                    onPlay={(t) => sh.store.getState().commands.playContext(t.ctx ?? t.uri, t.uri)} onContextMenu={rm.onContextMenu} resetKey={r.q} />
+        <div className="contents" {...likes.wrap}>
+          <TrackTable id="tracks" className={cx(r.type ? 'flex-auto' : 'flex-none max-h-[50%]', LIKE_CELLS)} rows={songs.tracks} columns={[...listColumns(songs.tracks), likes.column]}
+                      now={p.track?.uri ?? null} playing={p.playing} more={songs.more?.load} resetKey={r.q + '|' + r.type}
+                      onPlay={(t) => sh.store.getState().commands.playContext(t.ctx ?? t.uri, t.uri)} onContextMenu={rm.onContextMenu} />
+        </div>
       )}
-      <div className="flex-none h-6 bg-itunes-head border-y border-itunes-rule" aria-hidden="true" />
-      <Tiles sections={tiles} heads empty="" />
+      {!r.type && <div className="flex-none h-6 bg-itunes-head border-y border-itunes-rule" aria-hidden="true" />}
+      {tiles.length > 0 && <Tiles sections={tiles} heads empty="" more={rest[0]?.more ?? null} />}
     </div>
   );
 }
@@ -290,7 +380,9 @@ const BAR_BTN = 'grid place-items-center w-34 h-20 p-0 border-0 rounded-xs bg-tr
 function BottomBar({ content, mode }: { content: Content; mode: ViewMode }) {
   const tab = useItunesView((s) => s.gridTab), browse = content.kind === 'tracks' && mode === 'grid' ? content.browse : undefined;
   const n = browse ? (tab === 'artists' ? browse.artists : browse.albums).length : 0;
-  const status = browse ? n.toLocaleString('en-US') + ' ' + (tab === 'artists' ? (n === 1 ? 'artist' : 'artists') : n === 1 ? 'album' : 'albums') : statusLine(content);
+  const line = statusLine(content), episodes = content.kind === 'tracks' && isShow(content.ctx);
+  const status = browse ? n.toLocaleString('en-US') + ' ' + (tab === 'artists' ? (n === 1 ? 'artist' : 'artists') : n === 1 ? 'album' : 'albums')
+    : episodes ? line.replace(/\bsong(s?)\b/, 'episode$1') : line;
   const devices = useDevices(() => ''), genius = useGenius(), repeat = usePlayback().repeat, others = useApp((s) => s.devices.list.find((d) => d.active && d.id !== s.devices.self)?.name ?? '');
   return (
     <div id="bottombar" className="flex-none flex items-center gap-5 h-25 px-14 border-t border-itunes-bar-edge bg-itunes-bar bare:hidden">
@@ -302,7 +394,7 @@ function BottomBar({ content, mode }: { content: Content; mode: ViewMode }) {
       </TransportButton>
       <button type="button" className={BAR_BTN} id="bartwork" title="Show or hide the artwork" aria-label="Show or hide the artwork" onClick={viewActions.toggleArtwork}><Icon name="artwork" size={17} /></button>
       <div className="flex-auto min-w-0 truncate text-center text-11 text-[#2B2B2B] [text-shadow:0_1px_0_rgba(255,255,255,.5)]" id="status">{status}</div>
-      <Dropdown owner="airplay" items={devices.items} classes={MENU}>
+      <Dropdown owner="airplay" items={withAirPlay(devices.items)} classes={MENU}>
         <button type="button" id="bdevice" data-menuzone="" title={devices.title} aria-label={devices.title}
                 className={cx(BAR_BTN, 'w-auto px-5 gap-5 flex', devices.elsewhere && 'text-itunes-lit')}>
           <Icon name="airplay" />{others && <span className="text-11 text-[#2B2B2B] max-w-140 truncate">{others}</span>}

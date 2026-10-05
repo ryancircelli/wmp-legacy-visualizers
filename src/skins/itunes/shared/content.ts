@@ -203,7 +203,7 @@ export function statusLine(c: Content): string {
     case 'tracks': {
       if (c.loading) return '';
       const n = Math.max(c.total, c.tracks.length), ms = c.tracks.reduce((a, t) => a + (t.duration || 0), 0);
-      return n ? plural(n, c.title === 'Podcasts' ? 'episode' : 'song') + (c.tracks.length >= n && ms ? ', ' + spanText(ms) : '') : '';
+      return n ? plural(n, c.title === 'Podcasts' || c.ctx?.startsWith('spotify:show:') ? 'episode' : 'song') + (c.tracks.length >= n && ms ? ', ' + spanText(ms) : '') : '';
     }
     case 'tiles': {
       const n = c.sections.reduce((a, s) => a + s.items.length, 0);

@@ -4,17 +4,19 @@
 // is Now Playing; the time and battery above it where the Windows build had its menus and caption
 // buttons), one page under it at a time (the source list with its search field, a source, Now Playing,
 // Preferences: nav.ts), and the bottom bar always at the foot (Preferences, shuffle, repeat, AirPlay).
-// Nothing is shown twice on a screen this small: the view switch is a list's own, the status line a
-// list's last row. Turned on its side, the phone shows Cover Flow alone, as that Music app did. The
-// layout is drawn at the iPhone 4's 320 points and scaled to the phone (host.ts fit).
-import { useEffect, useState, type CSSProperties, type MouseEvent } from 'react';
+// Little is shown twice on a screen this small: the view switch is a list's own, the status line a
+// list's last row; Now Playing alone repeats the LCD's song and transport, under the thumb (the owner's
+// two rulings, 2026-10-04). Turned on its side, the phone shows Cover Flow alone, as that Music app did:
+// Now Playing's play order, or the selected list's albums. The layout is drawn at the iPhone 4's 320
+// points and scaled to the phone (host.ts fit).
+import { Component, useEffect, useState, type CSSProperties, type MouseEvent, type ReactNode } from 'react';
 import { Visualizer } from '../../../app/Visualizer';
 import { cx, deviceName, isAlbum, isSpotify, TransportButton, useApp, useDevices, useLibraryList, usePlayback, useShell } from '../../../ui';
 import { albumsOf, Icon, itunesView, Lcd, playRow, playUri, TransportCluster } from '../shared';
 import { haptic, useFit, useHostChrome, useHostGlobal } from './host';
 import { nav, phoneNav, topPage, type Page } from './nav';
-import { NowPlayingPage } from './NowPlaying';
-import { FlowStage, Note, SourcePage, SourcesPage, useSelection, type Selection } from './Pages';
+import { NowPlayingPage, NowPlayingSide, useKeepPlayed } from './NowPlaying';
+import { FlowStage, Note, searchFocus, SourcePage, SourcesPage, useSelection, type Selection } from './Pages';
 import { PrefsPage } from './Prefs';
 import { DeviceSheet, openSheet, SheetHost } from './Sheet';
 
@@ -24,10 +26,19 @@ const FONT = 'font-["Segoe_UI","Lucida_Grande","Helvetica_Neue",Helvetica,Arial,
 const TAPPABLE = 'button:not(:disabled), [role=button], [role=treeitem], [role=tab], [data-i]';
 
 export function PhoneRoot() {
-  const f = useFit(), spotify = useApp(isSpotify), sel = useSelection();
+  const f = useFit(), spotify = useApp(isSpotify), sel = useSelection(), pages = phoneNav((s) => s.pages), page = topPage(pages);
+  // what the page shows: a move anywhere gives a page that failed a fresh try
+  const pageKey = pages.join('/') + '|' + sel.id + '|' + (sel.opened ?? '') + '|' + sel.mode;
   useHostChrome();
+  useKeepPlayed();
   const host = !!window.alchemyLayout;
-  const safe = useHostGlobal('__wmpSafeArea', 'wmp-safe-area'), kbd = (useHostGlobal('__wmpKeyboard', 'wmp-keyboard') ?? 0) * f.pt;
+  // The keyboard counts only while one of the layout's own fields has it, and never past 60 % of the
+  // screen: the host's report is the screen's bottom less the keyboard's end frame, and iOS hands a
+  // zero end frame in some transitions (the app going to the background with the keyboard up, a
+  // relaunch), a whole screen of keyboard that collapsed the page to nothing under the toolbar and took
+  // the bottom bar with it (the owner, 2026-10-05: "crashed", a white page).
+  const safe = useHostGlobal('__wmpSafeArea', 'wmp-safe-area'), raw = useHostGlobal('__wmpKeyboard', 'wmp-keyboard') ?? 0, typing = searchFocus((s) => s.on);
+  const kbd = typing ? Math.min(raw * f.pt, f.h * 0.6) : 0;
   const ins = { top: (safe?.top ?? 0) * f.pt, right: (safe?.right ?? 0) * f.pt, bottom: (safe?.bottom ?? 0) * f.pt, left: (safe?.left ?? 0) * f.pt };
   // "show the current song" (Ctrl+L, Now Playing's Go to Current Song) opens the source's page
   useEffect(() => itunesView.subscribe((s, p) => { if (s.reveal !== p.reveal) nav.source(); }), []);
@@ -38,11 +49,12 @@ export function PhoneRoot() {
       <div id="chrome" data-spotify={spotify || undefined} data-phone=""
            className={cx('absolute left-0 top-0 origin-top-left flex flex-col overflow-hidden bg-white text-12 leading-[1.3] text-black', FONT)}
            style={{ width: f.w, height: f.h, transform: f.s === 1 ? undefined : `scale(${f.s})`, '--sb': (kbd ? 0 : ins.bottom) + 'px' } as CSSProperties}>
-        {f.landscape ? <Landscape sel={sel} left={ins.left} right={ins.right} /> : <>
+        {/* on its side: Now Playing's play order, else the selected list's albums */}
+        {f.landscape ? (page === 'now' ? <NowPlayingSide left={ins.left} right={ins.right} /> : <Landscape sel={sel} left={ins.left} right={ins.right} />) : <>
           {/* the time and battery where the hidden status bar was: the iOS app only (a browser keeps its own) */}
           <Toolbar band={host ? Math.max(ins.top, 20 * f.pt) : 0} />
           <main className="relative flex-auto min-h-0 flex flex-col bg-white" id="page">
-            {spotify ? <Pages sel={sel} /> : <Visualizer className="block w-full h-full bg-black" id="view" />}
+            {spotify ? <PageGuard reset={pageKey}><Pages sel={sel} /></PageGuard> : <Visualizer className="block w-full h-full bg-black" id="view" />}
           </main>
           {kbd ? <div className="flex-none" style={{ height: kbd }} /> : <BottomBar pad={ins.bottom} />}
         </>}
@@ -50,6 +62,26 @@ export function PhoneRoot() {
       </div>
     </div>
   );
+}
+
+/** A page that throws shows a note with the way back, instead of taking the layout down with it (React
+ *  unmounts everything under an error no boundary catches); the error goes to the host's log. A move
+ *  (`reset` changes) tries the page again. */
+export class PageGuard extends Component<{ reset: string; children: ReactNode }, { error: string | null }> {
+  state = { error: null as string | null };
+  static getDerivedStateFromError(e: unknown) { return { error: e instanceof Error ? e.message : String(e) }; }
+  componentDidCatch(e: unknown) { window.alchemyLog?.('itunes: ' + (e instanceof Error ? e.message : String(e))); }
+  componentDidUpdate(p: { reset: string }) { if (p.reset !== this.props.reset && this.state.error) this.setState({ error: null }); }
+  render() {
+    if (!this.state.error) return this.props.children;
+    return (
+      <div className="flex-auto flex flex-col items-center justify-center gap-10 px-24 text-center bg-white" id="pageerror">
+        <div className="text-13 font-bold">This page could not be shown.</div>
+        <div className="text-11 text-itunes-dim line-clamp-3 break-words">{this.state.error}</div>
+        <button type="button" onClick={nav.home} className="mt-4 h-32 px-16 rounded-full border border-itunes-rim bg-itunes-seg text-12 font-bold active:bg-itunes-btn-down">Back to iTunes</button>
+      </div>
+    );
+  }
 }
 
 /** The page on top, with where its ‹ goes back to. */

@@ -9,6 +9,7 @@ import { isBare, isSpotify, Karaoke, useApp, useFullscreen, useScreenShown, useS
 import { useSelection, Browser } from './Browser';
 import { CaptionRow, Toolbar, useNativeTitle, useOwnWindow } from './Chrome';
 import { Dialogs } from './Dialogs';
+import { usePlayedLog } from './spotify';
 
 /** the sidebar folds away under this width (px) */
 const NARROW = 760;
@@ -27,6 +28,7 @@ export function DesktopRoot() {
   const sh = useShell(), narrow = useNarrow(), shown = useScreenShown();
   const st = useApp((x) => ({ bare: isBare(x), spotify: isSpotify(x) })), nativeTitle = useNativeTitle();
   useOwnWindow();
+  usePlayedLog();   // iTunes DJ's played songs, from any view
   // iTunes opens on the library, never on the visualizer: the app's Now Playing (WMP 9's usual view,
   // restored from the settings) becomes the library when this skin comes up under Spotify
   useEffect(() => {

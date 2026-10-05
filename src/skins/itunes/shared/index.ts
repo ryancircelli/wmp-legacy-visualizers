@@ -53,7 +53,8 @@
 //                       empty?, row? (px; 20 = Windows)); COLUMNS, listColumns(rows), sorted(); TrackColumn
 //   AlbumList({ rows, now, playing, onPlay, more?, resetKey?, empty?, row? })  Album List view
 //   AlbumGrid({ sections, onOpen, onPlay, more?, size? 'normal'|'small' })  Grid view (src/ui TileGrid)
-//   CoverFlow({ covers, index, onIndex, onActivate })  Cover Flow (keys, wheel, drag, reflections);
+//   CoverFlow({ covers, index, onIndex, onActivate, size?, top?, bar? })  Cover Flow (keys, wheel, drag,
+//                       reflections; size / top: the front cover's, else from the stage's height; bar: its scrollbar);
 //                       flowPlace(d, size); FlowCover
 //   Icon({ name, size?, className, title? })  the monochrome glyphs; IconName
 //   styles              the CSS module: .vol (a range input), .stripes (rows striped past the last,

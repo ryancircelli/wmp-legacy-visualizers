@@ -1,14 +1,17 @@
 // iTunes 10 for Windows' menu bar as data: File Edit View Controls Store Advanced Help, each built as
 // it opens (as src/skins/menus.ts builds WMP 9's), onto the app's own actions. iTunes' entries with
-// no Spotify meaning (New Playlist, Import, Burn, Sync, Authorize…) are left out rather than greyed.
+// no Spotify meaning (New Playlist, Import, Burn, Sync, Authorize…) are left out rather than greyed;
+// Spotify's own sit where iTunes kept their kin (Get Info, the Canvas and the Equalizer under View, a
+// playlist's radio beside Start Genius, the log and Refresh Player under Help).
 import { FPS_OPTS } from '../../../model';
-import { appDownload, isPlaying, LINKS, openLink, playingTrack, prevNext, toggleSaved, VOL_STEP, type AddToApi, type MenuEntry, type Shell } from '../../../ui';
+import { appDownload, isPlaying, LINKS, openLink, playingTrack, prevNext, restartApp, toggleSaved, VOL_STEP, type AddToApi, type MenuEntry, type Shell } from '../../../ui';
 import { visMenu } from '../../menus';
 // a cycle (registry -> itunes -> here), safe: `skins` is read only when a menu opens
 import { skinFor, skins } from '../../registry';
 import { showPlaying } from '../shared/content';
 import { itunesView, VIEW_MODES, VIEW_NAMES, viewActions } from '../shared/state';
 import { focusSearch, toggleVisualizer } from '../shortcuts';
+import { desk, openInfo, radioFrom, radioLabel } from './spotify';
 
 export type ItunesMenu = 'file' | 'edit' | 'view' | 'controls' | 'store' | 'advanced' | 'help';
 export const MENUS: readonly [ItunesMenu, string][] = [
@@ -35,7 +38,8 @@ export function menuItems(name: ItunesMenu, sh: Shell, m: MenuContext): MenuEntr
   switch (name) {
     case 'file':
       return [
-        ...(spotify ? [{ label: 'Open Spotify Link...', accel: 'Ctrl+U', act: dialog('link') }, SEP] : []),
+        ...(spotify ? [{ label: 'Open Spotify Link...', accel: 'Ctrl+U', act: dialog('link') },
+                       { label: 'Get Info', disabled: !playingTrack(s), act: () => openInfo(sh, s.playback.track) }, SEP] : []),
         { label: 'Close Window', accel: 'Ctrl+W', act: () => (s.auth.hostWindow ? c.win('close') : window.close()) },
         { label: 'Exit', act: () => (s.auth.hostWindow ? c.win('close') : window.close()) },
       ];
@@ -47,12 +51,15 @@ export function menuItems(name: ItunesMenu, sh: Shell, m: MenuContext): MenuEntr
         ...(m.narrow ? [{ label: 'Show Sidebar', check: v.sidebarOpen, act: () => viewActions.setSidebarOpen(!v.sidebarOpen) }, SEP] : []),
         ...(spotify ? [...VIEW_MODES.map((x, i) => ({ label: 'as ' + VIEW_NAMES[x], accel: 'Ctrl+Alt+' + (i + 3), radio: true, check: m.views && mode === x,
                                                       disabled: !m.views, act: () => viewActions.setMode(x) })), SEP,
-          { label: 'Show Artwork', accel: 'Ctrl+G', check: v.artwork, act: viewActions.toggleArtwork }, SEP] : []),
+          { label: 'Show Artwork', accel: 'Ctrl+G', check: v.artwork, act: viewActions.toggleArtwork },
+          { label: 'Show Canvas', check: desk.getState().canvas, disabled: !v.artwork, act: () => desk.setState((d) => ({ canvas: !d.canvas })) }, SEP] : []),
         { label: 'Show Visualizer', accel: 'Ctrl+T', check: vis, act: () => toggleVisualizer(sh) },
         { label: 'Visualizer', sub: visMenu(sh, s) },
         { label: 'Refresh Rate', sub: FPS_OPTS.map((f) => ({ label: f + ' fps', radio: true, check: S.fps === f, act: () => a.setSettings({ fps: f }) })) },
         { label: 'Lyrics', check: S.lyrics, act: () => a.setLyricsEnabled(!S.lyrics) },
         { label: 'Karaoke Highlight', accel: 'Ctrl+K', check: S.karaoke !== false, disabled: !S.lyrics, act: () => a.setKaraoke(S.karaoke === false) },
+        // the host's own player's equalizer (auth.hostPlayer: CONTRACT v10), in iTunes' Equalizer window
+        ...(s.auth.hostPlayer ? [{ label: 'Show Equalizer', act: dialog('eq') }] : []),
         SEP,
         { label: 'Full Screen', accel: 'Ctrl+Shift+F', check: full, act: () => sh.toggleFullscreen() },
         { label: 'Skin', sub: Object.values(skins).map((k) => ({ label: k.name, radio: true, check: skinFor(S.skin).id === k.id,
@@ -89,19 +96,29 @@ export function menuItems(name: ItunesMenu, sh: Shell, m: MenuContext): MenuEntr
         { label: 'Search Spotify', accel: 'Ctrl+F', disabled: !spotify, act: () => focusSearch(sh) },
         ...(s.auth.canLogout ? [SEP, { label: 'Log Out of Spotify', act: () => c.logout() }] : []),
       ];
-    case 'advanced':
+    case 'advanced': {
+      // the playing playlist's, album's or artist's own radio, beside the song's (Genius)
+      const ctx = s.playback.context?.uri ?? '', radio = radioLabel(ctx);
       return [
         { label: 'Open Stream...', accel: 'Ctrl+U', disabled: !spotify, act: dialog('link') },
         { label: 'Start Genius', disabled: !m.genius, act: () => m.genius?.() },
+        ...(spotify ? [{ label: 'Start ' + (radio ?? 'Playlist Radio'), disabled: !radio,
+                         act: () => void radioFrom(sh, ctx, s.playback.context?.label.replace(/^\w+: /, '') || 'Playlist') }] : []),
       ];
+    }
     case 'help':
       return [
         ...(s.auth.hostUpdate ? [{ label: 'Download the New Version...', act: () => openLink(appDownload(spotify)) }, SEP] : []),
         { label: 'Keyboard Shortcuts', act: dialog('keys') },
-        ...(!spotify && s.auth.mode === 'web' ? [
-          { label: 'Download WMP Spotify for Windows', act: () => openLink(LINKS.spotify) },
-          { label: 'Source Code on GitHub', act: () => openLink(LINKS.repo) }] : []),
+        ...(!spotify && s.auth.mode === 'web' ? [{ label: 'Download WMP Spotify for Windows', act: () => openLink(LINKS.spotify) }] : []),
+        { label: 'Source Code on GitHub', act: () => openLink(LINKS.repo) },
+        { label: 'Report a Problem', act: () => openLink(LINKS.repo + '/issues') },
+        // the iOS app's log sheet (its band is hidden under this skin)
+        ...(window.alchemyShowLog ? [{ label: 'Show Log', act: () => window.alchemyShowLog?.() }] : []),
+        SEP,
         { label: 'Check for Updates', act: dialog('checkUpdates') },
+        // the newest page from the site, in place: the music goes on (the iOS app's alchemyRestart)
+        ...(window.alchemyRestart ? [{ label: 'Refresh Player', act: restartApp }] : []),
         SEP,
         { label: 'About WMP Spotify', act: dialog('about') },
       ];
