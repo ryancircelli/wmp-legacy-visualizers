@@ -265,11 +265,21 @@ function Art({ src, glyph, className }: { src?: string | null; glyph?: ReactNode
   );
 }
 
-/** the shuffle and heart glyphs (the status row's toggles, a collection header's buttons) */
-const shuffle = (className?: string) => (
+/** the shuffle and heart glyphs (the status row's toggles, a collection header's buttons); `smart`: Smart
+ *  Shuffle's, the arrows with a sparkle where they start (Spotify's) */
+const shuffle = (className?: string, smart = false) => (
   <svg className={className} viewBox="0 0 12 9" aria-hidden="true">
-    <path d="M0 2h3l5 5h2M0 7h3l5-5h2" fill="none" stroke="currentColor" strokeWidth="1.4" /><path d="M10 0v4l2-2zM10 5v4l2-2z" /></svg>
+    <path d={smart ? 'M4 2l5 5h1M4 7l5-5h1' : 'M0 2h3l5 5h2M0 7h3l5-5h2'} fill="none" stroke="currentColor" strokeWidth="1.4" />
+    <path d="M10 0v4l2-2zM10 5v4l2-2z" />
+    {smart && <path d="M1.9 2.6l.5 1.4 1.4.5-1.4.5-.5 1.4-.5-1.4L0 4.5l1.4-.5z" />}</svg>
 );
+/** Spotify's shuffle button: Off -> Shuffle -> Smart Shuffle -> Off, Smart Shuffle passed over where the
+ *  player has none (`canSmartShuffle`: never the phone's own speaker); toggleShuffle from it is Off */
+export function cycleShuffle(store: Shell['store']): void {
+  const { playback: p, commands: c } = store.getState();
+  if (p.shuffle && p.shuffleMode !== 'smart' && p.canSmartShuffle && c.setShuffleMode) void c.setShuffleMode('smart');
+  else c.toggleShuffle();
+}
 const heart = (on: boolean, className?: string) => (
   <svg className={className} viewBox="0 1 12 11" aria-hidden="true">
     <path d="M6 10.4C3.3 8.4 1.3 6.8 1.3 4.5 1.3 3 2.5 1.9 3.8 1.9c1 0 1.7.5 2.2 1.3.5-.8 1.2-1.3 2.2-1.3 1.3 0 2.5 1.1 2.5 2.6 0 2.3-2 3.9-4.7 5.9Z"
@@ -278,6 +288,7 @@ const heart = (on: boolean, className?: string) => (
 const FACE: Record<HeadAction['kind'] | 'more', (on: boolean) => ReactNode> = {
   play: (on) => <svg viewBox="0 0 10 12" aria-hidden="true"><path d={on ? 'M0 0h3v12H0zm6 0h3v12H6z' : 'M1 0l9 6-9 6z'} /></svg>,
   shuffle: () => shuffle(),
+  smart: () => shuffle(undefined, true),
   like: (on) => heart(on),
   more: () => <svg viewBox="0 0 12 3" aria-hidden="true"><circle cx="1.5" cy="1.5" r="1.3" /><circle cx="6" cy="1.5" r="1.3" /><circle cx="10.5" cy="1.5" r="1.3" /></svg>,
 };
@@ -286,7 +297,7 @@ const FACE: Record<HeadAction['kind'] | 'more', (on: boolean) => ReactNode> = {
  *  when none), the title, a dim line, then round buttons: `actions` (the list's first items, so the
  *  wheel walks them before the songs: a tap or the centre runs one, hold-centre its `onHold`) and
  *  "…" (`onMore`, a tap). `on`: Play shows Pause, Shuffle is lit (dimmed when off, as the status
- *  row's), the heart filled. */
+ *  row's; 'smart' is Smart Shuffle's glyph), the heart filled. */
 export const CollectionHeader: Chrome['CollectionHeader'] = ({ art, title, line, actions, onMore }) => {
   const { sel, tap } = useContext(HeadContext);
   return (
@@ -337,12 +348,13 @@ export function useTime(): string {
  *  menus (light) the screen's title, cut short before it reaches the time, over Now Playing and the
  *  media pages (`dark`) shuffle, repeat and Like (Spotify only). At the right always: ▶ playing / ❚❚ paused (the spinner
  *  while the screen loads), then the battery (the phone's, when the iOS app reports it). Shuffle,
- *  repeat and Like are toggles: a tap flips shuffle (dimmed when off), steps repeat Off -> All -> One
+ *  repeat and Like are toggles: a tap steps shuffle Off -> Shuffle -> Smart Shuffle (its own glyph; only
+ *  where the player has it) (dimmed when off), steps repeat Off -> All -> One
  *  (dimmed when off), or likes / unlikes the track (♡ / ♥, dimmed with none). */
 export const StatusRow = ({ title, dark, busy: loading }: { title: string; dark?: boolean; busy?: boolean }) => {
   const sh = useShell();
   const st = useApp((x) => ({ media: hasMedia(x), playing: isPlaying(x), paused: x.playback.status === 'paused',
-                               shuffle: x.playback.shuffle, repeat: x.playback.repeat, spotify: isSpotify(x) }));
+                               shuffle: x.playback.shuffle, smart: x.playback.shuffleMode === 'smart', repeat: x.playback.repeat, spotify: isSpotify(x) }));
   const tap = (e: MouseEvent, act: () => void) => { e.stopPropagation(); window.alchemyHaptic?.('light'); act(); };
   const time = useTime();
   const bat = useHostGlobal('__wmpBattery', 'wmp-battery');
@@ -356,9 +368,9 @@ export const StatusRow = ({ title, dark, busy: loading }: { title: string; dark?
   return (
     <div className={s.status} data-dark={dark || undefined}>
       {dark && <span className={s.modes}>{st.spotify && <>
-        <span className={s.mode} role="button" aria-label="Shuffle" aria-pressed={st.shuffle} data-off={!st.shuffle || undefined}
-              onClick={(e) => tap(e, () => sh.store.getState().commands.toggleShuffle())}>
-          {shuffle(s.glyph)}
+        <span className={s.mode} role="button" aria-label={st.smart ? 'Smart Shuffle' : 'Shuffle'} aria-pressed={st.shuffle} data-off={!st.shuffle || undefined}
+              onClick={(e) => tap(e, () => cycleShuffle(sh.store))}>
+          {shuffle(s.glyph, st.smart)}
         </span>
         <span className={s.mode} role="button" aria-label={st.repeat === 'track' ? 'Repeat one' : 'Repeat'} aria-pressed={st.repeat !== 'off'}
               data-off={st.repeat === 'off' || undefined}

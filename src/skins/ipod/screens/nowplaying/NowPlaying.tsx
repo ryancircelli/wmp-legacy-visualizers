@@ -32,7 +32,7 @@ import {
 import { useHostGlobal } from '../../host';
 import type { MenuItem, ScreenEntry } from '../contract';
 import { useVisualizers, visId } from '../settings';
-import { collection, startRadio as radioFrom } from '../lists';
+import { collection, startRadio as radioFrom, useEpisodeMarks } from '../lists';
 import { Bar, Marquee, MenuScreen, Popup, useNav, useScan, useWheel } from '../../ui';
 import { useTurn } from '../../wheel';
 import { pickAccent, rgbOf } from './accent';
@@ -195,6 +195,8 @@ function NowPlaying() {
   const artistUri = t?.artistUris?.[0] ?? row?.artistUris?.[0] ?? seeds.find((x) => x.seed.startsWith('spotify:artist:'))?.seed;
   const albumUri = t?.albumUri ?? row?.albumUri ?? (t?.ctx?.startsWith('spotify:album:') ? t.ctx : undefined);
 
+  // an episode's Mark as Played / Unplayed, its row (the show's, its dot) when listed
+  const marks = useEpisodeMarks()(row ?? t);
   const devices = useDevices(() => '');
   // the device it plays on when that is not this one: not this page's player, nor the phone's own speaker
   const active = useApp((s) => s.devices.list.find((x) => x.active && x.id !== s.devices.self));
@@ -224,6 +226,7 @@ function NowPlaying() {
       { id: 'radio', label: 'Start Radio', disabled: !seeds.length, onSelect: startRadio },
       { id: 'add', label: 'Add to Playlist…', disabled: !addTo.uri, onSelect: () => { plMenu.onOpen?.(); setPopup('playlists'); } },
       { id: 'like', label: addTo.saved ? 'Unlike' : 'Like', disabled: !addTo.uri, onSelect: addTo.toggle },
+      ...marks,
       { id: 'album', label: 'Browse Album', disabled: !albumUri && !(artistUri && t?.album),
         onSelect: () => nav.push(albumScreen({ uri: albumUri, artist: artistUri, name: t?.album ?? '' })) },
       { id: 'artist', label: 'Browse Artist', disabled: !artistUri,

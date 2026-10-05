@@ -1,8 +1,9 @@
 // The Library's screens over the Spotify library, in the nano 5G's look (docs/ipod-skin.md §2.4, §4.2):
 // the Library as Spotify's Your Library, filter chips over a grid: Playlists (the Queue first, which any
 // song's hold-centre > Add to Queue adds to and whose rows' hold-centre moves or removes them, then
-// Recently Played while the home feed has it, then Liked Songs), Albums, Artists, Podcasts (the followed
-// shows, each to its episodes); and Search. Lists are the chrome's GridScreen (center fires the tile, hold-center
+// Recently Played while the home feed has it, then Liked Songs, then New Playlist…), Albums, Artists, Podcasts
+// (the followed shows, each to its episodes, whose hold-centre marks one played or unplayed); and Search.
+// Lists are the chrome's GridScreen (center fires the tile, hold-center
 // its menu, Play/Pause plays it), or its MenuScreen in Settings > General > Library View: List; songs
 // are always rows (a playlist's, album's or Liked Songs' under Spotify's header). Search draws itself.
 // What a screen comes back to (the selected row, the typed query) is kept on its entry, so it outlives
@@ -14,9 +15,9 @@ import {
   bigCover, canSave, isAlbum, STALE, useAddTo, useApp, useArtist, useCollection, useDebounced, useLibraryList, useRecentlyPlayed, useSearch, useSearchAll, useShell,
   useShows, type Bucket, type Shell,
 } from '../../../../ui';
-import { CollectionHeader, FilterChips, GridScreen, MenuScreen, Popup, Tile, useNav, useWheel } from '../../ui';
+import { CollectionHeader, cycleShuffle, FilterChips, GridScreen, MenuScreen, Popup, Tile, useNav, useWheel } from '../../ui';
 import type { GridItem, HeadAction, MenuItem, Nav, ScreenEntry } from '../contract';
-import { LIBRARY_FILTERS, useLibraryFilter, useLibraryView, useMenuVisibility } from '../settings';
+import { confirm, LIBRARY_FILTERS, useLibraryFilter, useLibraryView, useMenuVisibility } from '../settings';
 import { albumsBy, artistList, artistsOf, az, episodeLine, queueEdit, subline, type QueueEdit } from './logic';
 
 /** nano pixels */
@@ -81,6 +82,21 @@ const LIKED_ART = 'data:image/svg+xml,' + encodeURIComponent(
   '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><defs><linearGradient id="g" x2="1" y2="1"><stop stop-color="#450af5"/>' +
   '<stop offset="1" stop-color="#c4efd9"/></linearGradient></defs><rect width="24" height="24" fill="url(#g)"/><path fill="#fff" ' +
   'transform="translate(7 7.4) scale(.42)" d="M12 21.6 10.3 20C4.2 14.5 0 10.7 0 6.1 0 2.7 2.7 0 6.1 0 8 0 9.9.9 12 3.1 14.1.9 16 0 17.9 0 21.3 0 24 2.7 24 6.1c0 4.6-4.2 8.4-10.3 13.9z"/></svg>');
+/** a row that acts rather than opens (New Playlist…, Clear Queue): the ♪ tile's grey with a white glyph */
+const glyphArt = (d: string) => 'data:image/svg+xml,' + encodeURIComponent(
+  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><defs><linearGradient id="g" x2="0" y2="1"><stop stop-color="#D6D6DA"/>' +
+  '<stop offset="1" stop-color="#B2B2B8"/></linearGradient></defs><rect width="24" height="24" fill="url(#g)"/>' +
+  `<path d="${d}" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round"/></svg>`);
+const NEW_ART = glyphArt('M12 6.5v11M6.5 12h11'), CLEAR_ART = glyphArt('M8 8l8 8M16 8l-8 8');
+
+/** New Playlist… (commands.createPlaylist): the name asked in the platform's own dialog (the iPod has no
+ *  text field; window.prompt is the iOS app's system alert with one), then the new playlist opened, empty;
+ *  Cancel or no name makes none */
+async function newPlaylist(sh: Shell, nav: Nav) {
+  const name = window.prompt('New Playlist', '')?.trim();
+  const uri = name && await sh.store.getState().commands.createPlaylist?.(name);
+  if (uri) nav.push(collection(uri, name));
+}
 
 // ---- tracks --------------------------------------------------------------------------------------
 
@@ -96,20 +112,23 @@ const PLAYING = <svg viewBox="0 0 8 10" fill="currentColor" style={{ width: u(7)
  *  then it pauses / resumes), the Shuffle toggle (Spotify's shuffle, as the status row's), the heart
  *  and "…" (Save to Library, Start Radio; hold-centre on a button too), and its songs are two-line
  *  rows with their covers (the collection's when a song has none), as `tall` asks for without one.
- *  `edit`: a row's hold-centre is this menu (the Queue's) instead of the song's. */
-function TrackList({ keep, rows, loading, more, head, tall = !!head, edit }: {
+ *  `edit`: a row's hold-centre is this menu (the Queue's) instead of the song's; `tail`: rows after the songs
+ *  (the Queue's Clear Queue). The "…" menu of the user's own playlist has Delete Playlist (a red confirm). */
+function TrackList({ keep, rows, loading, more, head, tall = !!head, edit, tail = [] }: {
   keep: Box<number>; rows: readonly Track[]; loading: boolean; more?: () => void; head?: Head; tall?: boolean; edit?: (i: number) => MenuItem[];
+  tail?: GridItem[];
 }) {
   const sh = useShell(), nav = useNav(), [held, setHeld] = useState<Held>(null), [menu, setMenu] = useState(false);
   const like = useAddTo(head && canSave(head.uri) ? head.uri : null, head?.saved), playing = useApp((s) => s.playback.track?.uri);
   const here = useApp((s) => !!head && s.playback.context?.uri === head.uri), paused = useApp((s) => s.playback.paused);
-  const shuffle = useApp((s) => s.playback.shuffle), c = () => sh.store.getState().commands;
+  const shuffle = useApp((s) => s.playback.shuffle), smart = useApp((s) => s.playback.shuffleMode === 'smart'), c = () => sh.store.getState().commands;
+  const deletes = useApp((s) => !!s.commands.deletePlaylist) && !!head?.own && !!head.uri.startsWith('spotify:playlist:');
   const open = like.uri ? () => setMenu(true) : undefined;
   // the playing context: pause / resume it, not again from the top
   const start = () => (here ? void c().playPause() : playUri(sh, nav, head!.uri));
   const acts: HeadAction[] = head && rows.length ? [
     { id: 'play', kind: 'play', label: here && !paused ? 'Pause' : 'Play', on: here && !paused, onSelect: start, onHold: open },
-    { id: 'shuffle', kind: 'shuffle', label: 'Shuffle', on: shuffle, onSelect: () => c().toggleShuffle(), onHold: open },
+    { id: 'shuffle', kind: smart ? 'smart' : 'shuffle', label: smart ? 'Smart Shuffle' : 'Shuffle', on: shuffle, onSelect: () => cycleShuffle(sh.store), onHold: open },
     ...(like.uri ? [head.own ? { id: 'like', kind: 'like' as const, label: 'Saved', on: true, onHold: open }
       : { id: 'like', kind: 'like' as const, label: like.saved ? 'Unlike' : 'Like', on: !!like.saved, onSelect: like.toggle, onHold: open }] : []),
   ] : [];
@@ -120,9 +139,10 @@ function TrackList({ keep, rows, loading, more, head, tall = !!head, edit }: {
     ...rows.map((t, i): GridItem => ({
       id: i + ':' + t.uri, label: t.title, sub: t.artist, art: t.image || t.art || head?.art, right: head && t.uri === playing ? PLAYING : undefined,
       onSelect: () => playSong(sh, nav, t), onHold: () => setHeld({ t, i }) })),
+    ...tail,
   ];
-  // Play/Pause on the header: the green button's
-  const play = (i: number) => (i >= lead ? playSong(sh, nav, rows[i - lead]!) : start());
+  // Play/Pause on the header: the green button's; on a tail row, nothing
+  const play = (i: number) => { const r = rows[i - lead]; if (i < lead) start(); else if (r) playSong(sh, nav, r); };
   return (
     <>
       <List keep={keep} items={items} loading={loading} empty="No Songs" near={more} play={held || menu ? undefined : play} lead={lead} tall={tall}
@@ -131,6 +151,9 @@ function TrackList({ keep, rows, loading, more, head, tall = !!head, edit }: {
       {menu && head && <Popup onClose={() => setMenu(false)} items={[
         ...(head.own ? [] : [{ id: 'like', label: like.saved ? 'Remove from Library' : 'Save to Library', onSelect: like.toggle }]),
         { id: 'radio', label: 'Start Radio', onSelect: () => void startRadio(sh, nav, head.uri, head.title) },
+        // the confirm opens on Cancel; Delete leaves it and this page (gone from the library), then asks Spotify
+        ...(deletes ? [{ id: 'delete', label: 'Delete Playlist', onSelect: () => nav.push(confirm('delete:' + head.uri, head.title, 'Delete Playlist',
+          (n) => { n.pop(); n.pop(); void c().deletePlaylist?.(head.uri); })) }] : []),
         { id: 'cancel', label: 'Cancel' },
       ]} />}
     </>
@@ -216,13 +239,15 @@ type Body = (p: { bar: Bar; keep: Box<string> }) => ReactNode;
  *  Spotify pins it), then the library's playlists in library order. */
 const Playlists: Body = ({ bar, keep }) => {
   const sh = useShell(), nav = useNav(), lib = useLibraryList(), liked = useCollection(LIKED), next = useApp((s) => s.queue.next[0]);
-  const recent = useRecentlyPlayed().items;
+  const recent = useRecentlyPlayed().items, creates = useApp((s) => !!s.commands.createPlaylist);
   const items: GridItem[] = [
     // the Queue's tile: the next song's cover, at 640 px (its row carries the 64 px thumbnail)
     { id: 'queue', label: 'Queue', chevron: true, art: bigCover(next?.art || next?.image), sub: 'Up next', onSelect: () => nav.push(onTheGo()) },
     ...(recent.length ? [{ id: 'recent', label: 'Recently Played', chevron: true, art: recent[0]!.img, sub: 'Jump back in', onSelect: () => nav.push(recentlyPlayed()) }] : []),
     { ...opens(nav, { uri: LIKED, name: 'Liked Songs' }), art: LIKED_ART,
       sub: liked.loaded ? 'Playlist · ' + liked.total.toLocaleString() + (liked.total === 1 ? ' song' : ' songs') : 'Playlist' },
+    // over the playlists, where Spotify puts a new one (the top of the library)
+    ...(creates ? [{ id: 'new', label: 'New Playlist…', art: NEW_ART, onSelect: () => void newPlaylist(sh, nav) }] : []),
     ...lib.items.filter((x) => !isAlbum(x.uri)).map((x) => opens(nav, x)),
   ];
   // Play/Pause on the Queue is the plain play/pause: the queue is already what plays next; on Recently Played, nothing
@@ -232,9 +257,14 @@ const Playlists: Body = ({ bar, keep }) => {
 /** The Queue: what Spotify plays next; a song joins it from any list's hold-centre > Add to Queue,
  *  and shows here with the player's next state. Hold-centre on a row: Play Next, Move Up, Move Down,
  *  Remove from Queue, Cancel (the engine's reorderQueue: Connect's set_queue, queued and context rows
- *  alike); the selection follows the row it moved. Without reorderQueue (the local engine), the song's menu. */
+ *  alike); the selection follows the row it moved. Without reorderQueue (the local engine), the song's menu.
+ *  While the user has queued songs (Track.queued), a last row Clear Queue (the nano's On-The-Go > Clear
+ *  Playlist; its red confirm): commands.clearQueue, the context's own upcoming songs left. */
 function OnTheGo({ keep }: { keep: Box<number> }) {
-  const sh = useShell(), rows = useApp((s) => s.queue.next), edits = useApp((s) => !!s.commands.reorderQueue), [rev, setRev] = useState(0);
+  const sh = useShell(), nav = useNav(), rows = useApp((s) => s.queue.next), edits = useApp((s) => !!s.commands.reorderQueue), [rev, setRev] = useState(0);
+  const clears = useApp((s) => !!s.commands.clearQueue) && rows.some((t) => t.queued);
+  const tail: GridItem[] = clears ? [{ id: 'clear', label: 'Clear Queue', art: CLEAR_ART, onSelect: () => nav.push(confirm('onTheGo/clear', 'Clear Queue', 'Clear Queue',
+    (n) => { n.pop(); void sh.store.getState().commands.clearQueue?.(); })) }] : [];
   const edit = (i: number): MenuItem[] => {
     const item = (id: QueueEdit, label: string): MenuItem => {
       const r = queueEdit(rows.length, i, id);
@@ -243,7 +273,7 @@ function OnTheGo({ keep }: { keep: Box<number> }) {
     return [item('next', 'Play Next'), item('up', 'Move Up'), item('down', 'Move Down'), item('remove', 'Remove from Queue'), { id: 'cancel', label: 'Cancel' }];
   };
   // keyed: a fresh list after an edit, its selection where keep now says
-  return <TrackList key={rev} keep={keep} rows={rows} loading={false} tall edit={edits ? edit : undefined} />;
+  return <TrackList key={rev} keep={keep} rows={rows} loading={false} tall edit={edits ? edit : undefined} tail={tail} />;
 }
 const onTheGo = () => screen('onTheGo', 'Queue', 0, (k) => <OnTheGo keep={k} />);
 
@@ -286,15 +316,37 @@ const Podcasts: Body = ({ bar, keep }) => {
 /** the blue dot of an episode not yet played [UG p.47]: the row value's blue, white on the selection */
 const UNPLAYED = <svg viewBox="0 0 8 8" fill="currentColor" style={{ width: u(8), height: u(8) }} role="img" aria-label="Unplayed"><circle cx="4" cy="4" r="4" /></svg>;
 
+/** An episode's Mark as Played / Mark as Unplayed (commands.markPlayed; none without it, or for a song): the
+ *  blue dot follows at once. Both, as Spotify's played state does not tell a started episode from a finished
+ *  one; dimmed is what is already so: Played once marked here, Unplayed while the dot shows. */
+export function useEpisodeMarks(): (t: Track | null | undefined) => MenuItem[] {
+  const sh = useShell(), on = useApp((s) => !!s.commands.markPlayed), played = useApp((s) => s.played);
+  const mark = (uri: string, p: boolean) => () => void sh.store.getState().commands.markPlayed?.(uri, p);
+  return (t) => (!on || !t?.uri.startsWith('spotify:episode:') ? [] : [
+    { id: 'played', label: 'Mark as Played', disabled: played[t.uri] === true, onSelect: mark(t.uri, true) },
+    { id: 'unplayed', label: 'Mark as Unplayed', disabled: !!t.unplayed, onSelect: mark(t.uri, false) },
+  ]);
+}
+
 /** A show's episodes, newest first [UG p.47]: two-line rows (the title; its date · length), the blue dot
- *  where Spotify says it is unplayed; centre (or Play/Pause) plays it in its show, then Now Playing.
+ *  where Spotify says it is unplayed; centre (or Play/Pause) plays it in its show, then Now Playing;
+ *  hold-centre: Mark as Played / Unplayed (useEpisodeMarks).
  *  ponytail: sorts what is loaded, so a show Spotify lists oldest first gets its newest as pages arrive. */
 function Show({ uri, keep }: { uri: string; keep: Box<number> }) {
   const sh = useShell(), nav = useNav(), c = useCollection(uri), art = useShows().items.find((x) => x.uri === uri)?.image;
+  const marks = useEpisodeMarks(), [held, setHeld] = useState<Track | null>(null);
   const rows = [...c.rows].sort((a, b) => (b.releaseDate ?? '').localeCompare(a.releaseDate ?? ''));
   const items = rows.map((t, i): GridItem => ({ id: i + ':' + t.uri, label: t.title, sub: episodeLine(t.releaseDate, t.duration), art: t.image || t.art || art,
-                                                right: t.unplayed ? UNPLAYED : undefined, onSelect: () => playSong(sh, nav, t) }));
-  return <List keep={keep} items={items} loading={c.loading} empty="No Episodes" near={c.loadMore} tall play={(i) => playSong(sh, nav, rows[i]!)} />;
+                                                right: t.unplayed ? UNPLAYED : undefined, onSelect: () => playSong(sh, nav, t),
+                                                onHold: marks(t).length ? () => setHeld(t) : undefined }));
+  // the held row as it is now (its dot), not as it was when held
+  const now = held && (rows.find((x) => x.uri === held.uri) ?? held);
+  return (
+    <>
+      <List keep={keep} items={items} loading={c.loading} empty="No Episodes" near={c.loadMore} tall play={held ? undefined : (i) => playSong(sh, nav, rows[i]!)} />
+      {now && <Popup items={[...marks(now), { id: 'cancel', label: 'Cancel' }]} onClose={() => setHeld(null)} />}
+    </>
+  );
 }
 const showPage = (uri: string, title: string) => screen('show:' + uri, title, 0, (k) => <Show uri={uri} keep={k} />);
 

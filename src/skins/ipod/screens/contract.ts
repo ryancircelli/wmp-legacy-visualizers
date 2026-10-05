@@ -64,9 +64,10 @@ export interface GridItem extends MenuItem {
   art?: string | null;
 }
 
-/** A CollectionHeader button: a MenuScreen item the header draws as a round `kind` button (`on`: the heart filled). */
+/** A CollectionHeader button: a MenuScreen item the header draws as a round `kind` button (`on`: the heart
+ *  filled; 'smart': the Shuffle button while Smart Shuffle is on, its glyph). */
 export interface HeadAction extends MenuItem {
-  kind: 'play' | 'shuffle' | 'like';
+  kind: 'play' | 'shuffle' | 'smart' | 'like';
   on?: boolean;
 }
 

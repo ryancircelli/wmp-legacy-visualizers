@@ -640,6 +640,8 @@
 }
 .sheet .label { flex: 0 1 auto; }
 .sheet .row[data-sel] { background: linear-gradient(#4A9FE2, #3367CA); box-shadow: none; }
+/* a row that cannot act now (the Queue's Move Up on its first song, Mark as Unplayed while the dot shows) */
+.sheet .row[data-disabled] { color: rgb(255 255 255 / .4); }
 
 /* the 12-spoke activity wheel, 16 tall */
 .spinner {

@@ -7,7 +7,9 @@
 //   the lists with covers draw (GridScreen or MenuScreen).
 // - useVisualizer(): Now Playing's Visualizer…, [visId, set] ('ipod.visualizer'; Bars first): the
 //   settings.vis / preset Now Playing applies while its visualizer shows; useVisualizers() lists them by engine.
+// - confirm(): the red confirm list (Reset Settings, Log Out; the Library's Delete Playlist, Clear Queue).
 export { settings } from './Settings';
+export { confirm } from './parts';
 export {
   LIBRARY_FILTERS, MAIN_MENU, useLibraryFilter, useLibraryView, useMenuVisibility,
   useVisualizer, useVisualizers, visId,
