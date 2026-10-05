@@ -386,11 +386,13 @@ final class DeviceState {
         for (name, push) in watched {
             center.addObserver(forName: name, object: nil, queue: .main) { _ in push() }
         }
-        // The keyboard's height over the screen's bottom edge: 0 hidden.
+        // The keyboard's height over the screen's bottom edge: 0 hidden. An empty end frame (iOS hands
+        // one over, e.g. going to the background with the keyboard up) is no keyboard, not one as tall
+        // as the screen: read that way, a layout made room for it and the page went white (2026-10-05).
         center.addObserver(forName: UIResponder.keyboardWillChangeFrameNotification, object: nil, queue: .main) { note in
             guard let frame = (note.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? NSValue)?.cgRectValue,
                   let screen = windowScene()?.screen else { return }
-            self.keyboard = Double(max(0, screen.bounds.maxY - frame.minY))
+            self.keyboard = frame.isEmpty ? 0 : Double(max(0, screen.bounds.maxY - frame.minY))
         }
     }
 
