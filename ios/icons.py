@@ -18,13 +18,6 @@ LOOK = 1.15                       # settings.ts LOOK: a preset's numbers are its
 HUES = range(0, 360, 30)          # Custom's grid: icon.ts has the same
 LIGHTS = (35, 55)
 GREYS = (25, 50, 72)
-# An alternate icon is only ever drawn at these sizes (iPhone and iPad: notifications, Settings, Spotlight, the
-# home screen; points × scale). Handed the one 1024 px image instead, the asset compiler kept that copy beside
-# them in every set: 0.7 MB a colour, 27 of the app's 36 MB (build 60). The app's own icon keeps its 1024 (the
-# App Store's), drawn from it at every size by the compiler.
-ALT = [('iphone', '20x20', 2), ('iphone', '20x20', 3), ('iphone', '29x29', 2), ('iphone', '29x29', 3),
-       ('iphone', '40x40', 2), ('iphone', '40x40', 3), ('iphone', '60x60', 2), ('iphone', '60x60', 3),
-       ('ipad', '20x20', 2), ('ipad', '29x29', 2), ('ipad', '40x40', 2), ('ipad', '76x76', 2), ('ipad', '83.5x83.5', 2)]
 
 def presets():
     ts = open(os.path.join(ROOT, '..', 'src', 'skins', 'ipod', 'settings.ts')).read()
@@ -67,22 +60,11 @@ def main():
     for name, (h, s, l) in list(want.items()) + [('', want['green'])]:   # '': the app's own icon, the default colour's
         d = os.path.join(ASSETS, 'Icon-%s.appiconset' % name if name else 'AppIcon.appiconset')
         os.makedirs(d, exist_ok=True)
-        for f in os.listdir(d):                       # a set made before (another size list) goes whole
-            if f.endswith('.png'): os.remove(os.path.join(d, f))
         out = Image.new('RGB', im.size)
         out.putdata(recolour(src, ref, h, s, l))
-        if not name:
-            out.save(os.path.join(d, 'icon-1024.png'), optimize=True)
-            images = [{'filename': 'icon-1024.png', 'idiom': 'universal', 'platform': 'ios', 'size': '1024x1024'}]
-        else:
-            images = []
-            for idiom, size, scale in ALT:
-                px = round(float(size.split('x')[0]) * scale)
-                f = 'icon-%d.png' % px                    # one file per pixel size, shared by the slots that take it
-                if not os.path.exists(os.path.join(d, f)):
-                    out.resize((px, px), Image.LANCZOS).save(os.path.join(d, f), optimize=True)
-                images.append({'filename': f, 'idiom': idiom, 'scale': '%dx' % scale, 'size': size})
-        json.dump({'images': images, 'info': {'author': 'xcode', 'version': 1}}, open(os.path.join(d, 'Contents.json'), 'w'), indent=2)
+        out.save(os.path.join(d, 'icon-1024.png'), optimize=True)
+        json.dump({'images': [{'filename': 'icon-1024.png', 'idiom': 'universal', 'platform': 'ios', 'size': '1024x1024'}],
+                   'info': {'author': 'xcode', 'version': 1}}, open(os.path.join(d, 'Contents.json'), 'w'), indent=2)
     print('icons: %d from %s (the orb at %.0f° %.0f%% %.0f%%)' % (len(want), os.path.basename(SRC), *ref))
     return 0
 
