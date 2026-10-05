@@ -173,10 +173,13 @@ it('Now Playing: the play order in Cover Flow (played, playing, Up Next); a side
     act(() => { vi.advanceTimersByTime(500); fireEvent.click(flow().querySelector('[data-front]')!); });
     expect(m.cmd.playContext).toHaveBeenCalledWith(PL, 'spotify:track:1');   // a played song again, in its context
   } finally { vi.useRealTimers(); }
-  act(() => { fireEvent.click(m.$('#npplay')); });
+  // the mini player stays on Now Playing and is its transport; the page adds only Like, Lyrics and Up Next
+  const phoneEl = m.getByTestId('phone');
+  expect(phoneEl.querySelector('[id="toolbar"]')).not.toBeNull();
+  expect(phoneEl.querySelector('[id="npplay"]')).toBeNull();
+  expect(phoneEl.querySelector('[id="npseek"]')).toBeNull();
+  act(() => { fireEvent.click(phoneEl.querySelector('[id="toolbar"] [id="bplay"]')!); });
   expect(m.cmd.playPause).toHaveBeenCalledOnce();
-  // Now Playing's own controls take over from the mini player
-  expect(m.getByTestId('phone').querySelector('[id="toolbar"]')).toBeNull();
 });
 
 it('Play On (the AirPlay button) carries the volume of what plays: a Connect speaker’s has no other place', async () => {

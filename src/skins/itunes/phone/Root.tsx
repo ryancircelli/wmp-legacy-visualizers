@@ -4,8 +4,9 @@
 // Preferences: nav.ts), its top one block of iTunes' grey chrome (the time and battery over the notch,
 // then the page's strip: Pages.tsx Strip); at the foot, under the thumb, the LCD and the transport as a
 // mini player (Spotify's sits over its tab bar; the Music app kept its controls low; the owner,
-// 2026-10-05), then the bottom bar (Preferences, shuffle, repeat, AirPlay). Now Playing hides the mini
-// player: its own scrubber and big transport take over, as Spotify's Now Playing covers its mini player.
+// 2026-10-05), then the bottom bar (Preferences, shuffle, repeat, AirPlay). The mini player stays on Now
+// Playing too, whose own row adds only what it lacks (Like, Lyrics, Up Next): a second scrubber and
+// transport there were one too many (the owner, same day, after a round of each).
 // Little is shown twice on a screen this small: the view switch is a list's own, the status line a list's
 // last row. Turned on its side, the phone shows Cover Flow alone, as that Music app did: Now Playing's
 // play order, or the selected list's albums. The layout is drawn at the iPhone 4's 320 points and scaled
@@ -61,7 +62,7 @@ export function PhoneRoot() {
           </BandHeight.Provider>
           {/* the bottom stack sits under the keyboard while a search field has it */}
           {kbd ? <div className="flex-none" style={{ height: kbd }} /> : <>
-            {page !== 'now' && <MiniPlayer />}
+            <MiniPlayer />
             <BottomBar pad={ins.bottom} />
           </>}
         </>}

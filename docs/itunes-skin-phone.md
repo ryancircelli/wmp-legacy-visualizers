@@ -24,6 +24,9 @@ build's (REFERENCE.md, the desktop agent's scratch notes from the 2010 captures)
 - 2026-10-05: the LCD and the transport go to the foot, under the thumb, as a mini player over the bottom
   bar (Spotify's sits over its tab bar; the Music app kept its controls low); the top is one block of grey
   chrome, the time and battery over the page's strip; Now Playing hides the mini player (§2).
+- 2026-10-05, later: the mini player stays on Now Playing ("i'd rather keep the bottom bar and only have the
+  coverflow now playing bar add the missing buttons that the bottom bar doesn't have"): Now Playing's own
+  scrubber and big transport go; its row keeps Like, Lyrics and Up Next.
 
 ---
 
@@ -34,7 +37,7 @@ build's (REFERENCE.md, the desktop agent's scratch notes from the 2010 captures)
 | Files | `phone/Root.tsx` (the frame, the mini player, the bottom bar, the phone on its side, the page guard), `phone/Pages.tsx` (the top with its notch band, the source list, a source's page, the search bar), `phone/NowPlaying.tsx` (the play order, the controls, the visualizer), `phone/Prefs.tsx`, `phone/Sheet.tsx` (action sheets, the long press, Play On's volume), `phone/nav.ts` (the page stack, Now Playing's two switches), `phone/host.ts` (the iOS app's bindings, the scale) |
 | Drawn at | the iPhone 4's 320 points across the narrow side, scaled to the phone (§1) |
 | Pages | the source list (with search), a source (what it shows), Now Playing, Preferences; on its side Cover Flow alone |
-| Always on screen (portrait) | the top (time and battery over the page's strip) and, at the foot, the mini player (the transport, the LCD; not on Now Playing) over the bottom bar (Preferences, shuffle, repeat, AirPlay) |
+| Always on screen (portrait) | the top (time and battery over the page's strip) and, at the foot, the mini player (the transport, the LCD; on Now Playing too) over the bottom bar (Preferences, shuffle, repeat, AirPlay) |
 | Taps | a tap plays a song or opens a cover (iTunes: a double-click); a long press (500 ms) opens a song's or a cover's sheet; every tap is felt (`alchemyHaptic('light')`; the long press `'medium'`) |
 | Tests | `tests/skins/itunes-phone.test.tsx` |
 
@@ -92,8 +95,8 @@ build's (REFERENCE.md, the desktop agent's scratch notes from the 2010 captures)
 - **The mini player** (iTunes' toolbar at the foot, under the thumb): the shared `TransportCluster` at its
   desktop size (38 / 45 points), each button's hit area grown 4 px round; the shared `Lcd compact`, its
   seek groove taking a finger above and below. A tap anywhere else on the LCD opens Now Playing
-  **(chosen)**. Hidden on Now Playing, whose scrubber and big transport take over, as Spotify's Now
-  Playing covers its mini player.
+  **(chosen)**. On Now Playing too, as its transport and scrubber; the page adds only Like, Lyrics and
+  Up Next (its own scrubber and big transport were one row of each too many).
 - **Bottom bar**: Preferences (in the place of iTunes' `+`: a new playlist is PLAYLISTS' Add Playlist…, §3),
   shuffle (Off → Shuffle → Smart Shuffle where the player offers it → Off, lit while on, a sparkle at the glyph's
   corner for Smart: the shared `ShuffleButton`), repeat (a small 1 for one song), and

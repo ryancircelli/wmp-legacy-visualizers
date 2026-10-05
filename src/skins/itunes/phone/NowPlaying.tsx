@@ -1,9 +1,8 @@
 // Now Playing on the phone. iTunes 10 had no such page (its artwork pane and Cover Flow showed the
 // cover), so the stage is Cover Flow of the play order: the playing song's cover in front, the songs
 // played this session to its left and Up Next to its right, the caption under the front one; then the
-// iPhone Music app's controls of 2010 in iTunes' dress: Like, Lyrics and Up Next, the scrubber (iTunes'
-// volume knob on Cover Flow's dark groove) and a big Previous / Play / Next row under the thumb. The
-// toolbar's LCD stays over it (the owner, 2026-10-04: the controls are wanted here too). A flick or a tap
+// one row of what the mini player under it lacks: Like, Lyrics and Up Next (the mini player's LCD and
+// transport are this page's controls; a scrubber and big transport of its own doubled them). A flick or a tap
 // on a side cover browses (its title and artist in the caption) and springs back to the playing song a
 // few seconds after the last touch; a tap on the browsed cover, now in front, plays it (Up Next: skipped
 // to; played: again, in its context). Lyrics show over the playing cover while they are on, as over
@@ -15,10 +14,9 @@ import { create } from 'zustand';
 import { Visualizer } from '../../../app/Visualizer';
 import { lyricsShown, type Track } from '../../../model';
 import {
-  artOk, cx, duration, Karaoke, playingTrack, seekHold, Slider, TransportButton, useAddTo, useApp, useCanvas, useLyricScroll, usePlainLyrics,
-  usePlayback, usePosition, useScrub, useShell,
+  artOk, Karaoke, playingTrack, TransportButton, useAddTo, useApp, useCanvas, useLyricScroll, usePlainLyrics, useShell,
 } from '../../../ui';
-import { CoverFlow, Icon, lcdTimes, playRow, viewActions, type Content, type FlowCover } from '../shared';
+import { CoverFlow, Icon, playRow, viewActions, type Content, type FlowCover } from '../shared';
 import { nav, nowView, setNowView } from './nav';
 import { Strip } from './Pages';
 import { openSheet, TrackSheet } from './Sheet';
@@ -245,51 +243,17 @@ function Lyrics({ top, size }: { top: number; size: number }) {
 // ---- the controls ----------------------------------------------------------------------------------
 
 const ROUND = 'relative grid place-items-center w-44 h-32 p-0 border-0 rounded-md bg-transparent text-[#CFCFCF] active:bg-white/10 data-on:text-[#5AA6FF] disabled:opacity-40';
-/** the transport under the thumb: the iPhone Music app's big glyphs, each a wide fingertip */
-const BIG = 'relative grid place-items-center w-72 h-50 p-0 border-0 rounded-lg bg-transparent text-[#EDEDED] [filter:drop-shadow(0_-1px_0_rgba(0,0,0,.7))] active:bg-white/10 disabled:opacity-35';
 
 function Controls() {
   return (
-    <div className="flex-none pb-2 bg-[linear-gradient(180deg,#262626,#0B0B0B)] border-t border-[#3A3A3A]" id="npcontrols">
-      <div className="flex items-center justify-center gap-32 h-34">
+    <div className="flex-none bg-[linear-gradient(180deg,#262626,#0B0B0B)] border-t border-[#3A3A3A]" id="npcontrols">
+      <div className="flex items-center justify-center gap-32 h-40">
         <Like />
         <TransportButton action="lyrics" id="blyrics" className={ROUND}><LyricsGlyph /></TransportButton>
         <button type="button" className={ROUND} aria-label="Up Next" title="Up Next (iTunes DJ)" id="bupnext" onClick={() => { viewActions.select('dj'); nav.source(); }}>
           <Icon name="dj" size={18} />
         </button>
       </div>
-      <Scrubber />
-      <div className="flex items-center justify-center gap-10 h-54" id="nptransport">
-        <TransportButton action="prev" id="npprev" className={BIG}><Icon name="prev" size={26} /></TransportButton>
-        <TransportButton action="play" id="npplay" className={BIG}>{(on) => <Icon name={on ? 'pause' : 'play'} size={30} className={on ? '' : 'ml-3'} />}</TransportButton>
-        <TransportButton action="next" id="npnext" className={BIG}><Icon name="next" size={26} /></TransportButton>
-      </div>
-    </div>
-  );
-}
-
-const KNOB = 'absolute top-1/2 w-18 h-18 -mt-9 rounded-full border border-[#5A5B5C] shadow-[0_1px_2px_rgba(0,0,0,.45)] bg-[radial-gradient(circle,rgba(90,91,92,.55)_0_1.5px,transparent_2px),linear-gradient(180deg,#FBFBFB,#E2E4E5_48%,#C9CBCC_52%,#B1B4B7)]';
-
-/** The scrubber: elapsed, the groove with the knob (drag or tap: src/ui's seekHold, which pauses while
- *  held and seeks on release, as the LCD's), the time left. Re-rendered once a second while it plays. */
-function Scrubber() {
-  const sh = useShell(), [hold] = useState(() => seekHold(sh)), held = useScrub(), { media, canSeek } = usePlayback();
-  const sec = usePosition((ms) => Math.floor(ms / 1000)), d = useApp(duration);
-  const ms = held ?? sec * 1000, v = d > 0 ? Math.min(1, ms / d) : -1, [left, right] = lcdTimes(ms, d, false), off = !media || !canSeek || !(d > 0);
-  return (
-    <div className="flex items-center gap-8 h-28 px-12 text-11 [font-variant-numeric:tabular-nums] text-[#BDBDBD]">
-      <span className="flex-none w-34 text-right" id="nptime">{media && d > 0 ? left : ''}</span>
-      <span className="relative flex-auto min-w-0">
-        {/* Cover Flow's dark groove, filled lighter up to the knob, under the slider that takes the finger */}
-        <span className="absolute inset-x-0 top-1/2 h-10 -mt-5 rounded-full border border-[#B3B3B3]/70 bg-[linear-gradient(180deg,#2E2E2D,#5C5C5B_50%,#4A4A49)] overflow-hidden pointer-events-none">
-          <span className="block h-full bg-[linear-gradient(180deg,#B9B9B9,#7E7E7E)]" style={{ width: v > 0 ? 'calc(9px + (100% - 18px) * ' + v + ')' : 0 }} />
-        </span>
-        <Slider id="npseek" label="Seek" inset={9} value={v} disabled={off} onStart={hold.start} onMove={hold.move} onCommit={hold.commit} onCancel={hold.cancel}
-                onStep={(dir) => sh.store.getState().commands.skip(dir * 5)}
-                className="relative block w-full h-28 touch-none outline-none data-disabled:opacity-50"
-                thumbClassName={cx(KNOB, 'left-[calc((100%-18px)*var(--seek,0))]', off && 'hidden')} />
-      </span>
-      <span className="flex-none w-34" id="npleft">{media && d > 0 ? right : ''}</span>
     </div>
   );
 }
