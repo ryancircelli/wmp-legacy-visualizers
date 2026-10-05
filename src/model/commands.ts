@@ -2,7 +2,7 @@
 // (`store.getState().commands`); until an adapter starts it is `noCommands`. Settings-only
 // changes (volume, mute, lyrics on/off, view, visualizer) are store actions, not commands: the
 // adapters subscribe to them.
-import type { RepeatMode } from './types';
+import type { RepeatMode, ShuffleMode } from './types';
 
 export type WinAction = 'drag' | 'min' | 'max' | 'close' | 'size';
 
@@ -39,6 +39,21 @@ export interface Commands {
   /** Up Next as it should be: `queue.next`'s rows by index in their new order, a row left out removed.
    *  Optimistic (queue.next at once, back if the player refuses). Absent: the engine has no queue. */
   reorderQueue?(order: readonly number[]): void;
+  /** Clear queue: the rows the user queued (Track.queued) removed, the context's own upcoming songs left
+   *  as they are. Optimistic, as reorderQueue. Absent: the engine has no queue. */
+  clearQueue?(): Promise<void>;
+  /** Spotify's three-way shuffle (playback.shuffleMode). 'smart' only while playback.canSmartShuffle: it
+   *  is refused, with a status-bar note, where the player has none. Optimistic. Absent: no such switch. */
+  setShuffleMode?(mode: ShuffleMode): Promise<void>;
+  /** New playlist: the new playlist's uri once Spotify has made it and put it at the top of the library
+   *  (the library list refetches), null if it could not (status-bar note). */
+  createPlaylist?(name: string): Promise<string | null>;
+  /** Delete a playlist of the user's (Spotify's Delete: off the library; another's playlist is unfollowed).
+   *  false if refused (status-bar note). */
+  deletePlaylist?(uri: string): Promise<boolean>;
+  /** Mark as played / unplayed: a podcast episode. Optimistic in `played` (the rows' Track.unplayed
+   *  follows at once), rolled back with a status-bar note if Spotify refuses. */
+  markPlayed?(episodeUri: string, played: boolean): Promise<void>;
 
   // selection (fetched data is TanStack Query's: see adapters/*/queries.ts)
   /** the Search view's query: sets ui.searchQ (the results are a query keyed on it) */

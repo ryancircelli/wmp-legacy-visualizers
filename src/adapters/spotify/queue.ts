@@ -31,10 +31,21 @@ export function nextTracks(raw: readonly Raw[], at: readonly number[], order: re
 
 /** The edit, optimistic: the store's queue from the new list at once (the last state re-read with it),
  *  the old one back if the player refuses and no newer state has come meanwhile. */
-export async function reorderQueue(sp: Sp, order: readonly number[]): Promise<void> {
+export function reorderQueue(sp: Sp, order: readonly number[]): Promise<void> {
+  return sp.last ? setQueue(sp, nextTracks(sp.last.next_tracks ?? [], sp.queueAt ?? [], order)) : Promise.resolve();
+}
+
+/** Clear queue as the web player does it (its bundle's clearQueue, 2026-10-05): set_queue with next_tracks
+ *  less the queued ones (provider 'queue'), the context's own left as they are. Nothing queued: nothing sent. */
+export function clearQueue(sp: Sp): Promise<void> {
+  const raw = sp.last?.next_tracks ?? [];
+  return raw.some((t) => t?.provider === 'queue') ? setQueue(sp, raw.filter((t) => t?.provider !== 'queue')) : Promise.resolve();
+}
+
+async function setQueue(sp: Sp, next: Raw[]): Promise<void> {
   const before = sp.last;
   if (!before) return;
-  const next = nextTracks(before.next_tracks ?? [], sp.queueAt ?? [], order), after = { ...before, next_tracks: next };
+  const after = { ...before, next_tracks: next };
   onState(sp, after, true);
   const ok = await command(sp, { endpoint: 'set_queue', next_tracks: next, prev_tracks: before.prev_tracks ?? [],
                                  queue_revision: before.queue_revision ?? '', logging_params: {} }, null);

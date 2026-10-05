@@ -33,5 +33,7 @@ export const host = (sp: Sp): Player => ({
   // shuffle false is "leave it as it is" (null), as the cloud's play sends no override then
   playContext: (context, track, shuffle) => send('load:' + JSON.stringify({ context, track, shuffle: shuffle || null, position: 0 }), sp),
   setShuffle: (on) => after('shuffle:' + (on ? 1 : 0), sp),
+  // no Smart Shuffle in CONTRACT v10's commands (librespot has none): refused, never sent as a plain shuffle
+  setShuffleMode: (m) => (m === 'smart' ? Promise.resolve(false) : after('shuffle:' + (m === 'shuffle' ? 1 : 0), sp)),
   setRepeat: (m) => after('repeat:' + m, sp),
 });

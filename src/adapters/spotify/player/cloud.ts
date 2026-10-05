@@ -23,6 +23,11 @@ export const cloud = (sp: Sp): Player => ({
 
   setShuffle: (on) => command(sp, { endpoint: 'set_shuffling_context', value: on }),
 
+  // The three-way shuffle as the web player sends it for each of its settings (captured 2026-10-05, its
+  // shuffle menu's Smart Shuffle): set_options with the mode beside shuffling_context.
+  setShuffleMode: (m) => command(sp, { endpoint: 'set_options', shuffling_context: m !== 'off',
+                                       modes: { context_enhancement: m === 'smart' ? 'RECOMMENDATION' : 'NONE' } }),
+
   // One set_options (what the web player's own client has), not two set_repeating_* commands: those
   // race and one is lost (measured live: Off -> Track left context off, Track -> Off left track on).
   setRepeat: (m) => command(sp, { endpoint: 'set_options', repeating_context: m !== 'off', repeating_track: m === 'track' }),

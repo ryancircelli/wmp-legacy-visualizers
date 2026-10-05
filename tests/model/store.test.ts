@@ -60,7 +60,7 @@ describe('store actions', () => {
     expect(s.playback.pending).toBeNull();
     expect(s.ui).toMatchObject({ view: 'now', libNode: null, libSel: null, searchQ: '' });
     expect(s.vis.hold).toBe(false);
-    expect(Object.keys(s).sort()).toEqual(['actions', 'auth', 'commands', 'devices', 'lyrics', 'membership', 'playback', 'queue', 'saved', 'settings', 'ui', 'vis']);
+    expect(Object.keys(s).sort()).toEqual(['actions', 'auth', 'commands', 'devices', 'lyrics', 'membership', 'playback', 'played', 'queue', 'saved', 'settings', 'ui', 'vis']);
   });
   it('setView holds the engine off Now Playing, saves the view, unknown -> now', () => {
     const st = mk();

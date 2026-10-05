@@ -10,6 +10,7 @@
 import type { CollectionPage, LibraryItem, Track } from '../../model';
 import { dateOf, libraryPages, midImage, remember, smallImage } from './library';
 import { hashFor, query, rescan, visitRoute } from './pathfinder';
+import { markedFinished } from './saved';
 import { RateLimitError, type Sp } from './sp';
 
 const log = (s: string) => window.alchemyLog?.('spotify: ' + s);
@@ -75,7 +76,10 @@ export async function fetchShowPage(sp: Sp, uri: string, offset = 0): Promise<Co
   const p = d && d.podcastUnionV2, e = p && p.episodesV2, items: any[] = (e && e.items) || [];
   if (!e) log(EPISODES + ': unexpected shape (data: ' + Object.keys(d || {}).join(', ') + '; podcastUnionV2: ' + Object.keys(p || {}).join(', ') + ')');
   const name: string = (p && p.name) || sp.cache.names.get(uri) || '';
-  const tracks = items.map((x) => episodeRow(x, uri, name)).filter((t): t is Track => !!t);
+  let tracks = items.map((x) => episodeRow(x, uri, name)).filter((t): t is Track => !!t);
+  // marked played (saved.ts markPlayed): Spotify's playedState does not say so, the set does
+  const marked = await markedFinished(sp, tracks.map((t) => t.uri)).catch(() => null);
+  if (marked?.size) tracks = tracks.map((t) => (marked.has(t.uri) ? { ...t, unplayed: false } : t));
   if (items.length && !tracks.length) log(EPISODES + ': no episode read in ' + items.length + ' items (the first\'s keys: ' + Object.keys(items[0] || {}).join(', ') + ')');
   const total = Math.max((e && e.totalCount) || 0, offset + tracks.length), next = offset + items.length;
   if (name) sp.cache.names.set(uri, name);

@@ -5,9 +5,10 @@
 // ponytail: response shapes unverified against a live capture; read defensively, and with
 // settings.debug the first answers' keys go to the console.
 import { LIKED, type LibraryItem } from '../../model';
+import { username } from './connect';
 import { fetchCollectionPage, fetchLibraryList } from './library';
 import { query } from './pathfinder';
-import { status, type Sp } from './sp';
+import { post, status, type Resp, type Sp } from './sp';
 
 const BATCH = 50;
 let logged = false;
@@ -187,4 +188,91 @@ export async function fetchMembership(sp: Sp, trackUri: string, playlistUris: st
     } catch { /* unknown */ }
   }
   return out;
+}
+
+// ------------------------------------------------------------------ new and deleted playlists, played episodes
+// What the web player sends (captured 2026-10-05 on open.spotify.com, its writes held back): New playlist is
+// POST spclient.wg playlist/v2/playlist { ops: [UPDATE_LIST_ATTRIBUTES { name }] } -> { uri }, then that uri
+// put at the top of the user's rootlist (rootlist/changes, ADD addFirst); Delete takes it off the rootlist
+// (REM, itemsAsKey), which for another's playlist is an unfollow.
+const WG = 'https://spclient.wg.spotify.com';
+const took = (r: Resp) => r.status >= 200 && r.status < 300;
+const why = (e: unknown) => (e as Error).message;
+
+async function rootlist(sp: Sp, op: object): Promise<void> {
+  const user = await username(sp);
+  if (!user) throw new Error('no username');
+  const r = await post(sp, WG + '/playlist/v2/user/' + encodeURIComponent(user) + '/rootlist/changes',
+                       { deltas: [{ ops: [op], info: { source: { client: 'WEBPLAYER' } } }] });
+  if (!took(r)) throw new Error(String(r.status));
+}
+
+/** New playlist (Commands.createPlaylist): its uri, the library list refetched; null and a note if refused. */
+export async function createPlaylist(sp: Sp, name: string): Promise<string | null> {
+  try {
+    const r = await post(sp, WG + '/playlist/v2/playlist',
+                         { ops: [{ kind: 'UPDATE_LIST_ATTRIBUTES', updateListAttributes: { newAttributes: { values: { name } } } }] });
+    const uri = (r.json as { uri?: unknown } | null)?.uri;
+    if (!took(r) || typeof uri !== 'string' || !uri.startsWith('spotify:playlist:')) throw new Error(String(r.status));
+    // ponytail: refused here, the playlist stays made but out of the library (Spotify's own client the same)
+    await rootlist(sp, { kind: 'ADD', add: { items: [{ uri, attributes: { timestamp: String(Date.now()) } }], addFirst: true } });
+    sp.cache.names.set(uri, name);
+    invalidate?.([['spotify', 'library']]);
+    return uri;
+  } catch (e) {
+    status(sp, 'Spotify: could not create the playlist (' + why(e) + ')');
+    return null;
+  }
+}
+
+/** Delete (Commands.deletePlaylist): off the library, the list refetched; false and a note if refused. */
+export async function deletePlaylist(sp: Sp, uri: string): Promise<boolean> {
+  try {
+    await rootlist(sp, { kind: 'REM', rem: { items: [{ uri }], itemsAsKey: true } });
+  } catch (e) {
+    status(sp, 'Spotify: could not delete the playlist (' + why(e) + ')');
+    return false;
+  }
+  invalidate?.([['spotify', 'library']]);
+  return true;
+}
+
+// Mark as played: the web player's two menu items for it (an episode's, and a show's "mark as finished") both
+// put the uri in the collection set "markedasfinished" and take it out for unplayed, POST collection/v2/write
+// { username, set, items: [{ uri }] } with is_removed: true to take out (its bundle, 2026-10-05). The web
+// build hides both (canMarkEpisodesAsDone false); the desktop also calls a native markAsPlayed the web has
+// none of, and reads the set back as "marked as finished". Measured live 2026-10-05: the set takes the
+// write, while pathfinder's playedState (NOT_STARTED) does not follow it, so the show's rows read the set
+// too (markedFinished). ponytail: what Spotify's phone app shows for such an episode is unconfirmed, and
+// unplayed only undoes a mark: an episode listened to the end stays COMPLETED in playedState.
+const FINISHED = 'markedasfinished';
+// the bare media type, as the web player sends it here: with ";charset=UTF-8" the collection service answers
+// 400 and an empty body (measured on contains, 2026-10-05)
+const collection = async (sp: Sp, op: 'write' | 'contains', items: object[]) => {
+  const user = await username(sp);
+  if (!user) throw new Error('no username');
+  const r = await post(sp, WG + '/collection/v2/' + op, { username: user, set: FINISHED, items }, 'POST', { 'Content-Type': 'application/json' });
+  if (!took(r)) throw new Error(String(r.status));
+  return r.json as { found?: unknown[] } | null;
+};
+
+/** Which of these episodes are in the set (fetchShowPage reads its rows' marks with it). */
+export async function markedFinished(sp: Sp, uris: string[]): Promise<Set<string>> {
+  const found = uris.length ? (await collection(sp, 'contains', uris.map((uri) => ({ uri }))))?.found ?? [] : [];
+  return new Set(uris.filter((_u, i) => found[i] === true));
+}
+
+/** Mark as played / unplayed (Commands.markPlayed): optimistic in `played`, the show's rows refetched. */
+export async function markPlayed(sp: Sp, uri: string, played: boolean): Promise<void> {
+  const { played: marks, actions } = sp.store.getState(), had = uri in marks ? marks[uri]! : null;
+  actions.setPlayed(uri, played);
+  try {
+    await collection(sp, 'write', [{ uri, ...(played ? {} : { is_removed: true }) }]);
+  } catch (e) {
+    actions.setPlayed(uri, had);
+    status(sp, 'Spotify: could not mark the episode ' + (played ? 'played' : 'unplayed') + ' (' + why(e) + ')');
+    return;
+  }
+  const show = sp.cache.tracks.get(uri)?.ctx;
+  if (show) invalidate?.([['spotify', 'collection', show]]);
 }

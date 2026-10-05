@@ -84,6 +84,19 @@ describe('a show\'s episodes', () => {
     expect(p.tracks.map((t) => t.unplayed)).toEqual([true, false, undefined]);
     expect([p.total, p.nextOffset, p.meta]).toEqual([120, 3, undefined]);
   });
+  it('an episode in the collection set markedasfinished (marked played here, or by Spotify\'s desktop) is not unplayed, whatever playedState says', async () => {
+    const env = setup({ hash: true });
+    env.route(/collection\/v2\/contains/, (_u, init) => ({ status: 200, json: { found: (JSON.parse(init.body) as { items: { uri: string }[] }).items.map((i) => /e1|e3/.test(i.uri)) } }));
+    env.route(/pathfinder/, (_u, init) => {
+      const b = JSON.parse(init.body);
+      if (b.operationName === 'profileAttributes') return { status: 200, json: { data: { me: { profile: { uri: 'spotify:user:u1' } } } } };
+      return { status: 200, json: b.operationName === 'queryPodcastEpisodes' ? episodesPage([episode(1, 'NOT_STARTED'), episode(2, 'NOT_STARTED'), episode(3)], 3) : { data: {} } };
+    });
+    window.__wmpSpotify!.hashes = { profileAttributes: 'p'.repeat(64) };
+    expect((await Q.fetchCollectionPage(SHOW)).tracks.map((t) => t.unplayed)).toEqual([false, true, false]);
+    const asked = env.calls.find((c) => /collection\/v2\/contains/.test(c.url))!;
+    expect(asked.body).toEqual({ username: 'u1', set: 'markedasfinished', items: [1, 2, 3].map((n) => ({ uri: 'spotify:episode:e' + n })) });
+  });
   it('no hash in the bundles: /show/<id> visited, then the host\'s log says so and the page fails; an odd shape is said too', async () => {
     const env = setup({ hash: false });
     const p = Q.fetchCollectionPage(SHOW).catch((e: Error) => e);

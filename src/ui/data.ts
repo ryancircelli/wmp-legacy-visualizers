@@ -65,9 +65,10 @@ export function useCollection(uri: string | null | undefined): CollectionData {
   // keyed by the uri even before the login is known: a result kept from the last session shows now
   const q = useQ(), ready = useReady(), is = isCollectionUri(uri) || isShowUri(uri), on = is && ready;
   const r = useInfiniteQuery({ ...collectionQuery(q, is ? uri : ''), enabled: on });
-  const pages = r.data?.pages ?? [];
+  const pages = r.data?.pages ?? [], played = useApp((s) => s.played);
   return {
-    rows: pages.flatMap((p) => p.tracks),
+    // an episode marked played / unplayed here shows so at once (commands.markPlayed), before the refetch
+    rows: pages.flatMap((p) => p.tracks).map((t) => (t.uri in played ? { ...t, unplayed: !played[t.uri] } : t)),
     meta: pages[0]?.meta,
     total: pages[0]?.total ?? 0,
     hasMore: !!r.hasNextPage,

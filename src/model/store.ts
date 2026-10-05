@@ -5,7 +5,7 @@ import { devtools, subscribeWithSelector } from 'zustand/middleware';
 import { noCommands, type Commands } from './commands';
 import { loadSettings, saveSettings, presetMax, DEFAULTS, type Settings } from './settings';
 import type {
-  CaptureSource, Device, LyricLine, MediaStatus, Mode, PlayingContext, RepeatMode, TimedLevel, Track, View, VisKind,
+  CaptureSource, Device, LyricLine, MediaStatus, Mode, PlayingContext, RepeatMode, ShuffleMode, TimedLevel, Track, View, VisKind,
 } from './types';
 
 export interface Playback {
@@ -18,7 +18,13 @@ export interface Playback {
   position: number;
   at: number;
   paused: boolean;
+  /** shuffling at all (shuffle or Smart Shuffle) */
   shuffle: boolean;
+  /** which: Spotify's three-way button ('smart' only where canSmartShuffle was true) */
+  shuffleMode: ShuffleMode;
+  /** Smart Shuffle can be turned on now: the device that plays offers it and the context allows it (a
+   *  playlist or Liked Songs). false on a player that has none (the host's own speaker, librespot) */
+  canSmartShuffle: boolean;
   repeat: RepeatMode;
   canSeek: boolean;
   canNext: boolean;
@@ -60,6 +66,9 @@ export interface AppState {
   saved: Record<string, boolean>;
   /** optimistic playlist membership: playlist uri -> track uri -> in it (absent = ask fetchMembership) */
   membership: Record<string, Record<string, boolean>>;
+  /** episodes marked played (true) / unplayed (false) here, by uri, over what the fetched rows say
+   *  (useCollection lays it over Track.unplayed) */
+  played: Record<string, boolean>;
   /** self = this web player's connect id ("(this window)") */
   devices: { list: Device[]; self: string };
   lyrics: {
@@ -116,6 +125,8 @@ export interface Actions {
   setSaved(uri: string, on: boolean | null): void;
   /** set or clear (null) the optimistic membership of a track in a playlist */
   setMembership(playlistUri: string, trackUri: string, on: boolean | null): void;
+  /** set (true played / false unplayed) or clear (null) an episode's mark */
+  setPlayed(uri: string, played: boolean | null): void;
   setLyrics(l: AppState['lyrics']): void;
   setUi(p: Partial<AppState['ui']>): void;
   /** switch view: holds the engine off 'now', and remembers it in the settings */
@@ -137,7 +148,7 @@ export const VIEWS: readonly View[] = ['now', 'guide', 'library', 'search', 'rad
 export const LIKED = 'spotify:collection:tracks';
 
 export const initialPlayback = (): Playback => ({
-  status: 'none', source: null, track: null, position: 0, at: 0, paused: true, shuffle: false, repeat: 'off',
+  status: 'none', source: null, track: null, position: 0, at: 0, paused: true, shuffle: false, shuffleMode: 'off', canSmartShuffle: false, repeat: 'off',
   canSeek: false, canNext: false, canPrev: false, context: null, from: '', app: '', capture: null, pending: null,
 });
 
@@ -167,6 +178,11 @@ export function createAppStore(opts: { settings?: Settings; persist?: boolean } 
         if (on == null) delete row[tr]; else row[tr] = on;
         return { membership: { ...s.membership, [pl]: row } };
       }, false, 'membership'),
+      setPlayed: (uri, on) => set((s) => {
+        const played = { ...s.played };
+        if (on == null) delete played[uri]; else played[uri] = on;
+        return { played };
+      }, false, 'played'),
       setDevices: (list, self) => set((s) => ({ devices: { list, self: self ?? s.devices.self } }), false, 'devices'),
       setLyrics: (l) => set({ lyrics: l }, false, 'lyrics'),
       setUi: (p) => merge('ui', p, 'ui'),
@@ -199,6 +215,7 @@ export function createAppStore(opts: { settings?: Settings; persist?: boolean } 
       queue: { next: [] },
       saved: {},
       membership: {},
+      played: {},
       devices: { list: [], self: '' },
       lyrics: { status: 'none', lines: null, plain: null, track: null, source: null },
       ui: { view: 'now', fullscreen: false, bare: false, dialog: null, menu: null, status: '', libNode: null, libSel: null, searchQ: '', searchOnly: null },

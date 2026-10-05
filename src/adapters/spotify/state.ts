@@ -5,6 +5,7 @@ import { setSession } from '../host/media';
 import * as hostPlayer from '../host/player';
 import { fetchCollectionPage, midImage, remember, trackRow } from './library';
 import { query } from './pathfinder';
+import { target } from './connect';
 import { hostLive } from './player';
 import { LIKED_CTX, W, cap, kindOf, type PlayerState, type Sp } from './sp';
 
@@ -20,7 +21,7 @@ export function img(u: string | undefined): string | null {
 export function bigCover(u: string | null | undefined): string | null {
   return u ? u.replace(/(\/image\/ab67616d0000)(?:4851|1e02)(?=[0-9a-f]{24}$)/, '$1b273') : null;
 }
-const none = (a: string[] | undefined) => !a || !a.length;
+const none = (a: unknown) => !Array.isArray(a) || !a.length;
 
 /** The context's name: the state's own description, the current track's album title when the
  *  context is that album, a library row we already hold, else what loadTracks learned — until
@@ -89,6 +90,24 @@ function want(sp: Sp, uri: string): void {
                                              () => { delete sp.loading[uri]; });
 }
 
+/** Smart Shuffle on offer for this state: the device commands go to (connect.ts target) lists
+ *  supports_smart_shuffle_mode among its capabilities in the cluster (Spotify's own apps do; librespot, the
+ *  app's own speaker, does not, and would take the command as a plain reshuffle: librespot-connect 0.8.0
+ *  ignores set_options' modes), shuffle may be toggled, the context is a playlist or Liked Songs, and the
+ *  device does not refuse RECOMMENDATION for it (restrictions.disallow_setting_modes, read as the web
+ *  player's canToggleSmartShuffle reads it: 'already_set' is no refusal).
+ *  ponytail: the web player also asks pathfinder's smartShuffle { uris: [context] } (data.lookup[0].data
+ *  .smartShuffle.available); a Spotify device's restrictions already say it for the playing context
+ *  ('not_supported_by_content_type' on a Daily Mix, the fixtures), so it is not asked. */
+function smartOk(ps: PlayerState): boolean {
+  const rs = ps.restrictions ?? {}, w = W(), to = target(w);
+  const devs = (w.cluster as { devices?: Record<string, { capabilities?: { supports_smart_shuffle_mode?: boolean } } | null> } | null)?.devices;
+  const modes = rs.disallow_setting_modes as { context_enhancement?: { values?: { RECOMMENDATION?: { reasons?: string[] } } } } | undefined;
+  const why = (modes?.context_enhancement?.values?.RECOMMENDATION?.reasons ?? []).filter((r) => r !== 'already_set');
+  return !!(to && devs?.[to]?.capabilities?.supports_smart_shuffle_mode) && none(rs.disallow_toggling_shuffle_reasons) && !why.length
+    && (/^spotify:playlist:/.test(ps.context_uri ?? '') || LIKED_CTX.test(ps.context_uri ?? ''));
+}
+
 /** The playback slice for a state. A state with no active device is Spotify's memory of the
  *  last session, not something playing anywhere: shown paused, the clock standing still. */
 export function toPlayback(sp: Sp, ps: PlayerState): Partial<Playback> {
@@ -117,6 +136,8 @@ export function toPlayback(sp: Sp, ps: PlayerState): Partial<Playback> {
     canNext: !!t.uri && none(rs.disallow_skipping_next_reasons),
     canPrev: !!t.uri && none(rs.disallow_skipping_prev_reasons),
     shuffle: !!o.shuffling_context,
+    shuffleMode: !o.shuffling_context ? 'off' : o.modes?.context_enhancement === 'RECOMMENDATION' ? 'smart' : 'shuffle',
+    canSmartShuffle: smartOk(ps),
     repeat,
     context: ctx === LIKED ? { uri: LIKED, kind: 'liked', label: 'Liked Songs' }
       : ctx && /^spotify:(playlist|album|artist|show):/.test(ctx) ? { uri: ctx, kind: kindOf(ctx), label: fromText(sp, ps) } : null,
@@ -156,7 +177,9 @@ function hostOver(sp: Sp, p: Partial<Playback>, ctx: string | null): Partial<Pla
     // loading: still 'playing' to the eye, its clock held (paused) until the track plays
     ...p, status: !h.uri ? 'stopped' : paused ? 'paused' : 'playing', paused: paused || !!h.loading, at: now,
     position: Math.max(0, dur ? Math.min(pos, dur) : pos),
-    shuffle: hostWins(sp, 'shuffle') ? h.shuffle : p.shuffle, repeat: hostWins(sp, 'repeat') ? h.repeat : p.repeat,
+    // the host's player has no Smart Shuffle: its word on shuffle is shuffle or off
+    ...(hostWins(sp, 'shuffle') ? { shuffle: h.shuffle, shuffleMode: h.shuffle ? 'shuffle' : 'off' } : {}),
+    repeat: hostWins(sp, 'repeat') ? h.repeat : p.repeat,
     track: h.uri ? { uri: h.uri, title: h.title || same?.title || '', artist: h.artist || same?.artist || '',
                      album: h.album || same?.album || '', duration: dur, art: bigCover(h.art || same?.art || same?.image || null), ctx } : null,
     ...(p.track ? {} : { canSeek: !!h.uri, canNext: !!h.uri, canPrev: !!h.uri }),
@@ -225,9 +248,10 @@ export function onState(sp: Sp, ps: PlayerState | null | undefined, replay = fal
     const m = t.metadata ?? {}, k = rowFor(sp, t.uri);
     // its cover too (the web player sends image_url with the first queued track): the Queue's tile and rows show it
     const pic = img(m.image_small_url || m.image_url) ?? k?.image;
+    const q = t.provider === 'queue' ? { queued: true } : {};
     const row: Track | null = m.title ? { uri: t.uri, title: m.title, artist: artistName(sp, t.uri, ctx, m), album: m.album_title || k?.album || '', duration: 0,
-                                          ctx: ctx ?? null, ...(pic ? { image: pic, art: bigCover(pic) } : {}) }
-      : k ? { ...k, ctx: ctx ?? null, ...(k.art || !k.image ? {} : { art: bigCover(k.image) }) } : null;
+                                          ctx: ctx ?? null, ...(pic ? { image: pic, art: bigCover(pic) } : {}), ...q }
+      : k ? { ...k, ctx: ctx ?? null, ...(k.art || !k.image ? {} : { art: bigCover(k.image) }), ...q } : null;
     if (row) { next.push(row); at.push(i); } else if (ask && n-- > 0) want(sp, t.uri);
     if (next.length === 30) break;
   }

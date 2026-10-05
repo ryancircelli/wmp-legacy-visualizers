@@ -15,8 +15,10 @@ export interface PlayerState {
   playback_speed?: string | number;
   duration?: string;
   track?: { uri?: string; metadata?: Record<string, string> };
-  restrictions?: Record<string, string[] | undefined>;
-  options?: { shuffling_context?: boolean; repeating_context?: boolean; repeating_track?: boolean };
+  /** disallow_<action>_reasons: string[]; disallow_setting_modes: { <mode>: { values: { <value>: { reasons } } } } */
+  restrictions?: Record<string, unknown>;
+  /** modes.context_enhancement: 'RECOMMENDATION' while Smart Shuffle is on, 'NONE' otherwise */
+  options?: { shuffling_context?: boolean; repeating_context?: boolean; repeating_track?: boolean; modes?: Record<string, string> };
   next_tracks?: (ProvidedTrack | null)[];
   prev_tracks?: (ProvidedTrack | null)[];
   queue_revision?: string;

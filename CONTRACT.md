@@ -171,6 +171,25 @@ Page (src/95-spotify.js):
     fallback table (dated; SPIKE2.md); the search chunk only loads after the hidden app visits /search, so the page may
     trigger it (history.pushState('/search') + popstate) and rescan. 412 "Invalid query hash" → rescan once, then status.
   - Premium: play/transport commands need Premium at Spotify's end; a non-2xx on them is reported in the status bar.
+  - Library writes outside pathfinder, as the web player sends them (captured 2026-10-05 on open.spotify.com with the
+    writes held back; src/adapters/spotify/saved.ts), all POST to https://spclient.wg.spotify.com with the same
+    credentials: New playlist `playlist/v2/playlist` {"ops":[{"kind":"UPDATE_LIST_ATTRIBUTES","updateListAttributes":
+    {"newAttributes":{"values":{"name":N}}}}]} -> {"uri":…}, then `playlist/v2/user/<username>/rootlist/changes`
+    {"deltas":[{"ops":[{"kind":"ADD","add":{"items":[{"uri":U,"attributes":{"timestamp":"<ms>"}}],"addFirst":true}}],
+    "info":{"source":{"client":"WEBPLAYER"}}}]}; Delete the same rootlist/changes with {"kind":"REM","rem":{"items":
+    [{"uri":U}],"itemsAsKey":true}}. Mark as played / unplayed: `collection/v2/write` {"username","set":
+    "markedasfinished","items":[{"uri":E}]} (unplayed: the item with "is_removed":true), what both of the web
+    player's mark-as-played menu items do (its bundle; the web build hides them), with Content-Type exactly
+    application/json (";charset=UTF-8" is a 400 there). pathfinder's Episode.playedState does not follow the set
+    (measured 2026-10-05), so a show's episode rows also ask `collection/v2/contains` (same body, answer
+    {"found":[bool…]}) and an episode in the set is not unplayed. The username is Liked Songs' context's
+    (spotify:user:<username>:collection).
+  - Smart Shuffle: the three-way shuffle is {"endpoint":"set_options","shuffling_context":B,"modes":
+    {"context_enhancement":"RECOMMENDATION"|"NONE"}} (captured from the web player's shuffle menu, 2026-10-05),
+    read back from player_state.options.modes.context_enhancement. Offered only where the target device lists
+    capabilities.supports_smart_shuffle_mode in the cluster and its restrictions.disallow_setting_modes
+    .context_enhancement.values.RECOMMENDATION.reasons are empty but for "already_set" (playback.canSmartShuffle).
+  - Clear queue: set_queue (as an Up Next edit) with next_tracks less the entries whose provider is "queue".
 
 ## v7 — page updates (the Deno host's `update.ts`; `tauri/src/update.rs` since v8)
 Every build writes dist/update.json {version, built (commit time), needs, host, files: {name: sha256}};
@@ -417,7 +436,12 @@ and repeat are whichever of the two last changed them (receipt time; a value as 
 host's are stale once it has taken the playback (its own earlier settings, not the session's) and say nothing of a play
 another client started with its own, but are right in the report after a toggle or a `load` sent from here, which counts
 as a change whatever its value. Otherwise (another Connect device active, a host without a player, the website) everything is v6.1's. Add to
-queue, volume, transfers to other devices and all browsing stay connect-state and pathfinder in every case.
+queue, Up Next edits and Clear queue (set_queue: librespot replaces its lists with it), volume, transfers to other
+devices, the library writes and all browsing stay connect-state, spclient and pathfinder in every case. Smart Shuffle
+is not offered while the host's player is in charge, nor anywhere its speaker is the target: no command for it here,
+and librespot (0.8.0) lists no supports_smart_shuffle_mode and ignores set_options' modes, reshuffling plainly; it
+would need the capability, the mode kept in its player options, and recommendations fetched into its queue
+(Spotify's context-enhancement lens) before it could be offered.
 
 ## Retired: the system-audio application
 `WmpVisualizers.exe` (`--mode=app`, release `app-latest`) was retired 2026-09-24. v4 (Now Playing) and v5 (lyrics) now

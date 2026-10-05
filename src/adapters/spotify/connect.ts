@@ -3,7 +3,7 @@
 // rules) goes to the host's mediaCmd (SMTC) instead — that command only, never the session.
 // Transport, shuffle, repeat and plays go through player/: to the host's own player instead, where it
 // is in charge (CONTRACT v10), with the same optimistic patches.
-import { LIKED, positionNow, type Playback, type RepeatMode } from '../../model';
+import { LIKED, positionNow, type Playback, type RepeatMode, type ShuffleMode } from '../../model';
 import { optimistic, pausedPatch } from '../host/media';
 import * as hostPlayer from '../host/player';
 import { query } from './pathfinder';
@@ -181,9 +181,19 @@ export function cycleRepeat(sp: Sp): Promise<void> {
   const m = repeatMode(sp);
   return setRepeat(sp, m === 'off' ? 'context' : m === 'context' ? 'track' : 'off');
 }
+/** Off from Smart Shuffle goes as the three-way switch's off, which clears the recommendations with it. */
 export function toggleShuffle(sp: Sp): Promise<void> {
-  const on = !sp.store.getState().playback.shuffle;
-  return optimistic(sp.store, { shuffle: on }, () => player(sp).setShuffle(on));
+  const p = sp.store.getState().playback, on = !p.shuffle;
+  if (p.shuffleMode === 'smart') return setShuffleMode(sp, 'off');
+  return optimistic(sp.store, { shuffle: on, shuffleMode: on ? 'shuffle' : 'off' }, () => player(sp).setShuffle(on));
+}
+/** Spotify's three-way shuffle. Smart only while the state offers it (state.ts smartOk): otherwise said
+ *  and not sent, since a player without it (librespot) would take it as a plain reshuffle. */
+export function setShuffleMode(sp: Sp, mode: ShuffleMode): Promise<void> {
+  const p = sp.store.getState().playback;
+  if (mode === p.shuffleMode) return Promise.resolve();
+  if (mode === 'smart' && !p.canSmartShuffle) { status(sp, 'Spotify: Smart Shuffle is not available on this device'); return Promise.resolve(); }
+  return optimistic(sp.store, { shuffle: mode !== 'off', shuffleMode: mode }, () => player(sp).setShuffleMode(mode));
 }
 
 /** The web player's Liked Songs context, spotify:user:<username>:collection (sp.ts LIKED_CTX):
@@ -196,6 +206,12 @@ export async function likedContext(sp: Sp): Promise<string | null> {
     if (/^spotify:user:[^:]+$/.test(user)) sp.liked = user + ':collection';
   }
   return sp.liked ?? null;
+}
+
+/** The account's username, as Liked Songs' context names it (spotify:user:<username>:collection). */
+export async function username(sp: Sp): Promise<string | null> {
+  const l = await likedContext(sp);
+  return l ? decodeURIComponent(l.split(':')[2]!) : null;
 }
 
 /** A context (playlist/album/artist/station, LIKED), optionally starting at one of its tracks, on the

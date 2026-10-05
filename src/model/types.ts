@@ -6,6 +6,8 @@ export type { TimedLevel } from '../engine/ns';
 
 export type MediaStatus = 'playing' | 'paused' | 'stopped' | 'none';
 export type RepeatMode = 'off' | 'context' | 'track';
+/** Spotify's three-way shuffle button: off, shuffle, Smart Shuffle (shuffle plus recommendations in the queue) */
+export type ShuffleMode = 'off' | 'shuffle' | 'smart';
 /** The task pane's views; Play on Device is the bottom bar's device button, not a view. */
 export type View = 'now' | 'guide' | 'library' | 'search' | 'radio';
 export type VisKind = 'alchemy' | 'bars' | 'battery';
@@ -38,6 +40,8 @@ export interface Track {
   uid?: string;
   /** a podcast episode Spotify says is not started yet (the iPod's blue dot); absent when it does not say */
   unplayed?: boolean;
+  /** an Up Next row the user queued (Spotify's "Next in queue"; Clear queue removes these), not the context's own */
+  queued?: boolean;
 }
 
 /** A playlist or album row (libraryV3, search, artist albums). */

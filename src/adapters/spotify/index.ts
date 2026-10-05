@@ -12,8 +12,8 @@ import { openLink, parseLink } from './links';
 import { observe } from './observers';
 import { openArtist } from './artist';
 import { bindQueries } from './queries';
-import { reorderQueue } from './queue';
-import { addTo, setLiked } from './saved';
+import { clearQueue, reorderQueue } from './queue';
+import { addTo, createPlaylist, deletePlaylist, markPlayed, setLiked } from './saved';
 import { newCache, type Sp } from './sp';
 import { transport } from './transport';
 
@@ -71,6 +71,11 @@ export function spotifyCommands(sp: Sp, host: HostLink | null) {
     },
     addToQueue: (uri: string) => void C.addToQueue(sp, uri),
     reorderQueue: (order: readonly number[]) => void reorderQueue(sp, order),
+    clearQueue: () => clearQueue(sp),
+    setShuffleMode: (mode) => C.setShuffleMode(sp, mode),
+    createPlaylist: (name: string) => createPlaylist(sp, name),
+    deletePlaylist: (uri: string) => deletePlaylist(sp, uri),
+    markPlayed: (uri: string, played: boolean) => markPlayed(sp, uri, played),
     search: (q) => store.getState().actions.setUi({ searchQ: String(q ?? ''), searchOnly: null }),
     openInLibrary,
     openAlbum,

@@ -24,7 +24,7 @@ export function usePlayback() {
   return useApp((s) => ({
     media: hasMedia(s), playing: isPlaying(s), capture: !!s.playback.capture, spotify: isSpotify(s),
     track: s.playback.track, from: s.playback.from, canSeek: s.playback.canSeek, canPrev: s.playback.canPrev, canNext: s.playback.canNext,
-    shuffle: s.playback.shuffle,
+    shuffle: s.playback.shuffle, shuffleMode: s.playback.shuffleMode, canSmartShuffle: s.playback.canSmartShuffle,
     repeat: s.playback.repeat, muted: s.settings.muted, volume: s.settings.volume, lyrics: s.settings.lyrics,
     status: s.ui.status,
   }));

@@ -3,7 +3,7 @@
 // (connect-state). Picked per call; connect.ts's commands keep their optimistic patches above either.
 import type { HostPlayer } from '../../host/globals';
 import * as hostPlayer from '../../host/player';
-import type { RepeatMode } from '../../../model';
+import type { RepeatMode, ShuffleMode } from '../../../model';
 import { target } from '../connect';
 import { W, type Sp } from '../sp';
 import { cloud } from './cloud';
@@ -18,6 +18,8 @@ export interface Player {
   /** a context, from one of its tracks or its start; shuffle: turned on with it (false: left as it is) */
   playContext(ctx: string, track: string | null, shuffle: boolean): Promise<boolean>;
   setShuffle(on: boolean): Promise<boolean>;
+  /** Spotify's three-way shuffle; false for 'smart' on a player without it */
+  setShuffleMode(mode: ShuffleMode): Promise<boolean>;
   setRepeat(m: RepeatMode): Promise<boolean>;
 }
 
