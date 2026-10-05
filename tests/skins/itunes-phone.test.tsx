@@ -41,6 +41,9 @@ async function phone() {
 it('opens on the selected source; ‹ shows the source list, a tap opens a playlist (its status line its last row) and a tap on a song plays it there', async () => {
   const m = await phone();
   expect(m.title()).toBe('Music');
+  // the LCD and the transport at the foot, over the bottom bar (by attribute: the WMP 9 skin the harness mounts shares ids)
+  const order = [...m.getByTestId('phone').querySelectorAll('[id="top"], [id="page"], [id="toolbar"], [id="bottombar"]')].map((e) => e.id);
+  expect(order).toEqual(['page', 'top', 'toolbar', 'bottombar']);
   act(() => { fireEvent.click(m.$('#bback')); });
   expect(m.ui.getByRole('tree', { name: 'Sources' })).toBeTruthy();
   act(() => { fireEvent.mouseDown(m.$('[data-source="' + PL + '"]')); });
@@ -170,6 +173,8 @@ it('Now Playing: the play order in Cover Flow (played, playing, Up Next); a side
   } finally { vi.useRealTimers(); }
   act(() => { fireEvent.click(m.$('#npplay')); });
   expect(m.cmd.playPause).toHaveBeenCalledOnce();
+  // Now Playing's own controls take over from the mini player
+  expect(m.getByTestId('phone').querySelector('[id="toolbar"]')).toBeNull();
 });
 
 it('Play On (the AirPlay button) carries the volume of what plays: a Connect speaker’s has no other place', async () => {

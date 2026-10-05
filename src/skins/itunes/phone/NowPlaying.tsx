@@ -126,10 +126,10 @@ export function NowPlayingPage({ back, backLabel }: { back: () => void; backLabe
   const t = useApp((s) => (s.playback.status !== 'none' ? s.playback.track : null));
   return (
     <>
-      <Strip dark title="Now Playing" back={back} backLabel={backLabel}
+      <Strip title="Now Playing" back={back} backLabel={backLabel}
              right={t && (
                <button type="button" aria-label="Song options" id="npmore" onClick={() => openSheet(<TrackSheet t={t} from="now" />)}
-                       className="relative grid place-items-center w-36 h-26 p-0 rounded-sm border border-[#111] bg-[linear-gradient(180deg,#5A5A5A,#333)] text-white text-14 leading-none tracking-[1px] active:bg-[linear-gradient(180deg,#333,#555)] after:absolute after:-inset-5 after:content-['']">•••</button>
+                       className="relative grid place-items-center w-36 h-26 p-0 rounded-sm border border-itunes-rim bg-itunes-seg text-[#333] text-14 leading-none tracking-[1px] shadow-[0_1px_0_rgba(255,255,255,.55)] active:bg-itunes-btn-down after:absolute after:-inset-5 after:content-['']">•••</button>
              )} />
       <Stage />
       <Controls />

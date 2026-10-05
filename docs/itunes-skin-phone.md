@@ -21,6 +21,9 @@ build's (REFERENCE.md, the desktop agent's scratch notes from the 2010 captures)
   under the thumb, and its stage is Cover Flow of the play order (§4).
 - 2026-10-04, standing: "these are inspired themes not 1-1 always and we want to fit all spotify
   features". Where iTunes had no place for a Spotify feature, it gets one in iTunes' visual language (§8).
+- 2026-10-05: the LCD and the transport go to the foot, under the thumb, as a mini player over the bottom
+  bar (Spotify's sits over its tab bar; the Music app kept its controls low); the top is one block of grey
+  chrome, the time and battery over the page's strip; Now Playing hides the mini player (§2).
 
 ---
 
@@ -28,10 +31,10 @@ build's (REFERENCE.md, the desktop agent's scratch notes from the 2010 captures)
 
 | | |
 |---|---|
-| Files | `phone/Root.tsx` (the frame, the toolbar, the bottom bar, the phone on its side, the page guard), `phone/Pages.tsx` (the source list, a source's page, the search bar), `phone/NowPlaying.tsx` (the play order, the controls, the visualizer), `phone/Prefs.tsx`, `phone/Sheet.tsx` (action sheets, the long press, Play On's volume), `phone/nav.ts` (the page stack, Now Playing's two switches), `phone/host.ts` (the iOS app's bindings, the scale) |
+| Files | `phone/Root.tsx` (the frame, the mini player, the bottom bar, the phone on its side, the page guard), `phone/Pages.tsx` (the top with its notch band, the source list, a source's page, the search bar), `phone/NowPlaying.tsx` (the play order, the controls, the visualizer), `phone/Prefs.tsx`, `phone/Sheet.tsx` (action sheets, the long press, Play On's volume), `phone/nav.ts` (the page stack, Now Playing's two switches), `phone/host.ts` (the iOS app's bindings, the scale) |
 | Drawn at | the iPhone 4's 320 points across the narrow side, scaled to the phone (§1) |
 | Pages | the source list (with search), a source (what it shows), Now Playing, Preferences; on its side Cover Flow alone |
-| Always on screen (portrait) | the toolbar (time and battery, the transport, the LCD) and the bottom bar (Preferences, shuffle, repeat, AirPlay) |
+| Always on screen (portrait) | the top (time and battery over the page's strip) and, at the foot, the mini player (the transport, the LCD; not on Now Playing) over the bottom bar (Preferences, shuffle, repeat, AirPlay) |
 | Taps | a tap plays a song or opens a cover (iTunes: a double-click); a long press (500 ms) opens a song's or a cover's sheet; every tap is felt (`alchemyHaptic('light')`; the long press `'medium'`) |
 | Tests | `tests/skins/itunes-phone.test.tsx` |
 
@@ -49,11 +52,11 @@ build's (REFERENCE.md, the desktop agent's scratch notes from the 2010 captures)
 - **Host chrome** (`host.ts useHostChrome`, a copy of the iPod's: a skin imports no skin): the edge layout,
   the status bar hidden, the home indicator shown, the log band hidden, orientation **any** (Cover Flow on
   its side), a black background, the screen let sleep (`alchemyAwake(false)`: the Music app let it).
-- **The time and battery** in the toolbar's top, over the notch, where the Windows build had its menu row:
+- **The time and battery** at the top of every page, over the notch, where the Windows build had its menu row:
   the time (the phone's 12 / 24 hours, re-read on the minute), the battery (`__wmpBattery`, a bolt while
   charging). Only in the iOS app (`window.alchemyLayout`).
-- **The keyboard.** While one of the layout's own search fields has the focus, the bottom bar gives way to
-  a spacer of the keyboard's height (`__wmpKeyboard`), never more than 60 % of the screen. Only then: the
+- **The keyboard.** While one of the layout's own search fields has the focus, the bottom stack (the mini
+  player and the bottom bar) gives way to a spacer of the keyboard's height, sitting under the keyboard (`__wmpKeyboard`), never more than 60 % of the screen. Only then: the
   host computes the height as the screen's bottom less the keyboard's end frame, and iOS hands a zero end
   frame in some transitions (the app going to the background with the keyboard up, a relaunch), a whole
   screen of keyboard. **That was the owner's blank page (2026-10-05)**: the spacer took every point under
@@ -70,22 +73,27 @@ build's (REFERENCE.md, the desktop agent's scratch notes from the 2010 captures)
 
 ```
 ┌──────────────────────────────────────┐
-│ 9:41                            ▭▮   │  the notch band (safe-area top)
-│ (◀◀)(▶)(▶▶) ┌──── LCD ─────────────┐ │  toolbar, 54 px: transport + compact LCD
-│             │ title / artist·album │ │  (a tap on the LCD: Now Playing)
-│             │ 1:01 ━━◆━━━━ -2:53   │ │
+│ 9:41                            ▭▮   │  the top: one block of grey chrome,
+│ [‹ iTunes]     Road Trip     [≡][☷][▦]│  the notch band over the page's strip
 ├──────────────────────────────────────┤
-│ [‹ iTunes]     Road Trip     [≡][☷][▦]│  the page's strip, 36 px
 │ (▶ Play)(⤨ Shuffle)(♥ Save)(⚛ Genius) │  a list's head
 │  page                                │
+├──────────────────────────────────────┤
+│ (◀◀)(▶)(▶▶) ┌──── LCD ─────────────┐ │  the mini player, 56 px: transport + compact LCD
+│             │ 1:01 ━━◆━━━━ -2:53   │ │  (a tap on the LCD: Now Playing)
 ├──────────────────────────────────────┤
 │ ⚙   ⤨   ⟳                 ((▲)) Kitchen│  bottom bar, 36 px + safe-area bottom
 └──────────────────────────────────────┘
 ```
 
-- **Toolbar, one row**: the shared `TransportCluster` at its desktop size (38 / 45 points), each button's
-  hit area grown 4 px round; the shared `Lcd compact`, its seek groove taking a finger above and below. A
-  tap anywhere else on the LCD opens Now Playing, or goes back from it **(chosen)**.
+- **The top** (Pages.tsx `Strip`, on every page, the source list's titled "iTunes"): the toolbar's grey
+  chrome from the screen's edge, the time and battery over the notch, then ‹ with where it goes back to,
+  the page's name, its own control at the right (a song list's view switch, Now Playing's •••).
+- **The mini player** (iTunes' toolbar at the foot, under the thumb): the shared `TransportCluster` at its
+  desktop size (38 / 45 points), each button's hit area grown 4 px round; the shared `Lcd compact`, its
+  seek groove taking a finger above and below. A tap anywhere else on the LCD opens Now Playing
+  **(chosen)**. Hidden on Now Playing, whose scrubber and big transport take over, as Spotify's Now
+  Playing covers its mini player.
 - **Bottom bar**: Preferences (in the place of iTunes' `+`), shuffle, repeat (a small 1 for one song), and
   **AirPlay**: Play On, lit while another device plays, its name after the glyph as iTunes named its
   chosen speaker (iLounge 16b).
@@ -94,18 +102,18 @@ build's (REFERENCE.md, the desktop agent's scratch notes from the 2010 captures)
   what was opened inside a source. "Show the current song" brings the source's page up. Only the top page
   is mounted.
 - **The page guard**: a page that throws shows "This page could not be shown." with the error and **Back
-  to iTunes**, and writes `itunes: <message>` to the host's log (`alchemyLog`); the toolbar and the bottom
-  bar stand. Any move tries the page again. (React unmounts the whole tree under an error no boundary
+  to iTunes**, and writes `itunes: <message>` to the host's log (`alchemyLog`); the mini player and the
+  bottom bar stand. Any move tries the page again. (React unmounts the whole tree under an error no boundary
   catches.)
-- **On its side**: Cover Flow alone on the black, inside the side insets, no toolbar or bottom bar. On Now
+- **On its side**: Cover Flow alone on the black, inside the side insets, no top, mini player or bottom bar. On Now
   Playing it is the play order (§4); anywhere else the selected list's albums (the saved albums for
   anything else), starting at the playing one, a tap on the front cover playing it.
 - **The local engine** (a phone browser on the website): the visualizer fills the page.
 
 ## 3. Pages (`Pages.tsx`)
 
-**The strip** over every page but the source list: ‹ with where it goes back to, the name centred, the
-page's own control at the right. Light over lists; dark over the store, Search Results and Now Playing.
+**The top** over every page (§2), the same grey chrome everywhere (the store's and Now Playing's dark
+strips went with the ruling of 2026-10-05: one top).
 
 **The source list**: the shared `SourceList` (LIBRARY Music / **Albums** / **Artists** / Podcasts / Radio;
 STORE Spotify / Search Results; GENIUS Genius / Genius Mixes; PLAYLISTS iTunes DJ with Up Next's count /
@@ -189,9 +197,9 @@ scrollbar off: §7); each song keeps its key as the order moves past it, so a tr
 
 | Function | Place |
 |---|---|
-| Play / pause, previous, next | the toolbar (always); Now Playing's big row |
-| Seek | the LCD's groove (always); Now Playing's scrubber |
-| Now Playing | a tap on the LCD |
+| Play / pause, previous, next | the mini player at the foot (every page but Now Playing); Now Playing's big row |
+| Seek | the mini player's LCD groove; Now Playing's scrubber |
+| Now Playing | a tap on the mini player's LCD |
 | Shuffle, repeat | the bottom bar; a list's Shuffle plays it shuffled |
 | Play a list or album whole | its head's Play / Shuffle; a cover's long press |
 | View switch | a song list's strip (List / Album List / Grid); Cover Flow is the phone on its side |

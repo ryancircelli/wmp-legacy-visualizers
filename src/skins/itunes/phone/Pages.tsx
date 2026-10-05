@@ -6,7 +6,7 @@
 // the status line ("15 songs, 1.0 hours") a row at the list's end as that Music app counted its lists.
 // A tap plays a song or opens a cover (the phone's way; iTunes' was a double-click); a long press opens
 // the song's sheet.
-import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type MouseEvent, type PointerEvent, type ReactNode } from 'react';
+import { createContext, useContext, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type MouseEvent, type PointerEvent, type ReactNode } from 'react';
 import { create } from 'zustand';
 import { mss, type Track } from '../../../model';
 import {
@@ -18,6 +18,7 @@ import {
   useSourceContent, useSources, VIEW_NAMES, viewActions, type Content, type FlowCover, type IconName, type Source, type TrackColumn,
   type TracksContent, type ViewMode,
 } from '../shared';
+import { useHostGlobal } from './host';
 import { nav } from './nav';
 import { collectionRadio, openSheet, shufflePlay, TileSheet, TrackSheet, useLongPress, type QueueEdit } from './Sheet';
 
@@ -40,24 +41,57 @@ export function useSelection() {
 }
 export type Selection = ReturnType<typeof useSelection>;
 
-/** The strip over a page: ‹ and where it goes back to, the name centred, what the page adds at the
- *  right. Dark over the store, as iTunes' store bar, and over Now Playing's black. */
-export function Strip({ title, back, backLabel, dark, right }: { title: string; back?: () => void; backLabel?: string; dark?: boolean; right?: ReactNode }) {
+/** The notch band's height in layout px (Root: the safe area's top in the iOS app, 0 in a browser). */
+export const BandHeight = createContext(0);
+
+/** The top of every page, one block of iTunes' grey chrome (the toolbar's gradient): the time and the
+ *  battery over the notch (where the Windows build had its menus and caption buttons), then the page's
+ *  strip: ‹ and where it goes back to, the name centred, what the page adds at the right. The LCD and
+ *  the transport are at the foot, over the bottom bar (Root.tsx). */
+export function Strip({ title, back, backLabel, right }: { title: string; back?: () => void; backLabel?: string; right?: ReactNode }) {
+  const band = useContext(BandHeight);
   return (
-    <div id="strip" className={cx('relative flex-none flex items-center h-36 px-6 border-b',
-                                  dark ? 'bg-itunes-store border-black text-white' : 'bg-itunes-head border-itunes-rule text-black')}>
-      {back && (
-        <button type="button" onClick={back} aria-label={'Back to ' + backLabel} id="bback"
-                className={cx('relative z-1 flex items-center gap-3 max-w-[30%] h-26 pl-5 pr-7 rounded-sm border text-11 font-bold after:absolute after:-inset-y-5 after:-inset-x-6 after:content-[""]',
-                              dark ? 'border-[#111] bg-[linear-gradient(180deg,#5A5A5A,#333)] text-white active:bg-[linear-gradient(180deg,#333,#555)]'
-                                   : 'border-itunes-rim bg-itunes-seg text-[#333] active:bg-itunes-btn-down')}>
-          <Icon name="back" size={9} className="flex-none" /><span className="truncate">{backLabel}</span>
-        </button>
-      )}
-      <div className="absolute inset-x-[31%] top-0 h-full flex items-center justify-center pointer-events-none">
-        <span className="truncate text-13 font-bold" id="striptitle">{title}</span>
+    <div id="top" className="flex-none bg-itunes-chrome border-b border-itunes-edge">
+      {band > 0 && <Band h={band} />}
+      <div id="strip" className="relative flex items-center h-38 px-6 pb-1 text-black">
+        {back && (
+          <button type="button" onClick={back} aria-label={'Back to ' + backLabel} id="bback"
+                  className={'relative z-1 flex items-center gap-3 max-w-[30%] h-26 pl-5 pr-7 rounded-sm border border-itunes-rim bg-itunes-seg text-11 font-bold text-[#333] shadow-[0_1px_0_rgba(255,255,255,.55)] active:bg-itunes-btn-down after:absolute after:-inset-y-5 after:-inset-x-6 after:content-[""]'}>
+            <Icon name="back" size={9} className="flex-none" /><span className="truncate">{backLabel}</span>
+          </button>
+        )}
+        <div className="absolute inset-x-[31%] top-0 h-full flex items-center justify-center pointer-events-none">
+          <span className="truncate text-13 font-bold [text-shadow:0_1px_0_rgba(255,255,255,.55)]" id="striptitle">{title}</span>
+        </div>
+        <div className="relative z-1 ml-auto flex items-center gap-4">{right}</div>
       </div>
-      <div className="relative z-1 ml-auto flex items-center gap-4">{right}</div>
+    </div>
+  );
+}
+
+/** the time now, as the phone writes it (its own 12 / 24 hours), re-read on the minute (the iPod's) */
+function useTime(): string {
+  const [now, setNow] = useState(Date.now);
+  useEffect(() => {
+    const t = setTimeout(() => setNow(Date.now()), 60_000 - (now % 60_000));
+    return () => clearTimeout(t);
+  }, [now]);
+  return new Date(now).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+}
+
+/** Over the notch: the time at the left, the battery at the right (the phone's report; full without
+ *  one), in the chrome's dark grey. */
+function Band({ h }: { h: number }) {
+  const time = useTime(), bat = useHostGlobal('__wmpBattery', 'wmp-battery'), level = bat && bat.level >= 0 ? bat.level / 100 : 1;
+  return (
+    <div className="flex items-center justify-between px-22 text-12 font-bold text-[#2E2F31] [text-shadow:0_1px_0_rgba(255,255,255,.6)]" style={{ height: h }} id="band">
+      <span>{time}</span>
+      <svg width="25" height="12" viewBox="0 0 25 12" role="img" aria-label={bat && bat.level >= 0 ? 'Battery ' + bat.level + '%' + (bat.charging ? ', charging' : '') : 'Battery'}>
+        <rect x=".5" y=".5" width="21" height="11" rx="2.5" fill="none" stroke="currentColor" />
+        <rect x="22.4" y="4" width="2" height="4" rx="1" fill="currentColor" />
+        <rect x="2" y="2" width={Math.max(1, 18 * Math.min(1, level))} height="8" rx="1.2" fill="currentColor" />
+        {bat?.charging && <path d="M12.4 1.2 8 6.6h2.8L9.6 10.8 14 5.2h-2.8Z" fill="#FFFFFF" stroke="#2E2F31" strokeWidth=".6" />}
+      </svg>
     </div>
   );
 }
@@ -133,12 +167,15 @@ const pick = (id: string) => {
 export function SourcesPage({ sel }: { sel: Selection }) {
   const sections = sel.src.sections.map((x) => (x.id === 'library' ? { ...x, items: [x.items[0]!, ...SHORTCUTS, ...x.items.slice(1)] } : x));
   return (
+    <>
+    <Strip title="iTunes" />
     <div className="flex-auto min-h-0 overflow-y-auto overscroll-contain bg-itunes-side" id="sidebar">
       <SearchBar go />
       {sections.length
         ? <SourceList sections={sections} selected={sel.source?.id ?? ''} onSelect={pick} className={SIDEBAR} />
         : <div className="pt-60 text-center text-12 text-itunes-dim">{sel.src.loading ? 'Loading…' : ''}</div>}
     </div>
+    </>
   );
 }
 
@@ -147,7 +184,6 @@ export function SourcesPage({ sel }: { sel: Selection }) {
 /** The page of the selected source (or what was opened in it). */
 export function SourcePage({ sel, back, backLabel }: { sel: Selection; back: () => void; backLabel: string }) {
   const { content: c, source, mode } = sel;
-  const store = source?.kind === 'store' || source?.kind === 'search';
   // a show's episodes have no albums to group or cover: List alone
   const songs = c.kind === 'tracks' && !c.queue && !c.ctx?.startsWith('spotify:show:'), tab = useItunesView((s) => s.gridTab), browse = songs && !!c.browse && mode === 'grid';
   const body = c.kind === 'tracks' ? <Tracks c={c} mode={mode} source={source} />
@@ -158,7 +194,7 @@ export function SourcePage({ sel, back, backLabel }: { sel: Selection; back: () 
     : <Note text={c.kind === 'none' ? c.note : ''} />;
   return (
     <>
-      <Strip title={c.title} back={back} backLabel={backLabel} dark={store} right={songs && <ViewSwitch mode={mode} />} />
+      <Strip title={c.title} back={back} backLabel={backLabel} right={songs && <ViewSwitch mode={mode} />} />
       {c.kind === 'search' && <SearchBar />}
       {browse && <GridTabs tab={tab} />}
       {body}

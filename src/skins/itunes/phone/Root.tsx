@@ -1,22 +1,23 @@
 // The iTunes 10 skin on a phone in portrait (docs/itunes-skin-phone.md). There was no iTunes for the
 // iPhone, so this is iTunes' window folded to a phone's width the way the iPhone's own Music app of 2010
-// laid out its pages: the grey toolbar always on top, one row (the transport and the LCD, a tap on which
-// is Now Playing; the time and battery above it where the Windows build had its menus and caption
-// buttons), one page under it at a time (the source list with its search field, a source, Now Playing,
-// Preferences: nav.ts), and the bottom bar always at the foot (Preferences, shuffle, repeat, AirPlay).
-// Little is shown twice on a screen this small: the view switch is a list's own, the status line a
-// list's last row; Now Playing alone repeats the LCD's song and transport, under the thumb (the owner's
-// two rulings, 2026-10-04). Turned on its side, the phone shows Cover Flow alone, as that Music app did:
-// Now Playing's play order, or the selected list's albums. The layout is drawn at the iPhone 4's 320
-// points and scaled to the phone (host.ts fit).
-import { Component, useEffect, useState, type CSSProperties, type MouseEvent, type ReactNode } from 'react';
+// laid out its pages: one page at a time (the source list with its search field, a source, Now Playing,
+// Preferences: nav.ts), its top one block of iTunes' grey chrome (the time and battery over the notch,
+// then the page's strip: Pages.tsx Strip); at the foot, under the thumb, the LCD and the transport as a
+// mini player (Spotify's sits over its tab bar; the Music app kept its controls low; the owner,
+// 2026-10-05), then the bottom bar (Preferences, shuffle, repeat, AirPlay). Now Playing hides the mini
+// player: its own scrubber and big transport take over, as Spotify's Now Playing covers its mini player.
+// Little is shown twice on a screen this small: the view switch is a list's own, the status line a list's
+// last row. Turned on its side, the phone shows Cover Flow alone, as that Music app did: Now Playing's
+// play order, or the selected list's albums. The layout is drawn at the iPhone 4's 320 points and scaled
+// to the phone (host.ts fit).
+import { Component, useEffect, type CSSProperties, type MouseEvent, type ReactNode } from 'react';
 import { Visualizer } from '../../../app/Visualizer';
 import { cx, deviceName, isAlbum, isSpotify, TransportButton, useApp, useDevices, useLibraryList, usePlayback, useShell } from '../../../ui';
 import { albumsOf, Icon, itunesView, Lcd, playRow, playUri, TransportCluster } from '../shared';
 import { haptic, useFit, useHostChrome, useHostGlobal } from './host';
 import { nav, phoneNav, topPage, type Page } from './nav';
 import { NowPlayingPage, NowPlayingSide, useKeepPlayed } from './NowPlaying';
-import { FlowStage, Note, searchFocus, SourcePage, SourcesPage, useSelection, type Selection } from './Pages';
+import { BandHeight, FlowStage, Note, searchFocus, SourcePage, SourcesPage, useSelection, type Selection } from './Pages';
 import { PrefsPage } from './Prefs';
 import { DeviceSheet, openSheet, SheetHost } from './Sheet';
 
@@ -51,12 +52,18 @@ export function PhoneRoot() {
            style={{ width: f.w, height: f.h, transform: f.s === 1 ? undefined : `scale(${f.s})`, '--sb': (kbd ? 0 : ins.bottom) + 'px' } as CSSProperties}>
         {/* on its side: Now Playing's play order, else the selected list's albums */}
         {f.landscape ? (page === 'now' ? <NowPlayingSide left={ins.left} right={ins.right} /> : <Landscape sel={sel} left={ins.left} right={ins.right} />) : <>
-          {/* the time and battery where the hidden status bar was: the iOS app only (a browser keeps its own) */}
-          <Toolbar band={host ? Math.max(ins.top, 20 * f.pt) : 0} />
-          <main className="relative flex-auto min-h-0 flex flex-col bg-white" id="page">
-            {spotify ? <PageGuard reset={pageKey}><Pages sel={sel} /></PageGuard> : <Visualizer className="block w-full h-full bg-black" id="view" />}
-          </main>
-          {kbd ? <div className="flex-none" style={{ height: kbd }} /> : <BottomBar pad={ins.bottom} />}
+          {/* the time and battery where the hidden status bar was, in each page's top: the iOS app only
+              (a browser keeps its own) */}
+          <BandHeight.Provider value={host ? Math.max(ins.top, 20 * f.pt) : 0}>
+            <main className="relative flex-auto min-h-0 flex flex-col bg-white" id="page">
+              {spotify ? <PageGuard reset={pageKey}><Pages sel={sel} /></PageGuard> : <Visualizer className="block w-full h-full bg-black" id="view" />}
+            </main>
+          </BandHeight.Provider>
+          {/* the bottom stack sits under the keyboard while a search field has it */}
+          {kbd ? <div className="flex-none" style={{ height: kbd }} /> : <>
+            {page !== 'now' && <MiniPlayer />}
+            <BottomBar pad={ins.bottom} />
+          </>}
         </>}
         <SheetHost />
       </div>
@@ -94,52 +101,23 @@ function Pages({ sel }: { sel: Selection }) {
   return <SourcesPage sel={sel} />;
 }
 
-// ---- the toolbar ------------------------------------------------------------------------------------
+// ---- the mini player ---------------------------------------------------------------------------------
 
 /** the transport's buttons at their desktop size (31 / 37 px: 38 / 45 points here), each a fingertip */
 const HIT = '[&>button]:relative [&>button]:after:absolute [&>button]:after:-inset-4 [&>button]:after:content-[""]';
 /** the LCD's seek groove taken by a finger above and below it too */
 const LCD = 'h-48 [&_#seektrack]:h-28! [&_#seektrack]:-my-[8.5px]';
 
-function Toolbar({ band }: { band: number }) {
+/** iTunes' toolbar at the foot: the round transport and the LCD on the grey chrome, over the bottom bar. */
+function MiniPlayer() {
   return (
-    <div id="toolbar" className="flex-none bg-itunes-chrome border-b border-itunes-edge">
-      {band > 0 && <Band h={band} />}
-      <div className="flex items-center gap-8 h-54 px-8 pb-2" id="titlebar">
-        <TransportCluster className={HIT} />
-        {/* a tap anywhere on the LCD but its seek groove shows Now Playing (a fingertip covers its lines,
-            so the artist line's turn and the time's flip, a click's on a desktop, are not taken here) */}
-        <div className="flex-auto min-w-0" onClickCapture={(e) => { if (!(e.target as Element).closest('#seektrack')) { e.stopPropagation(); nav.toggleNow(); } }}>
-          <Lcd compact className={LCD} />
-        </div>
+    <div id="toolbar" className="flex-none flex items-center gap-8 h-56 px-8 bg-itunes-chrome border-t border-itunes-edge">
+      <TransportCluster className={HIT} />
+      {/* a tap anywhere on the LCD but its seek groove shows Now Playing (a fingertip covers its lines,
+          so the artist line's turn and the time's flip, a click's on a desktop, are not taken here) */}
+      <div className="flex-auto min-w-0" id="titlebar" onClickCapture={(e) => { if (!(e.target as Element).closest('#seektrack')) { e.stopPropagation(); nav.push('now'); } }}>
+        <Lcd compact className={LCD} />
       </div>
-    </div>
-  );
-}
-
-/** the time now, as the phone writes it (its own 12 / 24 hours), re-read on the minute (the iPod's) */
-function useTime(): string {
-  const [now, setNow] = useState(Date.now);
-  useEffect(() => {
-    const t = setTimeout(() => setNow(Date.now()), 60_000 - (now % 60_000));
-    return () => clearTimeout(t);
-  }, [now]);
-  return new Date(now).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
-}
-
-/** The toolbar's top, over the notch: the time at the left, the battery at the right (the phone's
- *  report; full without one), in the chrome's dark grey. */
-function Band({ h }: { h: number }) {
-  const time = useTime(), bat = useHostGlobal('__wmpBattery', 'wmp-battery'), level = bat && bat.level >= 0 ? bat.level / 100 : 1;
-  return (
-    <div className="flex items-center justify-between px-22 text-12 font-bold text-[#2E2F31] [text-shadow:0_1px_0_rgba(255,255,255,.6)]" style={{ height: h }}>
-      <span>{time}</span>
-      <svg width="25" height="12" viewBox="0 0 25 12" role="img" aria-label={bat && bat.level >= 0 ? 'Battery ' + bat.level + '%' + (bat.charging ? ', charging' : '') : 'Battery'}>
-        <rect x=".5" y=".5" width="21" height="11" rx="2.5" fill="none" stroke="currentColor" />
-        <rect x="22.4" y="4" width="2" height="4" rx="1" fill="currentColor" />
-        <rect x="2" y="2" width={Math.max(1, 18 * Math.min(1, level))} height="8" rx="1.2" fill="currentColor" />
-        {bat?.charging && <path d="M12.4 1.2 8 6.6h2.8L9.6 10.8 14 5.2h-2.8Z" fill="#FFFFFF" stroke="#2E2F31" strokeWidth=".6" />}
-      </svg>
     </div>
   );
 }

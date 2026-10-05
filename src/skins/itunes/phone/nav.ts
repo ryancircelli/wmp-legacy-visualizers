@@ -26,8 +26,6 @@ export const nav = {
     const s = pages();
     if (topPage(s) !== p) phoneNav.setState({ pages: [...s.filter((x) => x !== p), p] });
   },
-  /** Now Playing's toggle (a tap on the LCD): on, or back from it */
-  toggleNow: () => (topPage(pages()) === 'now' ? nav.back() : nav.push('now')),
   back: () => {
     const s = pages();
     if (topPage(s) === 'source' && itunesView.getState().stack.length) viewActions.back();
