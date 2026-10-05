@@ -21,7 +21,7 @@ struct WmpSpotifyApp: App {
         // (UIBackgroundModes audio) and with the mute switch on. Not active yet: the speaker takes the
         // session when it has samples and gives it up when idle (Librespot.output / idle).
         try? AVAudioSession.sharedInstance().setCategory(.playback)
-        HostLog.shared.log("host: build \(appBuild)")
+        HostLog.shared.log("host: build \(appBuild), iOS \(UIDevice.current.systemVersion)")
         Librespot.shared.start()
         DeviceState.shared.start()
     }
