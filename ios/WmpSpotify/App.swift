@@ -1028,15 +1028,18 @@ func notify(_ body: String) {
 /// clears it. The colour is kept by the page; the icon follows it at the next change after the restart.
 enum IconStuck {
     private static var told = false
-    @MainActor static func tell() {
-        guard !told, var top = windowScene()?.keyWindow?.rootViewController else { return }
-        told = true
-        while let p = top.presentedViewController { top = p }
-        let a = UIAlertController(title: "Restart your iPhone to change the icon",
-                                  message: "iOS's icon service is stuck and is refusing icon changes until the phone restarts. Your colour is saved; the icon will follow it after a restart.",
-                                  preferredStyle: .alert)
-        a.addAction(UIAlertAction(title: "OK", style: .default))
-        top.present(a, animated: true)
+    /// On the main queue (as the icon handler calls it): isolated as the rest of the app's UI calls are.
+    static func tell() {
+        MainActor.assumeIsolated {
+            guard !told, var top = windowScene()?.keyWindow?.rootViewController else { return }
+            told = true
+            while let p = top.presentedViewController { top = p }
+            let a = UIAlertController(title: "Restart your iPhone to change the icon",
+                                      message: "iOS's icon service is stuck and is refusing icon changes until the phone restarts. Your colour is saved; the icon will follow it after a restart.",
+                                      preferredStyle: .alert)
+            a.addAction(UIAlertAction(title: "OK", style: .default))
+            top.present(a, animated: true)
+        }
     }
 }
 
