@@ -26,7 +26,7 @@
      moves. Both lightly (the owner, 2026-10-03); 1 and 0 where the host reports neither */
   --lux: 1;
   --tilt: 0;
-  transition: --tilt .25s linear, --lux 1.5s ease;   /* registered as numbers (Root.tsx useSheen): they ease */
+  transition: --tilt .25s linear, --pitch .3s linear, --lux 1.5s ease;   /* registered as numbers (Root.tsx useSheen): they ease */
   --t: calc(var(--tilt) * 5%);
   --L: calc(var(--l) * var(--lux));
   --base: hsl(var(--h) var(--s) var(--L));
@@ -98,6 +98,28 @@
   pointer-events: none;
 }
 .body:has(> .metal) { background: none; }
+/* and the click wheel's ring and centre button with it (gl.ts): their backgrounds go, the seams stay
+   (the ring's edge against the body, the centre button's seat), crisp over the canvas's point grid */
+.body:has(> .metal) .wheel { background: none; box-shadow: 0 0 0 1px rgb(0 0 0 / .08); }
+.body:has(> .metal)[data-wheel="black"] .wheel { box-shadow: 0 0 0 1px rgb(0 0 0 / .3); }
+.body:has(> .metal) .hub { background: none; }
+/* the grain stays off the wheel, as it is under Classic's opaque ring (metal/index.ts sets where it is) */
+.body:has(> .metal)::before {
+  mask-image: radial-gradient(circle var(--wheel-r, 0px) at var(--wheel-at, 50% 50%), transparent var(--wheel-r, 0px), #000 calc(var(--wheel-r, 0px) + 1px));
+}
+/* and the glass's reflection (gl.ts) for its static glare while it is drawn: over the screen, light
+   added, the lip and seams kept */
+.bezel:has(> .glass) { background: #050505; }
+.bezel:has(> .glass)::after { content: none; }
+.glass {
+  position: absolute;
+  inset: 0;
+  z-index: 3;                        /* over the screen's own layers (its sleep is 2) */
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  pointer-events: none;
+}
 /* a text field types and selects its own text, whatever the body says */
 .body input { user-select: text; -webkit-user-select: text; }
 @media (min-aspect-ratio: 3/4) {
@@ -702,6 +724,6 @@
   position: absolute;
   inset: 25.5%;
   border-radius: 50%;
-  background: radial-gradient(120% 95% at 32% 22%, var(--hi), var(--base) 45%, var(--mid) 70%, var(--shade) 100%);
+  background: radial-gradient(120% 95% at calc(32% - var(--tilt, 0) * 14%) calc(22% + var(--pitch, 0) * 14%), var(--hi), var(--base) 45%, var(--mid) 70%, var(--shade) 100%);
   box-shadow: inset 0 1px 2px rgb(0 0 0 / .35), 0 1px 0 rgb(255 255 255 / .5);
 }

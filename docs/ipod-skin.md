@@ -201,70 +201,129 @@ The owner, 2026-10-06: "how computationally expensive would it be to use a pbr f
 and base it on the light sensor to not be dynamic. obviously this is an anodized aluminum so I might
 need a different pbr", "we would also need it to account for gyro movement like it does now", "could
 we do it under a flag", and, on Low Power Mode, "keep pbr in low power but disable motion and light
-responses". **Settings > Metal** (under Appearance) toggles **Classic** (the CSS cylinder, §1.3, the
-default) and **Rendered**, kept in `ipod.settings` (`metal`). Reset Settings puts back Classic.
+responses". Then, the same day: "why isnt the wheel or wheel highlight mark moving" ("i am taking
+about the wheel dot, not the wheel rim"; "u can add wheel ring effects idc prob would help"), "why
+cheap trick, can we not do the same specular pbr we do for the regular skin there" (of a CSS shift of
+the centre's highlight), and "should we also do something to the screen instead of its static glare?".
+**Settings > Metal** (under Appearance) toggles **Classic** (the CSS cylinder, §1.3, the default) and
+**Rendered**, kept in `ipod.settings` (`metal`). Reset Settings puts back Classic.
 
-**What draws** (`src/skins/ipod/metal/`): a WebGL 1 canvas under the device (`.metal`, z-index -1 in
-the body's isolated stacking context), the cylinder's place; the grain (`.body::before`) stays a
-full-resolution CSS layer over it, and the centre button stays CSS (§1.5). While the canvas is there
-the cylinder is not painted (`.body:has(> .metal)`).
+**What draws** (`src/skins/ipod/metal/`, one shader, `gl.ts`):
 
-- **Shape.** The face is an arc across the width, 18° each side, whose outer 8 % of each half rounds
-  off 60° more (the long edges). The eye is 3.5 body heights in front and 0.3 of a height above the
-  middle, so the foot reflects the room's floor and darkens as Classic's does.
-- **Material.** A metal whose reflection is the dye's: F0 is the body colour as it reads (`settings.ts
-  bodyLook`: the base lifted by LOOK, so Custom's is the colour picked), in linear light. Anisotropic
-  GGX, roughness 0.25, anisotropy 0.6, brushed along the length: the lobe along the brushing is baked
-  into the room's blur (3°), the lobe across it is 16 reflections across the brushing in the shader,
-  weighted by GGX's slope distribution (a reflection into the metal is shadowed). The split sum's
-  scale and bias come from Karis's mobile fit, and the bias is taken back out of the dye, so a face seen
-  square-on in a light of 1 shows the colour. The light at the middle brightness is set so the body
-  below the wheel reads as Classic's (Silver's centre within a few levels, Gold's bands the owner's lit
-  sample, 41° 69% 46%). **The anodizing:** the clear oxide over the
-  dyed metal would add a dielectric's 4 % of white; that washes a dark dye grey (Navy's red is 2.6 % in
-  linear light), so it is left out. Tone: linear to 0.6, a soft shoulder above, then sRGB's own curve.
-- **The room** (`env.ts`, baked by `bake-env.mjs` from `ios/icon-studio.hdr`, Poly Haven, CC0): 64 × 32
-  texels of log luminance, 8 bits, azimuth all round and elevation ±45° (all a face that curves
-  across can reflect), 2.7 KB as base64 in the bundle, no fetch. The room's three windows sit on the
-  horizon; it is turned so two of them flank the viewer, mirrored and averaged about that axis (the
-  right one is twice the middle one), and darkened past 50° either side (a product shot's black
-  flags), so the bands fall where Classic's do and the rounded edges go dark rather than catching the
-  far windows. Luminance only: the dye is the only colour.
-- **Inputs.** `__wmpBrightness` (`wmp-brightness`) scales the room's light 0.86 to 1.14 (Classic's
-  `--lux` range, in linear light), once it has stood 0.5 s; 1 where the host reports none.
-  `__wmpTilt` (`wmp-tilt`) turns the room about the body's long axis by 40% of the phone's roll (4° at
-  a full roll could not be seen, "i also don't see tilt applying"; the whole roll was "too aggressive"),
-  and `__wmpPitch` (`wmp-pitch`, degrees from upright, from the iOS app since build 88) about its cross
-  axis by 40% of how far the phone is tipped from the way it is held: that reference follows the pitch
-  over 4 s, so a tip moves the light, which settles as the new angle becomes the way it is held ("y
-  movement doesn't do anything"). Each draw glides 45% of the way to the newest reading, so the host's
-  ten a second arrive smoothly. The colour sets F0.
-- **Shape.** A shallow arc across the face (18° at the sides) whose outer 22% each side rounds off by 55°
-  more, easing in (t²); the screen shows 93% of that width, so the rounding's darkest part falls past its
-  sides (the owner's crop of a screenshot, the darkest outer strip cut away): a quarter circle's profile over 8% piled the reflections into a hard line down
-  each side ("too harsh on that edge it's basically a line").
-- **Cost.** Drawn on change only, never on a loop: the colour, the size, the brightness (settled), a
-  roll more than 0.3° from the one drawn (about a pixel and a half; the host's ~1° steps already leave
-  tremor out), the glide toward it, at most 30 draws a second while it keeps turning, none once still. At the phone's point grid (CSS pixels in a browser; the phone's desktop
-  viewport has 2.5 to a point, `host.ts pointPx`), scaled up by the browser. Nothing draws while the
-  page is hidden (what changed draws when it shows); turning it off, or leaving the skin, frees the
-  context. Measured in headless Chromium on SwiftShader (software GL, so far slower than a phone's
-  GPU): one draw of 390 × 844 in 57 ms; idle a minute, 0 draws; a ±0.3° tremor at 60 Hz, 0 draws; a 40°
-  turn in 2.3 s, 62 draws, then none.
-- **Low Power Mode** (`__wmpLowPower`, `wmp-lowpower`): Rendered stays, on the same context, but holds
-  still: one frame upright at the middle brightness (exposure 1), then drawn again only for the colour
-  or the size; tilt and brightness are not followed. Leaving it follows them again at once.
-- **Fallbacks.** No WebGL (or a shader that does not link) and a lost context both remove the canvas,
+- a WebGL 1 canvas under the device (`.metal`, z-index -1 in the body's isolated stacking context): the
+  body, the click wheel's ring and its centre button. Their CSS backgrounds go while it is there
+  (`.body:has(> .metal)`); the wheel's MENU, glyphs and touches stay the page's, as do the seams (the
+  ring's 1 px edge, the centre button's seat). Where the wheel is comes from the page's layout (its
+  centre and radius and the button's, in the canvas's pixels), measured again on a resize.
+- a second, small context on a canvas over the screen (`.glass`, in `.bezel`, z-index 3, no pointer
+  events): the glass's reflection, in place of the bezel's static glare (hidden while that canvas is
+  there, `.bezel:has(> .glass)`). Its own context rather than a copy from the first: `drawImage` from a
+  WebGL canvas waits on its GPU every draw. Without a second context the glare stays.
+- the grain (`.body::before`) stays a full-resolution CSS layer over the body, masked off the wheel
+  (`--wheel-at`, `--wheel-r`, set with the layout), as it is under Classic's opaque ring.
+
+**Surfaces**, all under one room (below) turned by the hand:
+
+- **The body.** A shallow arc across the face (18° at the sides) whose outer 22% each side rounds off by
+  55° more, easing in (t²); the screen shows 93% of that width, so the rounding's darkest part falls past
+  its sides (the owner's crop of a screenshot, the darkest outer strip cut away): a quarter circle's
+  profile over 8% piled the reflections into a hard line down each side ("too harsh on that edge it's
+  basically a line"). The eye is 3.5 body heights in front and 0.3 of a height above the middle, so
+  the foot reflects lower and darkens as Classic's does. A metal whose reflection is the dye's: F0 is the
+  body colour as it reads (`settings.ts bodyLook`: the base lifted by LOOK, so Custom's is the colour
+  picked), in linear light. Anisotropic GGX, roughness 0.25, anisotropy 0.6, brushed along the length:
+  the lobe along the brushing is baked into the room's blur (3°), the lobe across it is 16 reflections
+  across the brushing in the shader, weighted by GGX's slope distribution (a reflection into the metal is
+  shadowed). The split sum's scale and bias come from Karis's mobile fit, and the bias is taken back out
+  of the dye, so a face seen square-on in a light of 1 shows the colour. The light at the middle
+  brightness is set so the body below the wheel reads as Classic's (Silver's centre within a few levels,
+  Gold's bands the owner's lit sample, 41° 69% 46%). **The anodizing:** the clear oxide over the dyed
+  metal would add a dielectric's 4 % of white; that washes a dark dye grey (Navy's red is 2.6 % in
+  linear light), so it is left out.
+- **The centre button** (the "wheel dot"): the same anodized metal in the body colour on its own disc,
+  nearly flat (domed 8° at the rim), its rim rounding off 15° more over its outer 8%, unbrushed: one
+  reflection halfway between the sharp map and the rough. Rolled 35° its rim mirrored the room's dark
+  ceiling and floor as a chrome bezel's black ring; on the sharp map alone it read as a chrome ball, on
+  the rough alone its light hardly moved with the hand. Its light moves across it with the roll and up
+  and down with the pitch.
+- **The ring:** satin plastic, white or black by Settings > Click Wheel: a dielectric (F0 4 %, roughness
+  0.5, the rough map) over a matte colour (white .86, black .013 linear; the irradiance), softly domed
+  across its width (10° at its edges) and rounded at both edges. Calibrated to Classic's ring, as the
+  body's exposure is: the matte light at 1.3 (the white ring reads 235 against Classic's 246) and the gloss
+  at 0.35 of a smooth dielectric's (at all of it the black ring read mid-grey, 60-70 against Classic's 30;
+  now 42-50 with a sheen that moves).
+- **The glass:** the same room in the glass over the screen, on the face's arc (it follows the body's
+  curve, not its rounded edges): a dielectric, F0 4 % with Fresnel's rise toward its curved sides,
+  polished (the sharp map), drawn as white over alpha, which adds light (black shows it, white stays
+  white). The room in it at 0.35 of the body's light (at the full 4 % its dim walls laid a grey veil over
+  the whole screen; this way only the windows show, as two soft vertical streaks that slide with the
+  hand) and capped softly at 0.015 linear: black text under a streak goes no lighter than about #1F,
+  white on Now Playing's black (lifted to 12 between the streaks, 28 under them) keeps above 15:1.
+- Tone: linear to 0.6, a soft shoulder above, then sRGB's own curve.
+
+**The room** (`env.ts`, baked by `bake-env.mjs` from `ios/icon-studio.hdr`, Poly Haven, CC0): its
+luminance only (the dye is the only colour), turned so two of its three windows flank the viewer,
+mirrored and averaged about that axis (the right one is twice the middle one), darkened past 50°
+either side (a product shot's black flags) so the body's rounded edges go dark rather than catching the
+far windows, and given a floor: below -10° each direction keeps at least its light there, easing to
+60% of it by -30° (a studio's sweep). The room's own floor fell to a tenth by -20°, so a few degrees of
+tip took the body's lower half off the windows ("gets way too dark and moves too much regardless").
+Baked as 64 × 32 texels over azimuth all round and elevation ±45°, two bytes each (log luminance, 8
+bits over ±6 stops): the **sharp** map (blurred 3° along the brushing, 8° across), and the **rough**
+(15°, the ring's satin lobe); and the **irradiance** as nine spherical harmonics (the ring's matte
+light). 5.5 KB of base64 in the bundle, no fetch. Measured with the room turned to its reach (6° of turn
+and of pitch together), the body below the screen loses 10 levels of 174 on Silver and 4 of 60 on Navy
+(before the floor: 111 and 35); the centre button and the ring stay within a few levels of upright.
+
+**Inputs.**
+
+- `__wmpBrightness` (`wmp-brightness`) scales the room's light 0.86 to 1.14 (Classic's `--lux` range,
+  in linear light), once it has stood 0.5 s; 1 where the host reports none.
+- `__wmpTilt` (`wmp-tilt`) turns the room about the body's long axis by 15% of the phone's roll, and
+  `__wmpPitch` (`wmp-pitch`, degrees from upright, from the iOS app since build 88) about its cross
+  axis by 12% of how far the phone is tipped from the way it is held, each never past 6° (4° at a full
+  roll could not be seen, "i also don't see tilt applying"; the whole roll was "too aggressive"; "gets
+  way too dark and moves too much regardless"). The way it is held is a reference that follows the
+  pitch over 4 s, so a tip moves the light, which settles back as the new angle becomes the way it is
+  held ("y movement doesn't do anything"); it follows in time whether drawn or not, so a tip after a
+  still spell shows in full.
+- A reading 2° or more from the one aimed at is followed; less is not. The host's roll comes in steps
+  of about a degree, ten a second, and a hand held on a step's edge flickers between two; with the room
+  at 15% of the roll a degree moves the reflections under a pixel, so 2° is about a pixel and a half.
+  Each draw glides 45% of the way to the new reading; a tip settling back is drawn again only once the
+  room's pitch has moved 0.1° (about half a pixel), and goes home under that.
+- Classic answers the hand too: its sheen (§1.3) with `--tilt`, and the centre button's highlight with
+  `--tilt` and `--pitch` (`Root.tsx useSheen`); its ring stays as it was.
+
+**Cost.** Drawn on change only, never on a loop: the colours, the size and the wheel's and the glass's
+place, the brightness (settled), the hand past 2°, the glide toward it (at most 30 draws a second), the
+settle in steps; none once still. Each draw is one pass on each context. At the phone's point grid
+(CSS pixels in a browser; the phone's desktop viewport has 2.5 to a point, `host.ts pointPx`), scaled up
+by the browser. Nothing draws while the page is hidden (what changed draws when it shows); turning it
+off, or leaving the skin, frees both contexts. Measured in headless Chromium on SwiftShader (software
+GL, far slower than a phone's GPU): one draw of the 390 × 844 body and wheel in 59 ms (the body alone
+68: the wheel's pixels skip the brushing's 16 reflections), the glass's 367 × 564 pass 13 ms more;
+idle a minute, 0 draws; a ±0.3° tremor at 60 Hz, 0; a roll flickering between two 1° steps ten a second,
+0 after the glide to it; a 40° turn in 2.2 s, 57 draws (26 a second), then none; a 25° tip held still,
+38 draws in all (before: about 500 over 17 s).
+
+- **Low Power Mode** (`__wmpLowPower`, `wmp-lowpower`): Rendered stays, on the same contexts, but holds
+  still: one frame upright at the middle brightness (exposure 1), then drawn again only for the colours,
+  the size or the layout; tilt, pitch and brightness are not followed. Leaving it follows them again at
+  once (the pitch as it is then taken as the way the phone is held).
+- **Fallbacks.** No WebGL (or a shader that does not link) and a lost context both remove the canvases,
   so Classic shows; a lost context stays Classic until Metal is switched again or the page reloads.
 - **The host log** (`alchemyLog`): `ipod: metal rendered (<the GPU's name>)` when it starts;
   `ipod: metal N redraws/min` each minute while on, beside the app's `cpu:` and thermal lines;
   `ipod: metal still (low power)` / `ipod: metal live` as Low Power Mode comes and goes;
   `ipod: metal classic (no webgl)` / `ipod: metal classic (context lost)` when it falls back.
 
-Its knobs are the constants at the top of `metal/gl.ts` (finish, shape, eye, exposure, taps),
-`metal/index.ts` (tremor, rate, settle time, turn, brightness range) and `metal/bake-env.mjs` (the
-room's turn, blur, flags; rerun it after changing ROUGH or ANISO, whose lobe along the brushing it
-bakes). Tests: `tests/skins/ipod-metal.test.tsx` (the GPU mocked); the look by screenshots.
+Its knobs are the constants at the top of `metal/gl.ts` (the finishes, shapes, eye, exposure, the
+ring's light and gloss, the glass's light and cap, taps), `metal/index.ts` (the hand's threshold,
+glide, settle step, turn, pitch, reach, hold; the brightness's settle and range) and
+`metal/bake-env.mjs` (the room's turn, blurs, flags and floor; rerun it after changing ROUGH or ANISO,
+whose lobe along the brushing it bakes). Tests: `tests/skins/ipod-metal.test.tsx` (the GPU mocked);
+the look by screenshots.
 
 ---
 

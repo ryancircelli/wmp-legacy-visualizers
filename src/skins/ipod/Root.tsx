@@ -131,7 +131,7 @@ export function Root() {
   const insets = safe && ({ '--safe-top': safe.top * k + 'px', '--safe-right': safe.right * k + 'px', '--safe-bottom': safe.bottom * k + 'px', '--safe-left': safe.left * k + 'px' } as CSSProperties);
 
   const sheen = useSheen();
-  useMetal(sheen, ipod.metal === 'rendered', bodyLook(ipod));
+  useMetal(sheen, ipod.metal === 'rendered', bodyLook(ipod), ipod.wheel);
   return (
     <NavContext.Provider value={nav}>
       <div className={s.backdrop} data-ui-root="" onMouseDown={caption ? drag : undefined}>
@@ -204,12 +204,16 @@ function click() {
 
 /** The metal answers the room and the hand, lightly (the owner, 2026-10-03): --lux from the screen's
  *  brightness (the phone's follows the room's light; apps are not given the sensor itself), --tilt from
- *  the phone's roll (the iOS app's __wmpTilt). Set on the body's style, no render; the two are
- *  registered as numbers so the changes ease (ipod.module.css .body's transition). */
+ *  the phone's roll (the iOS app's __wmpTilt), --pitch from how far it is tipped from the way it is held
+ *  (__wmpPitch against a reference that follows it over HOLD_MS, so it settles back; -1..1 at 25°): the
+ *  wheel's and the centre's highlights move with both (the owner, 2026-10-06: "why isnt the wheel or wheel
+ *  highlight mark moving"). Set on the body's style, no render; registered as numbers so the changes ease
+ *  (ipod.module.css .body's transition). */
+const HOLD_MS = 4000;
 function useSheen() {
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    for (const [name, v] of [['--tilt', '0'], ['--lux', '1']] as const) {
+    for (const [name, v] of [['--tilt', '0'], ['--lux', '1'], ['--pitch', '0']] as const) {
       try { CSS.registerProperty({ name, syntax: '<number>', inherits: true, initialValue: v }); } catch { /* registered already, or not supported: it steps */ }
     }
     const set = () => {
@@ -218,9 +222,23 @@ function useSheen() {
       if (typeof b === 'number') el.style.setProperty('--lux', String(Math.round((0.94 + 0.12 * Math.max(0, Math.min(1, b))) * 1000) / 1000));
       if (typeof t === 'number') el.style.setProperty('--tilt', String(Math.max(-1, Math.min(1, t))));
     };
-    set();
-    window.addEventListener('wmp-brightness', set); window.addEventListener('wmp-tilt', set);
-    return () => { window.removeEventListener('wmp-brightness', set); window.removeEventListener('wmp-tilt', set); };
+    let held = window.__wmpPitch ?? 0, heldAt = performance.now(), again = 0;
+    const pitch = () => {
+      clearTimeout(again);
+      const el = ref.current, p = window.__wmpPitch;
+      if (!el || typeof p !== 'number') return;
+      const now = performance.now();
+      held += (p - held) * Math.min(1, (now - heldAt) / HOLD_MS); heldAt = now;
+      const rel = p - held;
+      el.style.setProperty('--pitch', String(Math.round(Math.max(-1, Math.min(1, rel / 25)) * 1000) / 1000));
+      if (Math.abs(rel) > .5) again = window.setTimeout(pitch, 300);    // settling back to how it is held
+    };
+    set(); pitch();
+    window.addEventListener('wmp-brightness', set); window.addEventListener('wmp-tilt', set); window.addEventListener('wmp-pitch', pitch);
+    return () => {
+      clearTimeout(again);
+      window.removeEventListener('wmp-brightness', set); window.removeEventListener('wmp-tilt', set); window.removeEventListener('wmp-pitch', pitch);
+    };
   }, []);
   return ref;
 }
