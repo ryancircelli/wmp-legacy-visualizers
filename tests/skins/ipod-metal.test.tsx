@@ -81,22 +81,24 @@ it('a lost context: the canvas goes (the classic body shows), freed, said; nothi
   expect(draws()).toBe(1);
 });
 
-it('draws once, then only on a change: a roll past two degrees, never a tremor; the colour; a turned-off metal is freed', () => {
+it('draws once, then only on a change: a roll past a third of a degree, never a tremor; the colour; a turned-off metal is freed', () => {
   const r = render(<Body />);
   expect([draws(), last().turn, last().exposure]).toEqual([1, 0, 1]);      // no host: upright, the middle brightness
-  for (let k = 0; k < 20; k++) { tilt(roll(k % 2 ? 1.5 : -1.5)); wait(50); }   // the hand's tremor
+  for (let k = 0; k < 20; k++) { tilt(roll(k % 2 ? .2 : -.2)); wait(50); }   // the hand's tremor
   wait(5000);
   expect(draws()).toBe(1);
   tilt(roll(3));
   wait(50);
-  expect(draws()).toBe(2);
-  expect(last().turn).toBeGreaterThan(0);
+  expect(draws()).toBeGreaterThanOrEqual(2);                                  // glides there over a few frames
+  wait(1000);
+  expect(last().turn).toBeCloseTo(3 * Math.PI / 180, 3);                     // arrived: the room turned the whole roll
+  const d = draws();
   r.rerender(<Body color={NAVY} />);
   wait(50);
-  expect([draws(), last().f0[2] > last().f0[0]]).toEqual([3, true]);        // navy's blue over its red, linear
+  expect([draws(), last().f0[2] > last().f0[0]]).toEqual([d + 1, true]);    // navy's blue over its red, linear
   r.rerender(<Body color={NAVY} />);                                          // the same colour: nothing
   wait(5000);
-  expect(draws()).toBe(3);
+  expect(draws()).toBe(d + 1);
   r.rerender(<Body on={false} color={NAVY} />);
   expect([gpu.dispose.mock.calls.length, r.getByTestId('body').querySelector('canvas')]).toEqual([1, null]);
 });
@@ -107,8 +109,8 @@ it('a turning phone draws at most 30 a second and stops as soon as it is still',
   expect(draws()).toBeGreaterThanOrEqual(30);
   expect(draws()).toBeLessThanOrEqual(32);
   const n = draws();
-  wait(100);                                                                  // the last report's draw, then none
-  expect(draws()).toBeLessThanOrEqual(n + 1);
+  wait(500);                                                                  // the glide to the last report, then none
+  expect(draws()).toBeLessThanOrEqual(n + 12);
   const still = draws();
   wait(10_000);
   expect(draws()).toBe(still);
@@ -141,17 +143,19 @@ it('Low Power Mode holds the metal still on the same context: upright, the middl
   wait(50);
   expect([draws(), last().turn]).toEqual([2, 0]);
   lowPower(false);
-  wait(50);
-  expect([draws(), last().turn < 0, +last().exposure.toFixed(2), lines().at(-1)]).toEqual([3, true, .86, 'ipod: metal live']);
+  wait(1000);
+  expect([draws() > 2, +last().turn.toFixed(3), +last().exposure.toFixed(2), lines().at(-1)]).toEqual([true, -0.524, .86, 'ipod: metal live']);
+  let d = draws();
   tilt(roll(-25));
-  wait(50);
-  expect(draws()).toBe(4);
+  wait(1000);
+  expect(draws()).toBeGreaterThan(d);
   lowPower(true);                                                             // switched on mid-session: one still frame, the context kept
   wait(50);
-  expect([draws(), last().turn, last().exposure, gpu.dispose.mock.calls.length, lines().at(-1)]).toEqual([5, 0, 1, 0, 'ipod: metal still (low power)']);
+  expect([last().turn, last().exposure, gpu.dispose.mock.calls.length, lines().at(-1)]).toEqual([0, 1, 0, 'ipod: metal still (low power)']);
+  d = draws();
   tilt(roll(10));
   wait(1000);
-  expect(draws()).toBe(5);
+  expect(draws()).toBe(d);
 });
 
 it('nothing draws while the page is hidden; what changed is drawn once it shows', () => {
@@ -162,15 +166,15 @@ it('nothing draws while the page is hidden; what changed is drawn once it shows'
   expect(draws()).toBe(1);
   hidden.mockReturnValue(false);
   act(() => { document.dispatchEvent(new Event('visibilitychange')); });
-  wait(50);
-  expect(draws()).toBe(2);
+  wait(1000);
+  expect([draws() >= 2, +last().turn.toFixed(3)]).toEqual([true, 0.175]);
 });
 
 it('says its redraws a minute in the host log while it is on', () => {
   render(<Body />);
   tilt(roll(5)); wait(100);
   wait(60_000);
-  expect(lines().at(-1)).toBe('ipod: metal 2 redraws/min');
+  expect(lines().at(-1)).toMatch(/^ipod: metal ([3-9]|1\d) redraws\/min$/);   // the first, then the glide to 5°
   wait(60_000);
   expect(lines().at(-1)).toBe('ipod: metal 0 redraws/min');
 });

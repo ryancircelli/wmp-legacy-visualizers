@@ -12,8 +12,10 @@ const ROUGH = .25, ANISO = .6;
 /** the light (linear) past which the tone eases toward white */
 const KNEE = .6;
 /** the face: its arc's half-angle (degrees) at the sides; the outer EDGE of each half rounds off by
- *  EDGE_TURN more. The arc puts the room's two windows where the classic look has its bands (§1.3) */
-const FACE = 18, EDGE = .08, EDGE_TURN = 60;
+ *  EDGE_TURN more, easing in (t²): over 8% with a quarter circle's profile (asin, its slope endless at the
+ *  rim) the reflections piled into a hard line down each side (the owner, 2026-10-06: "it's basically a
+ *  line"). The arc puts the room's two windows where the classic look has its bands (§1.3) */
+const FACE = 18, EDGE = .22, EDGE_TURN = 55;
 /** the eye: this many body-heights in front, and EYE_UP of a height above the body's middle, so the
  *  body's foot reflects the room's floor and goes darker toward the bottom, as the classic look does */
 const EYE = 3.5, EYE_UP = .3;
@@ -65,7 +67,7 @@ vec2 dfg(float nv) {
 }
 void main() {
   float u = uv.x * 2. - 1., a = abs(u);
-  float phi = asin(a * ${f(Math.sin(FACE * Math.PI / 180))}) + ${f(EDGE_TURN * Math.PI / 180)} * asin(clamp((a - ${f(1 - EDGE)}) / ${f(EDGE)}, 0., 1.)) / (PI / 2.);
+  float phi = asin(a * ${f(Math.sin(FACE * Math.PI / 180))}) + ${f(EDGE_TURN * Math.PI / 180)} * pow(clamp((a - ${f(1 - EDGE)}) / ${f(EDGE)}, 0., 1.), 2.);
   vec3 n = vec3(sign(u) * sin(phi), 0., cos(phi)), across = vec3(n.z, 0., -n.x);
   vec3 v = normalize(vec3((.5 - uv) * size + vec2(0., ${f(EYE_UP)} * size.y), ${f(EYE)} * size.y));
   float e = 0., ws = 0.;

@@ -232,11 +232,16 @@ the cylinder is not painted (`.body:has(> .metal)`).
   far windows. Luminance only: the dye is the only colour.
 - **Inputs.** `__wmpBrightness` (`wmp-brightness`) scales the room's light 0.86 to 1.14 (Classic's
   `--lux` range, in linear light), once it has stood 0.5 s; 1 where the host reports none.
-  `__wmpTilt` (`wmp-tilt`) turns the room about the body's long axis, 4° at a full roll, so the bands
-  slide as Classic's do (12 px of a 390-wide body at a roll of 0.6, the same way). The colour sets F0.
+  `__wmpTilt` (`wmp-tilt`) turns the room about the body's long axis by the phone's whole roll, as real
+  metal's reflections turn (first 4° at a full roll, matched to Classic's 12 px slide, which could not be
+  seen: the owner, 2026-10-06, "i also don't see tilt applying"); each draw glides 45% of the way to the
+  newest roll, so the host's ten readings a second in ~1° steps arrive smoothly. The colour sets F0.
+- **Shape.** A shallow arc across the face (18° at the sides) whose outer 22% each side rounds off by 55°
+  more, easing in (t²): a quarter circle's profile over 8% piled the reflections into a hard line down
+  each side ("too harsh on that edge it's basically a line").
 - **Cost.** Drawn on change only, never on a loop: the colour, the size, the brightness (settled), a
-  roll more than 2° from the one drawn (tremor is ignored), at most 30 draws a second while it keeps
-  turning, none once still. At the phone's point grid (CSS pixels in a browser; the phone's desktop
+  roll more than 0.3° from the one drawn (about a pixel and a half; the host's ~1° steps already leave
+  tremor out), the glide toward it, at most 30 draws a second while it keeps turning, none once still. At the phone's point grid (CSS pixels in a browser; the phone's desktop
   viewport has 2.5 to a point, `host.ts pointPx`), scaled up by the browser. Nothing draws while the
   page is hidden (what changed draws when it shows); turning it off, or leaving the skin, frees the
   context. Measured in headless Chromium on SwiftShader (software GL, so far slower than a phone's

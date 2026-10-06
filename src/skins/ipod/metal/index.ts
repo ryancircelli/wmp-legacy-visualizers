@@ -10,16 +10,22 @@ import { pointPx } from '../host';
 import s from '../ipod.module.css';
 import { createRenderer } from './gl';
 
-/** a roll under this (degrees) from the one drawn is the hand's tremor: at this tilt strength 2° moves the
- *  reflections under half a pixel, and cut the draws while turning about fourfold from 0.5° */
-const STILL = 2;
+/** a roll under this (degrees) from the one drawn draws nothing: with the room turning by the phone's
+ *  whole roll (TURN), a degree moves the reflections about 5 px, so this is about a pixel and a half. The
+ *  host sends the roll ten times a second in steps of about a degree (App.swift Tilt), which already
+ *  leaves the hand's tremor out */
+const STILL = .3;
+/** each draw goes this share of the way to the newest roll, so the host's steps glide in over a few
+ *  frames (at most FPS a second) instead of jumping */
+const EASE = .45;
 /** at most this many draws a second while the phone turns or a colour is dragged */
 const FPS = 30;
 /** the brightness stands this long (ms) before the room follows it */
 const SETTLE = 500;
-/** the room turns this far (degrees) at a full roll (tilt ±1): the bands slide as the classic sheen's
- *  do, 12 px of a 390-wide body at a roll of 0.6 */
-const TURN = 4;
+/** the room turns with the hand by this share of the phone's own roll: 1, as real metal's reflections
+ *  do (a turn of 4° at a full roll, matched to the classic sheen's 12 px, could not be seen: the owner,
+ *  2026-10-06, "i also don't see tilt applying") */
+const TURN = 1;
 /** the room's light from the screen's brightness 0..1 (the classic --lux's range, in linear light);
  *  the middle, 1, where the host reports none and in Low Power Mode */
 const exposure = (b: number) => 1 + (Math.max(0, Math.min(1, b)) - .5) * .28;
@@ -60,18 +66,21 @@ function start(body: HTMLElement) {
   let f0: Rgb | null = null, low = !!window.__wmpLowPower, lux = window.__wmpBrightness ?? .5, w = -1, h = -1;
   /** the last draw's roll (degrees) and inputs (as a key), when, how many this minute; a draw the
    *  hidden page owes; the throttled draw's and the brightness's timers */
-  let roll = 0, drawn = '', at = -Infinity, count = 0, dirty = false, due = 0, settle = 0;
+  let roll = 0, drawn = '', at = -Infinity, count = 0, dirty = false, due = 0, settle = 0, shown = 0;
   if (low) log('still (low power)');
   const draw = () => {
     due = 0;
     if (!f0) return;
     if (document.hidden) { dirty = true; return; }
     dirty = false;
-    const t = low ? 0 : tilt(), frame = { f0, exposure: exposure(low ? .5 : lux), turn: t * TURN * Math.PI / 180 };
+    const target = low ? 0 : deg(tilt());
+    shown = low || Math.abs(target - shown) < .1 ? target : shown + (target - shown) * EASE;
+    const frame = { f0, exposure: exposure(low ? .5 : lux), turn: shown * TURN * Math.PI / 180 };
     const key = JSON.stringify([frame, w, h]);
     if (key === drawn) return;
     r.draw(frame);
-    roll = deg(t); drawn = key; at = performance.now(); count++;
+    roll = shown; drawn = key; at = performance.now(); count++;
+    if (shown !== target) request();             // still gliding to the newest roll
   };
   const request = () => {
     if (due) return;
