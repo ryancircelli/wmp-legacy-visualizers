@@ -52,7 +52,7 @@ def recolour(src, ref, h, s, l):
 STUDIO = os.path.join(ROOT, 'icon-studio.hdr')   # Poly Haven's "photo_studio_loft_hall", 1k, CC0 (polyhaven.com)
 THIN = 4.6          # px off each side of the lines (74, 62 and 49 px thick at 1024: about 15% thinner)
 INFLATE = 120       # the balloon's height, px
-YAW, EXPOSURE = 0.25, 10.0   # the studio turned a quarter, and how bright it is
+YAW, EXPOSURE = 0.25, 24.0   # the studio turned a quarter, and how bright it is (the owner picked 24 from a panel of 15–30, 2026-10-06)
 GROUND = 0.35       # the tile round the orb, toward black
 INF = 1e12
 
