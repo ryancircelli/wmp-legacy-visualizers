@@ -27,7 +27,7 @@ afterEach(() => {
   cleanup();
   vi.useRealTimers();
   localStorage.clear();
-  for (const k of ['alchemyLog', '__wmpTilt', '__wmpBrightness', '__wmpLowPower'] as const) delete window[k];
+  for (const k of ['alchemyLog', '__wmpTilt', '__wmpPitch', '__wmpBrightness', '__wmpLowPower'] as const) delete window[k];
 });
 
 const SILVER = [0, 0, 66] as const, NAVY = [222, 31, 24] as const;
@@ -91,7 +91,7 @@ it('draws once, then only on a change: a roll past a third of a degree, never a 
   wait(50);
   expect(draws()).toBeGreaterThanOrEqual(2);                                  // glides there over a few frames
   wait(1000);
-  expect(last().turn).toBeCloseTo(3 * Math.PI / 180, 3);                     // arrived: the room turned the whole roll
+  expect(last().turn).toBeCloseTo(.4 * 3 * Math.PI / 180, 3);                // arrived: the room turned 40% of the roll
   const d = draws();
   r.rerender(<Body color={NAVY} />);
   wait(50);
@@ -144,7 +144,7 @@ it('Low Power Mode holds the metal still on the same context: upright, the middl
   expect([draws(), last().turn]).toEqual([2, 0]);
   lowPower(false);
   wait(1000);
-  expect([draws() > 2, +last().turn.toFixed(3), +last().exposure.toFixed(2), lines().at(-1)]).toEqual([true, -0.524, .86, 'ipod: metal live']);
+  expect([draws() > 2, +last().turn.toFixed(3), +last().exposure.toFixed(2), lines().at(-1)]).toEqual([true, -0.209, .86, 'ipod: metal live']);
   let d = draws();
   tilt(roll(-25));
   wait(1000);
@@ -167,7 +167,7 @@ it('nothing draws while the page is hidden; what changed is drawn once it shows'
   hidden.mockReturnValue(false);
   act(() => { document.dispatchEvent(new Event('visibilitychange')); });
   wait(1000);
-  expect([draws() >= 2, +last().turn.toFixed(3)]).toEqual([true, 0.175]);
+  expect([draws() >= 2, +last().turn.toFixed(3)]).toEqual([true, 0.07]);
 });
 
 it('says its redraws a minute in the host log while it is on', () => {
@@ -177,4 +177,18 @@ it('says its redraws a minute in the host log while it is on', () => {
   expect(lines().at(-1)).toMatch(/^ipod: metal ([3-9]|1\d) redraws\/min$/);   // the first, then the glide to 5°
   wait(60_000);
   expect(lines().at(-1)).toBe('ipod: metal 0 redraws/min');
+});
+
+it('tipping the phone toward or away from how it is held turns the room the other way, then settles back', () => {
+  window.__wmpPitch = 55;
+  render(<Body />);
+  expect(last().pitch).toBe(0);                                               // as it is held: level
+  act(() => { window.__wmpPitch = 70; window.dispatchEvent(new Event('wmp-pitch')); });
+  wait(200);
+  expect(last().pitch).toBeGreaterThan(0);                                    // tipped back 15°: the light moves
+  wait(30_000);
+  expect(last().pitch).toBe(0);                                               // held there: the new level
+  const d = draws();
+  wait(5000);
+  expect(draws()).toBe(d);                                                    // and nothing more once settled
 });

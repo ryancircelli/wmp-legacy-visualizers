@@ -22,10 +22,13 @@ const EASE = .45;
 const FPS = 30;
 /** the brightness stands this long (ms) before the room follows it */
 const SETTLE = 500;
-/** the room turns with the hand by this share of the phone's own roll: 1, as real metal's reflections
- *  do (a turn of 4° at a full roll, matched to the classic sheen's 12 px, could not be seen: the owner,
- *  2026-10-06, "i also don't see tilt applying") */
-const TURN = 1;
+/** the room turns with the hand by this share of the phone's own roll (and its pitch, PITCH): 4° at a full
+ *  roll could not be seen ("i also don't see tilt applying"), the whole roll was "too aggressive" (the
+ *  owner, 2026-10-06) */
+const TURN = .4, PITCH = .4;
+/** the pitch is taken from how the phone is being held, a reference that follows it over this long (ms):
+ *  tipping it moves the light, which settles back as the new angle becomes the way it is held */
+const HOLD = 4000;
 /** the room's light from the screen's brightness 0..1 (the classic --lux's range, in linear light);
  *  the middle, 1, where the host reports none and in Low Power Mode */
 const exposure = (b: number) => 1 + (Math.max(0, Math.min(1, b)) - .5) * .28;
@@ -33,6 +36,7 @@ const exposure = (b: number) => 1 + (Math.max(0, Math.min(1, b)) - .5) * .28;
 type Rgb = readonly [number, number, number];
 const log = (line: string) => window.alchemyLog?.('ipod: metal ' + line);
 const tilt = () => Math.max(-1, Math.min(1, window.__wmpTilt ?? 0));
+const pitchNow = () => window.__wmpPitch ?? 0;
 const deg = (t: number) => Math.asin(t) * 180 / Math.PI;
 const linear = (c: number) => (c <= .04045 ? c / 12.92 : ((c + .055) / 1.055) ** 2.4);
 /** hsl (degrees, %, %) as linear RGB */
@@ -67,6 +71,8 @@ function start(body: HTMLElement) {
   /** the last draw's roll (degrees) and inputs (as a key), when, how many this minute; a draw the
    *  hidden page owes; the throttled draw's and the brightness's timers */
   let roll = 0, drawn = '', at = -Infinity, count = 0, dirty = false, due = 0, settle = 0, shown = 0;
+  /** the pitch's reference (how it is held, degrees) and when it last followed; the pitch drawn */
+  let held = pitchNow(), heldAt = performance.now(), tipped = 0, tippedShown = 0;
   if (low) log('still (low power)');
   const draw = () => {
     due = 0;
@@ -75,12 +81,17 @@ function start(body: HTMLElement) {
     dirty = false;
     const target = low ? 0 : deg(tilt());
     shown = low || Math.abs(target - shown) < .1 ? target : shown + (target - shown) * EASE;
-    const frame = { f0, exposure: exposure(low ? .5 : lux), turn: shown * TURN * Math.PI / 180 };
+    // the pitch from how it is held: the reference eases toward the pitch over HOLD
+    const now = performance.now(), p = pitchNow();
+    held += (p - held) * Math.min(1, (now - heldAt) / HOLD); heldAt = now;
+    const tip = low || Math.abs(p - held) < .1 ? 0 : p - held;
+    tippedShown = low || Math.abs(tip - tippedShown) < .1 ? tip : tippedShown + (tip - tippedShown) * EASE;
+    const frame = { f0, exposure: exposure(low ? .5 : lux), turn: shown * TURN * Math.PI / 180, pitch: tippedShown * PITCH * Math.PI / 180 };
     const key = JSON.stringify([frame, w, h]);
     if (key === drawn) return;
     r.draw(frame);
-    roll = shown; drawn = key; at = performance.now(); count++;
-    if (shown !== target) request();             // still gliding to the newest roll
+    roll = shown; tipped = tippedShown; drawn = key; at = now; count++;
+    if (shown !== target || tippedShown !== 0) request();   // gliding to the newest roll, or the pitch settling back
   };
   const request = () => {
     if (due) return;
@@ -97,6 +108,7 @@ function start(body: HTMLElement) {
     request();
   };
   const onTilt = () => { if (!low && Math.abs(deg(tilt()) - roll) > STILL) request(); };
+  const onPitch = () => { if (!low && Math.abs(pitchNow() - held - tipped) > STILL) request(); };
   const onLux = () => {
     clearTimeout(settle);
     settle = window.setTimeout(() => { lux = window.__wmpBrightness ?? .5; if (!low) request(); }, SETTLE);
@@ -111,7 +123,7 @@ function start(body: HTMLElement) {
   const onLost = () => { log('classic (context lost)'); stop(); };
   const ro = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(fit);
   const minute = window.setInterval(() => { log(count + ' redraws/min'); count = 0; }, 60_000);
-  const heard: [EventTarget, string, () => void][] = [[window, 'wmp-tilt', onTilt], [window, 'wmp-brightness', onLux], [window, 'wmp-lowpower', onLow],
+  const heard: [EventTarget, string, () => void][] = [[window, 'wmp-tilt', onTilt], [window, 'wmp-pitch', onPitch], [window, 'wmp-brightness', onLux], [window, 'wmp-lowpower', onLow],
                                                      [document, 'visibilitychange', onSeen], [canvas, 'webglcontextlost', onLost]];
   for (const [t, e, f] of heard) t.addEventListener(e, f);
   ro?.observe(canvas);

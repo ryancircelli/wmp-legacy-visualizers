@@ -115,6 +115,8 @@ declare global {
     __wmpBrightness?: number;
     /** the phone's roll, -1 (tilted left) to 1 (right), 0 upright: gravity's x; 'wmp-tilt' as it changes (the iOS app, in front) */
     __wmpTilt?: number;
+    /** the phone's pitch, degrees: 0 upright, 90 lying face up; 'wmp-pitch' as it changes (the iOS app, in front) */
+    __wmpPitch?: number;
     __wmpHost?: { build: string; version: string; ios: string; model: string; scale?: number; fps?: number; voiceOver?: boolean; viewport?: string };
     /** the iOS app, the rest of the phone (ios/README.md) */
     alchemyViewport?: (mode: 'mobile' | 'desktop') => void;

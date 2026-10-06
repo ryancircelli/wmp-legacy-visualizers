@@ -16,6 +16,9 @@ const KNEE = .6;
  *  rim) the reflections piled into a hard line down each side (the owner, 2026-10-06: "it's basically a
  *  line"). The arc puts the room's two windows where the classic look has its bands (§1.3) */
 const FACE = 18, EDGE = .22, EDGE_TURN = 55;
+/** the screen shows this share of the body's width: its rounded edges fall mostly past the screen's sides,
+ *  as the owner's crop of the rendered body (2026-10-06: the darkest outer strip cut away) */
+const SHOWN = .93;
 /** the eye: this many body-heights in front, and EYE_UP of a height above the body's middle, so the
  *  body's foot reflects the room's floor and goes darker toward the bottom, as the classic look does */
 const EYE = 3.5, EYE_UP = .3;
@@ -33,6 +36,8 @@ export interface Frame {
   exposure: number;
   /** the room turned about the body's long axis, radians */
   turn: number;
+  /** the room turned about the body's cross axis (the phone tipped toward or away), radians */
+  pitch: number;
 }
 export interface Renderer {
   /** the GPU, as the driver names it */
@@ -55,9 +60,10 @@ varying vec2 uv;
 uniform sampler2D env;
 uniform vec2 size;
 uniform vec3 f0;
-uniform float exposure, turn;
+uniform float exposure, turn, pitch;
 const float PI = 3.14159265, AX = ${f(ROUGH * ROUGH * (1 + ANISO))};
 float room(vec3 d) {
+  d = vec3(d.x, d.y * cos(pitch) - d.z * sin(pitch), d.y * sin(pitch) + d.z * cos(pitch));
   float az = atan(d.x, d.z) - turn, el = asin(clamp(d.y, -1., 1.));
   return exp2(mix(${f(ENV.stops[0])}, ${f(ENV.stops[1])}, texture2D(env, vec2(az / (2. * PI) + .5, .5 - el / ${f(2 * ENV.band * Math.PI / 180)})).r));
 }
@@ -66,7 +72,7 @@ vec2 dfg(float nv) {
   return vec2(-1.04, 1.04) * (min(r.x * r.x, exp2(-9.28 * nv)) * r.x + r.y) + r.zw;
 }
 void main() {
-  float u = uv.x * 2. - 1., a = abs(u);
+  float u = uv.x * 2. - 1., a = abs(u) * ${f(SHOWN)};
   float phi = asin(a * ${f(Math.sin(FACE * Math.PI / 180))}) + ${f(EDGE_TURN * Math.PI / 180)} * pow(clamp((a - ${f(1 - EDGE)}) / ${f(EDGE)}, 0., 1.), 2.);
   vec3 n = vec3(sign(u) * sin(phi), 0., cos(phi)), across = vec3(n.z, 0., -n.x);
   vec3 v = normalize(vec3((.5 - uv) * size + vec2(0., ${f(EYE_UP)} * size.y), ${f(EYE)} * size.y));
@@ -123,7 +129,7 @@ export function createRenderer(canvas: HTMLCanvasElement): Renderer | string {
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
   const at = (k: string) => gl.getUniformLocation(prog, k);
-  const [size, f0, exposure, turn] = ['size', 'f0', 'exposure', 'turn'].map(at);
+  const [size, f0, exposure, turn, pitch] = ['size', 'f0', 'exposure', 'turn', 'pitch'].map(at);
   const dbg = gl.getExtension('WEBGL_debug_renderer_info');
   return {
     name: String(gl.getParameter(dbg ? dbg.UNMASKED_RENDERER_WEBGL : gl.RENDERER)),
@@ -137,6 +143,7 @@ export function createRenderer(canvas: HTMLCanvasElement): Renderer | string {
       gl.uniform3f(f0!, ...fr.f0);
       gl.uniform1f(exposure!, fr.exposure);
       gl.uniform1f(turn!, fr.turn);
+      gl.uniform1f(pitch!, fr.pitch);
       gl.drawArrays(gl.TRIANGLES, 0, 3);
     },
     dispose() {

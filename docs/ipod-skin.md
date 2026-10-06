@@ -232,12 +232,16 @@ the cylinder is not painted (`.body:has(> .metal)`).
   far windows. Luminance only: the dye is the only colour.
 - **Inputs.** `__wmpBrightness` (`wmp-brightness`) scales the room's light 0.86 to 1.14 (Classic's
   `--lux` range, in linear light), once it has stood 0.5 s; 1 where the host reports none.
-  `__wmpTilt` (`wmp-tilt`) turns the room about the body's long axis by the phone's whole roll, as real
-  metal's reflections turn (first 4° at a full roll, matched to Classic's 12 px slide, which could not be
-  seen: the owner, 2026-10-06, "i also don't see tilt applying"); each draw glides 45% of the way to the
-  newest roll, so the host's ten readings a second in ~1° steps arrive smoothly. The colour sets F0.
+  `__wmpTilt` (`wmp-tilt`) turns the room about the body's long axis by 40% of the phone's roll (4° at
+  a full roll could not be seen, "i also don't see tilt applying"; the whole roll was "too aggressive"),
+  and `__wmpPitch` (`wmp-pitch`, degrees from upright, from the iOS app since build 88) about its cross
+  axis by 40% of how far the phone is tipped from the way it is held: that reference follows the pitch
+  over 4 s, so a tip moves the light, which settles as the new angle becomes the way it is held ("y
+  movement doesn't do anything"). Each draw glides 45% of the way to the newest reading, so the host's
+  ten a second arrive smoothly. The colour sets F0.
 - **Shape.** A shallow arc across the face (18° at the sides) whose outer 22% each side rounds off by 55°
-  more, easing in (t²): a quarter circle's profile over 8% piled the reflections into a hard line down
+  more, easing in (t²); the screen shows 93% of that width, so the rounding's darkest part falls past its
+  sides (the owner's crop of a screenshot, the darkest outer strip cut away): a quarter circle's profile over 8% piled the reflections into a hard line down
   each side ("too harsh on that edge it's basically a line").
 - **Cost.** Drawn on change only, never on a loop: the colour, the size, the brightness (settled), a
   roll more than 0.3° from the one drawn (about a pixel and a half; the host's ~1° steps already leave

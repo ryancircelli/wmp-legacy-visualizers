@@ -90,7 +90,7 @@ func logKind(_ line: String) -> String? {
 final class Tilt {
     static let shared = Tilt()
     private let motion = CMMotionManager()
-    private var last = 2.0
+    private var last = 2.0, lastPitch = 999.0
     func run(_ on: Bool) {
         guard on, motion.isDeviceMotionAvailable, !ProcessInfo.processInfo.isLowPowerModeEnabled else {
             if motion.isDeviceMotionActive { motion.stopDeviceMotionUpdates() }
@@ -99,8 +99,15 @@ final class Tilt {
         guard !motion.isDeviceMotionActive else { return }
         motion.deviceMotionUpdateInterval = 0.1
         motion.startDeviceMotionUpdates(to: .main) { data, _ in
-            guard let x = data?.gravity.x else { return }
-            let v = (max(-1, min(1, x)) * 100).rounded() / 100
+            guard let g = data?.gravity else { return }
+            // the pitch too (the owner, 2026-10-06: "y movement doesn't do anything"): degrees from
+            // upright, 90 lying face up, sent when it has moved a degree
+            let p = (atan2(-g.z, -g.y) * 180 / .pi).rounded()
+            if abs(p - self.lastPitch) >= 1 {
+                self.lastPitch = p
+                WebHolder.shared.push("__wmpPitch", "wmp-pitch", p)
+            }
+            let v = (max(-1, min(1, g.x)) * 100).rounded() / 100
             guard abs(v - self.last) >= 0.02 else { return }
             self.last = v
             WebHolder.shared.push("__wmpTilt", "wmp-tilt", v)
