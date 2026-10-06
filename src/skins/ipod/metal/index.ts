@@ -31,15 +31,15 @@ const FPS = 30;
 /** the brightness stands this long (ms) before the room follows it */
 const SETTLE = 500;
 /** the room turns with the hand by this share of the phone's own roll (and its pitch, PITCH): 4° at a full
- *  roll could not be seen ("i also don't see tilt applying"), the whole roll was "too aggressive" (the
- *  owner, 2026-10-06) */
-const TURN = .15, PITCH = .12;
-/** and never past this (degrees) either way: tipped further, the reflections left the room's windows for
- *  its dark floor and the body went nearly black ("gets way too dark and moves too much", build 88) */
-const REACH = 6;
+ *  roll could not be seen ("i also don't see tilt applying"), the whole roll was "too aggressive", 15% and
+ *  12% capped at 6° no longer "noticeable enough" once the room's floor was lifted (the owner, 2026-10-06) */
+const TURN = .25, PITCH = .35;
+/** and never past this (degrees) either way: before the floor was lifted, tipping took the reflections off
+ *  the room's windows onto its dark floor and the body went nearly black ("gets way too dark", build 88) */
+const REACH = 12;
 /** the pitch is taken from how the phone is being held, a reference that follows it over this long (ms):
  *  tipping it moves the light, which settles back as the new angle becomes the way it is held */
-const HOLD = 4000;
+const HOLD = 8000;
 /** the room's light from the screen's brightness 0..1 (the classic --lux's range, in linear light);
  *  the middle, 1, where the host reports none and in Low Power Mode */
 const exposure = (b: number) => 1 + (Math.max(0, Math.min(1, b)) - .5) * .28;

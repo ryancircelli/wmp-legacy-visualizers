@@ -279,17 +279,18 @@ and of pitch together), the body below the screen loses 10 levels of 174 on Silv
 
 - `__wmpBrightness` (`wmp-brightness`) scales the room's light 0.86 to 1.14 (Classic's `--lux` range,
   in linear light), once it has stood 0.5 s; 1 where the host reports none.
-- `__wmpTilt` (`wmp-tilt`) turns the room about the body's long axis by 15% of the phone's roll, and
+- `__wmpTilt` (`wmp-tilt`) turns the room about the body's long axis by 25% of the phone's roll, and
   `__wmpPitch` (`wmp-pitch`, degrees from upright, from the iOS app since build 88) about its cross
-  axis by 12% of how far the phone is tipped from the way it is held, each never past 6° (4° at a full
+  axis by 35% of how far the phone is tipped from the way it is held, each never past 12° (4° at a full
   roll could not be seen, "i also don't see tilt applying"; the whole roll was "too aggressive"; "gets
-  way too dark and moves too much regardless"). The way it is held is a reference that follows the
-  pitch over 4 s, so a tip moves the light, which settles back as the new angle becomes the way it is
+  way too dark and moves too much regardless", until the room's floor was lifted; then 15% and 12%
+  capped at 6° were "not noticeable enough anymore"). The way it is held is a reference that follows the
+  pitch over 8 s, so a tip moves the light, which settles back as the new angle becomes the way it is
   held ("y movement doesn't do anything"); it follows in time whether drawn or not, so a tip after a
   still spell shows in full.
 - A reading 2° or more from the one aimed at is followed; less is not. The host's roll comes in steps
   of about a degree, ten a second, and a hand held on a step's edge flickers between two; with the room
-  at 15% of the roll a degree moves the reflections under a pixel, so 2° is about a pixel and a half.
+  at 25% of the roll a degree moves the reflections about a pixel, so 2° is about two pixels.
   Each draw glides 45% of the way to the new reading; a tip settling back is drawn again only once the
   room's pitch has moved 0.1° (about half a pixel), and goes home under that.
 - Classic answers the hand too: its sheen (§1.3) with `--tilt`, and the centre button's highlight with

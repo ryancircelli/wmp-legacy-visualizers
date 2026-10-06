@@ -105,7 +105,7 @@ it('draws once, then only on a change: a roll past a third of a degree, never a 
   wait(50);
   expect(draws()).toBeGreaterThanOrEqual(2);                                  // glides there over a few frames
   wait(1000);
-  expect(last().turn).toBeCloseTo(.15 * 3 * Math.PI / 180, 3);               // arrived: the room turned 15% of the roll
+  expect(last().turn).toBeCloseTo(.25 * 3 * Math.PI / 180, 3);               // arrived: the room turned 25% of the roll
   const d = draws();
   r.rerender(<Body color={NAVY} />);
   wait(50);
@@ -158,7 +158,7 @@ it('Low Power Mode holds the metal still on the same context: upright, the middl
   expect([draws(), last().turn]).toEqual([2, 0]);
   lowPower(false);
   wait(1000);
-  expect([draws() > 2, +last().turn.toFixed(3), +last().exposure.toFixed(2), lines().at(-1)]).toEqual([true, -0.079, .86, 'ipod: metal live']);
+  expect([draws() > 2, +last().turn.toFixed(3), +last().exposure.toFixed(2), lines().at(-1)]).toEqual([true, -0.131, .86, 'ipod: metal live']);
   let d = draws();
   tilt(roll(-25));
   wait(1000);
@@ -181,7 +181,7 @@ it('nothing draws while the page is hidden; what changed is drawn once it shows'
   hidden.mockReturnValue(false);
   act(() => { document.dispatchEvent(new Event('visibilitychange')); });
   wait(1000);
-  expect([draws() >= 2, +last().turn.toFixed(3)]).toEqual([true, 0.026]);
+  expect([draws() >= 2, +last().turn.toFixed(3)]).toEqual([true, 0.044]);
 });
 
 it('says its redraws a minute in the host log while it is on', () => {
@@ -200,7 +200,7 @@ it('tipping the phone toward or away from how it is held turns the room the othe
   act(() => { window.__wmpPitch = 70; window.dispatchEvent(new Event('wmp-pitch')); });
   wait(200);
   expect(last().pitch).toBeGreaterThan(0);                                    // tipped back 15°: the light moves
-  wait(30_000);
+  wait(60_000);
   expect(last().pitch).toBe(0);                                               // held there: the new level
   const d = draws();
   wait(5000);
@@ -245,8 +245,8 @@ it('a hand come to rest on the edge of one of the host\'s 1° steps, flickering 
   render(<Body />);
   const d = draws();
   for (let k = 0; k < 50; k++) { tilt(roll(k % 2 ? 11 : 10)); wait(100); }   // turned to 10°, then ten a second for five seconds
-  expect(draws() - d).toBeLessThan(15);                                       // the glide to 10° (about ten), then none
-  expect(last().turn).toBeCloseTo(.15 * 10 * Math.PI / 180, 4);
+  expect(draws() - d).toBeLessThan(20);                                       // the glide to 10° (about a dozen), then none
+  expect(last().turn).toBeCloseTo(.25 * 10 * Math.PI / 180, 4);
 });
 
 it('a tip held still settles home in steps a visible distance apart, not a draw every frame; a tip after a still spell shows', () => {
@@ -255,9 +255,9 @@ it('a tip held still settles home in steps a visible distance apart, not a draw 
   act(() => { window.__wmpPitch = 25; window.dispatchEvent(new Event('wmp-pitch')); });
   wait(500);
   const tipped = last().pitch, d = draws();
-  expect(tipped).toBeGreaterThan(2.5 * Math.PI / 180);                        // 25° tipped: the room about 3°
-  wait(30_000);
-  expect([last().pitch, draws() - d < 50]).toEqual([0, true]);               // home, in a few dozen draws
+  expect(tipped).toBeGreaterThan(7 * Math.PI / 180);                          // 25° tipped: the room about 9°
+  wait(60_000);
+  expect([last().pitch, draws() - d < 120]).toEqual([0, true]);              // home, in under a hundred draws over its seconds
   const e = draws();
   wait(10_000);
   expect(draws()).toBe(e);
