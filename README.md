@@ -19,8 +19,9 @@ Three formats, one port.
 | **Website** | https://wmp.ryancircelli.com | Open it, hit play, share a tab with audio. Nothing to install. |
 | **Screensaver** | [`screensaver-latest`](https://github.com/ryancircelli/wmp-legacy-visualizers/releases/download/screensaver-latest/AlchemyScreensaver-win64.zip) | `Alchemy.scr`, the same thing full-screen when the machine goes idle. |
 | **Spotify** | [`spotify-latest`](https://github.com/ryancircelli/wmp-legacy-visualizers/releases/download/spotify-latest/WmpSpotify-win64.zip) | `WmpSpotify.exe`, the player window as a Spotify client: Spotify's web player runs inside it under the WMP skin, logged in once in its own profile. |
-| **iPhone / iPad** | TestFlight (private) | The same Spotify client as an iOS app: Spotify's web player in a WKWebView under the skin. [`ios/README.md`](ios/README.md). |
-| **iPod nano skin** | View > Skin | The player as a nano 5G: a click wheel, every page of its menus, the body in nine colours or any hue, brushed aluminium; made for the phone. [`docs/ipod-skin.md`](docs/ipod-skin.md). |
+| **iPhone / iPad** | TestFlight (private) | The same Spotify client as an iOS app: Spotify's web player in a WKWebView under the skin, playing through its own Spotify Connect speaker (librespot, built in), with crossfade, EQ and Control Center. [`ios/README.md`](ios/README.md). |
+| **iPod nano skin** | View > Skin | The player as a nano 5G: a click wheel, every page of its menus, the body in the nano's colours or any hue, brushed aluminium; made for the phone. [`docs/ipod-skin.md`](docs/ipod-skin.md). |
+| **iTunes 10 skin** | View > Skin | The player as iTunes 10: the LCD, the source list, the striped song table, Album List, Grid and Cover Flow, as the Windows window on a desktop and folded to a phone. [`docs/itunes-skin.md`](docs/itunes-skin.md), [`docs/itunes-skin-phone.md`](docs/itunes-skin-phone.md). |
 
 Both Windows downloads are rebuilt on every push, need only the WebView2 runtime (which ships with
 Windows 11 and current Windows 10), and are self-contained single files — nothing has to stay next to
