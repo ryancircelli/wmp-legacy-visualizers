@@ -9,13 +9,14 @@ import { useStore } from 'zustand';
 import { useApp, usePreloadNext, useShell, useWindowControls } from '../../ui';
 import { Boot } from './Boot';
 import { ClickWheel } from './ClickWheel';
-import { useHostChrome, useHostGlobal, useDesktopViewport } from './host';
+import { pointPx, useHostChrome, useHostGlobal, useDesktopViewport } from './host';
 import { iconFor } from './icon';
 import { mainMenu } from './menus';
 import { brick, fmRadio, nowPlaying } from './screens';
 import { createNav, top, type NavStore, type Slot } from './nav';
 import type { WheelInput } from './screens/contract';
-import { bodyVars, ipodSettings, useIpodSettings } from './settings';
+import { useMetal } from './metal';
+import { bodyLook, bodyVars, ipodSettings, useIpodSettings } from './settings';
 import { NowPlayingBar, scan, StatusRow, useBusy } from './ui';
 import { FrameContext, handler, NavContext, type Hub } from './wheel';
 import s from './ipod.module.css';
@@ -125,12 +126,12 @@ export function Root() {
   }, [asleep]);
   // §3.4: under a desktop host that draws no title, the aluminium (and the backdrop) is the caption
   const drag = (e: MouseEvent) => { if (!(e.target as Element).closest(`.${s.bezel}, .${s.wheel}`)) win.onCaptionMouseDown(e); };
-  // The insets come in points; in the desktop-wide viewport the phone scales the page, so a point is
-  // (viewport width / screen width) CSS pixels (host.ts: why the viewport is the desktop one).
-  const k = Math.min(4, Math.max(1, window.innerWidth / (window.screen?.width || window.innerWidth)));
+  // the insets come in points (host.ts pointPx)
+  const k = pointPx();
   const insets = safe && ({ '--safe-top': safe.top * k + 'px', '--safe-right': safe.right * k + 'px', '--safe-bottom': safe.bottom * k + 'px', '--safe-left': safe.left * k + 'px' } as CSSProperties);
 
   const sheen = useSheen();
+  useMetal(sheen, ipod.metal === 'rendered', bodyLook(ipod));
   return (
     <NavContext.Provider value={nav}>
       <div className={s.backdrop} data-ui-root="" onMouseDown={caption ? drag : undefined}>

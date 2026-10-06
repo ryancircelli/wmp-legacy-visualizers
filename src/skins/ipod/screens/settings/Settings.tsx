@@ -48,6 +48,9 @@ function SettingsMenu() {
       ? { id: k.id, label: 'iPod', right: '✓' }
       : { id: k.id, label: k.name, onSelect: () => sh.store.getState().actions.setSettings({ skin: k.id }) })))) },
     { id: 'color', label: 'Color', right: <Swatch bg={swatch(ip)} />, chevron: true, onSelect: to(nav, page('settings/color', 'Color', Color)) },
+    // the body: the CSS cylinder, or lit by the GPU (beta; docs/ipod-skin.md §1.7)
+    { id: 'metal', label: 'Metal', right: ip.metal === 'rendered' ? 'Rendered' : 'Classic',
+      onSelect: () => patch({ metal: ip.metal === 'rendered' ? 'classic' : 'rendered' }) },
     { id: 'wheel', label: 'Click Wheel', right: ip.wheel === 'black' ? 'Black' : 'White', onSelect: () => patch({ wheel: ip.wheel === 'black' ? 'white' : 'black' }) },
     { id: 'clicker', label: 'Clicker', right: onOff(ip.clicker), onSelect: () => patch({ clicker: !ip.clicker }) },
     // the host's light / dark (the iOS app's)

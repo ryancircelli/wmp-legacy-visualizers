@@ -478,7 +478,7 @@ function atSettings() {
            title: () => m.shown('[class*=status] [class*=title]')[0]?.textContent };
 }
 const SETTINGS = [
-  'SkiniPod', 'Color', 'Click WheelWhite', 'ClickerOn',
+  'SkiniPod', 'Color', 'MetalClassic', 'Click WheelWhite', 'ClickerOn',
   'Main Menu', 'Library Filters', 'Library ViewGrid',
   'About', 'Check for Updates', 'Reset Settings', 'Legal',
   'Source Code', 'Report a Problem',
@@ -491,7 +491,7 @@ it('Settings: one list under section headers, without what Now Playing or the de
   expect(m.sel()).toEqual(['SkiniPod']);             // the first row, under the first header
   key('ArrowUp');                                    // the header above it is no position
   expect(m.sel()).toEqual(['SkiniPod']);
-  for (let k = 0; k < 4; k++) key('ArrowDown');      // over the Menus header
+  for (let k = 0; k < 5; k++) key('ArrowDown');      // over the Menus header
   expect(m.sel()).toEqual(['Main Menu']);
   key('ArrowUp');
   expect(m.sel()).toEqual(['ClickerOn']);
@@ -547,7 +547,7 @@ it('Settings\' host-gated rows show only with their host: Theme, Refresh Player,
   act(() => m.S().actions.setAuth({ canLogout: true }));
   expect(m.headers()).toEqual(['Appearance', 'Menus', 'General', 'Support', 'Account']);
   expect(m.rows()).toEqual([
-    'SkiniPod', 'Color', 'Click WheelWhite', 'ClickerOn', 'ThemeAutomatic',
+    'SkiniPod', 'Color', 'MetalClassic', 'Click WheelWhite', 'ClickerOn', 'ThemeAutomatic',
     'Main Menu', 'Library Filters', 'Library ViewGrid',
     'About', 'Check for Updates', 'Refresh Player', 'Reset Settings', 'Legal',
     'Source Code', 'Report a Problem', 'Host Log',
@@ -562,21 +562,22 @@ it('Crossfade: shown with the host\'s player only, under Sound; Off -> 2 s -> 5 
   expect(m.rows()).toEqual(SETTINGS);                // the binding alone shows nothing: the adapter says the host can
   let off = () => {};
   act(() => { off = hostSettings(m.store); });
-  expect(m.rows()).toEqual([...SETTINGS.slice(0, 7), 'EQOff', 'Audio QualityHigh', 'Sound CheckOn', 'CrossfadeOff', 'Audio CacheOn', ...SETTINGS.slice(7)]);
+  expect(m.rows()).toEqual([...SETTINGS.slice(0, 8), 'EQOff', 'Audio QualityHigh', 'Sound CheckOn', 'CrossfadeOff', 'Audio CacheOn', ...SETTINGS.slice(8)]);
   m.click('CrossfadeOff');
   m.click('Crossfade2 s');
-  expect([m.rows()[10], m.S().settings.crossfade, sent.filter((c) => c.startsWith('crossfade:'))]).toEqual(['Crossfade5 s', 5, ['crossfade:0', 'crossfade:2', 'crossfade:5']]);
+  expect([m.rows()[11], m.S().settings.crossfade, sent.filter((c) => c.startsWith('crossfade:'))]).toEqual(['Crossfade5 s', 5, ['crossfade:0', 'crossfade:2', 'crossfade:5']]);
   for (const r of ['Crossfade5 s', 'Crossfade8 s', 'Crossfade12 s']) m.click(r);
-  expect([m.rows()[10], sent.at(-1)]).toEqual(['CrossfadeOff', 'crossfade:0']);
+  expect([m.rows()[11], sent.at(-1)]).toEqual(['CrossfadeOff', 'crossfade:0']);
   off();
 });
 
-it('Reset Settings puts back what Settings keeps: the toggles, the click wheel, the library view; the volume as it was', () => {
+it('Reset Settings puts back what Settings keeps: the toggles, the click wheel, the metal, the library view; the volume as it was', () => {
+  vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(null);   // Rendered without WebGL: the classic body, logged
   const m = atSettings();
   act(() => { for (const k of ['ipod.volumeLimit', 'ipod.shake', 'ipod.clock']) localStorage.setItem(k, '50'); });   // earlier builds': read by nothing
   act(() => m.store.getState().actions.setSettings({ volume: 80 }));
-  for (const r of ['ClickerOn', 'Click WheelWhite', 'Library ViewGrid']) m.click(r);
-  expect(m.rows()).toEqual(expect.arrayContaining(['ClickerOff', 'Click WheelBlack', 'Library ViewList']));
+  for (const r of ['ClickerOn', 'Click WheelWhite', 'MetalClassic', 'Library ViewGrid']) m.click(r);
+  expect(m.rows()).toEqual(expect.arrayContaining(['ClickerOff', 'Click WheelBlack', 'MetalRendered', 'Library ViewList']));
   expect(m.S().settings.volume).toBe(80);            // no limit holds it any more
   m.click('Reset Settings');
   act(() => { fireEvent.click(m.shown('div').find((x) => x.textContent === 'Reset' && !x.children.length)!); });

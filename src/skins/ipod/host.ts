@@ -39,6 +39,10 @@ export function useHostChrome(): void {
   }, [store]);
 }
 
+/** CSS pixels a point: in the desktop-wide viewport (below) the phone scales the page, so a point is
+ *  (viewport width / screen width) of them; 1 in a browser. */
+export const pointPx = () => Math.min(4, Math.max(1, window.innerWidth / (window.screen?.width || window.innerWidth)));
+
 const ASKED = 'ipod.viewport';
 /** The desktop viewport, as the WMP 9 skin has: measured on the phone (2026-09-30), Spotify's web
  *  player at a phone-wide viewport stops reporting its state (no song info, nothing in the lists),

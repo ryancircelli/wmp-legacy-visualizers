@@ -195,6 +195,68 @@ k  = Sw / 240                                         (CSS px per LCD pixel)
 WebKit and Chromium both support `zoom`, it stays crisp, and every metric in §2 can be used
 verbatim. The wheel is outside the zoomed box, so pointer maths there is unaffected.
 
+### 1.7 Rendered metal (Settings > Metal, beta)
+
+The owner, 2026-10-06: "how computationally expensive would it be to use a pbr for the ipod skin
+and base it on the light sensor to not be dynamic. obviously this is an anodized aluminum so I might
+need a different pbr", "we would also need it to account for gyro movement like it does now", "could
+we do it under a flag", and, on Low Power Mode, "keep pbr in low power but disable motion and light
+responses". **Settings > Metal** (under Appearance) toggles **Classic** (the CSS cylinder, §1.3, the
+default) and **Rendered**, kept in `ipod.settings` (`metal`). Reset Settings puts back Classic.
+
+**What draws** (`src/skins/ipod/metal/`): a WebGL 1 canvas under the device (`.metal`, z-index -1 in
+the body's isolated stacking context), the cylinder's place; the grain (`.body::before`) stays a
+full-resolution CSS layer over it, and the centre button stays CSS (§1.5). While the canvas is there
+the cylinder is not painted (`.body:has(> .metal)`).
+
+- **Shape.** The face is an arc across the width, 18° each side, whose outer 8 % of each half rounds
+  off 60° more (the long edges). The eye is 3.5 body heights in front and 0.3 of a height above the
+  middle, so the foot reflects the room's floor and darkens as Classic's does.
+- **Material.** A metal whose reflection is the dye's: F0 is the body colour as it reads (`settings.ts
+  bodyLook`: the base lifted by LOOK, so Custom's is the colour picked), in linear light. Anisotropic
+  GGX, roughness 0.25, anisotropy 0.6, brushed along the length: the lobe along the brushing is baked
+  into the room's blur (3°), the lobe across it is 16 reflections across the brushing in the shader,
+  weighted by GGX's slope distribution (a reflection into the metal is shadowed). The split sum's
+  scale and bias come from Karis's mobile fit, and the bias is taken back out of the dye, so a face seen
+  square-on in a light of 1 shows the colour. The light at the middle brightness is set so the body
+  below the wheel reads as Classic's (Silver's centre within a few levels, Gold's bands the owner's lit
+  sample, 41° 69% 46%). **The anodizing:** the clear oxide over the
+  dyed metal would add a dielectric's 4 % of white; that washes a dark dye grey (Navy's red is 2.6 % in
+  linear light), so it is left out. Tone: linear to 0.6, a soft shoulder above, then sRGB's own curve.
+- **The room** (`env.ts`, baked by `bake-env.mjs` from `ios/icon-studio.hdr`, Poly Haven, CC0): 64 × 32
+  texels of log luminance, 8 bits, azimuth all round and elevation ±45° (all a face that curves
+  across can reflect), 2.7 KB as base64 in the bundle, no fetch. The room's three windows sit on the
+  horizon; it is turned so two of them flank the viewer, mirrored and averaged about that axis (the
+  right one is twice the middle one), and darkened past 50° either side (a product shot's black
+  flags), so the bands fall where Classic's do and the rounded edges go dark rather than catching the
+  far windows. Luminance only: the dye is the only colour.
+- **Inputs.** `__wmpBrightness` (`wmp-brightness`) scales the room's light 0.86 to 1.14 (Classic's
+  `--lux` range, in linear light), once it has stood 0.5 s; 1 where the host reports none.
+  `__wmpTilt` (`wmp-tilt`) turns the room about the body's long axis, 4° at a full roll, so the bands
+  slide as Classic's do (12 px of a 390-wide body at a roll of 0.6, the same way). The colour sets F0.
+- **Cost.** Drawn on change only, never on a loop: the colour, the size, the brightness (settled), a
+  roll more than 2° from the one drawn (tremor is ignored), at most 30 draws a second while it keeps
+  turning, none once still. At the phone's point grid (CSS pixels in a browser; the phone's desktop
+  viewport has 2.5 to a point, `host.ts pointPx`), scaled up by the browser. Nothing draws while the
+  page is hidden (what changed draws when it shows); turning it off, or leaving the skin, frees the
+  context. Measured in headless Chromium on SwiftShader (software GL, so far slower than a phone's
+  GPU): one draw of 390 × 844 in 57 ms; idle a minute, 0 draws; a ±0.3° tremor at 60 Hz, 0 draws; a 40°
+  turn in 2.3 s, 62 draws, then none.
+- **Low Power Mode** (`__wmpLowPower`, `wmp-lowpower`): Rendered stays, on the same context, but holds
+  still: one frame upright at the middle brightness (exposure 1), then drawn again only for the colour
+  or the size; tilt and brightness are not followed. Leaving it follows them again at once.
+- **Fallbacks.** No WebGL (or a shader that does not link) and a lost context both remove the canvas,
+  so Classic shows; a lost context stays Classic until Metal is switched again or the page reloads.
+- **The host log** (`alchemyLog`): `ipod: metal rendered (<the GPU's name>)` when it starts;
+  `ipod: metal N redraws/min` each minute while on, beside the app's `cpu:` and thermal lines;
+  `ipod: metal still (low power)` / `ipod: metal live` as Low Power Mode comes and goes;
+  `ipod: metal classic (no webgl)` / `ipod: metal classic (context lost)` when it falls back.
+
+Its knobs are the constants at the top of `metal/gl.ts` (finish, shape, eye, exposure, taps),
+`metal/index.ts` (tremor, rate, settle time, turn, brightness range) and `metal/bake-env.mjs` (the
+room's turn, blur, flags; rerun it after changing ROUGH or ANISO, whose lobe along the brushing it
+bakes). Tests: `tests/skins/ipod-metal.test.tsx` (the GPU mocked); the look by screenshots.
+
 ---
 
 ## 2. The screen UI, every page
@@ -461,7 +523,7 @@ Contacts, Fitness, Voice Memos (§2.3).
 
 - **Value lists** (Color, Theme, Skin) are a list with a checkmark on the
   current choice.
-- **Toggles** (Clicker, Click Wheel, Library View) flip in place on
+- **Toggles** (Metal, Clicker, Click Wheel, Library View) flip in place on
   centre and show their value in blue.
 - This player's Settings is **one list under section headers** (§4.4, "This player's Settings
   tree"): a header is the iPod OS grouped list's short grey band with its name in bold white
@@ -706,7 +768,7 @@ rows show only with their host, and a header with no row shown under it is not s
 
 | Header | Its rows, in order |
 |---|---|
-| **Appearance** | Skin ›, Color ›, Click Wheel (White / Black), Clicker (On / Off), Theme › (Light / Dark / Automatic, *`alchemyAppearance`*) |
+| **Appearance** | Skin ›, Color ›, Metal (Classic / Rendered, §1.7), Click Wheel (White / Black), Clicker (On / Off), Theme › (Light / Dark / Automatic, *`alchemyAppearance`*) |
 | **Menus** | Main Menu › (Home, Search, Library, Radio, Brick, each on or off; all on at first), Library Filters ›, Library View (Grid / List) |
 | **Sound** (the whole section *`auth.hostPlayer`*: the host's own player) | EQ › (the iPod's presets, the row naming the chosen one), Audio Quality (Normal / High / Very High), Sound Check (On / Off), Crossfade (Off / 2 s / 5 s / 8 s / 12 s), Audio Cache (On / Off) |
 | **General** | About ›, Check for Updates ›, Refresh Player (*`alchemyRestart`*), Reset Settings ›, Legal › |
@@ -721,7 +783,7 @@ and Volume Limit (built, then removed 2026-10-02: it never held the phone's volu
 
 - Main Menu checklist plus Preview Panel, and the Music Menu checklist
 - Clicker
-- Color, Click Wheel
+- Color, Metal, Click Wheel
 - Reset Settings (resets `ipod.settings` only, never the app's)
 
 ### 4.5 Must-nots

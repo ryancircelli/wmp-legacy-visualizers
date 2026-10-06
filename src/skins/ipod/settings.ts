@@ -30,7 +30,7 @@ export const COLORS: Record<Preset, readonly [number, number, number]> = {
 /** Custom's lightness range: the body's lights top out at 72 % (ipod.module.css --hi), so past 75 the
  *  cylinder goes flat (its centre as bright as its bands); under 15 its edge and shade go black */
 export const LIGHT = [15, 75] as const;
-export const DEFAULTS: IpodSettings = { color: 'green', hue: 0, sat: 85, light: 50, clicker: true, wheel: 'white' };
+export const DEFAULTS: IpodSettings = { color: 'green', hue: 0, sat: 85, light: 50, clicker: true, wheel: 'white', metal: 'classic' };
 
 const clamp = (v: unknown, lo: number, hi: number, d: number) => (typeof v === 'number' && v >= lo && v <= hi ? v : d);
 /** Whatever localStorage held (an older or hand-edited blob) as valid settings. */
@@ -42,6 +42,7 @@ function normalize(p: Partial<IpodSettings>): IpodSettings {
     light: clamp(p.light, LIGHT[0], LIGHT[1], DEFAULTS.light),
     clicker: typeof p.clicker === 'boolean' ? p.clicker : DEFAULTS.clicker,
     wheel: p.wheel === 'black' ? 'black' : 'white',
+    metal: p.metal === 'rendered' ? 'rendered' : 'classic',
   };
 }
 
@@ -68,11 +69,22 @@ export const ipodSettings = () => store.getState();
 export const bodyHsl = (s: IpodSettings, color = s.color): readonly [number, number, number] =>
   color === 'custom' ? [s.hue, s.sat, s.light] : COLORS[color];
 
+/** The body's base colour, what both looks light (Custom's taken down by LOOK, below). */
+function bodyBase(s: IpodSettings): readonly [number, number, number] {
+  const [h, sat, l] = bodyHsl(s), k = s.color === 'custom' ? LOOK : 1;
+  return [h, sat / k, l / k];
+}
+/** The body colour as it reads, its base lifted by LOOK (Custom's: the colour picked): the rendered
+ *  metal's dye (metal/), whose light lifts the lightness as the cylinder's does, but not the saturation. */
+export function bodyLook(s: IpodSettings): readonly [number, number, number] {
+  const [h, sat, l] = bodyBase(s);
+  return [h, Math.min(100, sat * LOOK), Math.min(100, l * LOOK)];
+}
 /** The body colour as the one hue knob the module's .body reads (§1.3: --h --s --l; the highlight,
  *  shadow and centre button derive from it). */
 export function bodyVars(s: IpodSettings): CSSProperties {
-  const [h, sat, l] = bodyHsl(s), k = s.color === 'custom' ? LOOK : 1;
-  return { '--h': h, '--s': sat / k + '%', '--l': l / k + '%' } as CSSProperties;
+  const [h, sat, l] = bodyBase(s);
+  return { '--h': h, '--s': sat + '%', '--l': l + '%' } as CSSProperties;
 }
 /** The cylinder's lights (ipod.module.css --hi and its neighbours: up to 1.36 times the base's lightness
  *  and 1.3 its saturation, over most of what shows beside the screen) make the body read about this much

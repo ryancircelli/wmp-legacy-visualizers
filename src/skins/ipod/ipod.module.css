@@ -85,7 +85,19 @@
   font-family: var(--ipod-font);
   /* the cylinder and a tone change from top to bottom */
   background: linear-gradient(180deg, transparent 55%, rgb(0 0 0 / .2)), var(--metal);
+  isolation: isolate;                /* .metal's z-index -1 stays over this background */
 }
+/* Metal > Rendered (§1.7, metal/): the GPU's body on a canvas in the cylinder's place, under the
+   device and the grain; while it is there the cylinder is not painted */
+.metal {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+.body:has(> .metal) { background: none; }
 /* a text field types and selects its own text, whatever the body says */
 .body input { user-select: text; -webkit-user-select: text; }
 @media (min-aspect-ratio: 3/4) {
