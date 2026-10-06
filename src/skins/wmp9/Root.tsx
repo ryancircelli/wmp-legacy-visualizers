@@ -12,11 +12,21 @@ import { Transport, WmpSeekBar } from './components/Transport';
 import { MediaGuide, MediaLibrary, RadioTuner, SearchView } from './components/Views';
 import s from './wmp9.module.css';
 
+/** The app's icon (the iOS app's alternate icons, ios/icons.py): WMP 9's own Luna blue while it is the
+ *  skin (the owner, 2026-10-06), once it has stood a moment (a skin flicked through asks nothing). */
+function useSkinIcon() {
+  useEffect(() => {
+    const t = window.setTimeout(() => window.alchemyIcon?.('wmp'), 3000);
+    return () => clearTimeout(t);
+  }, []);
+}
+
 export function Root() {
   const sh = useShell();
   const st = useApp((x) => ({ bare: isBare(x), spotify: isSpotify(x), nativeTitle: x.auth.nativeTitle === true,
                               taskPane: x.settings.taskPane !== false, playlistPane: x.settings.playlistPane !== false }));
   useDesktopViewport();
+  useSkinIcon();
   return (
     <div className="font-xp text-11 leading-[1.4] text-ink" data-ui-root="">
       {/* Luna: the title bar across the top with rounded top corners, and a 4px blue border of the

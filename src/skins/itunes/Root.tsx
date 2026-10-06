@@ -13,6 +13,11 @@ export const isPhone = (): boolean =>
 export function Root() {
   const [phone] = useState(isPhone);
   useDesktopViewport();
+  // the app's icon in iTunes' silver while it is the skin (the owner, 2026-10-06), once it has stood a moment
+  useEffect(() => {
+    const t = window.setTimeout(() => window.alchemyIcon?.('silver'), 3000);
+    return () => clearTimeout(t);
+  }, []);
   return phone ? <PhoneRoot /> : <DesktopRoot />;
 }
 

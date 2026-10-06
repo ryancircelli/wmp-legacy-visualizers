@@ -211,6 +211,9 @@ def main():
     for h in HUES:
         for l in LIGHTS: want['c-h%03d-l%d' % (h, l)] = (h, 80, l)
     for l in GREYS: want['c-grey-l%d' % l] = (0, 0, l)
+    # the other skins' own (the owner, 2026-10-06): WMP 9's, the Luna title bar's blue (#0058EE to #0046D5,
+    # src/ui/theme.css luna-window); iTunes 10 takes the silver preset's
+    want['wmp'] = (219, 100, 44)
     for name, (h, s, l) in list(want.items()) + [('', want['green'])]:   # '': the app's own icon, the default colour's
         d = os.path.join(ASSETS, 'Icon-%s.appiconset' % name if name else 'AppIcon.appiconset')
         os.makedirs(d, exist_ok=True)
