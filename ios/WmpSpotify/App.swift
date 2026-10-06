@@ -949,6 +949,12 @@ struct WebView: UIViewRepresentable {
                 guard UIApplication.shared.alternateIconName != name else { return }
                 UIApplication.shared.setAlternateIconName(name) { error in
                     HostLog.shared.log("icon: \(s)\(error.map { " failed: " + $0.localizedDescription } ?? "")")
+                    // "Resource temporarily unavailable" (POSIX 35): iOS's icon service is stuck and refuses every
+                    // change until the phone restarts (seen 2026-10-05 after one bad icon request; Apple forums
+                    // 809474/812125). Said once a launch, as the switch fails (the owner, 2026-10-06).
+                    if let e = error as NSError?, e.domain == NSPOSIXErrorDomain, e.code == 35 {
+                        DispatchQueue.main.async { IconStuck.tell() }
+                    }
                 }
             case "notify":
                 guard let s = message.body as? String else { return }
@@ -1018,6 +1024,22 @@ func notify(_ body: String) {
 // Inside the safe area they are all 0; edge to edge they are the notch's and the home indicator's.
 // They are the window's, where the web view overlaps them, and never the keyboard's: SwiftUI counts
 // the keyboard in a hosted view's own safeAreaInsets while it shows, and the page would pad itself by it.
+/// The icon service stuck (an icon change refused with POSIX 35): one alert a launch saying a restart
+/// clears it. The colour is kept by the page; the icon follows it at the next change after the restart.
+enum IconStuck {
+    private static var told = false
+    @MainActor static func tell() {
+        guard !told, var top = windowScene()?.keyWindow?.rootViewController else { return }
+        told = true
+        while let p = top.presentedViewController { top = p }
+        let a = UIAlertController(title: "Restart your iPhone to change the icon",
+                                  message: "iOS's icon service is stuck and is refusing icon changes until the phone restarts. Your colour is saved; the icon will follow it after a restart.",
+                                  preferredStyle: .alert)
+        a.addAction(UIAlertAction(title: "OK", style: .default))
+        top.present(a, animated: true)
+    }
+}
+
 /// Three fingers held on the screen open the log, whatever the page shows: a page that went blank
 /// left no way to it (the owner, 2026-10-05: "i didn't have ui to access them"). A shake is the
 /// page's (the iPod's shuffle), so it is not this. Alongside the page's own touches, never instead.
