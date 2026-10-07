@@ -1,8 +1,9 @@
 // Ported from tests/trig.test.js — Alchemy.sin / cos / atan2 are clones of ucrtbase's (10.0.26100, FMA3 +
 // AVX2 branch), which is what mpvis.DLL and wmp.dll call; they are NOT correctly rounded, and the
 // engines truncate products that land exactly on their ulps (NOTES-battery-ab.md). This suite pins:
-//   1. bit agreement with ucrtbase's own answers (tests/trig-ucrt.bin: 2500 sin, 2500 cos, 2250 atan2
-//      evaluated by ucrtbase.dll on the capture machine) — two thirds of them engine arguments,
+//   1. bit agreement with the clone's frozen answers (tests/trig-clone.bin: 2500 sin, 2500 cos, 2250 atan2,
+//      written by the clone itself and proven equal to ucrtbase.dll's own by the private harness) — two
+//      thirds of them engine arguments,
 //      weighted to the ones where V8's Math.* disagrees, the rest random, near k*pi/4, tiny,
 //      Payne-Hanek-sized (>= 2e7) and atan2's wide-exponent / subnormal-quotient edges;
 //   2. Alchemy.fma (the emulated vfmadd every kernel step is built on) against a BigInt exact
@@ -23,10 +24,10 @@ const dv = new DataView(new ArrayBuffer(8));
 const hex = (v: number): string => { dv.setFloat64(0, v); return dv.getBigUint64(0).toString(16).padStart(16, '0'); };
 const same = (a: number, b: number): boolean => hex(a) === hex(b) || (a !== a && b !== b);
 
-for (const mode of ['js', 'wasm'] as const) describe(`trig (${mode}): bit agreement with ucrtbase fixtures`, () => {
+for (const mode of ['js', 'wasm'] as const) describe(`trig (${mode}): bit agreement with the frozen ucrtbase-equal answers`, () => {
   beforeAll(() => { A.trigMode = mode; });
   afterAll(() => { A.trigMode = 'auto'; });
-  const buf = fs.readFileSync(path.join(here, '..', 'trig-ucrt.bin'));
+  const buf = fs.readFileSync(path.join(here, '..', 'trig-clone.bin'));
   const F = new Float64Array(buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.length));
   const header = new Uint32Array(F.buffer, 0, 3);
   const nS = header[0]!, nC = header[1]!, nA = header[2]!;

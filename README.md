@@ -186,11 +186,11 @@ Every visualizer is byte-identical to the real Microsoft object for 30,000 conse
 Measured on 2026-09-24 and re-run on the TypeScript engine on 2026-09-25 with the same result.
 [`docs/EXACTNESS.md`](docs/EXACTNESS.md) has the per-preset table, the input, and the fixes it took.
 
-- **How.** `tools/hostP.ps1` hosts the real DLL in-process and hooks its `_time64`, `srand` and
+- **How.** A private harness hosts the real DLL in-process and hooks its `_time64`, `srand` and
   `rand` imports, so the clock is pinned and the random stream is known. Both sides get the same
   30,000 frames of a synthetic track (silence, quiet pads, beats, chords, sweeps, noise bursts).
   Every frame's FNV-1a hash of the whole surface and its `rand()` count must match.
-- **Coverage.** Alchemy's effects are chosen at random, so `tools/coverage.js` records every effect,
+- **Coverage.** Alchemy's effects are chosen at random, so the harness records every effect,
   warp kernel and parameter branch a run exercises. Shorter runs over many more seeds reached every
   reachable combination but one rare cell. They matched too, once the runtime clones below closed a
   single one-pixel difference.
@@ -219,12 +219,13 @@ Measured on 2026-09-24 and re-run on the TypeScript engine on 2026-09-25 with th
 3. **Port.** Each spec became a module under `src/engine/` (TypeScript, wrapped 1:1), keeping
    the DLL's own integer truncation, fixed-point shifts, and literal constants rather than
    "fixing" them to cleaner math.
-4. **Verify.** `tools/hostP.ps1` drives the real object and the port from the same input at the
+4. **Verify.** The private harness drives the real object and the port from the same input at the
    same pinned time. Any mismatch was chased back through the disassembly rather than patched away
    statistically.
 
-The decompiles and specs are not published. Comments that cite paths under `re/` or `spec/` point
-into that private reverse-engineering archive.
+The decompiles, specs and the verification harness (the hosts that load Microsoft's DLLs, the A/B
+runners, the test streams) are not published: this repo holds only our own port and tests of its own
+output. Comments that cite paths under `re/` or `spec/` point into that private archive.
 
 ## Repo layout
 
@@ -232,7 +233,7 @@ into that private reverse-engineering archive.
 |---|---|
 | `src/engine/` | The port itself: Alchemy, Bars and Waves, Battery, and the audio front end |
 | `src/` | The page around it: the WMP 9 skin, the player model, and the Spotify and capture adapters |
-| `tools/` | The verification harness: PowerShell hosts for the real DLLs, reference renderers, A/B scripts |
+| `tools/` | Build tooling (WebAssembly, post-build, update signing), `gen_frames.py` (the audio analysis the tests and pcm.ts follow), `loopback-rec` |
 | `tests/` | Vitest unit tests, fixtures, and the Playwright smokes |
 | `docs/` | `EXACTNESS.md`, the frame-by-frame comparison record; `history/`, the retired Deno host's design record |
 | `tauri/` | The two Windows desktop formats: one Rust exe for the screensaver, the player and Spotify, built twice (`tauri/package/` is the rest of the zips) |

@@ -733,7 +733,7 @@ class Battery {
     // Verified on the real object with the clock pinned and _o_rand hooked: preset 13 at seed
     // 1700000000 draws countdown 262 at frame 23 and calls NewPalette at frame 285; preset 20 draws
     // 151 and fires at 174 — the port now matches both frame for frame. A preset selected AFTER the
-    // first Render keeps bPalettePaused = 1 and never drifts (confirmed with hostP.ps1 -LatePreset).
+    // first Render keeps bPalettePaused = 1 and never drifts (confirmed against the real object by the private harness).
     if (this.allocPending) { this.allocPending = false; this.palettePaused = false; }
     switch (L.state) {
       case 0:                                                    // STOPPED

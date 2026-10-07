@@ -1,6 +1,6 @@
 // The engine's shared namespace: what `window.Alchemy` was. Every engine module attaches its exports to
 // it and calls the others through it late-bound (`A.rand()`, `A.Effect`, `A.BatteryDraws[name]`), which
-// is what lets the A/B tools (tools/js_*.js) count rand() draws and the tests swap in fakes. Keep it so.
+// is what lets the private A/B harness count rand() draws and the tests swap in fakes. Keep it so.
 import type { Effect, WarpKernel } from './effect';
 import type { Shift } from './shift';
 import type { Kernels } from './kernels';

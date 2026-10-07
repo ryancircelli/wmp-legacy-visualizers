@@ -547,7 +547,7 @@ describe('chaining halves the displacement', () => {
 // The maps truncate cos/sin(atan2(dy,dx)) * r to int, and at Pythagorean-triple radii that
 // product is exactly an integer, so a 1-ulp atan2 difference moves a table entry one pixel.
 // These are integer (y,x) pairs where V8's Math.atan2 disagrees with ucrtbase.dll; the
-// expected values are ucrtbase's, captured through a P/Invoke bridge on Windows.
+// expected values are the clone's, checked privately against ucrtbase.dll.
 describe('atan2 matches ucrtbase bit for bit', () => {
   it('24 hard integer pairs, plus the one-pixel table-error regression', () => {
     const A2 = A.atan2;

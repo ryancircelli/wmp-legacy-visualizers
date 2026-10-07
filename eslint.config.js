@@ -4,7 +4,7 @@ import reactHooks from 'eslint-plugin-react-hooks';
 import tseslint from 'typescript-eslint';
 
 export default tseslint.config(
-  // Old concatenated sources, A/B drivers and Playwright smokes are plain CommonJS/scripts, not linted.
+  // Old concatenated sources and Playwright smokes are plain CommonJS/scripts, not linted.
   // assembly/ is AssemblyScript (its own types and decorators), checked by its compiler (npm run build:wasm).
   { ignores: ['dist', 'alchemy.html', 'src/*.js', 'tools', 'tests/*.js', 're', 'spec', 'site', 'assembly', 'tauri/target', 'tauri/gen', 'ios'] }, // ios/: observer.js is a function body Swift wraps
   {

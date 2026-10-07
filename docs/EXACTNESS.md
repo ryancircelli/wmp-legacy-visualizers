@@ -9,10 +9,14 @@
 **Re-run on the TypeScript engine (branch react-ts, `dist/engine.js` built by Vite/esbuild, minified; 2026-09-25):** the
 identical 37 runs — Alchemy 3 seeds × 30 000 frames EXACT, Bars and Waves 4 presets × 30 000 identical, Battery 26
 presets at 1700000000 + presets 0/4/9/20 at 1234567890 × 30 000 identical. The port wrapped the numerics 1:1; the
-A/B tools now load `dist/engine.js` (`ALCHEMY_ENGINE` overrides).
+A/B drivers load `dist/engine.js`.
+
+The harness (the hosts that load the real DLLs, the A/B drivers, the test streams) lives in the private
+reverse-engineering archive since 2026-10-07; this repo keeps the results. "The host" below is the real
+object hosted in-process with its clock and `rand()` hooked; "the twin" is the port rendering the same input.
 
 Every Alchemy and Bars row compares the **per-frame FNV-1a hash of the whole RGB surface and the per-frame `rand()`
-count** (Battery: see below), every frame, between the real object (`tools/hostP.ps1`, IAT-hooked `_time64` / `_o_srand` /
+count** (Battery: see below), every frame, between the real object (the host, IAT-hooked `_time64` / `_o_srand` /
 `_o_rand`, so the run is deterministic) and the port on the same frames. "identical N/N" means
 every frame's hash and draw count matched.
 
@@ -66,10 +70,10 @@ the runs started, and again against the tree after the parallel `ucrtbase` sin/c
 
 Battery rows compare, every frame, the FNV-1a of the 384x288 8-bit FRONT surface (`ihash`), the
 `rand()` count, and the whole palette control block including FNV hashes of the FROM / LIVE / TO
-palettes (`hostP.ps1 -Pal` vs `js_bat.js`'s `pal.csv`). They do not compare the 640x480 DIB hash: that
+palettes (the host's and the twin's palette logs). They do not compare the 640x480 DIB hash: that
 image is GDI's `STRETCH_DELETESCANS` row/column pick plus the DLL's one-frame palette display lag
 (spec `battery/10` §2.3, §5), host blit behaviour, and is fully determined by FRONT + LIVE.
-`hostP.ps1 -Channels 2` (WMP's `MediaInfo`) and no `MediaInfo` give the same result.
+Calling `MediaInfo(2, …)` as WMP does and not calling it give the same result.
 
 **The divergence (fixed in 9a944f4):** before the fix the 14 presets without their own palette
 (1 2 3 4 6 8 11 12 13 14 16 17 19 23) all diverged on the same auto-cycled palette: at pinned
@@ -82,11 +86,11 @@ up in a different order, so TO entries 126-199 differed (74 entries) and LIVE fa
 wrong colours until the next palette at +792 frames. Index surface and `rand()` stream never
 differed. `src/75-battery.js` `newPalette` now uses the exchange sort; `tests/battery.test.js`
 pins the tie order with a scripted `rand()`; all 26 presets were re-run at 30 000 frames on the
-fixed build (`tools/battery_ab.sh`, `ALCHEMY_HOST_SHARE` mode) and are identical.
+fixed build and are identical.
 
 ## The input: `frames_long30k.bin`
 
-`python3 tools/make_long.py long.wav frames_long30k.bin 30000` (md5 of the .bin
+Made by the harness's composition script (md5 of the .bin
 `fa40e9c96a670c3c5e416c3061852eff`; ~3.5 min on 8 cores). A deterministic 502 s stereo composition
 (`random.seed(7)`) that cycles digital silence (2-6 s) → quiet pad (about -40 dB) → kick+hat beat →
 sustained three-note chord → sparse clicks over near-silence → 40 Hz-8 kHz log sweep → noise bursts
@@ -96,17 +100,12 @@ several full Alchemy scheduler cycles including quiet → loud transitions and f
 
 ## Reproduce
 
-```
-tools/pinned_ab.sh PIN frames_long30k.bin 30000     # Alchemy; ALCHEMY_HOST_DIR/_WIN = harness dir, KEEP=dir keeps both CSVs
-tools/bars_ab.sh PRESET frames_long30k.bin 30000 354 345 [RAWEVERY]   # Bars and Waves
-tools/battery_ab.sh PRESET PIN frames_long30k.bin 30000              # Battery (OUT=dir keeps both sides)
-tools/cmp_hash.sh real/stats.csv port/stats.csv     # compare any hostP -Hash run with js_renderP/js_bars
-```
-
-`hostP.ps1 -Channels 2` calls `MediaInfo(2, 44100, "")` before the first Render, as WMP does
-(without it the bare object stays mono: 50 `rand()` per frame instead of 100). `js_bars.js` renders
-the host's all-zero `Prepare()` probe first and restores the DLL's own preset-0 colour literals
-(the port ships the WMP-skin colours by design).
+The private harness (`tools/ab.py` in the reverse-engineering archive) runs any row: the host and the twin
+on the same frames, preset, pinned clock and size, every frame's hash compared, one verdict line per run.
+The host calls `MediaInfo(2, 44100, "")` before the first Render, as WMP does (without it the bare object
+stays mono: 50 `rand()` per frame instead of 100). The Bars and Waves twin renders the host's all-zero
+probe frame first and restores the DLL's own preset-0 colour literals (the port ships the WMP-skin colours
+by design).
 
 ## What it took for Bars and Waves (all fixed in `src/60-bars.js`)
 
@@ -119,7 +118,7 @@ The first byte-for-byte run failed on every frame. Causes, each from the wmp.dll
    the bar's top row. The port pushed the cap to `drawn+1` instead (same look, different pixels,
    and a stray cap row on silent frames). Trail mode: invalidation before the terminator test.
 3. **Fast-log tables**: `T_lin`, `T_mant`, `T_exp` are not formulas (T_lin is 10^(8v/255) rounded to
-   ~7 digits); extracted byte-exact by `tools/bars_tables.py` and embedded. `ReduceSpectrum` is all
+   ~7 digits); extracted byte-exact from the DLL and embedded. `ReduceSpectrum` is all
    float32 (`0x18041d007..0x18041d039`); the port summed in double.
 4. **Band edges use 1102.5, not 1100** (the double at `0x18088c548`) — bands end at 22 050 Hz.
 5. **`lastTimeStamp` starts at 0** (`0x18041cb76`), so a first Render at timeStamp 0 is a skip frame.

@@ -26,7 +26,7 @@ A.randSeed = function (s) { if (arguments.length) seed = s! | 0; return seed; };
 // 0x1800ab710, instruction for instruction.  Every vfmadd is one rounding, so it is an exact
 // fma here (fma() below); every other op is plain double arithmetic, which JS does identically.
 // Globals are captured once: a per-call global lookup is slow wherever the host makes globals
-// slow (node vm sandboxes: every A/B tool), and Math.abs is branch-free where `x < 0 ? -x : x` is not.
+// slow (node vm sandboxes: the private A/B harness), and Math.abs is branch-free where `x < 0 ? -x : x` is not.
 var abs = Math.abs, floor = Math.floor;
 var SPLIT = 134217729;                                          // 2^27 + 1 (Veltkamp)
 var F64 = new Float64Array(1), U32 = new Uint32Array(F64.buffer);   // little-endian: U32[0] = low word

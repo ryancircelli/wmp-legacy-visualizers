@@ -74,8 +74,8 @@ Old `src/*.js`, `template.html`, `build.py`, `deno/build.ts` are deleted at cut-
 ## Engine
 Port each src/NN-*.js to a TS module by wrapping, not rewriting: same functions, same typed arrays, same integer ops
 (`| 0`, `>>>`), same evaluation order; add types (Uint8Array, Float64Array, number) and `export`s only. The custom
-rand/LCG, the ucrtbase sin/cos/atan2 clones and the FMA emulation move verbatim. Gate: tools/js_render*.js, js_bat.js,
-js_bars.js (the A/B drivers) must run against the built engine (give them a small `dist/engine.js` classic build or
+rand/LCG, the ucrtbase sin/cos/atan2 clones and the FMA emulation move verbatim. Gate: the A/B drivers (the private
+harness) must run against the built engine (give them a small `dist/engine.js` classic build or
 load the TS through tsx) and reproduce docs/EXACTNESS.md on a sample: Alchemy 3 000 frames at 1700000000, Bars presets
 0–3 at 3 000, Battery presets 0, 1, 9, 20 at 3 000 — identical, before the old files are deleted. (The full 30 000 pass
 is re-run once at the end by the lead.)
