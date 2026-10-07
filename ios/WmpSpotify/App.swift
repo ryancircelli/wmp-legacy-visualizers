@@ -1371,6 +1371,25 @@ final class Librespot {
         }
     }
     private var interrupted = false  // on the main thread: paused by an interruption, to resume after it
+
+    /// Paused, the app is suspended once it gives up the session (idle), and iOS takes its sockets: a play
+    /// pressed in Control Center fifteen seconds after a pause woke it to a dead connection and was lost
+    /// (2026-10-07; the owner: "we can drain in scenarios like this we just need to minimize"). After a
+    /// pause it keeps the background time iOS allows (about half a minute, counted from when it is in the
+    /// background), so a short pause resumes at once; past that the press reconnects (librespot keeps it
+    /// for the new session). Nothing plays meanwhile, so Control Center shows it paused (a silent engine
+    /// would keep it awake longer, and showing playing).
+    private var pausedTask = UIBackgroundTaskIdentifier.invalid  // on the main thread
+    private func awake(_ on: Bool) {
+        DispatchQueue.main.async {
+            if self.pausedTask != .invalid { UIApplication.shared.endBackgroundTask(self.pausedTask); self.pausedTask = .invalid }
+            guard on else { return }
+            self.pausedTask = UIApplication.shared.beginBackgroundTask(withName: "paused") {
+                HostLog.shared.log("audio: paused past iOS's background time: suspended from here", quiet: true)
+                UIApplication.shared.endBackgroundTask(self.pausedTask); self.pausedTask = .invalid
+            }
+        }
+    }
     private var fed = Date.distantPast  // when samples last came (librespot's thread writes, main reads)
 
     /// Paused by an interruption, the app would be suspended within seconds and not hear it end (the
@@ -1635,9 +1654,11 @@ final class Librespot {
             if engine.isRunning { engine.pause() }
             Forwarder.shared.stopped()
             idle()
+            awake(true)
             return
         }
         if !playing {
+            awake(false)
             playing = true
             Forwarder.shared.started()
             // playing again, however it came about: no interruption is being waited out any more (the
