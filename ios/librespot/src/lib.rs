@@ -12,7 +12,7 @@ use std::{
     ffi::{CStr, CString, c_char, c_void},
     future::Future,
     pin::Pin,
-    sync::{Arc, Mutex, MutexGuard, atomic::Ordering::Relaxed},
+    sync::{Arc, Mutex, MutexGuard, atomic::{AtomicBool, Ordering::Relaxed}},
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
@@ -59,6 +59,8 @@ static HOST: Mutex<Option<Host>> = Mutex::new(None);
 static STOP: Mutex<Option<oneshot::Sender<()>>> = Mutex::new(None);
 static TOKENS: Mutex<Option<mpsc::UnboundedSender<(String, String, String)>>> = Mutex::new(None);
 static COMMANDS: Mutex<Option<mpsc::UnboundedSender<String>>> = Mutex::new(None);
+// The active Connect device (HostPlayer::send's `active`), for a transfer's retries to stop at.
+static ACTIVE: AtomicBool = AtomicBool::new(false);
 
 fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
     m.lock().unwrap_or_else(|e| e.into_inner())
@@ -176,6 +178,7 @@ impl HostPlayer {
     // with none (a mode or activation change) the last one carried forward while it played.
     fn send(&mut self, t: &Track, playing: bool, position: Option<u32>) {
         let now = epoch_ms();
+        ACTIVE.store(self.active, Relaxed);
         self.position = position.unwrap_or_else(|| {
             let p = self.position as u64 + if self.playing { now.saturating_sub(self.at) } else { 0 };
             (if t.duration > 0 { p.min(t.duration as u64) } else { p }) as u32
@@ -247,11 +250,23 @@ fn transfer(session: &Session) {
     tokio::spawn(async move {
         let id = session.device_id().to_owned();
         // A session just made is not a Connect device until Spirc has registered it (a moment): tried
-        // again for two seconds, then Spirc's own, which waits for that.
+        // every half second for two seconds. Then on, further apart, for half a minute and more: a session
+        // made again as the network came back met it still failing (no route to host, "can't assign
+        // requested address"), its one try lost, and the music stopped at the end of the song it had
+        // (2026-10-07). Until it is the active device, or its session ends; then Spirc's own.
+        const WAITS: [u64; 11] = [500, 500, 500, 500, 1000, 2000, 4000, 8000, 8000, 8000, 8000];
         for n in 0.. {
             match session.spclient().transfer(&id, &id, None).await {
                 Ok(_) => return,
-                Err(_) if n < 4 => tokio::time::sleep(Duration::from_millis(500)).await,
+                Err(e) if n < WAITS.len() => {
+                    if n >= 4 {
+                        say(&format!("librespot: transfer: {e}: again in {} s", WAITS[n] / 1000));
+                    }
+                    tokio::time::sleep(Duration::from_millis(WAITS[n])).await;
+                    if ACTIVE.load(Relaxed) || session.is_invalid() {
+                        return;
+                    }
+                }
                 Err(e) => {
                     say(&format!("librespot: transfer: {e}: through Spirc instead"));
                     if let Some(tx) = tx {
@@ -615,6 +630,12 @@ async fn run(
     let mut after: Vec<String> = Vec::new(); // a play and skips asked for before the taken playback is here: done once it is
     let mut taking: Option<Instant> = None; // the playback is being taken: until its track has loaded
     let mut held: Vec<String> = Vec::new(); // playback commands that came with no session, for the next
+    // The playback commands given the live session in the last SENT_FOR: the ones a session that ends then
+    // took to its end are held for the next. A play pressed in Control Center after a pause in the
+    // background went to a session already dead (the phone's sockets taken while it was suspended) and
+    // was lost with it (2026-10-07).
+    let mut sent: Vec<(Instant, String)> = Vec::new();
+    const SENT_FOR: Duration = Duration::from_secs(3);
     // A change of quality, normalisation or the cache (sound.rs), which librespot takes only into a new
     // player (its PlayerConfig is fixed at Player::new) and a new session (the Cache is fixed at
     // Session::new, and a session connects once, so Spirc, which holds the player, needs a new one):
@@ -695,15 +716,14 @@ async fn run(
                             } else {
                                 "librespot: the last session ended under a paused song: taking the playback back, paused"
                             });
-                            // Spirc's own transfer here: the device is not registered until its connection is
-                            // (Spirc holds commands till then); the play once the track has loaded, as any take's
+                            // As any take: the play once the track has loaded. Not Spirc's own transfer, which
+                            // tries once and says nothing (its failures are debug lines): transfer's tries
+                            // carry on until the device is registered and the network has settled.
                             taking = Some(Instant::now());
                             if resume {
                                 after.insert(0, "resume".into());
                             }
-                            if let Err(e) = s.transfer(None) {
-                                say(&format!("librespot: transfer failed: {e}"));
-                            }
+                            transfer(&session);
                         }
                         spirc = Some(s);
                         task = Some(Box::pin(t));
@@ -751,6 +771,11 @@ async fn run(
                 say(if dead { "librespot: session ended (its connection was lost)" } else { "librespot: session ended" });
                 if playing {
                     lost = Some((Instant::now(), true));
+                }
+                let late: Vec<String> = sent.drain(..).filter(|(at, _)| at.elapsed() < SENT_FOR).map(|(_, c)| c).collect();
+                if !late.is_empty() {
+                    say(&format!("librespot: {} given it as it ended, kept for the next", late.join(", ")));
+                    held.splice(0..0, late);
                 }
                 state(None);
                 // No Spirc, nothing to command: not the active device, and not playing to the page
@@ -897,6 +922,10 @@ async fn run(
                 // two fell out of step (a resume, a pause and a resume while a track loaded, 2026-10-03:
                 // Spirc paused, the player playing) and four presses of pause did nothing. The opposite
                 // command first puts Spirc where the player is (a no-op when they agree), then the one meant.
+                if matches!(c.as_str(), "play" | "pause" | "toggle" | "next" | "prev" | "take") {
+                    sent.retain(|(at, _)| at.elapsed() < SENT_FOR);
+                    sent.push((Instant::now(), c.clone()));
+                }
                 let pause = |s: &Spirc| s.play().and_then(|_| s.pause());
                 let play = |s: &Spirc| s.pause().and_then(|_| s.play());
                 // Spirc ignores all but activate and transfer while it is not the active device: to play,
