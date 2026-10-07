@@ -6,8 +6,10 @@
 //   weighted by GGX's distribution of slopes that way. Anodized: the reflection is the metal's, tinted
 //   by the dye (F0, the body colour). The clear oxide over it would add a dielectric's 4 % of white,
 //   which washes a dark dye grey (Navy's red is 2.6 % in linear light), so it is left out (§1.7).
-// - The centre button: the same anodized metal on its own disc, nearly flat, domed a little and rounded
-//   at its rim, unbrushed: one reflection, between the sharp map and the rough (HUB_SATIN).
+// - The centre button: the same brushed metal on its own disc, lying on the face's arc so its light runs
+//   on from the body's at the body's scale, flat but for its rounded rim. A dome of its own squeezed the
+//   body's bands into its width (at 8° and unbrushed, a ball's diagonal shading: the owner, 2026-10-07,
+//   "looks like the gradient was condensed into a smaller width"; at 2° still half as steep again).
 // - The ring: satin plastic, white or black: a dielectric (F0 4 %) over a matte colour, softly domed
 //   across its width and rounded at both edges: the rough map for its gloss, the irradiance for its colour.
 // - The glass over the screen: its reflection of the same room, a dielectric (F0 4 %, Fresnel's rise
@@ -41,11 +43,9 @@ const EYE = 3.5, EYE_UP = .3;
 const EXPOSURE = .59;
 /** reflections across the brushing, spanning ±SPAN of its alpha */
 const TAPS = 16, SPAN = 2.5;
-/** the centre button: its dome's slope at the rim (degrees), and its rim rounding off by HUB_ROLL more
- *  over its outer HUB_RIM (rolled 35° it mirrored the room's dark ceiling and floor as a chrome bezel's
- *  black ring); its finish between the two maps, HUB_SATIN of the rough: on the sharp alone it read as a
- *  chrome ball, on the rough alone its light hardly moved with the hand */
-const HUB_DOME = 8, HUB_ROLL = 15, HUB_RIM = .08, HUB_ROUGH = .3, HUB_SATIN = .5;
+/** the centre button's rim: rounding off by HUB_ROLL (degrees) over its outer HUB_RIM (rolled 35° it
+ *  mirrored the room's dark ceiling and floor as a chrome bezel's black ring) */
+const HUB_ROLL = 15, HUB_RIM = .08;
 /** the ring: its dome's slope at its edges (degrees), each edge rounding off by RING_ROLL more over its
  *  outer RING_RIM of the width; satin, the rough map's lobe */
 const RING_DOME = 10, RING_ROLL = 40, RING_RIM = .06, RING_ROUGH = .5;
@@ -134,10 +134,15 @@ vec3 anodized(float light, vec3 n, vec3 v, float rough) {
 }
 // a normal tilted by theta away from the centre (dir, in the face's plane)
 vec3 tilted(vec2 dir, float theta) { return vec3(dir * sin(theta), cos(theta)); }
-vec3 body(vec3 v) {
+// the face's normal at this pixel: the arc across the width, its long edges rounding away
+vec3 face() {
   float u = uv.x * 2. - 1., a = abs(u) * ${f(SHOWN)};
   float phi = asin(a * ${f(Math.sin(FACE * Math.PI / 180))}) + ${rad(EDGE_TURN)} * pow(clamp((a - ${f(1 - EDGE)}) / ${f(EDGE)}, 0., 1.), 2.);
-  vec3 n = vec3(sign(u) * sin(phi), 0., cos(phi)), across = vec3(n.z, 0., -n.x);
+  return vec3(sign(u) * sin(phi), 0., cos(phi));
+}
+// the brushed metal facing n
+vec3 brushed(vec3 n, vec3 v) {
+  vec3 across = normalize(vec3(n.z, 0., -n.x));
   float e = 0., ws = 0.;
   for (int i = 0; i < ${TAPS}; i++) {
     float s = (float(i) / ${f(TAPS - 1)} * 2. - 1.) * ${f(SPAN)}, w = pow(1. + s * s, -1.5);
@@ -148,10 +153,8 @@ vec3 body(vec3 v) {
   }
   return anodized(e / ws, n, v, ${f(ROUGH)});
 }
-vec3 hub(vec2 q, float r, vec3 v) {
-  vec3 n = tilted(q / max(r, .0001), atan(r * ${f(Math.tan(HUB_DOME * Math.PI / 180))}) + ${rad(HUB_ROLL)} * smoothstep(${f(1 - HUB_RIM)}, 1., r));
-  vec4 room = look(reflect(-v, n));
-  return anodized(mix(room.r, room.a, ${f(HUB_SATIN)}), n, v, ${f(HUB_ROUGH)});
+vec3 hub(vec2 q, float r) {
+  return normalize(face() + vec3(q / max(r, .0001) * tan(${rad(HUB_ROLL)} * smoothstep(${f(1 - HUB_RIM)}, 1., r)), 0.));
 }
 vec3 plastic(vec2 dir, float t, vec3 v) {
   // across the ring's width t (0 at the centre button, 1 at the body): tilted inward, then outward
@@ -178,11 +181,11 @@ void main() {
   vec2 q = gl_FragCoord.xy - wheel.xy;
   float d = length(q), onWheel = clamp(wheel.z - d + .5, 0., 1.), onHub = clamp(wheel.w - d + .5, 0., 1.);
   vec3 c = vec3(0.);
-  if (onWheel < 1.) c = body(v);
+  if (onWheel < 1.) c = brushed(face(), v);
   if (onWheel > 0.) {
     vec2 dir = q / max(d, .0001);
     vec3 w = onHub < 1. ? plastic(dir, clamp((d - wheel.w) / (wheel.z - wheel.w), 0., 1.), v) : vec3(0.);
-    if (onHub > 0.) w = mix(w, hub(q / wheel.w, min(d / wheel.w, 1.), v), onHub);
+    if (onHub > 0.) w = mix(w, brushed(hub(q / wheel.w, min(d / wheel.w, 1.)), v), onHub);
     c = mix(c, w, onWheel);
   }
   c *= exposure * ${f(EXPOSURE)};

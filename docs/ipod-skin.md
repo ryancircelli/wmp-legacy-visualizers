@@ -240,12 +240,13 @@ the centre's highlight), and "should we also do something to the screen instead 
   Gold's bands the owner's lit sample, 41° 69% 46%). **The anodizing:** the clear oxide over the dyed
   metal would add a dielectric's 4 % of white; that washes a dark dye grey (Navy's red is 2.6 % in
   linear light), so it is left out.
-- **The centre button** (the "wheel dot"): the same anodized metal in the body colour on its own disc,
-  nearly flat (domed 8° at the rim), its rim rounding off 15° more over its outer 8%, unbrushed: one
-  reflection halfway between the sharp map and the rough. Rolled 35° its rim mirrored the room's dark
-  ceiling and floor as a chrome bezel's black ring; on the sharp map alone it read as a chrome ball, on
-  the rough alone its light hardly moved with the hand. Its light moves across it with the roll and up
-  and down with the pitch.
+- **The centre button** (the "wheel dot"): the body's brushed metal on its own disc lying on the face's
+  arc, so its light runs on from the body's at the body's scale, flat but for its rim rounding off 15°
+  over its outer 8%. A dome of its own squeezed the body's bands into the button's width: at 8° and
+  unbrushed it read as a ball's diagonal shading (the owner, 2026-10-07: "looks like the gradient was
+  condensed into a smaller width"), at 2° still half as steep again as the body. Rolled 35° its rim
+  mirrored the room's dark ceiling and floor as a chrome bezel's black ring. Its light moves across it
+  with the roll and up and down with the pitch, as the body's.
 - **The ring:** satin plastic, white or black by Settings > Click Wheel: a dielectric (F0 4 %, roughness
   0.5, the rough map) over a matte colour (white .86, black .013 linear; the irradiance), softly domed
   across its width (10° at its edges) and rounded at both edges. Calibrated to Classic's ring, as the
