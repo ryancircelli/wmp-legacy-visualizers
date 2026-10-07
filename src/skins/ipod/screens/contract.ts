@@ -123,6 +123,8 @@ export interface IpodSettings {
   wheel: 'white' | 'black';
   /** the body: the CSS cylinder, or lit by the GPU (metal/, docs/ipod-skin.md §1.7) */
   metal: 'classic' | 'rendered';
+  /** seconds untouched before the screen dims (the iOS app; settings.ts BACKLIGHT), 0 never */
+  backlight: number;
 }
 
 /** Each group exports screen factories by these names; the chrome's main menu calls them (a

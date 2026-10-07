@@ -149,8 +149,12 @@
 /* the screen leads: its glass (6 units round the 240 x 376 LCD) spans the whole width inside the
    margins when the height allows, else as wide as leaves room for a wheel of 50 % and 2.5 % gaps.
    The wheel hangs --gap below the glass, the same gap as from the phone's edge to the glass (the
-   margin, plus the glass's inset when it is narrower than the width), and is 68 % of the width or
-   what is left above 2.5 % under it, so short of height it is the wheel that gives (never under 30 %) */
+   margin, plus the glass's inset when it is narrower than the width), and is 68 % of the width, or
+   what is left above 2.5 % under it, so short of height it is the wheel that gives (never under 30 %).
+   In the iOS app a gap more (--grow), the chin a gap less, into the margin under the device, so it ends
+   at the home indicator's inset (the owner, 2026-10-07: "a little too much chin under the wheel … make
+   wheel bigger … about as much as the gap between the screen and wheel"); in a browser, with no inset
+   under it, that left it 5 px from the edge */
 .device {
   container-type: size;
   position: relative;
@@ -161,8 +165,9 @@
   /* resolved where used, against this container */
   --unit: min(100cqw / 252, (100cqh - 55cqw) / 388);
   --gap: calc(var(--safe-left, 0px) + var(--margin) + (100cqw - var(--unit) * 252) / 2);
-  --wheel-d: clamp(30cqw, 100cqh - var(--unit) * 388 - var(--gap) - 2.5cqw, 68cqw);
+  --wheel-d: calc(clamp(30cqw, 100cqh - var(--unit) * 388 - var(--gap) - 2.5cqw, 68cqw) + var(--grow, 0px));
 }
+.body[data-phone] .device { --grow: var(--gap); }
 
 /* the glossy black glass round the LCD (§1.4), a little proud of the metal: a dark seam, a lip lit
    from above and catching light below, the glare strong on the glass, a streak faint over the LCD */
@@ -208,6 +213,18 @@
   /* vertical pans scroll the lists; a horizontal swipe reaches Root (right = MENU) */
   touch-action: pan-y;
 }
+/* Settings > Backlight (the iOS app, Root useBacklight): the whole screen dimmed after a while
+   untouched, over everything, so the touch that wakes it lands here and nowhere else */
+.dim {
+  position: absolute;
+  inset: 0;
+  z-index: 100;
+  background: #000000;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .15s;
+}
+.dim[data-on] { opacity: .6; pointer-events: auto; transition-duration: 1s; }
 /* asleep (hold Play): the LCD off */
 .screen[data-asleep]::after {
   content: "";

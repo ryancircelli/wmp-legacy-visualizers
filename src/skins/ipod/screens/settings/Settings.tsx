@@ -1,8 +1,8 @@
 // Settings: this player's tree in the nano's look (docs/ipod-skin.md §4.4), one list in sections under
 // headers (Appearance, Menus, Sound, General, Support, Account); a row that is a real choice opens its page.
 // What Now Playing controls itself is not here (Shuffle and Repeat: the status row; Lyrics, Karaoke,
-// Visualizer, Play On: its ⋯ and hold menus), nor what the device does (brightness, backlight, the date
-// and time, the clock's 24 hours, the volume), nor what has no meaning on Spotify (§4.4: Radio Regions, Language,
+// Visualizer, Play On: its ⋯ and hold menus), nor what the device does (brightness, the date and time,
+// the clock's 24 hours, the volume; Backlight is the app's own dimming, not the phone's), nor what has no meaning on Spotify (§4.4: Radio Regions, Language,
 // Font Size, Rotate, Sort Contacts, Spoken Menus, Audiobooks, Mono Audio). A value shows at
 // its row's right; a value list checks the current choice; a toggle flips in place (§2.4).
 import { useEffect, useState, type CSSProperties } from 'react';
@@ -11,7 +11,7 @@ import { appDownload, isAlbum, LINKS, openLink, restartApp, useApp, useCollectio
 // a cycle (registry -> ipod -> here), safe: `skins` is read only when the Skin page opens
 import { skins } from '../../../registry';
 import { useHostGlobal } from '../../host';
-import { bodyHsl, DEFAULTS } from '../../settings';
+import { BACKLIGHT, bodyHsl, DEFAULTS } from '../../settings';
 import { MenuScreen, Spinner, useIpodSettings, useNav, useWheel } from '../../ui';
 import type { IpodSettings, MenuItem, ScreenEntry } from '../contract';
 import { CustomColor } from './CustomColor';
@@ -53,6 +53,9 @@ function SettingsMenu() {
       onSelect: () => patch({ metal: ip.metal === 'rendered' ? 'classic' : 'rendered' }) },
     { id: 'wheel', label: 'Click Wheel', right: ip.wheel === 'black' ? 'Black' : 'White', onSelect: () => patch({ wheel: ip.wheel === 'black' ? 'white' : 'black' }) },
     { id: 'clicker', label: 'Clicker', right: onOff(ip.clicker), onSelect: () => patch({ clicker: !ip.clicker }) },
+    // the screen dimmed after a while untouched (the iOS app's, which keeps the phone awake; Root useBacklight)
+    !!window.alchemyLayout && { id: 'backlight', label: 'Backlight', right: backlightName(ip.backlight), chevron: true,
+                                onSelect: to(nav, page('settings/backlight', 'Backlight', Backlight)) },
     // the host's light / dark (the iOS app's)
     !!window.alchemyAppearance && { id: 'theme', label: 'Theme', right: MODES.find(([m]) => m === theme)?.[1], chevron: true,
                                     onSelect: to(nav, page('settings/theme', 'Theme', Theme)) },
@@ -181,6 +184,14 @@ function Color() {
 }
 
 // ---- Theme, Check for Updates ------------------------------------------------------------------------
+
+/** a Backlight choice as its row shows it */
+const backlightName = (n: number) => (!n ? 'Always On' : n < 60 ? n + ' Seconds' : n === 60 ? '1 Minute' : n / 60 + ' Minutes');
+/** the nano's Backlight [UG p.11]: the timer's choices, the current one checked */
+function Backlight() {
+  const [ip, patch] = useIpodSettings();
+  return <MenuScreen items={BACKLIGHT.map((n) => ({ id: String(n), label: backlightName(n), right: check(ip.backlight === n), onSelect: () => patch({ backlight: n }) }))} />;
+}
 
 const MODES = [['light', 'Light'], ['dark', 'Dark'], ['auto', 'Automatic']] as const;
 function Theme() {

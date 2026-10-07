@@ -510,8 +510,11 @@ On-The-Go, Browse Album, Browse Artist, Cancel [UG p.39-42]. Audiobooks add a sp
   (screenshot p.17): big thin time about 70 px, a progress bar, a play/pause box and a battery.
 - On the phone, `alchemyAwake(true)` while Backlight is "Always On" or while the clock screen is
   wanted; otherwise let the phone sleep.
-- **This player** (the owner's ruling, 2026-10-02): no Backlight, Brightness or Energy Saver of its
-  own; the device's screen does that.
+- **This player** (the owner's ruling, 2026-10-02): no Brightness or Energy Saver of its own; the
+  device's screen does that. **Backlight** came on 2026-10-07 ("a screen dimming (app only) after a
+  set amount of time"): in the iOS app, which keeps the phone awake, Settings > Backlight (10 or 30
+  seconds, 1, 2 or 5 minutes, Always On; 1 minute by default) dims the whole screen to 40 % after that
+  long without a touch, a key or the wheel; the touch that wakes it does nothing else.
 
 #### Search (UG p.44–45; layout reconstructed, the guide has no screenshot)
 

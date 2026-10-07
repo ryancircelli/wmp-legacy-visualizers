@@ -56,7 +56,7 @@ export function Root() {
   const bar = useApp((x) => !!x.playback.track) && topSlot.entry.key !== npKey;
   const safe = useHostGlobal('__wmpSafeArea', 'wmp-safe-area');
   const win = useWindowControls(), caption = useApp((x) => x.auth.hostWindow && !x.auth.nativeTitle);
-  const [asleep, setAsleep] = useState(false);
+  const [asleep, setAsleep] = useState(false), [dim, wake] = useBacklight(ipod.backlight);
   useHostChrome();
   useDesktopViewport();
 
@@ -168,10 +168,38 @@ export function Root() {
               onHoldNext={() => hold('onHoldNext', 1)}
               onHoldEnd={unhold} />
           </div>
+          <div className={s.dim} data-on={dim || undefined} onClick={wake} onPointerUp={() => window.setTimeout(wake, 300)} />
         </div>
       </div>
     </NavContext.Provider>
   );
+}
+
+/** Settings > Backlight, in the iOS app (which keeps the phone awake, host.ts): whether the screen is dimmed,
+ *  after `secs` without a touch, a key or the wheel (the owner, 2026-10-07: "a screen dimming (app only)
+ *  after a set amount of time"), and its waking. A touch wakes it from the dim layer, which stays over
+ *  everything until the tap is over (its click, or a moment after the finger lifts): cleared at the touch,
+ *  the tap's click went through to the row under it. */
+function useBacklight(secs: number): readonly [boolean, () => void] {
+  const [dim, setDim] = useState(false);
+  useEffect(() => {
+    if (!secs || !window.alchemyLayout) return;
+    // dimmed by this timer and not since woken by a key or the wheel (the dim layer's own wake leaves it
+    // set, and a touch then only restarts the timer: the screen is lit already)
+    let t = 0, dimmed = false;
+    const poke = (e?: Event) => {
+      clearTimeout(t);
+      t = window.setTimeout(() => { dimmed = true; setDim(true); }, secs * 1000);
+      if (dimmed && e?.type === 'pointerdown') return;
+      dimmed = false;
+      setDim(false);
+    };
+    const kinds = ['pointerdown', 'keydown', 'wheel'] as const;
+    kinds.forEach((k) => window.addEventListener(k, poke, { capture: true, passive: true }));
+    poke();
+    return () => { clearTimeout(t); kinds.forEach((k) => window.removeEventListener(k, poke, { capture: true })); setDim(false); };
+  }, [secs]);
+  return [dim, () => setDim(false)] as const;
 }
 
 /** One stacked screen: its own wheel registrations (FrameContext), hidden unless on top. */

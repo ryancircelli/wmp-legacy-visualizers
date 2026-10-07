@@ -141,7 +141,7 @@ it('a blob stored before the lightness loads as it looked: lightness 50, the old
     return [s.ipodSettings(), s.bodyVars(s.ipodSettings())] as const;
   };
   const [old, vars] = await load({ state: { color: 'custom', hue: 30, sat: 0, clicker: false, wheel: 'black' }, version: 0 });
-  expect(old).toEqual({ color: 'custom', hue: 30, sat: 85, light: 50, clicker: false, wheel: 'black', metal: 'classic' });
+  expect(old).toEqual({ color: 'custom', hue: 30, sat: 85, light: 50, clicker: false, wheel: 'black', metal: 'classic', backlight: 60 });
   // Custom's base is the picked colour taken down by 1.15: the cylinder's lights bring it back up
   expect(vars).toEqual({ '--h': 30, '--s': 85 / 1.15 + '%', '--l': 50 / 1.15 + '%' });
   expect(JSON.parse(localStorage.getItem('ipod.settings')!)).toMatchObject({ version: 1, state: { light: 50 } });   // migrated, rewritten
