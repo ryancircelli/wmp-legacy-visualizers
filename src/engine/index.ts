@@ -13,11 +13,12 @@ import './alchemy';
 import './bars';
 import './battery/index';
 import './spikes/index';
+import './particle/index';
 
 export { A };
 export type { Surface, TimedLevel };
 
-export type VisKind = 'alchemy' | 'bars' | 'battery' | 'spikes';
+export type VisKind = 'alchemy' | 'bars' | 'battery' | 'spikes' | 'particle';
 /** 'original' = each DLL's own surface size; 'auto' = the view, capped near 720p worth of pixels; n = view * n. */
 export type Scale = 'original' | 'auto' | number;
 
@@ -51,7 +52,7 @@ export interface CreateEngineOptions {
 export interface PresetEntry {
   vis: VisKind;
   preset: number;
-  group: 'Alchemy' | 'Bars and Waves' | 'Battery' | 'Spikes';
+  group: 'Alchemy' | 'Bars and Waves' | 'Battery' | 'Spikes' | 'Particle';
   name: string;
 }
 
@@ -95,6 +96,7 @@ export const PRESETS: readonly PresetEntry[] = [
   ...A.Bars.PRESET_NAMES.map((name, preset): PresetEntry => ({ vis: 'bars', preset, group: 'Bars and Waves', name })),
   ...A.Battery.PRESET_NAMES.map((name, preset): PresetEntry => ({ vis: 'battery', preset, group: 'Battery', name })),
   ...A.Spikes.PRESET_NAMES.map((name, preset): PresetEntry => ({ vis: 'spikes', preset, group: 'Spikes', name })),
+  ...A.Particle.PRESET_NAMES.map((name, preset): PresetEntry => ({ vis: 'particle', preset, group: 'Particle', name })),
 ];
 
 export function presetMax(kind: VisKind): number {
@@ -118,11 +120,11 @@ export function makeLevel(): TimedLevel {
 // (HALFTONE) to the window (spec 07); Bars and Waves has no internal surface at all — it draws
 // straight into a DIB the size of the window client area (spec/wmp §2.6), capped at 1920x1080;
 // Battery renders 384x288 8-bit and StretchBlt's it with STRETCH_DELETESCANS — nearest neighbour,
-// whole RECT, no aspect correction (spec 10 §2.3), which is why smoothing is off for it. Spikes (WMP 7-10)
-// draws into a DIB of the window's own size and copies it 1:1, as Bars and Waves does (no cap of its own;
-// the same 1080p one here).
+// whole RECT, no aspect correction (spec 10 §2.3), which is why smoothing is off for it. Spikes and
+// Particle (WMP 7-10) draw into a DIB of the window's own size and copy it 1:1, as Bars and Waves does (no
+// cap of their own; the same 1080p one here).
 export function nativeSize(kind: VisKind, viewW: number, viewH: number): [number, number] {
-  if (kind === 'bars' || kind === 'spikes') return [Math.min(1920, viewW), Math.min(1080, viewH)];
+  if (kind === 'bars' || kind === 'spikes' || kind === 'particle') return [Math.min(1920, viewW), Math.min(1080, viewH)];
   return kind === 'battery' ? [384, 288] : [640, 480];
 }
 
@@ -179,6 +181,7 @@ function makeRaw(kind: VisKind, preset: number, options: EngineOptions): RawEngi
     if (options.foregroundColor === undefined) options.foregroundColor = SPIKES_COLOR;
     return new (A.Spikes as unknown as RawCtor)({ width: 16, height: 16, options, preset });
   }
+  if (kind === 'particle') return new (A.Particle as unknown as RawCtor)({ width: 16, height: 16, options, preset });
   return new (A.Engine as unknown as RawCtor)({ width: 16, height: 16, options });
 }
 
@@ -203,8 +206,8 @@ export function createEngine(kind: VisKind, canvas: CanvasLike, opts: CreateEngi
   // WebGL2 when there is one (engine/gl.ts): no conversion loop, no hidden canvas, the GPU scales.
   // Otherwise the 2D path: convert, putImageData into a hidden canvas, drawImage it stretched.
   const gl = glPresenter(canvas, LITTLE_ENDIAN);
-  // Battery's StretchBlt is STRETCH_DELETESCANS; Spikes' 1-pixel spokes are copied 1:1: both nearest
-  const sampling: Sampling = kind === 'battery' || kind === 'spikes' ? 'nearest' : 'smooth';
+  // Battery's StretchBlt is STRETCH_DELETESCANS; Spikes' spokes and Particle's dots are 1 pixel, copied 1:1
+  const sampling: Sampling = kind === 'battery' || kind === 'spikes' || kind === 'particle' ? 'nearest' : 'smooth';
   const view = gl ? null : canvas.getContext('2d');
   const buf = gl ? { canvas: null, ctx: null } : makeBuffer();
   let img: ImageData | null = null, img32: Uint32Array | null = null;
