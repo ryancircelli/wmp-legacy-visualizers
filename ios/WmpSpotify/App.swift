@@ -210,6 +210,8 @@ final class HostLog: ObservableObject {
 
 /// This build's number (TestFlight's), as the log names it.
 let appBuild = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "?"
+/// The alternate icons this build has (ios/icons.py's Icon-<name> sets), as its Info.plist lists them for iOS.
+let alternateIcons = Set(((Bundle.main.infoDictionary?["CFBundleIcons"] as? [String: Any])?["CFBundleAlternateIcons"] as? [String: Any] ?? [:]).keys)
 
 // The app's window scene (it has one).
 func windowScene() -> UIWindowScene? {
@@ -448,8 +450,8 @@ final class DeviceState {
     }
 
     /// window.__wmpHost = {build, version, ios, model ("iPhone16,1"), scale (pixels per point), fps (the
-    /// screen's most), voiceOver, viewport}, then every report and the speaker: what a page asks for
-    /// once at load.
+    /// screen's most), voiceOver, viewport, icons (the alternate icons' names, alchemyIcon's)}, then every
+    /// report and the speaker: what a page asks for once at load.
     func pushAll() {
         var u = utsname()
         _ = uname(&u)
@@ -465,6 +467,7 @@ final class DeviceState {
             "fps": screen?.maximumFramesPerSecond ?? 0,
             "voiceOver": UIAccessibility.isVoiceOverRunning,
             "viewport": PageLayout.viewport,
+            "icons": alternateIcons.map { String($0.dropFirst("Icon-".count)) }.sorted(),
         ] as [String: Any])
         pushVolume()
         pushBattery()
@@ -947,6 +950,13 @@ struct WebView: UIViewRepresentable {
                       UIApplication.shared.supportsAlternateIcons else { return }
                 let name: String? = s == "green" ? nil : "Icon-" + s
                 guard UIApplication.shared.alternateIconName != name else { return }
+                // Only one this build has: a name iOS has no icon for is the kind of request that once left its
+                // icon service refusing every change until a restart (2026-10-05). An empty list (none found
+                // in Info.plist) checks nothing rather than refuse them all.
+                if let name, !alternateIcons.isEmpty, !alternateIcons.contains(name) {
+                    HostLog.shared.log("icon: \(s): not in this build")
+                    return
+                }
                 UIApplication.shared.setAlternateIconName(name) { error in
                     HostLog.shared.log("icon: \(s)\(error.map { " failed: " + $0.localizedDescription } ?? "")")
                     // "Resource temporarily unavailable" (POSIX 35): iOS's icon service is stuck and refuses every

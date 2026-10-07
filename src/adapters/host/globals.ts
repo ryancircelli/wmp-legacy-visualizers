@@ -117,7 +117,7 @@ declare global {
     __wmpTilt?: number;
     /** the phone's pitch, degrees: 0 upright, 90 lying face up; 'wmp-pitch' as it changes (the iOS app, in front) */
     __wmpPitch?: number;
-    __wmpHost?: { build: string; version: string; ios: string; model: string; scale?: number; fps?: number; voiceOver?: boolean; viewport?: string };
+    __wmpHost?: { build: string; version: string; ios: string; model: string; scale?: number; fps?: number; voiceOver?: boolean; viewport?: string; icons?: string[] };
     /** the iOS app, the rest of the phone (ios/README.md) */
     alchemyViewport?: (mode: 'mobile' | 'desktop') => void;
     alchemyHapticPattern?: (events: { t: number; i: number; s: number; d?: number }[]) => void;

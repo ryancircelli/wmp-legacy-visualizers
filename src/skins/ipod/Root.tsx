@@ -40,6 +40,10 @@ export function Root() {
     const t = window.setTimeout(() => {
       // said in the host's log, so a change that does not show can be told from one never asked for
       if (window.alchemyLayout) window.alchemyLog?.('ipod: icon ' + icon + (window.alchemyIcon ? '' : ' (this app build or its observer has no alchemyIcon yet)'));
+      // Forest came after build 90, which asks iOS for any name and has no Icon-forest (a name iOS has no
+      // icon for once left its icon service stuck until a restart); the builds that list their icons
+      // (__wmpHost.icons) refuse a missing one themselves
+      if (icon === 'forest' && !window.__wmpHost?.icons) return;
       window.alchemyIcon?.(icon);
     }, 3000);
     return () => clearTimeout(t);

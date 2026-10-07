@@ -26,6 +26,10 @@ export const COLORS: Record<Preset, readonly [number, number, number]> = {
   // navy (the owner, 2026-10-05): his washed-navy tee, #2C3A5B (222° 34% 26%) in an evenly lit listing photo (a
   // first photo under a train's warm light had read grey); as gold, its base is that over LOOK
   navy: [222, 31, 24],
+  // forest (the owner, 2026-10-07, "a forest green but muted like the navy (so not aggressively)"): navy's
+  // saturation, a touch darker for green's greater brightness at the same lightness; the hue forest green's
+  // own (#228B22's 120°, a touch warmer: at 145° he found it "a little blue")
+  forest: [118, 30, 22],
 };
 /** Custom's lightness range: the body's lights top out at 72 % (ipod.module.css --hi), so past 75 the
  *  cylinder goes flat (its centre as bright as its bands); under 15 its edge and shade go black */
