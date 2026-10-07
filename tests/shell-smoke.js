@@ -176,12 +176,13 @@ const MOCK = () => {
   }));
   assert.strictEqual(st.src, 'tone', '?src=tone did not attach');
   assert.strictEqual(st.state, 2, 'TimedLevel.state should be 2 while playing');
-  // The ticker targets 60 fps; under heavy host load (other jobs on the box) the renderer is starved and the
-  // number says nothing about the page, so relax the floor when the 1-minute load average exceeds the core count.
+  // The ticker paces as WMP did, at most ~30 fps; under heavy host load (other jobs on the box) the renderer is starved and
+  // WMP's own pacing then gives it 60% of the time (avg / 0.6 per frame: 10 fps at 60 ms a render, measured at load 47 on
+  // 8 cores), so the number says nothing about the page: relax the floor when the load average exceeds the core count.
   { const load = require('os').loadavg()[0], cores = require('os').cpus().length;
-    const floor = load > cores ? 10 : 45;
+    const floor = load > cores ? 5 : 20;
     if (load > cores) console.log(`  (host load ${load.toFixed(1)} on ${cores} cores: fps floor relaxed to ${floor})`);
-    assert(st.fps > floor && st.fps <= 65, 'fps out of range: ' + st.fps + ' (load ' + load.toFixed(1) + ')'); }
+    assert(st.fps > floor && st.fps <= 34, 'fps out of range: ' + st.fps + ' (load ' + load.toFixed(1) + ')'); }
   assert(st.freqSum > 0, 'analyser channel 0 got no frequency data');
   assert(st.waveSpread > 0, 'analyser channel 1 got no waveform (mono up-mix broken)');
   assert(st.bass > 0, 'engine saw no bass');

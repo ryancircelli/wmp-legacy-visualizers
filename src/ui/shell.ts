@@ -29,12 +29,23 @@ export function presetLabel(presets: readonly Preset[], s: AppState): string {
   return p ? p.group + ' : ' + p.name : 'Alchemy : Random';
 }
 
-/** Walk the flat preset list across all three engines. */
+/** WMP's next()/previous(): one flat walk over every preset of every family, wrapping at both ends, so
+ *  stepping back out of a family lands on the previous family's last preset. */
 export function cyclePreset(sh: Shell, d: number): void {
   const n = sh.presets.length, s = sh.store.getState();
   if (!n) return;
   const p = sh.presets[(presetIndex(sh.presets, s) + d + n) % n]!;
   s.actions.setVis(p.vis, p.preset);
+}
+
+/** WMP's nextEffect()/previousEffect() (Shift+click on WMP 7's and 9's arrows): the next family at its
+ *  first preset, the previous family at its last, wrapping. */
+export function cycleFamily(sh: Shell, d: number): void {
+  const ps = sh.presets, n = ps.length, s = sh.store.getState(), i = presetIndex(ps, s);
+  for (let k = 1; k < n; k++) {
+    const p = ps[(((i + d * k) % n) + n) % n]!;
+    if (p.vis !== ps[i]!.vis) { s.actions.setVis(p.vis, p.preset); return; }
+  }
 }
 
 /** Prev/Next: the session's track skip while one exists, the visualizers otherwise. */

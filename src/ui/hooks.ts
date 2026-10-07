@@ -12,7 +12,7 @@ import {
   artOk, clockText, duration, isAlbum, searchCollections, isBare, isContext, isSpotify, libraryView, uiSettings,
   type LibraryView, type ListItem,
 } from './selectors';
-import { cyclePreset, isPlaying, presetLabel, useApp, useClock, useFrame, useShell, VIEW_LABELS } from './shell';
+import { cycleFamily, cyclePreset, isPlaying, presetLabel, useApp, useClock, useFrame, useShell, VIEW_LABELS } from './shell';
 
 const useGet = () => {
   const sh = useShell();
@@ -394,10 +394,10 @@ export function usePresetList(box: RefObject<HTMLElement | null>) {
   }));
 }
 
-/** The strip under the screen: the visualization's name and the arrows that walk the presets. */
+/** The strip under the screen: the visualization's name and the arrows that walk the presets (Shift: the families). */
 export function useVisControl() {
-  const sh = useShell();
-  return { label: useApp((s) => presetLabel(sh.presets, s)), prev: () => cyclePreset(sh, -1), next: () => cyclePreset(sh, 1) };
+  const sh = useShell(), step = (d: number) => (e?: { shiftKey?: boolean }) => (e?.shiftKey ? cycleFamily : cyclePreset)(sh, d);
+  return { label: useApp((s) => presetLabel(sh.presets, s)), prev: step(-1), next: step(1) };
 }
 
 /** The pane's now-playing plate: art, names, and (Spotify) the links into the Media Library. */

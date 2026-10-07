@@ -6,14 +6,24 @@ import type { View, VisKind } from './types';
 export { EQ_PRESETS, eqPreset, type EqPreset } from './eq';
 
 export const LS_KEY = 'alchemy.settings';
-export const FPS_OPTS = [30, 45, 60, 75, 90, 120] as const;
+/** The visualizer's frame rate: 'wmp' is WMP's own pacing (app/ticker.ts wmpDelay: at most ~30 Render calls a
+ *  second, fewer for a slow frame), the visualizations' native speed; a number is a fixed rate. */
+export const FPS_OPTS = ['wmp', 30, 45, 60, 75, 90, 120] as const;
+export type Fps = (typeof FPS_OPTS)[number];
+export const fpsLabel = (f: Fps): string => (f === 'wmp' ? 'As WMP (up to 30 fps)' : f + ' fps');
+/** a <select>'s value back to the setting */
+export const fpsOf = (v: string): Fps => FPS_OPTS.find((f) => String(f) === v) ?? 'wmp';
+/** settings.version: 2 since 'wmp' became the default frame rate */
+const VERSION = 2;
 export const SCALE_OPTS = ['original', 'auto', 0.25, 0.5, 0.75, 1.0] as const;
 export type Scale = (typeof SCALE_OPTS)[number];
 /** the stream's bitrates in kbps (the host's player: Normal, High, Very High) */
 export const QUALITY_OPTS = [96, 160, 320] as const;
 
 export interface Settings {
-  fps: number;
+  /** the blob's format (VERSION); absent in one saved before 'wmp' */
+  version?: number;
+  fps: Fps;
   scale: Scale;
   intended: boolean;
   bg: number;
@@ -51,7 +61,7 @@ export interface Settings {
 }
 
 export const DEFAULTS: Settings = {
-  fps: 60, scale: 'original', intended: false, bg: 0x000000, smoothing: 0, debug: false,
+  version: VERSION, fps: 'wmp', scale: 'original', intended: false, bg: 0x000000, smoothing: 0, debug: false,
   vis: 'alchemy', preset: 0, advanced: false, animate: true, volume: 100, muted: false, lyrics: true, karaoke: true, crossfade: 0, eq: 'off', quality: 160, normalise: true, audioCache: true, skin: 'wmp9', detailsPane: true, libraryView: 'details',
 };
 
@@ -69,7 +79,10 @@ export function normalize(raw: Record<string, unknown>, firstRun = false): Setti
   Object.assign(s, raw);
   // Keys an older build may carry (the retired player frame): neither honoured nor written back.
   delete s.frame; delete s.frameSet;
-  s.fps = (FPS_OPTS as readonly number[]).includes(s.fps) ? s.fps : DEFAULTS.fps;
+  // 60 was the default before 'wmp' and every save wrote it: a blob from then carrying 60 had only the default
+  if (!((raw.version as number) >= 2) && s.fps === 60) s.fps = 'wmp';
+  s.fps = FPS_OPTS.includes(s.fps) ? s.fps : DEFAULTS.fps;
+  s.version = VERSION;
   s.vis = Object.hasOwn(VIS_PRESET_MAX, s.vis) ? s.vis : 'alchemy';
   s.preset = clamp(s.preset | 0, 0, presetMax(s.vis));
   s.scale = (SCALE_OPTS as readonly unknown[]).includes(s.scale) ? s.scale : DEFAULTS.scale;

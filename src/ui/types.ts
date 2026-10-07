@@ -5,7 +5,7 @@ import type { Shortcut } from './shortcuts';
 // type only: the functions arrive from the app (the engine's adapter), src/ui never imports adapters
 import type { Queries } from '../adapters';
 
-/** One entry of the flat visualization list, in WMP's own menu order (Alchemy, Bars and Waves, Battery). */
+/** One entry of the flat visualization list, in WMP's own order (its families by registry key: engine PRESETS). */
 export interface Preset {
   vis: VisKind;
   preset: number;

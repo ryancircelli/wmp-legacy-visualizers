@@ -3,7 +3,7 @@
 // no Spotify meaning (Import, Burn, Sync, Authorize…) are left out rather than greyed;
 // Spotify's own sit where iTunes kept their kin (Get Info, the Canvas and the Equalizer under View, a
 // playlist's radio beside Start Genius, the log and Refresh Player under Help).
-import { FPS_OPTS } from '../../../model';
+import { FPS_OPTS, fpsLabel } from '../../../model';
 import { appDownload, isPlaying, LINKS, openLink, playingTrack, prevNext, restartApp, toggleSaved, VOL_STEP, type AddToApi, type MenuEntry, type Shell } from '../../../ui';
 import { visMenu } from '../../menus';
 // a cycle (registry -> itunes -> here), safe: `skins` is read only when a menu opens
@@ -57,7 +57,7 @@ export function menuItems(name: ItunesMenu, sh: Shell, m: MenuContext): MenuEntr
           { label: 'Show Canvas', check: desk.getState().canvas, disabled: !v.artwork, act: () => desk.setState((d) => ({ canvas: !d.canvas })) }, SEP] : []),
         { label: 'Show Visualizer', accel: 'Ctrl+T', check: vis, act: () => toggleVisualizer(sh) },
         { label: 'Visualizer', sub: visMenu(sh, s) },
-        { label: 'Refresh Rate', sub: FPS_OPTS.map((f) => ({ label: f + ' fps', radio: true, check: S.fps === f, act: () => a.setSettings({ fps: f }) })) },
+        { label: 'Refresh Rate', sub: FPS_OPTS.map((f) => ({ label: fpsLabel(f), radio: true, check: S.fps === f, act: () => a.setSettings({ fps: f }) })) },
         { label: 'Lyrics', check: S.lyrics, act: () => a.setLyricsEnabled(!S.lyrics) },
         { label: 'Karaoke Highlight', accel: 'Ctrl+K', check: S.karaoke !== false, disabled: !S.lyrics, act: () => a.setKaraoke(S.karaoke === false) },
         // the host's own player's equalizer (auth.hostPlayer: CONTRACT v10), in iTunes' Equalizer window

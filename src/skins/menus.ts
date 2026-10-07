@@ -1,7 +1,7 @@
 // WMP 9's menus as data: File / View / Play / Tools / Help, built from the store at the moment one
 // opens (as the old shell did), for whichever engine is running. Skins render them with src/ui's
 // MenuBar / Dropdown.
-import { FPS_OPTS, type AppState, type RepeatMode } from '../model';
+import { FPS_OPTS, fpsLabel, type AppState, type RepeatMode } from '../model';
 import {
   appDownload, detailsPaneOn, isPlaying, libraryView, LINKS, openLink, playingTrack, prevNext, toggleSaved, uiSettings, VIEW_LABELS, VOL_STEP, type AddToApi, type MenuEntry,
   type MenuItem, type Shell,
@@ -65,7 +65,7 @@ export function menuItems(name: MenuName, sh: Shell, addTo?: AddToApi): MenuEntr
         ...(spotify ? [...VIEW_LABELS.map(([v, label], i) => ({ label, accel: 'Ctrl+' + (i + 1), radio: true, check: s.ui.view === v,
                                                                 act: () => a.setView(v) })), SEP] : []),
         { label: 'Visualizations', sub: visMenu(sh, s) },
-        { label: 'Refresh Rate', sub: FPS_OPTS.map((f) => ({ label: f + ' fps', radio: true, check: S.fps === f,
+        { label: 'Refresh Rate', sub: FPS_OPTS.map((f) => ({ label: fpsLabel(f), radio: true, check: S.fps === f,
                                                              act: () => a.setSettings({ fps: f }) })) },
         { label: 'Karaoke Highlight', accel: 'Ctrl+K', check: S.karaoke !== false, act: () => a.setKaraoke(S.karaoke === false) },
         ...(spotify ? [SEP,

@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { LIKED, type Track } from '../../src/model';
 import { announceHostUpdate } from '../../src/adapters/host';
 import { LINKS } from '../../src/ui';
+import { PRESETS } from '../../src/engine';
 import { fakeData, mountSkinNow, settle, type FakeData } from './harness';
 
 let h: ReturnType<typeof mountSkinNow>, cmd: typeof h.cmd;
@@ -70,7 +71,7 @@ describe('menus', () => {
     await keyOn('ArrowDown');
     expect(document.activeElement).toBe(item(0, 'Refresh Rate'));
     await keyOn('ArrowRight');
-    expect(document.activeElement).toBe(item(1, '30 fps'));
+    expect(document.activeElement).toBe(item(1, 'As WMP (up to 30 fps)'));
     await keyOn('ArrowLeft');
     expect(menu(1)).toBeNull();
     key('Escape');
@@ -81,7 +82,7 @@ describe('menus', () => {
   it('a click outside closes; the picker ▾ opens the visualizations', async () => {
     const { $ } = setup();
     press($('#vpick')!);
-    expect([...menu(0)!.querySelectorAll<HTMLElement>('[role^=menuitem]')].map((b) => b.children[1]!.textContent)).toEqual(['Alchemy', 'Bars and Waves', 'Battery', 'Spikes', 'Particle']);
+    expect([...menu(0)!.querySelectorAll<HTMLElement>('[role^=menuitem]')].map((b) => b.children[1]!.textContent)).toEqual(['Alchemy', 'Bars and Waves', 'Battery', 'Particle', 'Spikes']);   // by registry key: Particle is "Dotplane"
     await act(() => new Promise((r) => setTimeout(r, 0)));     // Radix listens for outside presses from the next tick
     press(document.body);
     expect(menu(0)).toBeNull();
@@ -296,6 +297,29 @@ describe('transport', () => {
     expect(S().vis.kind).toBe('alchemy');
     fireEvent.click($('#vnext')!);             // the arrows under the screen still walk the presets
     expect(S().vis.kind).toBe('bars');
+  });
+
+  it("the arrows walk WMP's flat list, wrapping, into a family's last preset going back; Shift steps the families", () => {
+    const { $ } = setup();
+    const at = () => S().vis.kind + ':' + S().vis.preset, last = PRESETS[PRESETS.length - 1]!;
+    const lastOf = (vis: string) => vis + ':' + (PRESETS.filter((p) => p.vis === vis).length - 1);
+    fireEvent.click($('#vprev')!);                                     // Alchemy, the first: wraps to the end
+    expect(at()).toBe(last.vis + ':' + last.preset);
+    fireEvent.click($('#vnext')!);
+    expect(at()).toBe('alchemy:0');
+    act(() => S().actions.setVis('particle', 0));
+    fireEvent.click($('#vprev')!);                                     // out of Particle: Battery's last preset
+    expect(at()).toBe(lastOf('battery'));
+    fireEvent.click($('#vnext')!);
+    expect(at()).toBe('particle:0');
+    act(() => S().actions.setVis('battery', 3));
+    fireEvent.click($('#vnext')!, { shiftKey: true });                 // next family, its first preset
+    expect(at()).toBe('particle:0');
+    fireEvent.click($('#vprev')!, { shiftKey: true });                 // previous family, its last preset
+    expect(at()).toBe(lastOf('battery'));
+    act(() => S().actions.setVis('alchemy', 0));
+    fireEvent.click($('#vprev')!, { shiftKey: true });                 // wraps: the last family, its last preset
+    expect(at()).toBe(last.vis + ':' + last.preset);
   });
 
   it('the clock: elapsed, a click for remaining, the length as its title; the seek thumb', () => {
@@ -518,7 +542,7 @@ describe('dialogs', () => {
     expect([S().settings.fps, S().settings.scale]).toEqual([30, 0.25]);
     expect($('#scale option[value=original]')!.textContent).toBe('Original 640x480');
     fireEvent.click($('#optCancel')!);
-    expect([S().settings.fps, S().settings.scale, S().settings.advanced]).toEqual([60, 'original', false]);
+    expect([S().settings.fps, S().settings.scale, S().settings.advanced]).toEqual(['wmp', 'original', false]);
     expect($('#modal')!.hidden).toBe(true);
   });
 

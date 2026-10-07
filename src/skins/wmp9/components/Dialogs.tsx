@@ -3,7 +3,7 @@
 import { useEffect, useState, type CSSProperties, type ReactNode } from 'react';
 import emblemSpotify from '../assets/emblem-spotify.svg';
 import emblemWmp from '../assets/emblem-wmp.svg';
-import { FPS_OPTS, SCALE_OPTS, type Scale, type Settings, type UpdateCheck } from '../../../model';
+import { FPS_OPTS, fpsLabel, fpsOf, SCALE_OPTS, type Scale, type Settings, type UpdateCheck } from '../../../model';
 import { appDownload, cx, Dialog, DialogHost, LINKS, LYRICS_SOURCE, openLink, restartApp, useApp, useCloseDialog, useShell, useShortcuts, type DialogClasses } from '../../../ui';
 
 const DLG: DialogClasses = {
@@ -97,8 +97,8 @@ export function Options() {
           <section data-pane="adv" hidden={t !== 'adv'}>
             <fieldset className={GRP}><legend className={LEGEND}>Rendering</legend>
               <div className={ROW}><label className={LABEL} htmlFor="fps">Frame rate</label>
-                <select className={FIELD} id="fps" value={S.fps} onChange={(e) => set({ fps: +e.currentTarget.value })}>
-                  {FPS_OPTS.map((f) => <option key={f} value={f}>{f}</option>)}
+                <select className={FIELD} id="fps" value={S.fps} onChange={(e) => set({ fps: fpsOf(e.currentTarget.value) })}>
+                  {FPS_OPTS.map((f) => <option key={f} value={f}>{f === 'wmp' ? fpsLabel(f) : f}</option>)}
                 </select></div>
               <div className={ROW}><label className={LABEL} htmlFor="scale">Render scale</label>
                 <select className={FIELD} id="scale" value={String(S.scale)}

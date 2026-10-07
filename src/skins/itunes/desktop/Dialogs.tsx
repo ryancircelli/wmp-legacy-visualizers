@@ -3,7 +3,7 @@
 // Info (a song's summary and, playing, its lyrics), About, Keyboard Shortcuts, Open Stream (a Spotify
 // link), a playlist's Delete, and the update notes. The frame and closing are src/ui's Dialog / DialogHost.
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { EQ_PRESETS, eqPreset, FPS_OPTS, lineAt, lyricsShown, mss, QUALITY_OPTS, SCALE_OPTS, type Scale, type Settings, type UpdateCheck } from '../../../model';
+import { EQ_PRESETS, eqPreset, FPS_OPTS, fpsLabel, fpsOf, lineAt, lyricsShown, mss, QUALITY_OPTS, SCALE_OPTS, type Scale, type Settings, type UpdateCheck } from '../../../model';
 import {
   appDownload, artOk, canSave, cx, Dialog, DialogHost, LINKS, LYRICS_SOURCE, openLink, restartApp, shareUrl, useAlbumMeta, useApp, useCloseDialog, usePosition, useShell,
   useShortcuts, type DialogClasses,
@@ -80,8 +80,8 @@ function Preferences() {
         {pane === 'playback' && <>
           <Check id="animate" label="Animate the visualizer when no audio plays" checked={S.animate} onChange={(v) => set({ animate: v })} />
           <label className={ROW} htmlFor="fps">Visualizer frame rate
-            <select id="fps" className="ml-auto border border-[#ABADB3] bg-white px-2" value={S.fps} onChange={(e) => set({ fps: +e.currentTarget.value })}>
-              {FPS_OPTS.map((f) => <option key={f} value={f}>{f} fps</option>)}
+            <select id="fps" className="ml-auto border border-[#ABADB3] bg-white px-2" value={S.fps} onChange={(e) => set({ fps: fpsOf(e.currentTarget.value) })}>
+              {FPS_OPTS.map((f) => <option key={f} value={f}>{fpsLabel(f)}</option>)}
             </select></label>
           <label className={ROW} htmlFor="scale">Visualizer size
             <select id="scale" className="ml-auto border border-[#ABADB3] bg-white px-2" value={String(S.scale)}

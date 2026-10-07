@@ -17,7 +17,7 @@ describe('settings', () => {
     localStorage.setItem(LS_KEY, JSON.stringify({ fps: 33, vis: 'nope', preset: 9, volume: 500, frame: 'x', frameSet: 1,
       remaining: true, taskPane: false, view: 'library', lyrics: false, animate: 0 }));
     const s = loadSettings() as unknown as Record<string, unknown>;
-    expect(s.fps).toBe(60);
+    expect(s.fps).toBe('wmp');
     expect(s.vis).toBe('alchemy');
     expect(s.preset).toBe(0);   // Alchemy's one preset (it was Bars and Waves' limit, 3, for all but Battery)
     expect(s.volume).toBe(200);
@@ -30,6 +30,18 @@ describe('settings', () => {
     expect(normalize({ view: 'search' }).view).toBe('search');
     expect([normalize({ detailsPane: false, libraryView: 'tiles' }).detailsPane, normalize({ libraryView: 'tiles' }).libraryView,
             normalize({ libraryView: 'bogus' }).libraryView]).toEqual([false, 'tiles', 'details']);
+  });
+  it("frame rate: WMP's pacing by default; a 60 saved before it was the old default and becomes it, a choice is kept", () => {
+    expect(DEFAULTS.fps).toBe('wmp');
+    expect(normalize({ fps: 60 }).fps).toBe('wmp');                       // an old blob: 60 was only the default
+    expect([normalize({ fps: 30 }).fps, normalize({ fps: 120 }).fps]).toEqual([30, 120]);   // an old blob's choice
+    expect(normalize({ fps: 60, version: 2 }).fps).toBe(60);              // chosen after 'wmp' existed
+    expect(normalize({ fps: 'wmp', version: 2 }).fps).toBe('wmp');
+    expect(normalize({ fps: 'fast', version: 2 }).fps).toBe('wmp');
+    expect(normalize({ fps: 60 }).version).toBe(2);                       // so the next load keeps a 60 chosen now
+    const st = createAppStore();
+    st.getState().actions.setSettings({ fps: 60 });
+    expect(loadSettings().fps).toBe(60);
   });
   it('battery presets clamp to 25; a corrupt blob falls back to defaults', () => {
     expect(normalize({ vis: 'battery', preset: 40 }).preset).toBe(25);

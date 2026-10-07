@@ -54,6 +54,8 @@ export interface PresetEntry {
   preset: number;
   group: 'Alchemy' | 'Bars and Waves' | 'Battery' | 'Spikes' | 'Particle';
   name: string;
+  /** the family's registry key, HKLM\SOFTWARE\Microsoft\MediaPlayer\Objects\Effects\<key> (its place in the list) */
+  key: string;
 }
 
 /** The visualizer's own methods (Alchemy.Engine / Alchemy.Bars / Alchemy.Battery), as the shell used them. */
@@ -91,13 +93,22 @@ export interface VisEngine {
 
 export type CanvasLike = HTMLCanvasElement | OffscreenCanvas;
 
-export const PRESETS: readonly PresetEntry[] = [
-  { vis: 'alchemy', preset: 0, group: 'Alchemy', name: 'Random' },
-  ...A.Bars.PRESET_NAMES.map((name, preset): PresetEntry => ({ vis: 'bars', preset, group: 'Bars and Waves', name })),
-  ...A.Battery.PRESET_NAMES.map((name, preset): PresetEntry => ({ vis: 'battery', preset, group: 'Battery', name })),
-  ...A.Spikes.PRESET_NAMES.map((name, preset): PresetEntry => ({ vis: 'spikes', preset, group: 'Spikes', name })),
-  ...A.Particle.PRESET_NAMES.map((name, preset): PresetEntry => ({ vis: 'particle', preset, group: 'Particle', name })),
+/** The families, each with its registry key. WMP (every version) lists them, in its menu and in its
+ *  next/previous walk, in RegEnumKeyEx order: the keys sorted case-insensitively, unsorted by the player
+ *  (re/player/PLAYER.md §3). So Particle, key "Dotplane", comes after Battery. A new family can go
+ *  anywhere in this table: PRESETS places it by its key. */
+const FAMILIES: readonly { key: string; vis: VisKind; group: PresetEntry['group']; names: readonly string[] }[] = [
+  { key: 'Alchemy', vis: 'alchemy', group: 'Alchemy', names: ['Random'] },   // mpvis.dll's script (WMP 9-12)
+  { key: 'Bars', vis: 'bars', group: 'Bars and Waves', names: A.Bars.PRESET_NAMES },
+  { key: 'Battery', vis: 'battery', group: 'Battery', names: A.Battery.PRESET_NAMES },
+  { key: 'Spikes', vis: 'spikes', group: 'Spikes', names: A.Spikes.PRESET_NAMES },
+  { key: 'Dotplane', vis: 'particle', group: 'Particle', names: A.Particle.PRESET_NAMES },
 ];
+
+/** Every preset of every family, in WMP's order: the flat list its next/previous walks, wrapping. */
+export const PRESETS: readonly PresetEntry[] = [...FAMILIES]
+  .sort((a, b) => (a.key.toUpperCase() < b.key.toUpperCase() ? -1 : 1))
+  .flatMap((f) => f.names.map((name, preset): PresetEntry => ({ vis: f.vis, preset, group: f.group, name, key: f.key })));
 
 export function presetMax(kind: VisKind): number {
   return PRESETS.filter((p) => p.vis === kind).length - 1;
