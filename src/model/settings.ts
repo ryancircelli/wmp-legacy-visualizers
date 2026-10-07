@@ -56,7 +56,10 @@ export const DEFAULTS: Settings = {
 };
 
 const clamp = (v: number, lo: number, hi: number) => (v < lo ? lo : v > hi ? hi : v);
-export const presetMax = (vis: VisKind) => (vis === 'battery' ? 25 : 3);
+/** Each visualizer's last preset (the engine's PRESETS has the names; tests/model/vis-kinds.test.ts keeps
+ *  the two in step), so a saved choice from another build lands on a real preset. */
+export const VIS_PRESET_MAX: Readonly<Record<VisKind, number>> = { alchemy: 0, bars: 3, battery: 25, spikes: 1 };
+export const presetMax = (vis: VisKind) => VIS_PRESET_MAX[vis];
 
 /** Normalise any parsed blob (old builds included) to a valid Settings. */
 export function normalize(raw: Record<string, unknown>, firstRun = false): Settings {
@@ -67,7 +70,7 @@ export function normalize(raw: Record<string, unknown>, firstRun = false): Setti
   // Keys an older build may carry (the retired player frame): neither honoured nor written back.
   delete s.frame; delete s.frameSet;
   s.fps = (FPS_OPTS as readonly number[]).includes(s.fps) ? s.fps : DEFAULTS.fps;
-  s.vis = s.vis === 'bars' || s.vis === 'battery' ? s.vis : 'alchemy';
+  s.vis = Object.hasOwn(VIS_PRESET_MAX, s.vis) ? s.vis : 'alchemy';
   s.preset = clamp(s.preset | 0, 0, presetMax(s.vis));
   s.scale = (SCALE_OPTS as readonly unknown[]).includes(s.scale) ? s.scale : DEFAULTS.scale;
   s.bg = clamp(s.bg | 0, 0, 0xffffff);

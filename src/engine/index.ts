@@ -12,11 +12,12 @@ import './draw';
 import './alchemy';
 import './bars';
 import './battery/index';
+import './spikes/index';
 
 export { A };
 export type { Surface, TimedLevel };
 
-export type VisKind = 'alchemy' | 'bars' | 'battery';
+export type VisKind = 'alchemy' | 'bars' | 'battery' | 'spikes';
 /** 'original' = each DLL's own surface size; 'auto' = the view, capped near 720p worth of pixels; n = view * n. */
 export type Scale = 'original' | 'auto' | number;
 
@@ -31,7 +32,13 @@ export interface EngineOptions {
   alpha?: OutputAlpha;
   /** 'luma' only: each pixel painted this colour (0..255 each), the surface used as a mask */
   tint?: Tint | null;
+  /** Spikes' line colour (0xRRGGBB): the player's, as WMP 10's Now Playing set it (SPIKES_COLOR), unless
+   *  given; null keeps the presets' own (WMP 7-8, and the exactness runs against the bare DLL) */
+  foregroundColor?: number | null;
 }
+/** WMP 10's default theme colour for the playing item, which its Now Playing gives Spikes (WMP 10 is the
+ *  newest that ships Spikes; WMP 9's was #89E116) */
+export const SPIKES_COLOR = 0xa4eb0c;
 export type OutputAlpha = 'opaque' | 'luma';
 export type Tint = readonly [number, number, number];
 
@@ -44,7 +51,7 @@ export interface CreateEngineOptions {
 export interface PresetEntry {
   vis: VisKind;
   preset: number;
-  group: 'Alchemy' | 'Bars and Waves' | 'Battery';
+  group: 'Alchemy' | 'Bars and Waves' | 'Battery' | 'Spikes';
   name: string;
 }
 
@@ -87,10 +94,11 @@ export const PRESETS: readonly PresetEntry[] = [
   { vis: 'alchemy', preset: 0, group: 'Alchemy', name: 'Random' },
   ...A.Bars.PRESET_NAMES.map((name, preset): PresetEntry => ({ vis: 'bars', preset, group: 'Bars and Waves', name })),
   ...A.Battery.PRESET_NAMES.map((name, preset): PresetEntry => ({ vis: 'battery', preset, group: 'Battery', name })),
+  ...A.Spikes.PRESET_NAMES.map((name, preset): PresetEntry => ({ vis: 'spikes', preset, group: 'Spikes', name })),
 ];
 
 export function presetMax(kind: VisKind): number {
-  return kind === 'battery' ? A.Battery.PRESET_NAMES.length - 1 : kind === 'bars' ? A.Bars.PRESET_NAMES.length - 1 : 0;
+  return PRESETS.filter((p) => p.vis === kind).length - 1;
 }
 
 /** Digital silence (wave bytes at 128, not -1 full scale), state 0, as the shell's makeLevel(). */
@@ -110,9 +118,11 @@ export function makeLevel(): TimedLevel {
 // (HALFTONE) to the window (spec 07); Bars and Waves has no internal surface at all — it draws
 // straight into a DIB the size of the window client area (spec/wmp §2.6), capped at 1920x1080;
 // Battery renders 384x288 8-bit and StretchBlt's it with STRETCH_DELETESCANS — nearest neighbour,
-// whole RECT, no aspect correction (spec 10 §2.3), which is why smoothing is off for it.
+// whole RECT, no aspect correction (spec 10 §2.3), which is why smoothing is off for it. Spikes (WMP 7-10)
+// draws into a DIB of the window's own size and copies it 1:1, as Bars and Waves does (no cap of its own;
+// the same 1080p one here).
 export function nativeSize(kind: VisKind, viewW: number, viewH: number): [number, number] {
-  if (kind === 'bars') return [Math.min(1920, viewW), Math.min(1080, viewH)];
+  if (kind === 'bars' || kind === 'spikes') return [Math.min(1920, viewW), Math.min(1080, viewH)];
   return kind === 'battery' ? [384, 288] : [640, 480];
 }
 
@@ -165,6 +175,10 @@ type RawCtor = new (cfg: { width: number; height: number; options: EngineOptions
 function makeRaw(kind: VisKind, preset: number, options: EngineOptions): RawEngine {
   if (kind === 'bars') return new (A.Bars as unknown as RawCtor)({ width: 16, height: 16, options, preset });
   if (kind === 'battery') return new (A.Battery as unknown as RawCtor)({ width: 384, height: 288, options, preset });
+  if (kind === 'spikes') {
+    if (options.foregroundColor === undefined) options.foregroundColor = SPIKES_COLOR;
+    return new (A.Spikes as unknown as RawCtor)({ width: 16, height: 16, options, preset });
+  }
   return new (A.Engine as unknown as RawCtor)({ width: 16, height: 16, options });
 }
 
@@ -189,7 +203,8 @@ export function createEngine(kind: VisKind, canvas: CanvasLike, opts: CreateEngi
   // WebGL2 when there is one (engine/gl.ts): no conversion loop, no hidden canvas, the GPU scales.
   // Otherwise the 2D path: convert, putImageData into a hidden canvas, drawImage it stretched.
   const gl = glPresenter(canvas, LITTLE_ENDIAN);
-  const sampling: Sampling = kind === 'battery' ? 'nearest' : 'smooth';
+  // Battery's StretchBlt is STRETCH_DELETESCANS; Spikes' 1-pixel spokes are copied 1:1: both nearest
+  const sampling: Sampling = kind === 'battery' || kind === 'spikes' ? 'nearest' : 'smooth';
   const view = gl ? null : canvas.getContext('2d');
   const buf = gl ? { canvas: null, ctx: null } : makeBuffer();
   let img: ImageData | null = null, img32: Uint32Array | null = null;
@@ -246,7 +261,7 @@ export function createEngine(kind: VisKind, canvas: CanvasLike, opts: CreateEngi
       canvas.height = vh;
       if (view) {
         // Battery's blit is STRETCH_DELETESCANS (nearest neighbour); Alchemy's is HALFTONE.
-        view.imageSmoothingEnabled = kind !== 'battery';
+        view.imageSmoothingEnabled = sampling === 'smooth';
         view.imageSmoothingQuality = 'high';
       }
       const orig = scale === 'original' ? nativeSize(kind, vw, vh) : null;

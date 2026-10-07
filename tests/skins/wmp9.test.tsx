@@ -81,7 +81,7 @@ describe('menus', () => {
   it('a click outside closes; the picker ▾ opens the visualizations', async () => {
     const { $ } = setup();
     press($('#vpick')!);
-    expect([...menu(0)!.querySelectorAll<HTMLElement>('[role^=menuitem]')].map((b) => b.children[1]!.textContent)).toEqual(['Alchemy', 'Bars and Waves', 'Battery']);
+    expect([...menu(0)!.querySelectorAll<HTMLElement>('[role^=menuitem]')].map((b) => b.children[1]!.textContent)).toEqual(['Alchemy', 'Bars and Waves', 'Battery', 'Spikes']);
     await act(() => new Promise((r) => setTimeout(r, 0)));     // Radix listens for outside presses from the next tick
     press(document.body);
     expect(menu(0)).toBeNull();

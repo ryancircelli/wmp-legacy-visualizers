@@ -19,7 +19,7 @@ describe('settings', () => {
     const s = loadSettings() as unknown as Record<string, unknown>;
     expect(s.fps).toBe(60);
     expect(s.vis).toBe('alchemy');
-    expect(s.preset).toBe(3);
+    expect(s.preset).toBe(0);   // Alchemy's one preset (it was Bars and Waves' limit, 3, for all but Battery)
     expect(s.volume).toBe(200);
     expect('frame' in s || 'frameSet' in s).toBe(false);
     expect([s.remaining, s.taskPane, s.view, s.lyrics, s.animate]).toEqual([true, false, 'library', false, true]);
