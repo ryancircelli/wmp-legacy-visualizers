@@ -42,8 +42,8 @@ describe('Bars: presets (§2.7)', () => {
 
     b.setPreset(3);
     expect(b.displayMode).toBe(3);
-    expect(hex(b.levelColor)).toBe('#a0ffa0');
-    expect(hex(b.peakColor)).toBe('#ff0000');       // Scope sets no peakColor: keeps Fire Storm's red
+    expect(hex(b.levelColor)).toBe('#a4eb0c');       // WMP 12's Now Playing colours, as on preset 0
+    expect(hex(b.peakColor)).toBe('#dfeaf7');
     expect(b.levelWidth).toBe(0);                    // Scope sets no levelWidth: keeps the previous 0
     expect(b.setPreset(4)).toBe(false);               // E_INVALIDARG
     expect(b.setPreset(-1)).toBe(false);
@@ -300,7 +300,7 @@ describe('Bars: Scope (§2.11)', () => {
     const rows = new Set<number>();
     for (let yy = 0; yy < 60; yy++) for (let x = 0; x < 100; x++) if (b.surface.px[yy * 100 + x]) rows.add(yy);
     expect([...rows].join(',')).toBe('30');
-    expect(hex(b.surface.px[30 * 100 + 50])).toBe('#a0ffa0');
+    expect(hex(b.surface.px[30 * 100 + 50])).toBe('#a4eb0c');
   });
 });
 
@@ -356,7 +356,7 @@ describe('Bars: no out-of-bounds writes', () => {
     b.surface = G;
     for (let f = 2; f < 8; f++) b.render(Object.assign(level(2, (l) => l.freq[0].fill(200)), { timeStamp: f }));
     expect(G.bad).toEqual([]);
-  }, 30000);
+  }, 120000);   // a heavily loaded machine took 45 s
 });
 
 describe('Bars: debug()', () => {

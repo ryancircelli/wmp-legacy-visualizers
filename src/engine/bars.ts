@@ -41,15 +41,18 @@ interface BarsPresetFields {
   horizontalSpacing?: number; showPeaks?: boolean;
 }
 var PRESETS: BarsPresetFields[] = [
-  // DLL literals are 0x00B020 / 0x2020FF; WMP's default skin overrides both (levelColor/peakColor are
-  // VT_BSTR wmpskin: refs). Values below are what the user's WMP Legacy actually shows (captured 2026-09-22).
+  // Presets 0 and 3 carry the colours WMP 12's Now Playing gives them, not the DLL's: its VIZ.JS
+  // SynchEffectColor(), run after every preset change, sets levelColor = itemPlayingColor (#A4EB0C) and
+  // peakColor = appColorLight (#DFEAF7, AppColorLightV11's default) on Bars and Scope, and returns early on
+  // Ocean Mist and Fire Storm, which keep their literals (re/player/WMP12.md §5). The DLL's own literals:
+  // preset 0 0x00B020 / 0x2020FF; preset 3 0xA0FFA0 and no peakColor at all.
   { levelColor: 0xA4EB0C, peakColor: 0xDFEAF7, displayMode: 1, levelWidth: 5, levelFallbackSpeed: 4.0,
     peakHangTime: 4, fadeMode: 0, horizontalSpacing: 1, showPeaks: true },
   { levelColor: 0x0000FF, peakColor: 0xFFFFFF, displayMode: 2, levelWidth: 0, levelFallbackSpeed: 4.0,
     fadeMode: 4, fadeRate: 20, horizontalSpacing: 0, showPeaks: true },
   { levelColor: 0xFFA500, peakColor: 0xFF0000, displayMode: 2, levelWidth: 0, levelFallbackSpeed: 4.0,
     fadeMode: 1, fadeRate: 15, horizontalSpacing: 0, showPeaks: true },
-  { levelColor: 0xA0FFA0, displayMode: 3, fadeMode: 0, horizontalSpacing: 0, showPeaks: true }
+  { levelColor: 0xA4EB0C, peakColor: 0xDFEAF7, displayMode: 3, fadeMode: 0, horizontalSpacing: 0, showPeaks: true }
 ];
 
 // ---------------------------------------------------------------- DIB primitives
