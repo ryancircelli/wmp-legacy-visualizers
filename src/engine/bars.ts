@@ -11,22 +11,17 @@ import { newArena, arenaOf } from './bars-kernel';
 var F32 = Math.fround;
 var HZ_PER_BIN = 21.513671875;          // float32 at 0x18088c624 — hardcoded, never from the real Fs
 
-// The three .rdata tables, byte-exact from wmp.dll (extracted by the private harness).
-// None is a clean formula: T_lin is 10^(8v/255) rounded to ~7 decimal digits, and
-// T_mant/T_exp are a hand-tuned round(32*log10(x)) off the float bits (§2.8).
-var T_LIN_HEX = '00000000af96893f43e5933f7ff99e3f2ae2aa3f42afb73fd271c53f433cd43f5722e43f5439f53f08cc034086ab0d405e481840bcb02340dcf32f4025223d40344d4b40f9875a40c9e66a40917f7c40e3b487405fdf9140cdcc9c40cc8ba8400a2cb5406cbec2401355d1407b03e140a0def14082fe014171bb0b411e3316418c732141b78b2d41d68b3a4149854841bb8a574140b06741630b7941afd9854190e08f41bba79a41953da6419fb1b2417b14c0410978ce418eefdd41ab8fee414e37004223d20942292514422d3e1f42032c2b429efe374221c74542f6975442ed84644249a37542f9048442bde88d422b8a984274f7a342e33fb042de73bd4212a5cb4266e6da424a4ceb42a5ecfc4283ef0743631e12438a101d439cd42843517a35438f12434383af5143b664614324477243ae368243cff78b43057496434bb9a143b5d6ad4374dcba43f1dbc843dce7d7435714e843fa76f94383130644ba1e10448eea1a446c852644d6fe32447a67404441d14e44714f5e44bdf66e44b06e8044b20d8a4427659444fa829f44fc75ab441d4eb844931cc644cff3d444a6e7e444680df644043e04450c260e4514cc18454e3e2445088c3045bac53d450afd4b45fa445b45f4b16b45f0597d45422a8845875d924568549d458f1da945bac8b545d966c3451f0ad24519c6e145d1aff245f06e02464a340c4605b5164629ff2146d7212e46332d3b46b8324946294558469a786846c3e27946714d8646005d90467b2d9b465ccda6462e4cb3469abac0469f2acf4680afde46fb5def4633a6004754490a474aa51447e6c71f470dc02b47c09d38472e724647d44f55478f4a6547bb777647267784477a638e47180e99474585a44752d8b047b817be472655cc47b3a3db47cd17ec4766c7fd471a650848c69c124866981d48a06629484617364846bb4348e0645248a6276248ad1873484aa78248dd708c4823f696482a45a2480d6dae48107ebb48a689c94896a2d8480ddde848bd4efa487a8706495e9b104988701b4970152749a5993349e00d414920844f49b60f5f496ac56f49c8dd804918858a4980e59449f00ca049400aac4988edb849f0c7c64900acd549a0ade54938e2f64964b0044a00a10e4a3c50194a5ccc244abc24314adc693e4a74ad4c4a9c025c4acc7d6c4a0c357e4a06a0884a1edc924a7cdc9d4ad4afa94af465b64ada0fc44ac6bfd24a5c89e24ab681f34abfdf024b8cad0c4b5d37174b4a8b224b70b82e4b10cf3b4bbee0494b3000594bac41694be0ba7a4b99c1864bdbd9904bb0b39b4ba05da74b3ce7b34b4b61c14bcaddcf4b1970df4b052df04b7615014cf0c00a4cd825154c1752204c9a542c4c6a3d394ccf1d474c5008564cde10664ce64c774cb8e9844c9ede8e4c7892994c9013a54c4571b14c20bcbe4c';
-var T_MANT_STEPS = [76, 235, 406, 590, 787, 1000, 1228, 1473, 1737, 2020];
-var T_EXP0 = -1218, T_EXP_STEPS = '110101101011010110101011010110101101011010110101101011010110101011010110101101011010110101101011010110101011010110101101011010010101101011010110101101010110101101011010110101101011010110101101010110101101011010110101101011010110101101010110101101011010110';
+// The three .rdata tables (T_lin 0x180851690, T_mant 0x180851a90, T_exp 0x180853a90), generated here
+// byte for byte (tests/engine/recreated-tables.test.ts). T_lin is 10^(8v/255) taken to float, written
+// out with 7 significant digits (ties up, as MSVC's printf did) and read back as a float; T_mant/T_exp
+// are a fast 31.875*log10(x) off the float's mantissa and exponent bits, each term rounded half up
+// and truncated as C's (int) does: the same tables as WMP's spectrum analyzer's (audio/wmp.ts T1/T2).
 var T_lin = new Float32Array(256), T_mant = new Int32Array(2048), T_exp = new Int32Array(256);
 (function () {
-  var dv = new DataView(new ArrayBuffer(4)), i, k;
-  for (i = 0; i < 256; i++) {
-    for (k = 0; k < 4; k++) dv.setUint8(k, parseInt(T_LIN_HEX.substr(i * 8 + k * 2, 2), 16));
-    T_lin[i] = dv.getFloat32(0, true);
-  }
-  for (i = 1, k = 0; i < 2048; i++) T_mant[i] = T_mant[i - 1] + (i === T_MANT_STEPS[k] ? (k++, 1) : 0);
-  T_exp[0] = T_EXP0;
-  for (i = 1; i < 256; i++) T_exp[i] = T_exp[i - 1] + 9 + (+T_EXP_STEPS[i - 1]);
+  var K = (255 / 80) * 10 * Math.log10(2), i;
+  for (i = 1; i < 256; i++) T_lin[i] = F32(+F32(10 ** (8 * i / 255)).toPrecision(7));
+  for (i = 0; i < 2048; i++) T_mant[i] = Math.trunc(K * Math.log2(1 + i / 2048) + 0.5);
+  for (i = 0; i < 256; i++) T_exp[i] = Math.trunc(K * (i - 127) + 0.5);
 })();
 // fastLog32 (0x18041d070..0x18041d091): T_mant[(bits >> 12) & 0x7FF] + T_exp[(bits >> 23) & 0xFF].
 var _f = new Float32Array(1), _u = new Uint32Array(_f.buffer);
@@ -527,4 +522,4 @@ class Bars {
 }
 
 A.Bars = Bars;
-export { Bars };
+export { Bars, T_lin, T_mant, T_exp };

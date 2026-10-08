@@ -118,8 +118,9 @@ The first byte-for-byte run failed on every frame. Causes, each from the wmp.dll
    (`0x18041dca8..0x18041dcbc`, `0x18041dd36`, `0x18041dd65`); a cap equal to the level overwrites
    the bar's top row. The port pushed the cap to `drawn+1` instead (same look, different pixels,
    and a stray cap row on silent frames). Trail mode: invalidation before the terminator test.
-3. **Fast-log tables**: `T_lin`, `T_mant`, `T_exp` are not formulas (T_lin is 10^(8v/255) rounded to
-   ~7 digits); extracted byte-exact from the DLL and embedded. `ReduceSpectrum` is all
+3. **Fast-log tables**: `T_lin`, `T_mant`, `T_exp` need the DLL's exact bytes, which the port generates:
+   T_lin is 10^(8v/255) as a float printed to 7 digits (ties up) and read back, T_mant/T_exp the
+   analyzer's fast 31.875*log10 tables (`tests/engine/recreated-tables.test.ts`). `ReduceSpectrum` is all
    float32 (`0x18041d007..0x18041d039`); the port summed in double.
 4. **Band edges use 1102.5, not 1100** (the double at `0x18088c548`) — bands end at 22 050 Hz.
 5. **`lastTimeStamp` starts at 0** (`0x18041cb76`), so a first Render at timeStamp 0 is a skip frame.

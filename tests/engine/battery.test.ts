@@ -285,7 +285,7 @@ describe('Battery: preset order + names (§9)', () => {
     const sleepy = I.PRESETS.find((p: any) => p[0] === 'sleepyspray');
     expect(sleepy[6][0][1][3]).toBe(384.000015258789);
     expect(I.PRESETS.filter((p: any) => p[7]).length).toBe(17);
-    expect(I.hexToPalette(I.PRESETS.find((p: any) => p[0] === 'cominatya')[8]).length).toBe(1024);
+    expect(I.presetPalette(I.PRESETS.find((p: any) => p[0] === 'cominatya')[8]).length).toBe(1024);
   });
 });
 
