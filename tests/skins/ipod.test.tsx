@@ -606,7 +606,7 @@ it('the ⋯ over the cover opens this page\'s options: Lyrics and Karaoke toggle
   open();
   expect([m.S().settings.karaoke, rows()]).toEqual([false, ['Play On…', 'Visualizer…', 'LyricsOff', 'KaraokeOff', 'Cancel']]);
   pick('Visualizer…');                               // the switch, Opacity, the engines, then (a second popup) an engine's presets
-  expect(rows()).toEqual(['VisualizerOn', 'Opacity50%', 'Alchemy', 'Ambience', 'Bars and WavesBars', 'Battery', 'Particle', 'Plenoptic', 'Spikes']);
+  expect(rows()).toEqual(['VisualizerOn', 'Opacity50%', 'Alchemy', 'Ambience', 'Bars and WavesBars', 'Battery', 'Particle', 'Plenoptic', 'Spikes', 'Musical Colors']);
   pick('VisualizerOn');                              // off, the list kept open
   expect([rows().slice(0, 2), !!np.querySelector('canvas')]).toEqual([['VisualizerOff', 'Opacity50%'], false]);
   pick('Bars and WavesBars');
@@ -616,7 +616,7 @@ it('the ⋯ over the cover opens this page\'s options: Lyrics and Karaoke toggle
     .toEqual(['"bars:2"', 'true', true, 'bars', 2, []]);
   open();
   pick('Visualizer…');
-  expect(rows()).toEqual(['VisualizerOn', 'Opacity50%', 'Alchemy', 'Ambience', 'Bars and WavesFire Storm', 'Battery', 'Particle', 'Plenoptic', 'Spikes']);
+  expect(rows()).toEqual(['VisualizerOn', 'Opacity50%', 'Alchemy', 'Ambience', 'Bars and WavesFire Storm', 'Battery', 'Particle', 'Plenoptic', 'Spikes', 'Musical Colors']);
   pick('Alchemy');                                   // its one preset: picked at its row
   expect([localStorage.getItem('ipod.visualizer'), m.S().vis.kind, rows()]).toEqual(['"alchemy:0"', 'alchemy', []]);
 });

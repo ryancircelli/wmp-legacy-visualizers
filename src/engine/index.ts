@@ -16,11 +16,12 @@ import './spikes/index';
 import './particle/index';
 import './plenoptic/index';
 import './ambience/index';
+import './musical/index';
 
 export { A };
 export type { Surface, TimedLevel };
 
-export type VisKind = 'alchemy' | 'bars' | 'battery' | 'spikes' | 'particle' | 'plenoptic' | 'ambience';
+export type VisKind = 'alchemy' | 'bars' | 'battery' | 'spikes' | 'particle' | 'plenoptic' | 'ambience' | 'musical';
 /** 'original' = each DLL's own surface size; 'auto' = the view, capped near 720p worth of pixels; n = view * n. */
 export type Scale = 'original' | 'auto' | number;
 
@@ -54,7 +55,7 @@ export interface CreateEngineOptions {
 export interface PresetEntry {
   vis: VisKind;
   preset: number;
-  group: 'Alchemy' | 'Bars and Waves' | 'Battery' | 'Spikes' | 'Particle' | 'Plenoptic' | 'Ambience';
+  group: 'Alchemy' | 'Bars and Waves' | 'Battery' | 'Spikes' | 'Particle' | 'Plenoptic' | 'Ambience' | 'Musical Colors';
   name: string;
   /** the family's registry key, HKLM\SOFTWARE\Microsoft\MediaPlayer\Objects\Effects\<key> (its place in the list) */
   key: string;
@@ -107,6 +108,8 @@ const FAMILIES: readonly { key: string; vis: VisKind; group: PresetEntry['group'
   { key: 'Dotplane', vis: 'particle', group: 'Particle', names: A.Particle.PRESET_NAMES },
   { key: 'Plenoptic', vis: 'plenoptic', group: 'Plenoptic', names: A.Plenoptic.PRESET_NAMES },
   { key: 'Ambience', vis: 'ambience', group: 'Ambience', names: A.Ambience.PRESET_NAMES },
+  // WMP 7 and 8's wmpvis.dll, key "WMPVis": after Spikes in their walk
+  { key: 'WMPVis', vis: 'musical', group: 'Musical Colors', names: A.MusicalColors.PRESET_NAMES },
 ];
 
 /** Every preset of every family, in WMP's order: the flat list its next/previous walks, wrapping. */
@@ -137,7 +140,8 @@ export function makeLevel(): TimedLevel {
 // Battery renders 384x288 8-bit and StretchBlt's it with STRETCH_DELETESCANS — nearest neighbour,
 // whole RECT, no aspect correction (spec 10 §2.3), which is why smoothing is off for it. Spikes and
 // Particle (WMP 7-10) draw into a DIB of the window's own size and copy it 1:1, as Bars and Waves does (no
-// cap of their own; the same 1080p one here).
+// cap of their own; the same 1080p one here); Musical Colors (WMP 7-8) scales its 350x320
+// canvas itself (up to 3x) into the window's DC, black around it.
 /** Families that draw at a size of their own whatever the window (Plenoptic and Ambience: their
  *  Plenoptic_Resolution / Assault_Resolution, 256x192 by default, StretchDIBits'd to the window): every
  *  scale renders them there, the canvas stretches. */
@@ -145,7 +149,7 @@ const FIXED_SIZE: ReadonlySet<VisKind> = new Set(['plenoptic', 'ambience']);
 
 export function nativeSize(kind: VisKind, viewW: number, viewH: number): [number, number] {
   if (kind === 'plenoptic' || kind === 'ambience') return [256, 192];
-  if (kind === 'bars' || kind === 'spikes' || kind === 'particle') return [Math.min(1920, viewW), Math.min(1080, viewH)];
+  if (kind === 'bars' || kind === 'spikes' || kind === 'particle' || kind === 'musical') return [Math.min(1920, viewW), Math.min(1080, viewH)];
   return kind === 'battery' ? [384, 288] : [640, 480];
 }
 
@@ -205,6 +209,7 @@ function makeRaw(kind: VisKind, preset: number, options: EngineOptions): RawEngi
   if (kind === 'particle') return new (A.Particle as unknown as RawCtor)({ width: 16, height: 16, options, preset });
   if (kind === 'plenoptic') return new (A.Plenoptic as unknown as RawCtor)({ width: 256, height: 192, options, preset });
   if (kind === 'ambience') return new (A.Ambience as unknown as RawCtor)({ width: 256, height: 192, options, preset });
+  if (kind === 'musical') return new (A.MusicalColors as unknown as RawCtor)({ width: 16, height: 16, options, preset });
   return new (A.Engine as unknown as RawCtor)({ width: 16, height: 16, options });
 }
 

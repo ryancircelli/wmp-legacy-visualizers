@@ -1,8 +1,8 @@
 # WMP Legacy Visualizers
 
 Every visualizer Windows Media Player shipped, from WMP 7 to today's: **Alchemy**, **Ambience**,
-**Bars and Waves**, **Battery**, **Particle**, **Plenoptic** and **Spikes** (Musical Colors, WMP 7 and
-8's, is on its way), reverse-engineered from Ghidra decompiles and ported instruction-for-instruction
+**Bars and Waves**, **Battery**, **Musical Colors**, **Particle**, **Plenoptic** and **Spikes**,
+reverse-engineered from Ghidra decompiles and ported instruction-for-instruction
 into one dependency-free HTML file, wrapped in a hand-rolled WMP 9 / XP "Corporate" player skin.
 Where an older version drew differently, it is a preset of its own ("Vox (WMP 7)", "Particle (WMP 7-8)").
 The sound reaches them through WMP's own spectrum analyzer, ported byte for byte, at WMP's own pace.
@@ -189,6 +189,7 @@ Every visualizer is byte-identical to the real Microsoft object for 30,000 conse
 | Plenoptic (WMP 10 `wmp.dll`, 256x192) | 47 of 30,000 frames: all 16 presets (7, plus 9 WMP 7 / 8 ones) against their own builds on music, synthetic and paused streams | 1,410,000 | identical |
 | Spikes (WMP 7-10) | 72 (26 of 30,000 frames): both presets, every version, eleven window sizes | over 780,000 | identical |
 | Particle (WMP 7-10) | 28: all 4 presets, every version, five window sizes | 840,000 | identical |
+| Musical Colors (WMP 7-8 `wmpvis.dll`) | all 21 presets on music and synthetic streams; its engine on the DLL's own images (the shipped build draws our own recreation of its artwork, within 2 levels for 99% of most images' values) | over 1,000,000 | identical engine |
 | WMP's spectrum analyzer (WMP 9-12) | 63 per build: every byte of every snapshot, six recordings and a synthetic set | 751,914 snapshots per build | identical |
 
 Measured on 2026-09-24 and re-run on the TypeScript engine on 2026-09-25 with the same result.
