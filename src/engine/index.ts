@@ -213,6 +213,10 @@ export function createEngine(kind: VisKind, canvas: CanvasLike, opts: CreateEngi
   const max = presetMax(kind);
   const clampPreset = (n: number) => Math.min(max, Math.max(0, n | 0));
   const raw = makeRaw(kind, clampPreset(opts.preset ?? 0), options);
+  // a port that keeps no options of its own (Particle reads none) still gets the shell's: the skins set
+  // alpha, tint and the rest on engine.options live (the iPod's Now Playing overlay crashed on Particle
+  // without this, 2026-10-07)
+  if (!raw.options) raw.options = options;
   let scale: Scale = opts.scale ?? 'original';
   // WebGL2 when there is one (engine/gl.ts): no conversion loop, no hidden canvas, the GPU scales.
   // Otherwise the 2D path: convert, putImageData into a hidden canvas, drawImage it stretched.

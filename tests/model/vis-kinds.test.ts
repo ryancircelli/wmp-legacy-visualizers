@@ -32,3 +32,13 @@ it("gives Spikes the player's colour unless one is given", async () => {
   expect(createEngine('spikes', canvas).options.foregroundColor).toBe(SPIKES_COLOR);
   expect(createEngine('spikes', canvas, { options: { foregroundColor: null } }).options.foregroundColor).toBe(null);
 });
+
+it("lets the shell set every family's options live, whatever the port keeps", async () => {
+  const { createEngine, PRESETS } = await import('../../src/engine');
+  const canvas = { width: 16, height: 16, getContext: () => null } as unknown as HTMLCanvasElement;
+  for (const k of new Set(PRESETS.map((p) => p.vis))) {
+    const eng = createEngine(k, canvas);
+    expect(() => { eng.options.alpha = 'luma'; eng.options.tint = [255, 0, 0]; eng.options.backgroundColor = 0x102030; }, k).not.toThrow();
+    expect(eng.options.alpha, k).toBe('luma');
+  }
+});
