@@ -34,6 +34,10 @@ function accept(w: number): boolean {                   // 18000a707-a72f: (doub
 }
 function rnd01(): number { return A.rand() / 32767; }   // (double)rand()/32767.0
 function clamp(v: number, lo: number, hi: number): number { return v < lo ? lo : (v > hi ? hi : v); }
+// 18000734c: exactly 7 UTF-16 units, the first skipped, six hex digits (either case) -> 0xRRGGBB; else 0.
+export function parseColor(s: string): number {
+  return /^[\s\S][0-9A-Fa-f]{6}$/.test(s) ? parseInt(s.slice(1), 16) : 0;
+}
 
 // ---------------------------------------------------------------- Bass Bounce
 // Category 7, weight 0.5, nameId 115. FUN_180011200 / Randomize 180011440 / Validate 1800113e0.
@@ -173,6 +177,7 @@ class Engine {
   declare w: number;
   declare h: number;
   declare last: Surface;
+  declare allocated: boolean;
 
   constructor(cfg?: EngineConfig) {
     cfg = cfg || {};
@@ -218,9 +223,25 @@ class Engine {
     this.bassMean = 0;
 
     this.resize(cfg.width || 320, cfg.height || 240);
+    this.allocated = false;     // the DLL allocates (and fills) its surfaces in the first Render
   }
 
   seed(n: number): this { A.srand(n | 0); return this; }
+
+  // ---- the scriptable IToleranceVis (vtable 0x180020230), as WMP's SynchEffectColor script drives it ----
+  // put_foregroundColor and put_backgroundColor are ONE function (180009550: the two identical bodies were
+  // folded), and SetProperty("BackgroundColor", BSTR) (180009300) writes the same field: each parses
+  // "#RRGGBB" (18000734c) into CVisual+0xde0, the BackgroundColor. Nothing else reads a foreground colour.
+  // The colour reaches the surfaces when they are allocated (the first Render; a later call does not
+  // repaint them) and rows 0 and H-1 every frame (Shift's border fill). WMP 12 Now Playing sets
+  // foregroundColor = "#A4EB0C", then SetProperty("BackgroundColor", "#000000"): black, the default.
+  setColor(s: string): void {
+    this.options.backgroundColor = parseColor(s);
+    if (!this.allocated) this.resize(this.w, this.h);
+  }
+  setProperty(name: string, value: unknown): void {      // _wcsicmp, VT_BSTR only
+    if (name.replace(/[A-Z]/g, (c) => c.toLowerCase()) === 'backgroundcolor' && typeof value === 'string') this.setColor(value);
+  }
 
   resize(w: number, h: number): void {
     this.w = Math.max(1, w | 0);
@@ -362,6 +383,7 @@ class Engine {
 
   // ---- one WMP Render() ----
   render(L: TimedLevel): Surface | null {
+    this.allocated = true;      // Render allocates the surfaces whatever the state (spec 06 §1 step 2)
     // state != 2: RenderEffect is skipped entirely — audio ring, both beat counters, the cycle
     // countdown and all eight slot countdowns freeze, and the stale image is presented again.
     if (!L || L.state !== 2) return this.last;

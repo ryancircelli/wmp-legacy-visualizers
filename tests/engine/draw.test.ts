@@ -376,7 +376,7 @@ describe('7. AtomBalls motion', () => {
     T.render(ctxFor(S, { bass: 0 }));
     eq(T.x, 51);
     eq(T.y, 52);
-    const FRIC = 0.80000000298023224;            // (double)(float)0.8, exactly as the DLL stores it
+    const FRIC = Math.fround(0.8);               // (double)(float)0.8: the qword 0x3fe99999a0000000 mpvis stores (18000fa23)
     near(T.vx, 1 * FRIC, 0);
     near(T.vy, 2 * FRIC, 0);
     eq(T.bounced, false);
@@ -475,8 +475,8 @@ describe('7. AtomBalls motion', () => {
     T = new AtomBalls();
     eq(T.nameId, 113); eq(T.traceId, 17);
     eq(T.category, 4); eq(T.weight, 0.9);
-    near(T.friction, 0.80000000298023224, 0);
-    near(T.drive, 0.80000000298023224, 0);
+    near(T.friction, Math.fround(0.8), 0);
+    near(T.drive, Math.fround(0.8), 0);
     T.setSize(100, 100);
     A.srand(4242);
     for (let i = 0; i < 2000; i++) {

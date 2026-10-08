@@ -23,17 +23,18 @@ var TAU_D = 6.2831854820251465;    // 0x180023750 f64
 function cvt(v: number): number {
   return (v > -2147483649 && v < 2147483648) ? Math.trunc(v) : -2147483648;
 }
-// 18000bef4 — round half away from zero, then (int).
-function roundToInt(v: number): number { return cvt(v <= 0 ? v - 0.5 : v + 0.5); }
+// 18000bef4 — round half away from zero, then (int): ADDSS/SUBSS 0.5f, so the sum is rounded to
+// float before CVTTSS2SI (|v| in [0.5 - 2^-25, 0.5) rounds to +-1, not 0).
+function roundToInt(v: number): number { return cvt(F(v <= 0 ? v - 0.5 : v + 0.5)); }
 
 // 18000b518 — per-channel lerp in 8-bit arithmetic. t=0 -> c0, t=1 -> c1.
 // The delta is truncated to int8 and added mod 256, so t outside [0,1] WRAPS per channel.
 function lerpChan(c0: number, c1: number, k: number, t: number): number {
   var a = (c0 >>> k) & 0xff;
-  // (int8)RoundToInt((float)(int)(b - a) * t); b - a is exact in f32, so one rounding suffices,
-  // and the product always fits an int32, so `| 0` is the (int) cast.
+  // (int8)RoundToInt((float)(int)(b - a) * t) (MULSS, then 18000bef4); b - a is exact in f32, so one
+  // rounding suffices, and the product always fits an int32, so `| 0` is the (int) cast.
   var d = F((((c1 >>> k) & 0xff) - a) * t);
-  d = (((d <= 0 ? d - 0.5 : d + 0.5) | 0) << 24) >> 24;
+  d = ((F(d <= 0 ? d - 0.5 : d + 0.5) | 0) << 24) >> 24;
   return ((d + a) & 0xff) << k;
 }
 function lerp(c0: number, c1: number, t: number): number {                 // channel order G,R,B as in the DLL (no effect on output)
@@ -556,16 +557,17 @@ class AtomBalls extends A.Effect {
     this.cx = 0; this.cy = 0;
     // BouncePoint (+0x50)
     this.x = 0; this.y = 0; this.vx = 0; this.vy = 0;
-    // eslint-disable-next-line no-loss-of-precision -- exact (double)(float)0.8 bit pattern from the DLL, kept verbatim
-    this.friction = 0.80000000298023224;              // (double)(float)0.8, never randomised
+    // 18000fa23/18000fa43: the qword 0x3fe99999a0000000 = (double)(float)0.8 = 0.800000011920929.
+    // (0.80000000298023224 here before was a different double, 0x3fe999999b333333: x drifted by
+    // ~1e-6 over a ball's life and moved a ball a pixel when x landed on a float .5 boundary.)
+    this.friction = F(0.8);                           // never randomised
     this.maxX = 0; this.maxY = 0; this.bounced = false;
     new ColorFader();                                 // dead Plotter at +0x90: 6 rand() draws
     this.Ball1Radius = 0; this.Ball2Radius = 0;        // uninitialised in the DLL (Ball2 dead)
     this.colorA = new ColorFader(); this.colorB = new ColorFader();
     this.invertColors = false;
     this.radius = 0; this.springK = 0; this.springV = 0; this.springM = 1.0;
-    // eslint-disable-next-line no-loss-of-precision -- exact (double)(float)0.8 bit pattern from the DLL, kept verbatim
-    this.drive = 0.80000000298023224;                 // never randomised
+    this.drive = F(0.8);                              // 18000facb: the same qword as friction; never randomised
     this.damping = 0.5;
     this.flashFrames = 0;
     this.pen = new Pen();

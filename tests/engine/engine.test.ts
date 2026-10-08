@@ -4,7 +4,7 @@
 // (the engine resolves them late-bound at construction, via resolve()/makeEffect() in alchemy.ts).
 import { describe, expect, it, beforeAll } from 'vitest';
 import { A } from '../../src/engine/ns';
-import '../../src/engine/alchemy';
+import { parseColor } from '../../src/engine/alchemy';
 import { level } from './helpers-2';
 import type { TimedLevel } from '../../src/engine/ns';
 
@@ -392,5 +392,29 @@ describe('Engine: cycle / debug shape', () => {
     e2.render(L);
     expect(e2.cycleFramesLeft >= 1500).toBe(true);
     expect(e2.cycle.slots.map((s: any) => s.framesLeft).join(',')).toBe(slotBefore.map((v: number) => v - 1).join(','));
+  });
+});
+
+describe('Engine: IToleranceVis colours (18000734c, 180009550, 180009300)', () => {
+  it('parses "#RRGGBB" as the DLL does: 7 units, the first skipped, six hex digits, else black', () => {
+    expect(parseColor('#A4EB0C')).toBe(0xa4eb0c);
+    expect(parseColor('x366ab3')).toBe(0x366ab3);
+    expect(parseColor('black')).toBe(0);
+    expect(parseColor('#A4EB0G')).toBe(0);
+    expect(parseColor('#A4EB0C ')).toBe(0);
+  });
+  it('colours the surfaces only before the first Render; afterwards only the per-frame copy', () => {
+    const e = engine().seed(1);
+    e.setColor('#A4EB0C');                          // foregroundColor: the same setter
+    e.setProperty('backgroundcolor', '#366AB3');    // case-insensitive name
+    e.setProperty('Other', '#FFFFFF');              // ignored
+    expect(e.A.px[0]).toBe(0x366ab3);
+    expect(e.B.px[e.B.px.length - 1]).toBe(0x366ab3);
+    e.render(level(2));
+    expect(e.ctx.bgColor).toBe(0x366ab3);
+    e.setProperty('BackgroundColor', '#000000');
+    expect(e.A.px[0]).toBe(0x366ab3);               // no repaint after the first Render
+    e.render(level(2));
+    expect(e.ctx.bgColor).toBe(0);
   });
 });
