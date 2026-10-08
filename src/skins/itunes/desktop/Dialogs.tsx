@@ -236,7 +236,7 @@ function About() {
         <span className="flex-none grid place-items-center w-64 h-64 rounded-full bg-[radial-gradient(circle_at_50%_35%,#9FD3FF,#2E7FD8_60%,#1B4F9C)] text-white shadow-[0_2px_6px_rgba(0,0,0,.35)]"><Icon name="note" size={34} /></span>
         <div>
           <p className="m-0 mb-6 text-17 font-bold" id="aboutname">{spotify ? 'WMP Spotify' : 'WMP Legacy Visualizers'}</p>
-          <p className="m-0 mb-6">The iTunes 10 skin. Alchemy, Bars and Waves and Battery ported 1:1 from the decompiled Windows Media Player visualizers{spotify ? ', over Spotify.' : '.'}</p>
+          <p className="m-0 mb-6">The iTunes 10 skin. Every Windows Media Player visualizer, WMP 7 to 12, ported 1:1 from the decompiled originals{spotify ? ', over Spotify.' : '.'}</p>
           {web && <p className="m-0 mb-6" id="aboutlinks">Windows apps: {a(LINKS.spotify, 'WMP Spotify')} · {a(LINKS.screensaver, 'Alchemy Screensaver')}<br />Source code on {a(LINKS.repo, 'GitHub')}</p>}
           <p className="m-0 text-11 text-itunes-dim">An independent project. Not affiliated with Apple, Microsoft{spotify ? ' or Spotify' : ''}. iTunes is a trademark of Apple Inc.</p>
         </div>

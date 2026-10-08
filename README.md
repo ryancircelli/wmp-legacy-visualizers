@@ -1,14 +1,16 @@
 # WMP Legacy Visualizers
 
-Windows Media Player's three built-in visualizers — **Alchemy**, **Bars and Waves**, and
-**Battery** — reverse-engineered from Ghidra decompiles and ported instruction-for-instruction
+Every visualizer Windows Media Player shipped, from WMP 7 to today's: **Alchemy**, **Ambience**,
+**Bars and Waves**, **Battery**, **Particle**, **Plenoptic** and **Spikes** (Musical Colors, WMP 7 and
+8's, is on its way), reverse-engineered from Ghidra decompiles and ported instruction-for-instruction
 into one dependency-free HTML file, wrapped in a hand-rolled WMP 9 / XP "Corporate" player skin.
-Alchemy comes from `mpvis.DLL`; Bars and Waves and Battery are built into `wmp.dll` itself.
+Where an older version drew differently, it is a preset of its own ("Vox (WMP 7)", "Particle (WMP 7-8)").
+The sound reaches them through WMP's own spectrum analyzer, ported byte for byte, at WMP's own pace.
 
-Fidelity was not eyeballed. Each visualizer was hosted in-process with the real COM objects
-behind an IAT-hooked, pinned clock and compared frame by frame against the port. All three are
-byte-identical to the real objects for 30,000 consecutive frames: Alchemy on three seeds, Bars and
-Waves on all four presets, Battery on all 26. See [Fidelity](#fidelity) below.
+Fidelity was not eyeballed. Each visualizer was hosted in-process with Microsoft's own DLLs (from
+their signed installers) behind an IAT-hooked, pinned clock and compared frame by frame against the
+port, on real music as well as synthetic sound: every one is byte-identical to the real object for
+30,000 consecutive frames. See [Fidelity](#fidelity) below.
 
 ## Quick links
 
@@ -180,9 +182,14 @@ Every visualizer is byte-identical to the real Microsoft object for 30,000 conse
 
 | Visualizer | Runs | Frames compared | Result |
 |---|---|---|---|
-| Alchemy (`mpvis.DLL`, 640x480) | 3 seeds | 90,000 | identical |
-| Bars and Waves (`wmp.dll`, 354x345) | all 4 presets | 120,000 | identical |
-| Battery (`wmp.dll`, 384x288) | all 26 presets, plus 4 of them on a second seed | 900,000 | identical |
+| Alchemy (WMP 12 `mpvis.dll`, 640x480) | 40: six music recordings, two synthetic, silence, a paused stream; four clock pins | 1,200,000 | identical |
+| Bars and Waves (WMP 12 `wmp.dll`) | 108: all 4 presets, eight streams, four window sizes, two pins | 3,132,000 | identical |
+| Battery (WMP 12 `wmp.dll`, 384x288) | all 26 presets, plus 4 of them on a second seed (the music retest is running) | 900,000 | identical |
+| Ambience (WMP 10 `wmp.dll`, 256x192) | 148: all 14 presets and the 10 older-version ones, music and synthetic, three resolutions | 2,420,400 | identical |
+| Plenoptic (WMP 10 `wmp.dll`, 256x192) | 47 of 30,000 frames: all 16 presets (7, plus 9 WMP 7 / 8 ones) against their own builds on music, synthetic and paused streams | 1,410,000 | identical |
+| Spikes (WMP 7-10) | 72 (26 of 30,000 frames): both presets, every version, eleven window sizes | over 780,000 | identical |
+| Particle (WMP 7-10) | 28: all 4 presets, every version, five window sizes | 840,000 | identical |
+| WMP's spectrum analyzer (WMP 9-12) | 63 per build: every byte of every snapshot, six recordings and a synthetic set | 751,914 snapshots per build | identical |
 
 Measured on 2026-09-24 and re-run on the TypeScript engine on 2026-09-25 with the same result.
 [`docs/EXACTNESS.md`](docs/EXACTNESS.md) has the per-preset table, the input, and the fixes it took.
@@ -241,6 +248,6 @@ output. Comments that cite paths under `re/` or `spec/` point into that private 
 
 ## A note on the source material
 
-Alchemy, Bars and Waves and Battery are Microsoft's. This repository contains only independently
+Windows Media Player's visualizers are Microsoft's. This repository contains only independently
 written code that reproduces their behaviour. It includes no original DLL, no decompiled source and
 no extracted binary resource, and neither does any release.

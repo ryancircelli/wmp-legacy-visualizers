@@ -128,7 +128,7 @@ export function About() {
       <div className={cx(BODY, 'text-left')}>
         <img className="float-left w-48 h-48 mt-0 mr-10 mb-6 ml-0" id="aboutemblem" alt="" src={spotify ? emblemSpotify : emblemWmp} />
         <p className="m-0 mb-8 overflow-hidden"><b id="aboutname">{spotify ? 'WMP Spotify' : 'WMP Legacy Visualizers'}</b></p>
-        <p className="m-0 mb-8 overflow-hidden">Alchemy, Bars and Waves and Battery ported 1:1 from the decompiled Windows Media Player visualizers{spotify ? ', over Spotify.' : '.'}</p>
+        <p className="m-0 mb-8 overflow-hidden">Every Windows Media Player visualizer, WMP 7 to 12, ported 1:1 from the decompiled originals{spotify ? ', over Spotify.' : '.'}</p>
         {web && <p className="m-0 mb-8 overflow-hidden" id="aboutlinks">Windows apps: {a(LINKS.spotify, 'WMP Spotify')} · {a(LINKS.screensaver, 'Alchemy Screensaver')}<br />Source code on {a(LINKS.repo, 'GitHub')}</p>}
         <p className="m-0 overflow-hidden text-xp-hint">Rendered in JavaScript from the original DLL semantics. Not affiliated with Microsoft{spotify ? ' or Spotify' : ''}.</p>
       </div>
