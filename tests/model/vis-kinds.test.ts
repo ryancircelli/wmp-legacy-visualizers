@@ -42,3 +42,13 @@ it("lets the shell set every family's options live, whatever the port keeps", as
     expect(eng.options.alpha, k).toBe('luma');
   }
 });
+
+it('draws a fixed-size family at its own size at every scale (else present() drew nothing)', async () => {
+  const { createEngine } = await import('../../src/engine');
+  const canvas = { width: 16, height: 16, clientWidth: 900, clientHeight: 600, getContext: () => null } as unknown as HTMLCanvasElement;
+  for (const scale of ['original', 'auto', 1, 0.5] as const) {
+    const eng = createEngine('plenoptic', canvas, { scale });
+    eng.resize();
+    expect([eng.width, eng.height], String(scale)).toEqual([256, 192]);
+  }
+});

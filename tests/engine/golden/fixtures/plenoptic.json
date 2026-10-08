@@ -1,0 +1,15 @@
+{
+  "plenoptic-p0-r0": ["230949cf","159c82b0","385f94cd"],
+  "plenoptic-p1-r0": ["ba79473b","62bcd2b1","fed2b876"],
+  "plenoptic-p2-r0": ["765cecc2","dfcbe073","a7899b1d"],
+  "plenoptic-p3-r0": ["ec4bbadc","9227aaf0","167251a2"],
+  "plenoptic-p4-r0": ["f5e2f4dd","f75fb251","5332d786"],
+  "plenoptic-p5-r0": ["22c65b8d","a427d8fe","ce410807"],
+  "plenoptic-p6-r0": ["9c33c366","159c82b0","385f94cd"],
+  "plenoptic-p0-r5-s777-stops": ["f5394772","ed39bbb6","7cc2bd83"],
+  "plenoptic-p5-r3-ch1": ["d5057c5c","23177688","1da9d47e"],
+  "plenoptic-p6-r2-stops": ["ef06b6d8","6ad61509","a60cdade"],
+  "plenoptic-p6-r0-v8": ["477a55fc","159c82b0","6a096b6e"],
+  "plenoptic-p4-r0-v9": ["94bee391","26cf028e","b2a0087b"],
+  "plenoptic-p3-r0-v7-stops": ["da26a205","3a27a5fd","de7c6e5b"]
+}

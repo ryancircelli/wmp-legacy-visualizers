@@ -68,7 +68,7 @@ export const DEFAULTS: Settings = {
 const clamp = (v: number, lo: number, hi: number) => (v < lo ? lo : v > hi ? hi : v);
 /** Each visualizer's last preset (the engine's PRESETS has the names; tests/model/vis-kinds.test.ts keeps
  *  the two in step), so a saved choice from another build lands on a real preset. */
-export const VIS_PRESET_MAX: Readonly<Record<VisKind, number>> = { alchemy: 0, bars: 3, battery: 25, spikes: 1, particle: 3 };
+export const VIS_PRESET_MAX: Readonly<Record<VisKind, number>> = { alchemy: 0, bars: 3, battery: 25, spikes: 1, particle: 3, plenoptic: 6 };
 export const presetMax = (vis: VisKind) => VIS_PRESET_MAX[vis];
 
 /** Normalise any parsed blob (old builds included) to a valid Settings. */
