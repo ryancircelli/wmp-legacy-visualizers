@@ -6,8 +6,7 @@
 //   seeded sparkles (the originals' count and colour per column, our positions);
 // - the Star Power starburst: a 14-point star distance (radius times a triangle wave in the angle) through
 //   a piecewise-linear brightness curve;
-// - Star Power's background palette: our own 255 colours (golden-angle hues, brightness rising with the
-//   index, saturation from a small LCG).
+// - Star Power's background palette: our own walk in hue / saturation / brightness through 16 key colours.
 // The key colours were fitted by private tools (least-squares linear splines within +-2 levels at 99% of
 // channel values; the originals' dithering noise is not reproduced). The private A/B twin can still load
 // the original resource (MusicalColors options.datatable) to prove the rest of the engine exact.
@@ -173,14 +172,22 @@ function starburst(): Uint32Array {
   return px;
 }
 
-function palette(): Uint32Array {                     // Star Power's background colours, our own
-  var px = new Uint32Array(255), seed = 0x2545f491;
+// Star Power's background colours, our own: a walk in hue / saturation / brightness through 16 evenly spaced
+// key colours. Each key is a saturation-weighted average of the original palette around that index (so a
+// range keeps the look of its colourful entries), not any entry of it; hue runs the short way round.
+const PAL_H = [0.1263, 0.8123, 0.5139, 0.1211, 0.0087, 0.5915, 0.3475, 0.073, 0.8203, 0.5971, 0.5167, 0.4259, 0.179, 0.0738, 0.9799, 0.91];
+const PAL_S = [0.5271, 0.5298, 0.7865, 0.6735, 0.3241, 0.2969, 0.2967, 0.334, 0.5445, 0.7319, 0.9008, 0.8406, 0.831, 0.7898, 0.7102, 0.7885];
+const PAL_V = [0.2994, 0.4304, 0.3577, 0.4376, 0.575, 0.7004, 0.7235, 0.8122, 0.7304, 0.7127, 0.6688, 0.6509, 0.8163, 0.8773, 0.8044, 0.701];
+function palette(): Uint32Array {
+  var px = new Uint32Array(255), K = PAL_H.length, mod1 = (x: number): number => ((x % 1) + 1) % 1;
   for (var i = 0; i < 255; i++) {
-    seed = (Math.imul(seed, 1103515245) + 12345) & 0x7fffffff; var u = seed / 0x7fffffff;
-    seed = (Math.imul(seed, 1103515245) + 12345) & 0x7fffffff; var w = seed / 0x7fffffff;
-    var h = (i * 0.381966) % 1.0, v = Math.min(1.0, 0.42 + 0.52 * i / 254 + 0.25 * (u - 0.5)), s = 0.05 + 0.95 * w;
-    var k = Math.floor(h * 6), f = h * 6 - k, p = v * (1 - s), q = v * (1 - s * f), t = v * (1 - s * (1 - f));
-    var rgb = [[v, t, p], [q, v, p], [p, v, t], [p, q, v], [t, p, v], [v, p, q]][k % 6];
+    var j = 0;
+    while (j < K - 2 && Math.round((j + 1) * 254 / (K - 1)) <= i) j++;
+    var ra = Math.round(j * 254 / (K - 1)), rb = Math.round((j + 1) * 254 / (K - 1)), t = (i - ra) / (rb - ra);
+    var dh = mod1(PAL_H[j + 1] - PAL_H[j] + 0.5) - 0.5;
+    var h = mod1(PAL_H[j] + dh * t), s = PAL_S[j] + (PAL_S[j + 1] - PAL_S[j]) * t, v = PAL_V[j] + (PAL_V[j + 1] - PAL_V[j]) * t;
+    var k = Math.floor(h * 6), f = h * 6 - k, p = v * (1 - s), q = v * (1 - s * f), u = v * (1 - s * (1 - f));
+    var rgb = [[v, u, p], [q, v, p], [p, v, u], [p, q, v], [u, p, v], [v, p, q]][k % 6];
     px[i] = (Math.floor(rgb[0] * 255 + 0.5) << 16 | Math.floor(rgb[1] * 255 + 0.5) << 8 | Math.floor(rgb[2] * 255 + 0.5)) >>> 0;
   }
   return px;
