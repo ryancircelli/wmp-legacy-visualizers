@@ -82,7 +82,7 @@ describe('menus', () => {
   it('a click outside closes; the picker ▾ opens the visualizations', async () => {
     const { $ } = setup();
     press($('#vpick')!);
-    expect([...menu(0)!.querySelectorAll<HTMLElement>('[role^=menuitem]')].map((b) => b.children[1]!.textContent)).toEqual(['Alchemy', 'Bars and Waves', 'Battery', 'Particle', 'Plenoptic', 'Spikes']);   // by registry key: Particle is "Dotplane"
+    expect([...menu(0)!.querySelectorAll<HTMLElement>('[role^=menuitem]')].map((b) => b.children[1]!.textContent)).toEqual(['Alchemy', 'Ambience', 'Bars and Waves', 'Battery', 'Particle', 'Plenoptic', 'Spikes']);   // by registry key: Particle is "Dotplane"
     await act(() => new Promise((r) => setTimeout(r, 0)));     // Radix listens for outside presses from the next tick
     press(document.body);
     expect(menu(0)).toBeNull();
@@ -286,7 +286,7 @@ describe('transport', () => {
   it('Previous/Next walk the presets with no session, skip tracks with one', () => {
     const { $ } = setup();
     fireEvent.click($('#bnext')!);
-    expect([S().vis.kind, S().vis.preset]).toEqual(['bars', 0]);
+    expect([S().vis.kind, S().vis.preset]).toEqual(['ambience', 0]);   // WMP's order: Ambience's key sorts after Alchemy's
     fireEvent.click($('#bprev')!);
     expect(S().vis.kind).toBe('alchemy');
     session();
@@ -296,7 +296,7 @@ describe('transport', () => {
     expect([cmd.next.mock.calls.length, cmd.prev.mock.calls.length]).toEqual([1, 1]);
     expect(S().vis.kind).toBe('alchemy');
     fireEvent.click($('#vnext')!);             // the arrows under the screen still walk the presets
-    expect(S().vis.kind).toBe('bars');
+    expect(S().vis.kind).toBe('ambience');
   });
 
   it("the arrows walk WMP's flat list, wrapping, into a family's last preset going back; Shift steps the families", () => {

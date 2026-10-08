@@ -15,11 +15,12 @@ import './battery/index';
 import './spikes/index';
 import './particle/index';
 import './plenoptic/index';
+import './ambience/index';
 
 export { A };
 export type { Surface, TimedLevel };
 
-export type VisKind = 'alchemy' | 'bars' | 'battery' | 'spikes' | 'particle' | 'plenoptic';
+export type VisKind = 'alchemy' | 'bars' | 'battery' | 'spikes' | 'particle' | 'plenoptic' | 'ambience';
 /** 'original' = each DLL's own surface size; 'auto' = the view, capped near 720p worth of pixels; n = view * n. */
 export type Scale = 'original' | 'auto' | number;
 
@@ -53,7 +54,7 @@ export interface CreateEngineOptions {
 export interface PresetEntry {
   vis: VisKind;
   preset: number;
-  group: 'Alchemy' | 'Bars and Waves' | 'Battery' | 'Spikes' | 'Particle' | 'Plenoptic';
+  group: 'Alchemy' | 'Bars and Waves' | 'Battery' | 'Spikes' | 'Particle' | 'Plenoptic' | 'Ambience';
   name: string;
   /** the family's registry key, HKLM\SOFTWARE\Microsoft\MediaPlayer\Objects\Effects\<key> (its place in the list) */
   key: string;
@@ -105,6 +106,7 @@ const FAMILIES: readonly { key: string; vis: VisKind; group: PresetEntry['group'
   { key: 'Spikes', vis: 'spikes', group: 'Spikes', names: A.Spikes.PRESET_NAMES },
   { key: 'Dotplane', vis: 'particle', group: 'Particle', names: A.Particle.PRESET_NAMES },
   { key: 'Plenoptic', vis: 'plenoptic', group: 'Plenoptic', names: A.Plenoptic.PRESET_NAMES },
+  { key: 'Ambience', vis: 'ambience', group: 'Ambience', names: A.Ambience.PRESET_NAMES },
 ];
 
 /** Every preset of every family, in WMP's order: the flat list its next/previous walks, wrapping. */
@@ -136,12 +138,13 @@ export function makeLevel(): TimedLevel {
 // whole RECT, no aspect correction (spec 10 §2.3), which is why smoothing is off for it. Spikes and
 // Particle (WMP 7-10) draw into a DIB of the window's own size and copy it 1:1, as Bars and Waves does (no
 // cap of their own; the same 1080p one here).
-/** Families that draw at a size of their own whatever the window (Plenoptic: its Plenoptic_Resolution,
- *  256x192 by default, StretchDIBits'd to the window): every scale renders them there, the canvas stretches. */
-const FIXED_SIZE: ReadonlySet<VisKind> = new Set(['plenoptic']);
+/** Families that draw at a size of their own whatever the window (Plenoptic and Ambience: their
+ *  Plenoptic_Resolution / Assault_Resolution, 256x192 by default, StretchDIBits'd to the window): every
+ *  scale renders them there, the canvas stretches. */
+const FIXED_SIZE: ReadonlySet<VisKind> = new Set(['plenoptic', 'ambience']);
 
 export function nativeSize(kind: VisKind, viewW: number, viewH: number): [number, number] {
-  if (kind === 'plenoptic') return [256, 192];
+  if (kind === 'plenoptic' || kind === 'ambience') return [256, 192];
   if (kind === 'bars' || kind === 'spikes' || kind === 'particle') return [Math.min(1920, viewW), Math.min(1080, viewH)];
   return kind === 'battery' ? [384, 288] : [640, 480];
 }
@@ -201,6 +204,7 @@ function makeRaw(kind: VisKind, preset: number, options: EngineOptions): RawEngi
   }
   if (kind === 'particle') return new (A.Particle as unknown as RawCtor)({ width: 16, height: 16, options, preset });
   if (kind === 'plenoptic') return new (A.Plenoptic as unknown as RawCtor)({ width: 256, height: 192, options, preset });
+  if (kind === 'ambience') return new (A.Ambience as unknown as RawCtor)({ width: 256, height: 192, options, preset });
   return new (A.Engine as unknown as RawCtor)({ width: 16, height: 16, options });
 }
 
@@ -229,9 +233,9 @@ export function createEngine(kind: VisKind, canvas: CanvasLike, opts: CreateEngi
   // WebGL2 when there is one (engine/gl.ts): no conversion loop, no hidden canvas, the GPU scales.
   // Otherwise the 2D path: convert, putImageData into a hidden canvas, drawImage it stretched.
   const gl = glPresenter(canvas, LITTLE_ENDIAN);
-  // Battery's StretchBlt is STRETCH_DELETESCANS, Plenoptic's StretchDIBits COLORONCOLOR; Spikes' spokes and
-  // Particle's dots are 1 pixel, copied 1:1: all nearest
-  const sampling: Sampling = kind === 'battery' || kind === 'spikes' || kind === 'particle' || kind === 'plenoptic' ? 'nearest' : 'smooth';
+  // Battery's StretchBlt is STRETCH_DELETESCANS, Plenoptic's and Ambience's StretchDIBits COLORONCOLOR;
+  // Spikes' spokes and Particle's dots are 1 pixel, copied 1:1: all nearest
+  const sampling: Sampling = kind === 'alchemy' || kind === 'bars' ? 'smooth' : 'nearest';
   const view = gl ? null : canvas.getContext('2d');
   const buf = gl ? { canvas: null, ctx: null } : makeBuffer();
   let img: ImageData | null = null, img32: Uint32Array | null = null;
