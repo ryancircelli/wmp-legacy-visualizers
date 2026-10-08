@@ -184,7 +184,7 @@ Every visualizer is byte-identical to the real Microsoft object for 30,000 conse
 |---|---|---|---|
 | Alchemy (WMP 12 `mpvis.dll`, 640x480) | 40: six music recordings, two synthetic, silence, a paused stream; four clock pins | 1,200,000 | identical |
 | Bars and Waves (WMP 12 `wmp.dll`) | 108: all 4 presets, eight streams, four window sizes, two pins | 3,132,000 | identical |
-| Battery (WMP 12 `wmp.dll`, 384x288) | all 26 presets, plus 4 of them on a second seed (the music retest is running) | 900,000 | identical |
+| Battery (WMP 12 `wmp.dll`, 384x288) | 884: all 26 presets, eight streams (six music recordings), two pins, mono and stereo, and a late preset switch | 26,520,000 | identical |
 | Ambience (WMP 10 `wmp.dll`, 256x192) | 148: all 14 presets and the 10 older-version ones, music and synthetic, three resolutions | 2,420,400 | identical |
 | Plenoptic (WMP 10 `wmp.dll`, 256x192) | 47 of 30,000 frames: all 16 presets (7, plus 9 WMP 7 / 8 ones) against their own builds on music, synthetic and paused streams | 1,410,000 | identical |
 | Spikes (WMP 7-10) | 72 (26 of 30,000 frames): both presets, every version, eleven window sizes | over 780,000 | identical |
