@@ -21,7 +21,18 @@ declare module '../ns' {
   }
 }
 
-const PRESET_NAMES = ['Random', 'Smokey Circles', 'Smokey Lines', 'Vox', 'Flame', 'Fountain', 'Spyro'];
+const DLL_NAMES = ['Random', 'Smokey Circles', 'Smokey Lines', 'Vox', 'Flame', 'Fountain', 'Spyro'];
+
+/** The presets: WMP 10's seven, then each older build's where it draws other frames from the same input
+ *  (A/B against the DLLs, 30,000 frames of make_long, music and a paused stream): `dll` is the DLL's own
+ *  preset, `ver` the WMP whose arithmetic and behaviour it follows (PlenopticConfig.version). WMP 8 and
+ *  8 SP1 draw alike, as do 7.0 and 7.1; WMP 9 draws WMP 10's frames. */
+const PRESETS: { dll: number; ver: number }[] = [
+  ...DLL_NAMES.map((_, dll) => ({ dll, ver: 0 })),                // 0: PlenopticConfig.version (10)
+  { dll: 0, ver: 8 }, { dll: 6, ver: 8 },                            // WMP 8: Spyro's camera arithmetic
+  ...DLL_NAMES.map((_, dll) => ({ dll, ver: 7 })),                // WMP 7: Vox's bars, drawing on while paused
+];
+const PRESET_NAMES = PRESETS.map((p, i) => i < 7 ? DLL_NAMES[p.dll] : DLL_NAMES[p.dll] + ' (WMP ' + p.ver + ')');
 
 /** The resolution table, 0x79a4d50 [9: 0x7a635c8]; "Plenoptic_Resolution" (HKCU, then HKLM) picks the row, default 0. */
 const RESOLUTIONS: number[][] = [[256, 192], [320, 200], [320, 240], [384, 288], [512, 384], [640, 480]];
@@ -34,7 +45,7 @@ export interface PlenopticConfig {
   resolution?: number;
   /** the channel count WMP's MediaInfo hands it; 1 copies channel 0 over channel 1 every frame */
   channels?: number;
-  /** the WMP to follow, 10 by default. 9 (and below): no life == 0 guard in the particle draw. 8 (and 7,
+  /** the WMP the base presets (0..6) follow, 10 by default; the variant presets carry their own. 9 (and below): no life == 0 guard in the particle draw. 8 (and 7,
    *  wmpui.dll): division instead of reciprocal multiplication in normalize, the projection and vgrad, the
    *  older matrix * vector sum order and rotate's register set; each changes a few frames in tens of
    *  thousands. 7 (WMP 7.0/7.1): Vox's bars a quarter as tall, and a paused stream still draws the effect. */
@@ -227,6 +238,12 @@ abstract class Particles extends Effect {
     this.inited = true;
   }
 
+  /** A variant preset can switch the version mid-run: the camera follows it from the next draw. */
+  run(s: Surf): void {
+    this.cam.old = this.f.ver < 9;
+    super.run(s);
+  }
+
   /** The draw loop every one of them ends with, last particle first. */
   drawAll(s: Surf): void {
     var L = this.list, a = L.a, c = this.cam, A = this.sprA, B = this.sprB;
@@ -369,8 +386,11 @@ class Plenoptic {
   f = new Frame();
   /** the screen surface, obj+0x708 (attached to the DIB's bits) */
   scr = new Surf();
-  /** obj+0x6e8: the preset (0 = Random), obj+0x6ec the effect running, obj+0x6f0 Random's countdown */
+  /** PRESET_NAMES index; obj+0x6e8 is its DLL preset `dll` (0 = Random), obj+0x6ec the effect running,
+   *  obj+0x6f0 Random's countdown */
   preset = 0;
+  dll = 0;
+  baseVer = 10;
   current = 0;
   countdown = 0;
   /** obj+0x6f8: frames still faded after the music stops */
@@ -394,7 +414,7 @@ class Plenoptic {
     this.effects = [new SmokeyCircles(f), new SmokeyLines(f), new Vox(f), new Flame(f), new Fountain(f), new Spyro(f)];
     this.border = new Border(f);
     this.channels = (cfg.channels || 0) | 0;
-    f.ver = cfg.version === undefined ? 10 : +cfg.version;
+    f.ver = this.baseVer = cfg.version === undefined ? 10 : +cfg.version;
     this.resolution = cfg.resolution !== undefined && cfg.resolution >= 0 && cfg.resolution < 6 ? cfg.resolution | 0 : 0;
     this.tick = cfg.tick || (typeof performance !== 'undefined' ? () => performance.now() : () => Date.now());
     this.lastTick = Math.floor(this.tick()) >>> 0;                // ctor base 0x787438a: obj+0x6e0 = GetTickCount()
@@ -406,11 +426,15 @@ class Plenoptic {
   /** The native size follows the resolution setting, never the window: resize() only reselects it. */
   resize(_w: number, _h: number): void {}
 
-  /** SetCurrentPreset, 0x78733d5 [9: 0x7979723]: 0..7 accepted (7 runs only the border); nothing is reset */
+  /** SetCurrentPreset, 0x78733d5 [9: 0x7979723], plus the version a variant preset selects. Nothing is reset,
+   *  as in the DLL: the effects carry on, under the new version's arithmetic from the next frame. (The DLL
+   *  also takes 7 there, which draws only the border; here 7 is the first variant.) */
   setPreset(n: number): boolean {
     n = n | 0;
-    if (n < 0 || n > 7) return false;
+    if (n < 0 || n >= PRESETS.length) return false;
     this.preset = n;
+    this.dll = PRESETS[n].dll;
+    this.f.ver = PRESETS[n].ver || this.baseVer;
     return true;
   }
 
@@ -467,13 +491,13 @@ class Plenoptic {
   /** dispatch, 0x7873be8 [9: 0x7979f58]: Random redraws an effect every 120 s of play */
   dispatch(): void {
     var s = this.scr;
-    if (this.preset === 0) {
+    if (this.dll === 0) {
       if (!(0 < this.countdown)) {
         this.countdown = 120;
         this.current = A.rand() % 6;
       }
       this.countdown = this.countdown - this.f.dt;
-    } else this.current = this.preset - 1;
+    } else this.current = this.dll - 1;
     if (this.current < 6) this.effects[this.current].run(s);
     this.border.run(s);
   }
@@ -492,7 +516,7 @@ class Plenoptic {
 
   debug(): Record<string, unknown> {
     return {
-      engine: 'Plenoptic', preset: this.preset, presetName: PRESET_NAMES[this.preset] || '(border only)',
+      engine: 'Plenoptic', preset: this.preset, presetName: PRESET_NAMES[this.preset], version: this.f.ver,
       effect: this.current, size: this.scr.w + 'x' + this.scr.h, frame: this.frame,
       rms: this.f.rms, beat: this.f.beat, countdown: this.countdown, fade: this.fade,
     };

@@ -11,5 +11,7 @@
   "plenoptic-p6-r2-stops": ["ef06b6d8","6ad61509","a60cdade"],
   "plenoptic-p6-r0-v8": ["477a55fc","159c82b0","6a096b6e"],
   "plenoptic-p4-r0-v9": ["94bee391","26cf028e","b2a0087b"],
-  "plenoptic-p3-r0-v7-stops": ["da26a205","3a27a5fd","de7c6e5b"]
+  "plenoptic-p3-r0-v7-stops": ["da26a205","3a27a5fd","de7c6e5b"],
+  "plenoptic-p15-r0-stops": ["477a55fc","4b1dbdc1","fbc4b4a3"],
+  "plenoptic-p6-to-p8-r0": ["9c33c366","159c82b0","6a096b6e"]
 }

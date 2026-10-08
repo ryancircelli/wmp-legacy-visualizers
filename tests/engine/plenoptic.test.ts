@@ -27,14 +27,42 @@ function silence(state = 2) {
 }
 
 describe('Plenoptic: presets and size', () => {
-  it('names; SetCurrentPreset takes 0..7 (7 runs only the border)', () => {
-    expect(Plenoptic.PRESET_NAMES).toEqual(['Random', 'Smokey Circles', 'Smokey Lines', 'Vox', 'Flame', 'Fountain', 'Spyro']);
+  it("names: WMP 10's seven, then the older builds' that draw other frames", () => {
+    expect(Plenoptic.PRESET_NAMES).toEqual(['Random', 'Smokey Circles', 'Smokey Lines', 'Vox', 'Flame', 'Fountain', 'Spyro',
+      'Random (WMP 8)', 'Spyro (WMP 8)',
+      'Random (WMP 7)', 'Smokey Circles (WMP 7)', 'Smokey Lines (WMP 7)', 'Vox (WMP 7)', 'Flame (WMP 7)', 'Fountain (WMP 7)', 'Spyro (WMP 7)']);
     const p = new Plenoptic({});
-    expect(p.setPreset(7)).toBe(true);
-    expect(p.setPreset(8)).toBe(false);
+    expect(p.setPreset(15)).toBe(true);
+    expect([p.dll, p.f.ver]).toEqual([6, 7]);
+    expect(p.setPreset(8)).toBe(true);
+    expect([p.dll, p.f.ver]).toEqual([6, 8]);
+    expect(p.setPreset(6)).toBe(true);
+    expect([p.dll, p.f.ver]).toEqual([6, 10]);
+    expect(p.setPreset(16)).toBe(false);
     expect(p.setPreset(-1)).toBe(false);
-    expect(p.preset).toBe(7);
+    expect(p.preset).toBe(6);
+    expect(new Plenoptic({ preset: 3, version: 7 }).f.ver).toBe(7);   // the A/B twin's way: a DLL preset and a version
   });
+
+  it('a variant preset draws exactly what its DLL preset does under its version', () => {
+    const names: string[] = Plenoptic.PRESET_NAMES;
+    for (let i = 7; i < names.length; i++) {
+      const base = names.indexOf(names[i]!.replace(/ \(WMP \d\)$/, '')), ver = +/WMP (\d)/.exec(names[i]!)![1]!;
+      const run = (cfg: object) => {
+        A.srand(5);
+        const gen = new InputGen(), c = clock(), p = new Plenoptic({ ...cfg, tick: c.tick });
+        let h = 0;
+        for (let f = 0; f < 120; f++) {
+          const L = gen.next();
+          if (f >= 100 && f < 110) L.state = 1;
+          c.next(); p.render(L);
+          for (const v of p.scr.px) h = Math.imul(h ^ v, 16777619);
+        }
+        return h;
+      };
+      expect(run({ preset: i }), names[i]).toBe(run({ preset: base, version: ver }));
+    }
+  }, 120_000);
 
   it('the native surface comes from the resolution setting, never the window', () => {
     for (const [r, w, h] of [[0, 256, 192], [1, 320, 200], [2, 320, 240], [3, 384, 288], [4, 512, 384], [5, 640, 480]] as const) {
@@ -184,7 +212,7 @@ describe('Plenoptic: stopped and paused', () => {
 // and its rand() count. InputGen's stream with a 60 fps clock (16/17 ms ticks), srand(1) first, plus
 // stop/pause frames for the fade path.
 const GOLDEN = join(dirname(fileURLToPath(import.meta.url)), 'golden', 'fixtures', 'plenoptic.json');
-interface GRun { id: string; preset: number; res: number; ch: number; seed: number; stops?: boolean; version?: number }
+interface GRun { id: string; preset: number; res: number; ch: number; seed: number; stops?: boolean; version?: number; switchTo?: number }
 const RUNS: GRun[] = [
   ...[0, 1, 2, 3, 4, 5, 6].map((preset): GRun => ({ id: `plenoptic-p${preset}-r0`, preset, res: 0, ch: 0, seed: 1 })),
   { id: 'plenoptic-p0-r5-s777-stops', preset: 0, res: 5, ch: 0, seed: 777, stops: true },
@@ -193,6 +221,9 @@ const RUNS: GRun[] = [
   { id: 'plenoptic-p6-r0-v8', preset: 6, res: 0, ch: 0, seed: 1, version: 8 },
   { id: 'plenoptic-p4-r0-v9', preset: 4, res: 0, ch: 0, seed: 3, version: 9 },
   { id: 'plenoptic-p3-r0-v7-stops', preset: 3, res: 0, ch: 0, seed: 1, version: 7, stops: true },
+  // the variant presets by index, one switched in mid-run (frame 150) on the same object
+  { id: 'plenoptic-p15-r0-stops', preset: 15, res: 0, ch: 0, seed: 1, stops: true },
+  { id: 'plenoptic-p6-to-p8-r0', preset: 6, res: 0, ch: 0, seed: 1, switchTo: 8 },
 ];
 const FRAMES = 300;
 
@@ -209,6 +240,7 @@ function runGolden(r: GRun): string[] {
     for (let f = 0; f < FRAMES; f++) {
       const L = gen.next();
       if (r.stops && f % 151 >= 140) L.state = f % 2 ? 0 : 1;
+      if (r.switchTo !== undefined && f === 150) p.setPreset(r.switchTo);
       c.next();
       randN = 0;
       p.render(L);
