@@ -52,9 +52,10 @@ In the browser, audio is a screen/tab share: press Play, pick a tab or your scre
 
 The application and the screensaver capture the system mix instead, with nothing to click: the
 desktop host reads the speakers' PCM through WASAPI loopback, in its own process, and hands it to the
-page over a local WebSocket, and the page turns it into the same frequency and waveform bytes an
-`AnalyserNode` produces. WebView2 itself offers no way to answer a capture request with a loopback
-stream. [`tauri/README.md`](tauri/README.md) has the details, and
+page over a local WebSocket. Every path, the share included, turns the samples into frequency and
+waveform bytes with Windows Media Player's own analyzer (`src/engine/audio/wmp.ts`, bit-exact against
+WMP 12's): 30 snapshots a second, as WMP hands them to a visualizer. WebView2 itself offers no way
+to answer a capture request with a loopback stream. [`tauri/README.md`](tauri/README.md) has the details, and
 [`docs/history/deno-webview.md`](docs/history/deno-webview.md) the measurements from the first host
 that forced this design.
 
@@ -233,7 +234,7 @@ output. Comments that cite paths under `re/` or `spec/` point into that private 
 |---|---|
 | `src/engine/` | The port itself: Alchemy, Bars and Waves, Battery, and the audio front end |
 | `src/` | The page around it: the WMP 9 skin, the player model, and the Spotify and capture adapters |
-| `tools/` | Build tooling (WebAssembly, post-build, update signing), `gen_frames.py` (the audio analysis the tests and pcm.ts follow), `loopback-rec` |
+| `tools/` | Build tooling (WebAssembly, post-build, update signing), `gen_frames.py` (TimedLevel streams for the harness, analysed as the app does), `loopback-rec` |
 | `tests/` | Vitest unit tests, fixtures, and the Playwright smokes |
 | `docs/` | `EXACTNESS.md`, the frame-by-frame comparison record; `history/`, the retired Deno host's design record |
 | `tauri/` | The two Windows desktop formats: one Rust exe for the screensaver, the player and Spotify, built twice (`tauri/package/` is the rest of the zips) |

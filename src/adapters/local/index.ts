@@ -119,15 +119,18 @@ export function startHost(store: AppStore, opts: { hostMedia?: () => boolean; pl
   function openHostAudio(url: string): void {
     const pcm = createPcmLevel();
     let me: HostSocket | null = null;
-    const fill = (l: TimedLevel) => pcm.fill(l, gain(), S().smoothing);
+    const fill = (l: TimedLevel) => pcm.fill(l, S().smoothing, store.getState().vis.kind);
     me = sock = openSocket(url, {
       // The desktop host only fetches lyrics while this says so (CONTRACT v5).
       onOpen: () => send({ type: 'lyricsPref', enabled: !!S().lyrics }),
       // The host resends {"rate"} whenever its capture restarts (a default-device change): this
       // socket's source is already attached then, and attaching again would stop it, which closes
       // the very socket the frame came on.
-      onRate: () => { if (source?.fill !== fill) attach({ kind: 'wsaudio', label: MSG_LOCAL, fill, stop: () => me?.close() }); },
-      onPcm: (f) => pcm.push(f),
+      onRate: (rate) => {
+        pcm.setRate(rate);
+        if (source?.fill !== fill) attach({ kind: 'wsaudio', label: MSG_LOCAL, fill, stop: () => me?.close() });
+      },
+      onPcm: (f) => pcm.push(f, gain()),
       onMedia: (m: MediaFrame) => { if (!opts.hostMedia || opts.hostMedia()) onMediaFrame(store, m); },
       onLyrics: (l) => onLyricsFrame(store, l),
       onLost: (why, attached) => {
@@ -162,7 +165,7 @@ export function startHost(store: AppStore, opts: { hostMedia?: () => boolean; pl
     level.state = !paused && (live || S().animate) ? 2 : 1;
     level.timeStamp = performance.now();
     if (source?.fill) source.fill(level);
-    else if (graph) graph.fill(level);
+    else if (graph) graph.fill(level, store.getState().vis.kind);
     return level;
   }
   actions.setLevel(fillLevel);

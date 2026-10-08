@@ -29,9 +29,6 @@ export function Modal() {
 }
 
 const hex6 = (n: number) => '#' + ('000000' + ((n | 0) & 0xffffff).toString(16)).slice(-6);
-// ?db=<min>,<max> overrides the analyser's dB window (the local adapter reads the same query).
-const DBQ = /(^|[?&])db=(-?[0-9.]+),(-?[0-9.]+)/.exec(typeof location === 'undefined' ? '' : location.search);
-const DB_WINDOW = DBQ ? [+DBQ[2]!, +DBQ[3]!] : [-93.0, -15.1];
 
 const GRP = 'border border-xp-edge rounded-xs pt-8 px-10 pb-10 m-0 mb-10';
 const LEGEND = 'py-0 px-4 text-xp-navy font-bold';
@@ -113,7 +110,7 @@ export function Options() {
                 <input className={CHECK} id="smooth" type="checkbox" checked={S.smoothing > 0} onChange={(e) => set({ smoothing: e.currentTarget.checked ? 0.8 : 0 })} /></div>
               <div className={ROW}><label className={LABEL} htmlFor="debug">Debug overlay (D)</label>
                 <input className={CHECK} id="debug" type="checkbox" checked={S.debug} onChange={(e) => set({ debug: e.currentTarget.checked })} /></div>
-              <p className="text-xp-ro-ink bg-xp-ro border border-xp-edge py-3 px-5 m-0 mt-6" id="dbwin">{'Analyser dB window: ' + DB_WINDOW[0]!.toFixed(1) + ' to ' + DB_WINDOW[1]!.toFixed(1) + ' dB (AnalyserNode min/maxDecibels)'}</p>
+              <p className="text-xp-ro-ink bg-xp-ro border border-xp-edge py-3 px-5 m-0 mt-6" id="dbwin">Analyser: WMP's own (2048-point FFT, 80 dB, 30 snapshots a second)</p>
             </fieldset>
           </section>
         )}

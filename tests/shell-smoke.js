@@ -30,7 +30,8 @@ const MOCK = () => {
   const AC = window.AudioContext;
   window.AudioContext = class extends AC { constructor(...a) { super(...a); if (!window.__mockAC) window.__actx++; } };
   // Bin 43 of a 2048-point FFT, whatever the sample rate: a bin-centred tone at -20 dBFS lands on
-  // one byte both audio paths must agree on (194, per tools/gen_frames.py).
+  // frequency[40] (WMP's analyzer puts bin i + 3 at i) at one byte both audio paths must agree on
+  // (176 at 48 kHz, per tests/engine/wmp-analyzer.test.ts and tools/gen_frames.py).
   window.__tone = ctx => ({ freq: 43 * ctx.sampleRate / 2048, amp: 0.1 });
   navigator.mediaDevices.getDisplayMedia = function () {
     if (window.__share === 'reject') {
@@ -408,8 +409,8 @@ const MOCK = () => {
   assert(!(await page.evaluate(() => Alchemy.store.getState().ui.bare)), '?mode=app must keep the full chrome');
   assert(await page.locator('#titlebar').isVisible(), '?mode=app lost the title bar');
 
-  // 17. system audio: ?audio=ws feeds the analysers through the AudioWorklet, with the same byte
-  //     calibration as the share path, and a dropped socket falls back to the silence animation.
+  // 17. system audio: ?audio=ws feeds WMP's analyzer from the socket's samples, the share path from an
+  //     AudioWorklet, the same bytes either way, and a dropped socket falls back to the silence animation.
   await page.goto(PAGE + '?audio=ws&vis=bars&preset=3');
   await page.waitForFunction(() => Alchemy && Alchemy.Shell.source &&
                                    Alchemy.Shell.source.kind === 'wsaudio', null, { timeout: 5000 })
@@ -434,16 +435,16 @@ const MOCK = () => {
     for (let i = 1; i < f.length; i++) if (f[i] > f[at]) at = i;
     return { bin: at, byte: f[at], sum: f.reduce((a, b) => a + b, 0) };
   });
-  // A discontinuity in the ring buffer would smear one frame's spectrum; take the best of a few.
+  // A gap in the pacing would smear one snapshot's spectrum; take the best of a few.
   let ws = { bin: 0, byte: 0, sum: 0 };
   for (let i = 0; i < 6; i++) {
     await page.waitForTimeout(150);
     const p = await peak();
     if (p.byte > ws.byte) ws = p;
   }
-  assert.strictEqual(ws.bin, 43, 'the tone should peak in bin 43: ' + JSON.stringify(ws));
-  assert(Math.abs(ws.byte - 194) <= 6,
-         'analyser byte off the -20 dBFS ground truth of 194 (tools/gen_frames.py): ' + ws.byte);
+  assert.strictEqual(ws.bin, 40, 'the tone should peak at frequency[40] (FFT bin 43): ' + JSON.stringify(ws));
+  assert(Math.abs(ws.byte - 176) <= 6,
+         'analyser byte off the -20 dBFS ground truth of 176 (tests/engine/wmp-analyzer.test.ts): ' + ws.byte);
   // the same tone through getDisplayMedia, for the byte-for-byte comparison
   await page.evaluate(() => { window.__share = 'tone'; });
   await page.click('#bstop');            // Play is Pause while a source is attached
@@ -459,7 +460,7 @@ const MOCK = () => {
   assert.strictEqual(sh.bin, ws.bin, 'share path peaks in a different bin: ' + sh.bin + ' vs ' + ws.bin);
   assert(Math.abs(sh.byte - ws.byte) <= 4,
          'system audio and the share path disagree: ' + ws.byte + ' vs ' + sh.byte);
-  console.log('  system audio: bin %d byte %d, share path byte %d, ground truth 194',
+  console.log('  system audio: frequency[%d] = %d, share path %d, ground truth 176',
               ws.bin, ws.byte, sh.byte);
 
   // a dropped socket must go back to animating on silence, not freeze on the last frame

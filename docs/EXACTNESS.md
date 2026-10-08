@@ -95,7 +95,8 @@ Made by the harness's composition script (md5 of the .bin
 (`random.seed(7)`) that cycles digital silence (2-6 s) → quiet pad (about -40 dB) → kick+hat beat →
 sustained three-note chord → sparse clicks over near-silence → 40 Hz-8 kHz log sweep → noise bursts
 → fast beat → fade-out, 6-22 s per section, a new key/tempo/pan every section. Analysed exactly as
-`gen_frames.py wav` (Blackman FFT → AnalyserNode bytes), 60 fps, so 30 000 frames = 8 min 20 s,
+`gen_frames.py wav` as it was then (Blackman FFT → AnalyserNode bytes; it now uses WMP's own analyzer, as the
+app does), 60 fps, so 30 000 frames = 8 min 20 s,
 several full Alchemy scheduler cycles including quiet → loud transitions and full silence.
 
 ## Reproduce
