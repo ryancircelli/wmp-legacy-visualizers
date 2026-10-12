@@ -20,12 +20,13 @@ export interface CatalogFamily {
 
 /** The WMP whose presets each family's unversioned names are: the newest that ships it (README's Fidelity):
  *  WMP 12's Alchemy, Bars and Waves and Battery; WMP 10's Spikes, Particle, Plenoptic and Ambience; Musical
- *  Colors only ever in WMP 7 and 8. */
+ *  Colors only ever in WMP 7 and 8; 3D Alchemy is WMP 9's (the Creativity Fun Pack for WMP 9 Series). */
 const CURRENT: Record<VisKind, Versions> = {
   alchemy: [12, 12], bars: [12, 12], battery: [12, 12],
   spikes: [10, 10], particle: [10, 10], plenoptic: [10, 10], ambience: [10, 10],
   musical: [7, 8],
   blazing: [7, 8], colorcubes: [7, 8], pulsing: [7, 8], trilogy1: [7, 8], trilogy2: [7, 8], trilogy3: [7, 8],
+  alchemy3d: [9, 9],
 };
 
 /** A preset's name as its name and the versions its suffix gives ("Swirl (WMP 7-9)": Swirl, [7, 9]); none: null. */

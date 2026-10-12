@@ -82,7 +82,7 @@ describe('menus', () => {
   it('a click outside closes; the picker ▾ opens the visualizations', async () => {
     const { $ } = setup();
     press($('#vpick')!);
-    expect([...menu(0)!.querySelectorAll<HTMLElement>('[role^=menuitem]')].map((b) => b.children[1]!.textContent)).toEqual(['Alchemy', 'Ambience', 'Bars and Waves', 'Battery', 'Blazing Colors', 'Color Cubes', 'Particle', 'Plenoptic', 'Pulsing Colors', 'Spikes',
+    expect([...menu(0)!.querySelectorAll<HTMLElement>('[role^=menuitem]')].map((b) => b.children[1]!.textContent)).toEqual(['3D Alchemy', 'Alchemy', 'Ambience', 'Bars and Waves', 'Battery', 'Blazing Colors', 'Color Cubes', 'Particle', 'Plenoptic', 'Pulsing Colors', 'Spikes',
       'Trilogy I', 'Trilogy II', 'Trilogy III', 'Musical Colors']);   // by registry key: Particle is "Dotplane"
     await act(() => new Promise((r) => setTimeout(r, 0)));     // Radix listens for outside presses from the next tick
     press(document.body);
@@ -303,11 +303,12 @@ describe('transport', () => {
   it("the arrows walk WMP's flat list, wrapping, into a family's last preset going back; Shift steps the families", () => {
     const { $ } = setup();
     const at = () => S().vis.kind + ':' + S().vis.preset, last = PRESETS[PRESETS.length - 1]!;
-    const lastOf = (vis: string) => vis + ':' + (PRESETS.filter((p) => p.vis === vis).length - 1);
-    fireEvent.click($('#vprev')!);                                     // Alchemy, the first: wraps to the end
+    const lastOf = (vis: string) => vis + ':' + (PRESETS.filter((p) => p.vis === vis).length - 1), first = PRESETS[0]!;
+    act(() => S().actions.setVis(first.vis, first.preset));             // the list's first (3D Alchemy, key "3D-Alchemy")
+    fireEvent.click($('#vprev')!);                                     // wraps to the end
     expect(at()).toBe(last.vis + ':' + last.preset);
     fireEvent.click($('#vnext')!);
-    expect(at()).toBe('alchemy:0');
+    expect(at()).toBe(first.vis + ':' + first.preset);
     act(() => S().actions.setVis('particle', 0));
     fireEvent.click($('#vprev')!);                                     // out of Particle ("Dotplane"): Color Cubes' last preset
     expect(at()).toBe(lastOf('colorcubes'));
@@ -318,7 +319,7 @@ describe('transport', () => {
     expect(at()).toBe('particle:0');
     fireEvent.click($('#vprev')!, { shiftKey: true });                 // previous family, its last preset
     expect(at()).toBe(lastOf('colorcubes'));
-    act(() => S().actions.setVis('alchemy', 0));
+    act(() => S().actions.setVis(first.vis, 0));
     fireEvent.click($('#vprev')!, { shiftKey: true });                 // wraps: the last family, its last preset
     expect(at()).toBe(last.vis + ':' + last.preset);
   });

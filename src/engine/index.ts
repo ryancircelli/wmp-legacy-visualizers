@@ -18,12 +18,13 @@ import './plenoptic/index';
 import './ambience/index';
 import './musical/index';
 import './musical/plus';
+import './alchemy3d/index';
 
 export { A };
 export type { Surface, TimedLevel };
 
 export type VisKind = 'alchemy' | 'bars' | 'battery' | 'spikes' | 'particle' | 'plenoptic' | 'ambience' | 'musical'
-  | 'blazing' | 'colorcubes' | 'pulsing' | 'trilogy1' | 'trilogy2' | 'trilogy3';
+  | 'blazing' | 'colorcubes' | 'pulsing' | 'trilogy1' | 'trilogy2' | 'trilogy3' | 'alchemy3d';
 /** 'original' = each DLL's own surface size; 'auto' = the view, capped near 720p worth of pixels; n = view * n. */
 export type Scale = 'original' | 'auto' | number;
 
@@ -58,7 +59,7 @@ export interface PresetEntry {
   vis: VisKind;
   preset: number;
   group: 'Alchemy' | 'Bars and Waves' | 'Battery' | 'Spikes' | 'Particle' | 'Plenoptic' | 'Ambience' | 'Musical Colors'
-    | 'Blazing Colors' | 'Color Cubes' | 'Pulsing Colors' | 'Trilogy I' | 'Trilogy II' | 'Trilogy III';
+    | 'Blazing Colors' | 'Color Cubes' | 'Pulsing Colors' | 'Trilogy I' | 'Trilogy II' | 'Trilogy III' | '3D Alchemy';
   name: string;
   /** the family's registry key, HKLM\SOFTWARE\Microsoft\MediaPlayer\Objects\Effects\<key> (its place in the list) */
   key: string;
@@ -120,6 +121,10 @@ const FAMILIES: readonly { key: string; vis: VisKind; group: PresetEntry['group'
   { key: 'TrilogyI', vis: 'trilogy1', group: 'Trilogy I', names: A.TrilogyI.PRESET_NAMES },
   { key: 'TrilogyII', vis: 'trilogy2', group: 'Trilogy II', names: A.TrilogyII.PRESET_NAMES },
   { key: 'TrilogyIII', vis: 'trilogy3', group: 'Trilogy III', names: A.TrilogyIII.PRESET_NAMES },
+  // the Creativity Fun Pack's mpvis3d.dll (2003) registers its own Effects key, "3D-Alchemy" (named "3D Alchemy"):
+  // WMP 9 lists it as a visualization of its own, first ("3" sorts before "A"). Its sixth preset, Draco's room,
+  // is one WMP never offered (GetPresetCount says 5)
+  { key: '3D-Alchemy', vis: 'alchemy3d', group: '3D Alchemy', names: A.Alchemy3D.PRESET_NAMES },
 ];
 
 /** Every preset of every family, in WMP's order: the flat list its next/previous walks, wrapping. */
@@ -151,7 +156,8 @@ export function makeLevel(): TimedLevel {
 // whole RECT, no aspect correction (spec 10 §2.3), which is why smoothing is off for it. Spikes and
 // Particle (WMP 7-10) draw into a DIB of the window's own size and copy it 1:1, as Bars and Waves does (no
 // cap of their own; the same 1080p one here); Musical Colors (WMP 7-8) scales its 350x320
-// canvas itself (up to 3x) into the window's DC, black around it.
+// canvas itself (up to 3x) into the window's DC, black around it. 3D Alchemy draws through Direct3D into a back
+// buffer of the window's size, presented 1:1.
 /** Families that draw at a size of their own whatever the window (Plenoptic and Ambience: their
  *  Plenoptic_Resolution / Assault_Resolution, 256x192 by default, StretchDIBits'd to the window): every
  *  scale renders them there, the canvas stretches. */
@@ -170,7 +176,7 @@ export function samplingOf(kind: VisKind, preset = 0): Sampling {
 export function nativeSize(kind: VisKind, viewW: number, viewH: number, preset = 0): [number, number] {
   if (kind === 'plenoptic' || kind === 'ambience') return [256, 192];
   if (kind === 'alchemy' && preset === 1) return [384, 288];          // Random (WMP 9)
-  if (kind === 'bars' || kind === 'spikes' || kind === 'particle' || kind === 'musical' || PLUS[kind]) return [Math.min(1920, viewW), Math.min(1080, viewH)];
+  if (kind === 'bars' || kind === 'spikes' || kind === 'particle' || kind === 'musical' || PLUS[kind] || kind === 'alchemy3d') return [Math.min(1920, viewW), Math.min(1080, viewH)];
   return kind === 'battery' ? [384, 288] : [640, 480];
 }
 
@@ -238,6 +244,7 @@ function makeRaw(kind: VisKind, preset: number, options: EngineOptions): RawEngi
   if (kind === 'musical') return new (A.MusicalColors as unknown as RawCtor)({ width: 16, height: 16, options, preset });
   const P = PLUS[kind];
   if (P) return new P({ width: 16, height: 16, options, preset });
+  if (kind === 'alchemy3d') return new (A.Alchemy3D as unknown as RawCtor)({ width: 640, height: 480, options, preset });
   return new (A.Engine as unknown as RawCtor)({ width: 16, height: 16, options, preset });
 }
 
