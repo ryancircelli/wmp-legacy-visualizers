@@ -125,6 +125,8 @@ export interface IpodSettings {
   metal: 'classic' | 'rendered';
   /** seconds untouched before the screen dims (the iOS app; settings.ts BACKLIGHT), 0 never */
   backlight: number;
+  /** the battery's percentage beside it in the status row (the iOS app, which reports the battery) */
+  batteryPct: boolean;
 }
 
 /** Each group exports screen factories by these names; the chrome's main menu calls them (a

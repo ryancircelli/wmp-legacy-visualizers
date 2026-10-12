@@ -3,9 +3,10 @@
 // checked in Chromium against the original build); any input wakes it, a tap on the screen, a wheel turn
 // or an arrow key doing nothing else, the wheel's buttons acting as ever. The visualizer overlay is the
 // whole area in both views; the minimized view's bar and mirrors are gone.
-import { act, cleanup, fireEvent, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, renderHook, within } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { Root } from '../../src/skins/ipod/Root';
+import { useIpodSettings } from '../../src/skins/ipod/settings';
 import { QUIET_MS } from '../../src/skins/ipod/screens/nowplaying/logic';
 import { fakeData, mountSkinNow, settle } from './harness';
 
@@ -132,5 +133,22 @@ it('the status row: the output in ▶\'s place once the phone reports a route (h
   expect(ipod.querySelector('[class*=bolt]')).toBeNull();
   push('__wmpBattery', 'wmp-battery', { level: 40, charging: true });
   expect([!!ipod.querySelector('[class*=bolt]'), ipod.querySelector('[class*=battery]')?.getAttribute('aria-label')]).toEqual([true, 'Battery 40%, charging']);
+  // the fill: red at 20 % or under unless charging, yellow in Low Power Mode whatever the level
+  const fill = () => ipod.querySelector('[class*=battery]')?.getAttribute('data-fill') ?? null;
+  expect(fill()).toBeNull();
+  push('__wmpBattery', 'wmp-battery', { level: 15, charging: false });
+  expect(fill()).toBe('low');
+  push('__wmpBattery', 'wmp-battery', { level: 15, charging: true });
+  expect(fill()).toBeNull();
+  push('__wmpLowPower', 'wmp-lowpower', true);
+  expect(fill()).toBe('low-power');
+  // Settings > Battery Percentage: the number beside it
+  const pct = () => ipod.querySelector('[class*=pct]')?.textContent ?? null;
+  expect(pct()).toBeNull();
+  const { result } = renderHook(() => useIpodSettings());
+  act(() => result.current[1]({ batteryPct: true }));
+  expect(pct()).toBe('15%');
+  act(() => result.current[1]({ batteryPct: false }));
   delete (window as unknown as Record<string, unknown>).__wmpRoute; delete (window as unknown as Record<string, unknown>).__wmpBattery;
+  delete (window as unknown as Record<string, unknown>).__wmpLowPower;
 });

@@ -56,6 +56,8 @@ function SettingsMenu() {
     // the screen dimmed after a while untouched (the iOS app's, which keeps the phone awake; Root useBacklight)
     !!window.alchemyLayout && { id: 'backlight', label: 'Backlight', right: backlightName(ip.backlight), chevron: true,
                                 onSelect: to(nav, page('settings/backlight', 'Backlight', Backlight)) },
+    // the battery's percentage beside it (the host reports the battery: the iOS app)
+    !!window.__wmpBattery && { id: 'batterypct', label: 'Battery Percentage', right: onOff(ip.batteryPct), onSelect: () => patch({ batteryPct: !ip.batteryPct }) },
     // the host's light / dark (the iOS app's)
     !!window.alchemyAppearance && { id: 'theme', label: 'Theme', right: MODES.find(([m]) => m === theme)?.[1], chevron: true,
                                     onSelect: to(nav, page('settings/theme', 'Theme', Theme)) },

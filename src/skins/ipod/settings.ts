@@ -36,7 +36,7 @@ export const COLORS: Record<Preset, readonly [number, number, number]> = {
 export const LIGHT = [15, 75] as const;
 /** Settings > Backlight's choices, seconds untouched before the screen dims (0: Always On) */
 export const BACKLIGHT = [10, 30, 60, 120, 300, 0] as const;
-export const DEFAULTS: IpodSettings = { color: 'green', hue: 0, sat: 85, light: 50, clicker: true, wheel: 'white', metal: 'classic', backlight: 60 };
+export const DEFAULTS: IpodSettings = { color: 'green', hue: 0, sat: 85, light: 50, clicker: true, wheel: 'white', metal: 'classic', backlight: 60, batteryPct: false };
 
 const clamp = (v: unknown, lo: number, hi: number, d: number) => (typeof v === 'number' && v >= lo && v <= hi ? v : d);
 /** Whatever localStorage held (an older or hand-edited blob) as valid settings. */
@@ -50,6 +50,7 @@ function normalize(p: Partial<IpodSettings>): IpodSettings {
     wheel: p.wheel === 'black' ? 'black' : 'white',
     metal: p.metal === 'rendered' ? 'rendered' : 'classic',
     backlight: (BACKLIGHT as readonly unknown[]).includes(p.backlight) ? p.backlight! : DEFAULTS.backlight,
+    batteryPct: typeof p.batteryPct === 'boolean' ? p.batteryPct : DEFAULTS.batteryPct,
   };
 }
 

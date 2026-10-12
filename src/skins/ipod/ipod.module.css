@@ -330,6 +330,11 @@
   width: calc((100% - var(--unit) * 2) * var(--v, 1));
   background: #A2C871;
 }
+/* Low Power Mode yellow and low red, the iPhone's */
+.battery[data-fill=low-power]::after { background: #F2C230; }
+.battery[data-fill=low]::after { background: #E0453A; }
+/* Settings > Battery Percentage: the number beside the battery, the status row's own type */
+.pct { flex: none; margin-right: calc(var(--unit) * 3); font-size: calc(var(--unit) * 10); font-weight: 700; font-variant-numeric: tabular-nums; }
 
 /* the stack: each screen fills it; the top one slides in (from the right pushed, the left popped) */
 .frames {
