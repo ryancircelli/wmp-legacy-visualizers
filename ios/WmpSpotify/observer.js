@@ -224,6 +224,10 @@ function emit(n, d) { window.dispatchEvent(new CustomEvent(n, { detail: d })); }
 // and client token to spclient and the dealer in place of its own, which Spotify refuses a web login;
 // an app without the handler throws here, swallowed). Never logged.
 function lsToken() { try { if (W.token) webkit.messageHandlers.lstoken.postMessage((W.clientId || '') + ' ' + (W.clientToken || '') + ' ' + W.token); } catch (e) {} }
+// When that token expires (ms since the epoch, 0 unknown), after it: Spotify's token endpoint hands out the
+// session's current token with what is left of its hour, eight minutes once at a launch, and the app
+// planned on fifty. Its own message, so an app without the handler only drops it.
+function lsExpiry() { try { webkit.messageHandlers.lstokenexp.postMessage(String(W.expiresAt || 0)); } catch (e) {} }
 var API = /^https:\/\/(api|api-partner|[a-z0-9-]*spclient[a-z0-9.-]*)\.spotify\.com\//;
 function hdr(h, name) {
   if (!h) return null;
@@ -237,9 +241,12 @@ function seenHeader(url, name, v) {
   if (name === 'authorization') {
     var m = /^Bearer\s+(\S+)/i.exec(v);
     if (!m || m[1] === W.token) return; // the page's own calls repeat the same token: once each
-    W.token = m[1]; W.at = Date.now();
+    // one from the token endpoint, its expiry known and not near, stands: a call still carrying an older
+    // token would hand the app that one back
+    if (W.expiresAt > Date.now() + 60000) return;
+    W.token = m[1]; W.at = Date.now(); W.expiresAt = 0;
     emit('wmp-spotify-token', { token: W.token, clientId: W.clientId });
-    lsToken();
+    lsToken(); lsExpiry();
   } else if (name === 'client-token' && v !== W.clientToken) {
     W.clientToken = v;
     lsToken();
@@ -331,6 +338,7 @@ function seenResponse(url, res) {
       W.clientId = j.clientId || null;
       W.expiresAt = j.accessTokenExpirationTimestampMs || 0;
       if (j.accessToken && j.accessToken !== W.token) { W.token = j.accessToken; W.at = Date.now(); emit('wmp-spotify-token', { token: W.token, clientId: W.clientId }); lsToken(); }
+      lsExpiry();
       var li = j.isAnonymous === false;
       if (li !== W.loggedIn) { W.loggedIn = li; emit('wmp-spotify-auth', { loggedIn: li }); }
       if (j.isAnonymous === true) toLogin();

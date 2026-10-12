@@ -568,13 +568,21 @@ async fn run(
     }
     let mut token: Option<(String, Instant)> = None; // the web player's latest
     let mut client_token: Option<String> = None; // the web player's, with it
+    // When the web player's token expires (ms since the epoch, the page's "tokenexp:"), when it said:
+    // Spotify's token endpoint hands out the session's current token with what is left of its hour, so
+    // one received at a launch had eight minutes left, and taken for fifty it ran out in the background
+    // (every queued song "unavailable", the music stopped: 2026-10-12).
+    let mut token_expiry: Option<u64> = None;
     // The web player's tokens into the session, in place of login5's and clienttoken's (core.patch):
     // login5 refused the credentials a web login gives (INVALID_CREDENTIALS with Keymaster's client
     // id, BAD_REQUEST with the web player's: builds 22 and 23), and the web player's own pair is what
     // spclient and the dealer take from the web player anyway. Before each connect, and on each token.
-    let inject = |session: &Session, token: &Option<(String, Instant)>, ct: &Option<String>| {
+    let inject = |session: &Session, token: &Option<(String, Instant)>, ct: &Option<String>, expiry: Option<u64>| {
         if let Some((t, at)) = token {
-            let left = TOKEN_LIFE.saturating_sub(at.elapsed());
+            let left = match expiry {
+                Some(ms) => Duration::from_millis(ms.saturating_sub(epoch_ms())),
+                None => TOKEN_LIFE.saturating_sub(at.elapsed()),
+            };
             if !left.is_zero() {
                 session.login5().set_auth_token(t.clone(), left);
             }
@@ -713,7 +721,7 @@ async fn run(
                     session = Session::new(session_config.clone(), cache.clone());
                     player.set_session(session.clone());
                 }
-                inject(&session, &token, &client_token);
+                inject(&session, &token, &client_token, token_expiry);
                 // A pick or a token that has just come, else the web player's token while fresh,
                 // else what the cache holds.
                 let fresh = token.as_ref().filter(|(_, at)| at.elapsed() < TOKEN_LIFE)
@@ -869,12 +877,16 @@ async fn run(
                         session.set_client_id(&session_config.client_id);
                     }
                 }
-                token = Some((t, Instant::now())); // kept for the next reconnect either way
+                // kept for the next reconnect either way; the same token again (a new client token with it)
+                // keeps its age
+                if token.as_ref().is_none_or(|(old, _)| *old != t) {
+                    token = Some((t, Instant::now()));
+                }
                 if !ct.is_empty() {
                     client_token = Some(ct);
                 }
                 if !session.is_invalid() {
-                    inject(&session, &token, &client_token);
+                    inject(&session, &token, &client_token, token_expiry);
                 }
                 let idle = task.is_none() && !connecting;
                 if idle {
@@ -891,6 +903,14 @@ async fn run(
             // Control Center's buttons and the page's player (wmp_ls_command, the contract's commands), to
             // the live session.
             Some(c) = commands.recv() => {
+                // the web player's token's expiry (observer.js), for the token it came with
+                if let Some(ms) = c.strip_prefix("tokenexp:") {
+                    token_expiry = ms.parse::<u64>().ok().filter(|&ms| ms > 0);
+                    if !session.is_invalid() {
+                        inject(&session, &token, &client_token, token_expiry);
+                    }
+                    continue;
+                }
                 // The page's setting, kept for the process (not by the session, and not across launches:
                 // the page sends it at its start and at each change).
                 if let Some(n) = c.strip_prefix("crossfade:") {

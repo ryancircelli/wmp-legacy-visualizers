@@ -760,7 +760,7 @@ struct WebView: UIViewRepresentable {
         for name in ["log", "volume", "open", "layout", "showlog", "haptic", "awake", "statusbar", "orientation",
                      "brightness", "share", "homeindicator", "host", "reset", "viewport", "proximity",
                      "hapticpattern", "sound", "routepicker", "audiosession", "notify", "appearance", "clipboard", "icon",
-                     "band", "background", "keyboard", "scroll", "lstoken", "speaker", "player"] {
+                     "band", "background", "keyboard", "scroll", "lstoken", "lstokenexp", "speaker", "player"] {
             config.userContentController.add(context.coordinator, name: name)
         }
         if let script {
@@ -988,6 +988,9 @@ struct WebView: UIViewRepresentable {
             case "lstoken":
                 guard let s = message.body as? String, !s.isEmpty else { return }
                 Librespot.shared.token(s)
+            case "lstokenexp":
+                guard let s = message.body as? String, let ms = Double(s) else { return }
+                Librespot.shared.tokenExpiry(ms)
             case "speaker":
                 guard let s = message.body as? String, !s.isEmpty else { return }
                 Librespot.shared.rename(s)
@@ -1468,6 +1471,26 @@ final class Librespot {
         wmp_ls_token(t, client, clientToken)
     }
 
+    /// On the main thread: when the web player's token expires (ms since the epoch, 0 unknown), the
+    /// "lstokenexp" message after each token. To librespot, which serves it that long and no longer; and
+    /// five minutes before, with the app in the background, the page is loaded again for a fresh one:
+    /// hidden, the web player did not renew it, and at its expiry every queued song came back
+    /// "unavailable" and the music stopped (2026-10-12). In front it renews it itself.
+    func tokenExpiry(_ ms: Double) {
+        wmp_ls_command("tokenexp:\(Int(ms))")
+        renew?.invalidate()
+        guard ms > 0 else { return }
+        let at = Date(timeIntervalSince1970: ms / 1000 - 300)
+        renew = Timer.scheduledTimer(withTimeInterval: max(1, at.timeIntervalSinceNow), repeats: true) { timer in
+            guard Date().timeIntervalSince1970 * 1000 < ms else { timer.invalidate(); return }
+            guard UIApplication.shared.applicationState != .active else { timer.fireDate = Date() + 60; return }
+            timer.invalidate()
+            HostLog.shared.log("page: the token expires in \(Int((ms / 1000 - Date().timeIntervalSince1970) / 60)) min, in the background: loading the page again for a fresh one")
+            WebHolder.shared.web?.reload()
+        }
+    }
+    private var renew: Timer?  // on the main thread
+
     /// On the main thread, once, with the audio session active.
     func start() {
         engine.attach(node)
@@ -1615,6 +1638,7 @@ final class Librespot {
     }
     private var outputFailed = false  // on librespot's player thread, but for the first start
     private var stalls = 0            // under `room`: seconds running the queue has not moved
+    private var health: (low: Int, high: Int, packets: Int, since: Date) = (Int.max, 0, 0, Date())  // under `room`
     private var stalledAt: AVAudioFramePosition?  // under `room`: the node's sample time at the last full wait
 
     /// The app in front (the scene's phase): the queue's depth follows it.
@@ -1702,8 +1726,20 @@ final class Librespot {
         stalls = waited || moved ? 0 : stalls + 1
         let kick = stalls >= 2
         if kick { stalls = 0; queued = 0 }
+        // The queue's low and high marks and the packets taken, every 15 s while it plays: low near 0
+        // before a stutter is librespot's decoding falling behind; a queue that stays up while it stutters
+        // is the output's ("is it a decoding issue?", the owner, 2026-10-12, a buffer line all downloaded)
+        health.low = min(health.low, queued); health.high = max(health.high, queued); health.packets += 1
+        var report: (low: Int, high: Int, packets: Int, since: Date)?
+        if Date().timeIntervalSince(health.since) >= 15 { report = health }
+        if report != nil { health = (Int.max, 0, 0, Date()) }
         queued += frames
         room.unlock()
+        if let report {
+            HostLog.shared.log(String(format: "audio: queue low %.2f s, high %.2f s, %d packets in %.0f s (%@)",
+                                      Double(report.low) / 44100, Double(report.high) / 44100, report.packets,
+                                      Date().timeIntervalSince(report.since), front ? "in front" : "in the background"))
+        }
         if kick {
             let s = AVAudioSession.sharedInstance()
             HostLog.shared.log("audio: nothing is being played (engine \(engine.isRunning ? "running" : "stopped"), node \(node.isPlaying ? "playing" : "stopped"), category \(s.category.rawValue) options \(s.categoryOptions.rawValue)): starting over")
