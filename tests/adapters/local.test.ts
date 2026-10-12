@@ -243,6 +243,9 @@ describe('the analyzer build per preset', () => {
     const by = (b: string) => Object.keys(map).filter((k) => map[k] === b);
     expect(by('wmp7').sort()).toEqual([
       ...PRESETS.filter((p) => p.vis === 'musical').map((p) => 'Musical Colors: ' + p.name),
+      // the downloadable packs on its engine
+      ...PRESETS.filter((p) => ['blazing', 'colorcubes', 'pulsing', 'trilogy1', 'trilogy2', 'trilogy3'].includes(p.vis))
+        .map((p) => p.group + ': ' + p.name),
       'Ambience: Niagara (WMP 7-8)', 'Ambience: Random (WMP 7)', 'Ambience: Random (WMP 8)',
       'Bars and Waves: Bars (WMP 7-8)', 'Bars and Waves: Scope (WMP 7-8)',
       ...PRESETS.filter((p) => p.vis === 'battery' && p.name.endsWith(' (WMP 8)')).map((p) => 'Battery: ' + p.name),

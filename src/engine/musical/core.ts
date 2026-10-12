@@ -15,7 +15,7 @@
 // ftol() below (truncate, low 32 bits). The only transcendental use is the sin/cos tables (0x55c15ab4).
 import { A } from '../ns';
 import '../rand';
-import { musicalImages } from './images';
+import { musicalImages, type MusicalImage } from './images';
 
 const fr = Math.fround;
 /** MSVC _ftol: truncate toward zero to int64, return the low 32 bits (0 for NaN/out of range). */
@@ -31,6 +31,17 @@ export const OBJ_SIZE = 0x4f34;
 /** the dword after a work buffer: a Windows heap block header (see allocWork), as one real run had it */
 const HEAP_NEXT = 0x115c8962;
 const HEAP0 = 0x5000;            // first malloc'd byte; everything below is the object
+/** The 2000-2001 builds of the engine (Plus: Blazing Colors, Pulsing Colors, Color Cubes, Trilogy) keep 52 layer and
+ *  52 transform records where wmpvis.dll keeps 8. The port keeps wmpvis.dll's object (every global field at its
+ *  offset there) and moves only those two arrays and the draw-order list after them past it: transform records
+ *  from 0x5000, layers from 0x7d80, the order list from 0xe170 (plus slack for clipLayers' one-past-the-end
+ *  "layer 52", which reads and writes the list and what follows it as a layer), the heap from 0xe400. */
+const PLUS_XF = 0x5000, PLUS_LY = PLUS_XF + 52 * 0xe0, PLUS_ORDER = PLUS_LY + 52 * 0x1ec, PLUS_HEAP0 = 0xe400;
+/** Trilogy's own fields (no wmpvis.dll counterpart), kept past wmpvis.dll's object (0x4f40.. is Color Cubes'):
+ *  the silence detector's counter and last ten bins, the frames-per-second counter, Random Selection's flag and
+ *  frame counter, the presets' frame counter */
+export const TR_SIL = 0x4f50, TR_PREV = 0x4f54, TR_FRAMES = 0x4f80, TR_LAST = 0x4f84, TR_FPS = 0x4f88, TR_RANDOM = 0x4f8c,
+  TR_RCOUNT = 0x4f90, TR_COUNT = 0x4f94;
 
 /** The flat heap: the object at 0, then malloc'd blocks. Freed blocks are reused by exact size. */
 class Mem {
@@ -43,8 +54,8 @@ class Mem {
   declare top: number;
   declare free: Map<number, number[]>;
   declare sizes: Map<number, number>;
-  constructor(bytes: number) {
-    this.top = HEAP0;
+  constructor(bytes: number, heap0: number) {
+    this.top = heap0;
     this.free = new Map();
     this.sizes = new Map();
     this.views(new ArrayBuffer(bytes));
@@ -82,15 +93,41 @@ class Mem {
 }
 
 // ---------------------------------------------------------------- record layout
-/** layer k's base (int index): 8 records of 0x7b ints from obj+0x76c */
-export function LY(k: number): number { return 0x1db + k * 0x7b; }
-/** transform record k's base (int index): 8 records of 0x38 ints from obj+0x6c */
-export function XF(k: number): number { return 0x1b + k * 0x38; }
+// Where the records are for the engine running now (Core.layout() sets them on every entry: wmpvis.dll's
+// object, or the Plus builds' 52-record arrays): int indices.
+var LB = 0x76c >> 2, XB = 0x6c >> 2, ORD = 0x16cc >> 2;
+/** layer k's base (int index): 0x7b ints per record from obj+0x76c (8 records; the Plus builds: 52 from PLUS_LY) */
+export function LY(k: number): number { return LB + k * 0x7b; }
+/** transform record k's base (int index): 0x38 ints per record from obj+0x6c (8; the Plus builds: 52 from PLUS_XF) */
+export function XF(k: number): number { return XB + k * 0x38; }
 /** layer field: byte offset as layer 0 has it (0x76c..0x957) -> int offset in the record */
 const lf = (byteOff: number): number => (byteOff - 0x76c) >> 2;
 /** transform field: byte offset as record 0 has it (0x6c..0x14b) -> int offset in the record */
 const xf = (byteOff: number): number => (byteOff - 0x6c) >> 2;
 export { lf, xf };
+
+/** One of the Plus builds of the engine (plus.ts): what differs from wmpvis.dll beyond the engine code paths
+ *  Core switches on `ver`: its preset programs, images and a few per-DLL details. */
+export interface PlusDll {
+  /** 1 = the 2000 builds (Blazing Colors, Pulsing Colors, Color Cubes), 2 = Trilogy (2001) */
+  ver: number;
+  /** GetPresetCount */
+  presets: number;
+  /** the layer presetStep tests for an image before the bars and the program (Blazing Colors 1, the others 0) */
+  stepLayer: number;
+  /** presetStep with the trails and bars (Blazing Colors, Pulsing Colors), or just the program (Color Cubes) */
+  bars: boolean;
+  /** the image table's index (DATATABLE_2 at 1; Color Cubes' DATATABLE_3 at 2) */
+  table: number;
+  /** the default scene's six layers (core.ts PLUS_SCENE when not given) */
+  scene?: number[][];
+  /** SetCurrentPreset when it is not wmpvis.dll's (Trilogy: the last preset is Random Selection) */
+  setPreset?(c: Core, n: number): void;
+  /** the preset program (the DLL's vt+0x18c-ish dispatcher on obj+0x47bc): first call builds, later ones animate */
+  program(c: Core): void;
+  /** the image table, generated (our own artwork) */
+  images(): MusicalImage[];
+}
 
 export class Core {
   declare m: Mem;
@@ -106,14 +143,26 @@ export class Core {
   declare v8: boolean;
   /** the DLL's DATATABLE resource when the caller supplies one (exact images); else the generated ones */
   declare res: Uint8Array | null;
+  /** 0 = wmpvis.dll; else the Plus build's PlusDll.ver */
+  declare ver: number;
+  declare plus: PlusDll | null;
+  /** Trilogy's millisecond clock (winmm timeGetTime: frames per second, which scale its animation) */
+  declare clock: () => number;
+  /** Trilogy's srand seed at its first frame (CRT time(NULL)) */
+  declare timeSeed: () => number;
 
-  constructor(res?: Uint8Array | null) {
-    this.m = new Mem(24 << 20);
+  constructor(res?: Uint8Array | null, plus?: PlusDll | null) {
+    this.plus = plus || null;
+    this.ver = plus ? plus.ver : 0;
+    this.m = new Mem(24 << 20, this.ver ? PLUS_HEAP0 : HEAP0);
+    this.clock = (): number => Math.floor(typeof performance !== 'undefined' ? performance.now() : Date.now()) >>> 0;
+    this.timeSeed = (): number => Math.floor(Date.now() / 1000) >>> 0;
+    this.layout();
     this.freq = new Uint8Array(1024);
     this.dcW = this.dcH = 0;
     this.dc = new Uint32Array(0);
     this.rcLeft = this.rcTop = 0;
-    this.v8 = true;
+    this.v8 = !this.plus;
     this.res = null;
     if (res) { this.res = new Uint8Array(res.length + 4); this.res.set(res); }   // + slack for the 24-bit reads
     // CComObject ctor 0x55c0d6f1 zeroes a handful of fields; the rest of the operator-new block is what
@@ -123,11 +172,19 @@ export class Core {
     // real DLL does so too in the runs where the heap left stale bytes there (zeros = this port).
   }
 
+  /** point LY / XF / the order list at this engine's records (every public entry calls it) */
+  layout(): void {
+    if (this.ver) { LB = PLUS_LY >> 2; XB = PLUS_XF >> 2; ORD = PLUS_ORDER >> 2; }
+    else { LB = 0x76c >> 2; XB = 0x6c >> 2; ORD = 0x16cc >> 2; }
+  }
+
   // ---------------------------------------------------------------- IWMPEffects
-  /** SetCurrentPreset 0x55c0dc3a (this = obj+4): obj+0x47bc = n + 1, obj+0xc = n. */
+  /** SetCurrentPreset 0x55c0dc3a (this = obj+4): obj+0x47bc = n + 1, obj+0xc = n. The Plus builds keep the
+   *  same id field (their own offsets; obj+0xc = n kept for the port). */
   setPreset(n: number): boolean {
-    if (n < 0 || n > 0x13) return false;
+    if (n < 0 || n >= (this.plus ? this.plus.presets : 0x14)) return false;
     var s = this.m.I;
+    if (this.plus && this.plus.setPreset) { this.plus.setPreset(this, n); return true; }
     s[0x47bc >> 2] = n + 1;
     s[0xc >> 2] = n;
     return true;
@@ -136,6 +193,7 @@ export class Core {
   /** IWMPEffects::Render 0x55c0d71c (WMP 8: 0x590dd8a3). freq0 = the TimedLevel's freq[0] (1024 bytes),
    *  state its play state; the DC is w x h. */
   render(freq0: Uint8Array, w: number, h: number, state: number): void {
+    this.layout();
     var m = this.m, s = m.I;
     if (w !== this.dcW || h !== this.dcH) {
       var nd = new Uint32Array(w * h);           // a fresh DIB is black
@@ -145,6 +203,8 @@ export class Core {
       this.dc.fill(0);
       return;
     }
+    if (this.ver && s[0x47bc >> 2] === 0x1e) return;   // the Plus builds skip preset id 30 (none has one)
+    if (this.ver === 2) { this.renderTrilogy(freq0, w, h); return; }
     s[0x4b34 >> 2] = 0;
     if (s[0x455c >> 2] === 0) {
       this.init();                                 // vt+0x1cc 0x55c1510e
@@ -156,15 +216,15 @@ export class Core {
       s[0x47e0 >> 2] = 0x100;                      // scale 1.0 (8.8)
       s[0x47e4 >> 2] = 0x100;
       m.F[0x4470 >> 2] = fr((s[0x47a0 >> 2] / 2) | 0);
-      s[0x4618 >> 2] = 0;
+      s[0x4618 >> 2] = this.plus ? this.plus.table : 0;   // the Plus builds' one table (Color Cubes loads 0, 1, 2)
       this.loadTable();                            // vt+0x168 0x55c15597
       this.strides();                              // vt+0x16c 0x55c1563d
       this.defaultScene();                         // vt+0x184 0x55c15726
       this.trigTables();                           // vt+0x170 0x55c15ab4
       s[0x45c0 >> 2] = 1;                          // GetForegroundWindow(): never read
     }
-    if (this.v8) {                                 // WMP 8 reloads the (cached) table every frame and starts over
-      s[0x4618 >> 2] = 0;                          // when that ran out of memory (its flag obj+0x4580; never here)
+    if (this.v8 || this.ver) {                     // WMP 8 and the Plus builds reload the (cached) table every frame and
+      s[0x4618 >> 2] = this.plus ? this.plus.table : 0;   // start over when that ran out of memory (OOM flag; never here)
       this.loadTable();
     }
     s[0x47e8 >> 2] = this.rcLeft;
@@ -192,6 +252,84 @@ export class Core {
     s[0x4c8c >> 2] = s[0x4c8c >> 2] === 0 ? s[0x44c4 >> 2] : s[0x4c8c >> 2] - 1;
     s[0x4620 >> 2] = 1;                            // the HDC (non-zero = there is one)
     this.frame();                                  // vt+0x1ac 0x55c0d452
+  }
+
+  /** Trilogy's Render (TrilogyI 0x1000fad0, its engine part vt+0x288 0x1000fcc0): wmpvis.dll's, plus srand(time) at
+   *  the first frame, a silence detector (bins 50..59 unchanged for 7 frames = silence), two more random spectrum
+   *  modes, and Random Selection's switch between the other presets every (fps + 1) * 100 / 3 frames. */
+  renderTrilogy(freq0: Uint8Array, w: number, h: number): void {
+    var m = this.m, s = m.I, i: number;
+    if (s[0x455c >> 2] === 0) {
+      this.init();
+      s[0x455c >> 2] = 1;
+      s[0x47a0 >> 2] = 0x15e;
+      s[0x47a8 >> 2] = 0x140;
+      s[0x467c >> 2] = 0x15e;
+      s[0x4680 >> 2] = 0x140;
+      s[0x47e0 >> 2] = 0x100;
+      s[0x47e4 >> 2] = 0x100;
+      m.F[0x4470 >> 2] = fr((s[0x47a0 >> 2] / 2) | 0);
+      A.srand(this.timeSeed());
+      s[0x4618 >> 2] = this.plus!.table;
+      this.loadTable();
+      this.strides();
+      this.defaultScene();
+      this.trigTables();
+      s = m.I;
+      s[0x45c0 >> 2] = 1;
+    }
+    s[0x4618 >> 2] = this.plus!.table;
+    this.loadTable();
+    s = m.I;
+    s[0x4b34 >> 2] = 0;
+    s[0x47e8 >> 2] = this.rcLeft;
+    s[0x47ec >> 2] = this.rcTop;
+    if (s[0x467c >> 2] === w && s[0x4680 >> 2] === h) s[0x46cc >> 2] = 0;
+    else { s[0x46cc >> 2] = 1; s[0x4770 >> 2] = 0; s[0x4680 >> 2] = h; s[0x467c >> 2] = w; }
+    if (s[0x4770 >> 2] < 0x10) s[0x4770 >> 2]++; else { s[0x4770 >> 2] = 0; s[0x46cc >> 2] = 1; }
+    s[0x4620 >> 2] = 1;
+    var fq = this.freq;
+    fq.set(freq0.subarray(0, 1024));
+    for (i = 0; i < 0x100; i++) {
+      var c = fq[i * 4];
+      if (c < fq[i * 4 + 1]) c = fq[i * 4 + 1];
+      if (c < fq[i * 4 + 2]) c = fq[i * 4 + 2];
+      if (c < fq[i * 4 + 3]) c = fq[i * 4 + 3];
+      fq[i] = c;
+    }
+    s[0x45cc >> 2] = 0x100;
+    s[TR_SIL >> 2]++;                              // bins 50..59 unchanged for 7 frames: silence (bins 1..255 := 0)
+    for (i = 0; i < 10; i++) {
+      if (s[(TR_PREV >> 2) + i] !== fq[0x32 + i]) { s[(TR_PREV >> 2) + i] = fq[0x32 + i]; s[TR_SIL >> 2] = 0; }
+    }
+    if (s[TR_SIL >> 2] > 6) { s[TR_SIL >> 2] = 7; for (i = 0; i < 0xff; i++) fq[1 + i] = 0; s[0x45cc >> 2] = 0xff; }
+    else s[0x45cc >> 2] = 10;
+    if (s[0x4c8c >> 2] === 0 || s[0x44c4 >> 2] === 0) this.spectrumIn();
+    s = m.I;
+    s[0x4c8c >> 2] = s[0x4c8c >> 2] === 0 ? s[0x44c4 >> 2] : s[0x4c8c >> 2] - 1;
+    if (s[TR_RANDOM >> 2] !== 0) {                 // Random Selection
+      if ((((s[TR_FPS >> 2] + 1) * 100) / 3 | 0) < s[TR_RCOUNT >> 2] || s[TR_RCOUNT >> 2] === 0) {
+        s[TR_RCOUNT >> 2] = 1;
+        var pick = (): number => { var a = A.rand(), b2 = A.rand(); return (a & 1) + 1 + (b2 & 1); };
+        s[0x4e78 >> 2] = pick();
+        if (s[0x4e78 >> 2] === s[0x47bc >> 2]) s[0x4e78 >> 2] = pick();
+        if (s[0x4e78 >> 2] === s[0x47bc >> 2]) s[0x4e78 >> 2] = pick();
+        s[0x47bc >> 2] = s[0x4e78 >> 2];
+      }
+      s[TR_RCOUNT >> 2]++;
+    }
+    this.frame();
+  }
+  /** Trilogy's frames-per-second counter (vt+0x220 0x10001590), after every blit: frames over the last
+   *  second or more of timeGetTime */
+  fpsCount(): void {
+    var s = this.m.I, d = (this.clock() - s[TR_LAST >> 2]) >>> 0;
+    if (d > 1000) {
+      s[TR_FPS >> 2] = ((Math.imul(s[TR_FRAMES >> 2], 1000) >>> 0) / d) >>> 0;
+      s[TR_LAST >> 2] = this.clock();
+      s[TR_FRAMES >> 2] = 0;
+    }
+    s[TR_FRAMES >> 2]++;
   }
 
   /** Render 0x55c0d8d5..0x55c0daf8: the collapsed spectrum into obj+0x1740[0..254], the level. */
@@ -225,6 +363,7 @@ export class Core {
     for (i = 0; i <= 9; i++) s[0x4414 >> 2] += s[(0x1718 >> 2) + i];
     s[0x4ee8 >> 2] = 10;
     s[0x4414 >> 2] = (s[0x4414 >> 2] / 10) | 0;
+    if (this.ver === 2 && (s[0x44d4 >> 2] === 3 || s[0x44d4 >> 2] === 4)) this.gapRuns(row);
     if (s[0x44d4 >> 2] === 2) {
       // random runs of 1..16 consecutive bins (0x55c0da3f)
       var n = 0;
@@ -253,6 +392,40 @@ export class Core {
     this.spectrumProcess();                        // vt+0x204 0x55c12e65
   }
   fq(): Uint8Array { return this.freq; }
+  /** Trilogy's random modes 3 and 4 (0x1000fcc0): runs of 7..22 (3) or 5..12 (4) bins from random starts below 128,
+   *  three in four preceded by twice as many silent bins */
+  gapRuns(row: number): void {
+    var s = this.m.I, fq = this.freq, n = 0, md = s[0x44d4 >> 2];
+    s[0x4ee8 >> 2] = 0;
+    for (;;) {
+      var len: number;
+      for (;;) {
+        s[0x4768 >> 2] = A.rand() & 0x7f;
+        len = md === 3 ? (A.rand() & 0xf) + 7 : (A.rand() & 7) + 5;
+        s[0x45cc >> 2] = len;
+        if (len + s[0x4768 >> 2] > 0xfe) s[0x4768 >> 2] = len;
+        if ((A.rand() & 3) === 0) break;
+        s[0x45d0 >> 2] = 0;
+        len <<= 1;
+        s[0x45cc >> 2] = len;
+        for (var j = 0; ; j++) {
+          s[(0x1740 >> 2) + row + n] = 0;
+          n++; s[0x4ee8 >> 2] = n;
+          if (n > 0xfe) { s[0x45d0 >> 2] = j; return; }
+          s[0x45d0 >> 2] = j + 1;
+          if (j + 1 > len) break;
+        }
+      }
+      s[0x45d0 >> 2] = 0;
+      for (var k = 0; ; k++) {
+        s[(0x1740 >> 2) + row + n] = fq[s[0x4768 >> 2] + k];
+        n++; s[0x4ee8 >> 2] = n;
+        if (n > 0xfe) { s[0x45d0 >> 2] = k; return; }
+        s[0x45d0 >> 2] = k + 1;
+        if (k + 1 > s[0x45cc >> 2]) break;
+      }
+    }
+  }
 
   // ---------------------------------------------------------------- spectrum (vt+0x204 0x55c12e65)
   spectrumProcess(): void {
@@ -266,7 +439,7 @@ export class Core {
   /** 0x55c12ea9: modes 1, 3, 4, 5 mirror the 255 bins into a 512-wide buffer at 0x1f60. */
   specMirror(): void {
     var s = this.m.I, md = s[0x44c8 >> 2];
-    if (md === 5 || md === 4 || md === 3 || md === 1) {
+    if (md === 5 || md === 4 || md === 3 || md === 1 || (this.ver && md >= 6 && md <= (this.ver === 2 ? 9 : 8))) {   // the Plus builds: and 6..8 (Trilogy 9)
       for (var i = 0; i < s[0x4494 >> 2]; i++) {
         s[0x45cc >> 2] = i;
         s[(0x235c >> 2) + i] = s[(0x1740 >> 2) + i];
@@ -275,6 +448,14 @@ export class Core {
       s[0x45cc >> 2] = i;
       s[0x448c >> 2] = 1;
       s[0x4494 >> 2] = 0x200;
+    }
+    if (this.ver === 2 && md === 10) {             // Trilogy 0x10014fd0: the top 225 bins reversed at half height, the first ten silent
+      var n = s[0x4494 >> 2] - 0x1e;
+      s[0x4494 >> 2] = n;
+      for (i = 0; i < n; i++) s[(0x1f60 >> 2) + i] = (s[0x6cf - i] / 2) | 0;
+      for (i = 0; i < 10; i++) s[(0x1f60 >> 2) + i] = 0;
+      s[0x45cc >> 2] = 10;
+      s[0x448c >> 2] = 1;
     }
   }
   /** 0x55c12fcd: resample to obj+0x44cc/256 of the width (DDA on the carry of a 32-bit sum). */
@@ -360,7 +541,7 @@ export class Core {
         s[0x45f0 >> 2] = j;
         var q = j + i;
         s[0x45d0 >> 2] = q;
-        if (q >= s[0x4494 >> 2]) s[0x45d0 >> 2] = q = i;
+        if (q >= s[0x4494 >> 2]) s[0x45d0 >> 2] = q = this.ver === 2 ? s[0x4494 >> 2] - 1 : i;   // Trilogy: the last bin
         var sum = (s[0x4c28 >> 2] + s[S + q]) | 0, r: number;
         s[0x4c28 >> 2] = sum;
         if (i !== 0 && sum === 0) {
@@ -370,6 +551,7 @@ export class Core {
         s[S + i] = r;
       }
       s[0x45f0 >> 2] = j;
+      if (this.ver && s[S + i] > 0xff) s[S + i] = 0xff;   // the Plus builds clamp each smoothed bin
       void F;
     }
     s[0x45cc >> 2] = i;
@@ -397,8 +579,9 @@ export class Core {
   // ---------------------------------------------------------------- one frame (vt+0x1ac 0x55c0d452)
   frame(): void {
     var s = this.m.I;
-    if (s[0x77c >> 2] < 2 && s[0x910 >> 2] !== -1) s[0x77c >> 2] = 2;
-    if (s[0xb54 >> 2] < 2 && s[0xce8 >> 2] !== -1) s[0xb54 >> 2] = 3;
+    var b0 = LY(0), b2 = LY(2);
+    if (s[b0 + lf(0x77c)] < 2 && s[b0 + lf(0x910)] !== -1) s[b0 + lf(0x77c)] = 2;
+    if (s[b2 + lf(0x77c)] < 2 && s[b2 + lf(0x910)] !== -1) s[b2 + lf(0x77c)] = 3;
     this.animateLayers();                          // vt+0x28 0x55c133bc -> vt+0x40 0x55c13610
     this.presetStep();                             // vt+0x70 0x55c10ad4
     s[0x4570 >> 2] = 1;
@@ -410,7 +593,7 @@ export class Core {
     var s = this.m.I;
     for (var k = 0; (k >>> 0) < (s[0x463c >> 2] >>> 0); k++) {
       s[0x44a8 >> 2] = k;
-      if (s[LY(k)] !== -1 && s[LY(k) + lf(0x77c)] !== 0) this.animateLayer();
+      if (s[LY(k)] !== -1 && (this.ver === 2 || s[LY(k) + lf(0x77c)] !== 0)) this.animateLayer();   // Trilogy: dirty or not
     }
     s[0x44a8 >> 2] = k;
   }
@@ -438,7 +621,7 @@ export class Core {
       F[x + xf(0x124)] = F[x + xf(0x128)] + F[x + xf(0x124)];
       if (255 < F[x + xf(0x124)]) F[x + xf(0x124)] = 255;
       if (F[x + xf(0x124)] < 0) F[x + xf(0x124)] = 0;
-      touch();
+      if (this.ver === 2) { s[LY(s[0x44a8 >> 2])] = 2; this.saveRect(); } else touch();   // Trilogy: no dirty 3
     }
     if (s[b + lf(0x8a0)] !== 0) {
       s[b + lf(0x87c)] = (s[b + lf(0x87c)] + s[b + lf(0x8a0)]) | 0;
@@ -466,6 +649,11 @@ export class Core {
       this.saveRect();
       touch();
     }
+    x = XF(s[0x44a8 >> 2]);
+    if (this.ver && F[x + xf(0x148)] !== 0) {     // the Plus builds: a phase (0x144) advancing by 0x148, kept in [0, 1)
+      if (1 <= F[x + xf(0x144)]) F[x + xf(0x144)] = F[x + xf(0x144)] - ftol(F[x + xf(0x144)]);
+      F[x + xf(0x144)] = F[x + xf(0x148)] + F[x + xf(0x144)];
+    }
   }
 
   /** vt+0x254 0x55c01992: the first time a dirty layer moves, remember where it was (for the erase). */
@@ -491,6 +679,7 @@ export class Core {
    *  preset program (vt+0x1b8 0x55c11738). */
   presetStep(): void {
     var s = this.m.I;
+    if (this.plus) { this.plusStep(this.plus); return; }
     if (s[0x4600 >> 2] === s[0x47bc >> 2]) {
       s[0x44a8 >> 2] = 0;
       if (s[0x794 >> 2] === 0) return;
@@ -508,6 +697,28 @@ export class Core {
       s[0x4600 >> 2] = s[0x47bc >> 2];
     }
     this.presetProgram();                              // vt+0x1b8 0x55c11738
+  }
+
+  /** the Plus builds' presetStep (Blazing Colors 0x100154a0): a new preset id rebuilds the scene and runs only the
+   *  program; else, when the step layer has an image: the trails (fill layer 0 or move it into layer 2) in bar
+   *  mode (obj+0x457c), the bars, then the program. */
+  plusStep(p: PlusDll): void {
+    var s = this.m.I;
+    if (s[0x4600 >> 2] !== s[0x47bc >> 2]) {
+      s[0x4600 >> 2] = s[0x47bc >> 2];
+      s[0x4574 >> 2] = 0;
+      p.program(this);
+      return;
+    }
+    s[0x44a8 >> 2] = p.stepLayer;
+    if (s[LY(p.stepLayer) + lf(0x794)] === 0) return;
+    if (!p.bars) { p.program(this); return; }     // Color Cubes 0x10015510
+    var bm = s[0x457c >> 2];
+    if (bm === 0 || s[LY(2) + lf(0x910)] === -1) {
+      if (bm !== 0 && s[LY(0) + lf(0x910)] !== -1) { s[0x44a8 >> 2] = 0; this.fillLayerBg(); }
+    } else { s[0x44a8 >> 2] = 0; this.spectrumToLayer2(); }
+    if (s[0x457c >> 2] === 1) this.barsPlus();
+    p.program(this);
   }
 
   // ---------------------------------------------------------------- the preset programs (0x55c11738)
@@ -666,11 +877,12 @@ export class Core {
   }
   /** vt+0x74 0x55c112ce: layer 0's image := its background colour (0x7e4). */
   fillLayerBg(): void {
-    var m = this.m, s = m.I;
-    s[0x44a8 >> 2] = 0;
-    s[0x4ec4 >> 2] = Math.imul(s[0x7f8 >> 2], s[0x7f4 >> 2]);
-    s[0x4b8c >> 2] = s[0x794 >> 2];
-    s[0x4df4 >> 2] = s[0x7e4 >> 2];
+    var m = this.m, s = m.I, k = 0;
+    if (this.ver) k = s[0x44a8 >> 2];               // the Plus builds take the size from the current layer
+    else s[0x44a8 >> 2] = 0;
+    s[0x4ec4 >> 2] = Math.imul(s[LY(k) + lf(0x7f8)], s[LY(k) + lf(0x7f4)]);
+    s[0x4b8c >> 2] = s[LY(0) + lf(0x794)];
+    s[0x4df4 >> 2] = s[LY(0) + lf(0x7e4)];
     var p = s[0x4b8c >> 2] >> 2;
     m.U.fill(s[0x4df4 >> 2] >>> 0, p, p + (s[0x4ec4 >> 2] >>> 0));
   }
@@ -678,6 +890,7 @@ export class Core {
    *  then age layer 2 into its image: alpha += obj+0xd18 each frame, a pixel whose alpha overflows is
    *  gone (layer 2's background). The trails of most presets. */
   spectrumToLayer2(): void {
+    if (this.ver) { this.spectrumToLayer2Plus(); return; }
     var m = this.m, s = m.I, U = m.U, i: number;
     s[0x4b8c >> 2] = s[0x794 >> 2];
     s[0x4df4 >> 2] = s[0x7e4 >> 2];
@@ -715,6 +928,48 @@ export class Core {
     }
     s[b + lf(0x824)] = 0;
   }
+  /** the Plus builds' spectrumToLayer2 (Blazing Colors 0x10015600): as wmpvis.dll's but from the current layer
+   *  (obj+0x44a8), and layer 2 ages by its transform's float 0x144 (wmpvis.dll: the int 0x940). */
+  spectrumToLayer2Plus(): void {
+    var m = this.m, s = m.I, U = m.U, F = m.F, i: number, k = s[0x44a8 >> 2], b = LY(k);
+    s[0x4b8c >> 2] = s[b + lf(0x794)];
+    s[0x4df4 >> 2] = s[b + lf(0x7e4)];
+    var sel = s[b + lf(0x824)];
+    if (sel === 1 || sel === 2) {
+      if (s[b + lf(sel === 1 ? 0x828 : 0x90c)] === 0) return;
+      this.fillLayerBg();
+      s[0x4b8c >> 2] = s[LY(s[0x44a8 >> 2]) + lf(sel === 1 ? 0x828 : 0x90c)];
+    }
+    s[0x44a8 >> 2] = 2;
+    var b2 = LY(2);
+    s[0x4c08 >> 2] = s[b2 + lf(0x794)];
+    sel = s[b2 + lf(0x824)];
+    if (sel === 1 || sel === 2) {
+      var v = s[b2 + lf(sel === 1 ? 0x828 : 0x90c)];
+      if (v === 0) return;
+      s[0x4c08 >> 2] = v;
+    }
+    var n = Math.imul(s[b2 + lf(0x7f8)], s[b2 + lf(0x7f4)]) >>> 0;
+    s[0x4ec4 >> 2] = n;
+    s[0x4c54 >> 2] = ftol(F[XF(2) + xf(0x124)]);
+    var a = s[0x4b8c >> 2] >> 2, d = s[0x4c08 >> 2] >> 2, bg = s[0x4df4 >> 2] >>> 0;
+    for (i = 0; i < n; i++) {
+      var px = U[a + i];
+      if (px !== bg) { U[d + i] = px; U[a + i] = bg; }
+    }
+    k = s[0x44a8 >> 2]; b = LY(k);
+    s[0x439c >> 2] = s[b + lf(0x794)];
+    s[0x4c54 >> 2] = ftol(F[XF(k) + xf(0x144)]);
+    s[0x4df4 >> 2] = s[b + lf(0x7e4)];
+    var src = s[0x4c08 >> 2] >> 2, dst = s[0x439c >> 2] >> 2, bg2 = s[0x4df4 >> 2] >>> 0, st = bswap(s[0x4c54 >> 2] >>> 0);
+    for (i = 0; i < n; i++) {
+      var q = U[src + i];
+      if (q !== bg2) { var t = q + st; q = t > 0xffffffff ? bg2 : t; }
+      U[dst + i] = q;
+    }
+    s[b + lf(0x824)] = 0;
+  }
+
   /** vt+0x180 0x55c10cbc: one column per spectrum bin: layer 3 (a strip cut from layer 1's colour ramp,
    *  as long as the bin is loud) drawn at x = bin, y from the bin (obj+0x44c8 picks how). */
   bars(): void {
@@ -742,16 +997,145 @@ export class Core {
     }
     s[0xed4 >> 2] = -1;
   }
+  /** the Plus builds' bars (Blazing Colors 0x10015800): the strip generators by obj+0x47f8 (1 scroll, 2 / 3 solid
+   *  strips, 4 / 20 barStrip, 5 / 6 mirrored strips), y laws 0..8 (5 skips bins under 3; 8 moves layer 3's
+   *  scroll offset instead), layer 3 left visible. Trilogy (0x10016e80): y laws 9 and 10, law 10's bins squeezed
+   *  first, layer 3 hidden again at the end. */
+  barsPlus(): void {
+    var m = this.m, s = m.I, b0 = LY(0), b3 = LY(3), tri = this.ver === 2;
+    var step = s[0x47f8 >> 2];
+    s[b3 + lf(0x910)] = 0;
+    if (step === 1) this.rampScroll();
+    s[0x4444 >> 2] = s[b0 + lf(0x7f4)];
+    if (tri && s[0x44c8 >> 2] === 10) {           // a quiet bin (under 36) takes its right neighbour; the count shrinks by as many
+      var q = 0, j: number;
+      for (j = 10; j < s[0x4494 >> 2]; j++) {
+        if (s[(0x1740 >> 2) + j] < 0x24) { s[(0x1740 >> 2) + j] = s[(0x1740 >> 2) + j + 1]; q++; }
+      }
+      s[0x4e78 >> 2] = q;
+      s[0x45cc >> 2] = j > 10 ? j : 10;
+      s[0x4494 >> 2] -= q;
+    }
+    s[0x4ee8 >> 2] = 0;
+    if (s[0x4494 >> 2] < 1) { if (tri) s[b3 + lf(0x910)] = -1; return; }
+    do {
+      s = m.I;
+      var i = s[0x4ee8 >> 2];
+      s[b3 + lf(0x780)] = i;
+      if (i <= s[0x4444 >> 2] && i >= 0) {
+        step = s[0x47f8 >> 2];
+        if (step === 2) this.solidStrip(false);      // vt+0x1b8 0x10015c90
+        if (step === 3) this.solidStrip(true);       // vt+0x1bc 0x10015d90
+        if (step === 5) this.mirrorStrip(false);     // vt+0x1c0 (Pulsing Colors 0x10015ea0)
+        if (step === 6) this.mirrorStrip(true);      // vt+0x1c4 (Pulsing Colors 0x10015fb0)
+        if (tri && step === 7) unported(0x10016e80)();
+        if (step === 0x14 || step === 4) this.barStrip();
+        s = m.I;
+        var md = s[0x44c8 >> 2], v = s[(0x1740 >> 2) + s[0x4ee8 >> 2]];
+        if (md < 3) s[b3 + lf(0x784)] = v - 0xff;
+        if (md === 3) s[b3 + lf(0x784)] = 0x140 - v;
+        if (md === 4) s[b3 + lf(0x784)] = v + 0x40;
+        var draw = true;
+        if (md === 5) { s[b3 + lf(0x784)] = v; draw = v > 2; }
+        if (draw) {
+          if (md === 6) s[b3 + lf(0x784)] = v - 0x10c;
+          if (md === 7) s[b3 + lf(0x784)] = 0;
+          if (md === 8) m.F[XF(3) + xf(0x110)] = 0xa0 - ((v / 2) | 0);
+          if (tri && md === 9) { s[b3 + lf(0x784)] = 0xa0 - ((v / 2) | 0); draw = v > 2; }
+          if (tri && md === 10) {
+            s[b3 + lf(0x784)] = v + 0x9b;
+            s[b3 + lf(0x780)] = (s[b3 + lf(0x780)] + s[LY(5) + lf(0x7e8)] + 0x46) | 0;
+          }
+        }
+        if (draw) {
+          s[0x4444 >> 2] = s[b0 + lf(0x7f4)];
+          s[0x4440 >> 2] = s[b0 + lf(0x7f8)];
+          s[0x4378 >> 2] = s[b0 + lf(0x794)];
+          s[0x4f10 >> 2] = 0;
+          s[0x4f24 >> 2] = 0;
+          s[0x44a8 >> 2] = 3;
+          s[b3 + lf(0x77c)] = 3;
+          this.renderLayer();
+        }
+      }
+      s = m.I;
+      s[0x4ee8 >> 2]++;
+    } while (s[0x4ee8 >> 2] < s[0x4494 >> 2]);
+    if (tri) s[b3 + lf(0x910)] = -1;
+  }
+  /** the Plus builds' solid strips (Blazing Colors 0x10015c90 / 0x10015d90): layer 3 := the first spec[bin] rows'
+   *  worth of layer 1's ramp read straight through, the rest in the ramp's colour at pixel 256 * its width; the
+   *  soft variant adds 0x20, 0x40, 0x80 to the alpha bytes of the last three it copied. */
+  solidStrip(soft: boolean): void {
+    var m = this.m, s = m.I, U = m.U, b1 = LY(1), b3 = LY(3);
+    s[0x43ec >> 2] = s[b1 + lf(0x794)];
+    var sel = s[b1 + lf(0x824)];
+    if (sel === 1) s[0x43ec >> 2] = s[b1 + lf(0x828)];
+    if (sel === 2) s[0x43ec >> 2] = s[b1 + lf(0x90c)];
+    var w3 = s[b3 + lf(0x7f4)], h3 = s[b3 + lf(0x7f8)];
+    s[0x4390 >> 2] = s[b3 + lf(0x794)];
+    var n = Math.imul(s[(0x1740 >> 2) + s[0x4ee8 >> 2]], w3);
+    s[0x4ec4 >> 2] = n;
+    var rest = (Math.imul(h3, w3) - n) | 0;
+    if (n > Math.imul(s[b1 + lf(0x7f8)], s[b1 + lf(0x7f4)])) return;
+    var src = s[0x43ec >> 2], fill = U[(src + s[b1 + lf(0x7f4)] * 0x400) >> 2];
+    s[0x4c50 >> 2] = fill;
+    var d = s[0x4390 >> 2];
+    m.B[d - 4] = 0;
+    d >>= 2; src >>= 2;
+    for (var i = 0; i < (n >>> 0); i++) U[d++] = U[src++];
+    if (soft && (n >>> 0) > 2) {
+      U[d - 1] = (U[d - 1] + 0x80000000) >>> 0;
+      U[d - 2] = (U[d - 2] + 0x40000000) >>> 0;
+      U[d - 3] = (U[d - 3] + 0x20000000) >>> 0;
+    }
+    do { U[d++] = fill; rest = (rest - 1) | 0; } while (rest !== 0);
+  }
+  /** the Plus builds' mirrored strips (Pulsing Colors 0x10015ea0 / 0x10015fb0): n = spec[bin] * layer 3's width;
+   *  the first ceil(n / 2) pixels of layer 1's ramp forward, then floor(n / 2) back from one past where that
+   *  ended, the rest black. The faded variant ORs alpha ramps in (BSWAPped counters: falling from ceil(n / 2),
+   *  then floor(n / 2) / 4 ...) and fills the rest with the ramp's pixel 0 (alpha rising by 1) then pixel 200. */
+  mirrorStrip(fade: boolean): void {
+    var m = this.m, s = m.I, U = m.U, b1 = LY(1), b3 = LY(3);
+    s[0x43ec >> 2] = s[b1 + lf(0x794)];
+    var sel = s[b1 + lf(0x824)];
+    if (sel === 1) s[0x43ec >> 2] = s[b1 + lf(0x828)];
+    if (sel === 2) s[0x43ec >> 2] = s[b1 + lf(0x90c)];
+    var w3 = s[b3 + lf(0x7f4)], h3 = s[b3 + lf(0x7f8)];
+    s[0x4390 >> 2] = s[b3 + lf(0x794)];
+    var n = Math.imul(s[(0x1740 >> 2) + s[0x4ee8 >> 2]], w3);
+    s[0x4ec4 >> 2] = n;
+    var rest = (Math.imul(h3, w3) - n) | 0;
+    if (n > Math.imul(s[b1 + lf(0x7f8)], s[b1 + lf(0x7f4)])) return;
+    var src = s[0x43ec >> 2] >> 2, d = s[0x4390 >> 2];
+    m.B[d - 4] = 0;
+    d >>= 2;
+    var p0 = U[src], p200 = U[src + 200], half = (n >>> 0) >>> 1, fw = half + ((n & 1) ? 1 : 0), c: number;
+    if (!fade) s[0x4c50 >> 2] = 0;
+    else s[0x4c50 >> 2] = p200;
+    if (n !== 0) {
+      for (c = fw; c !== 0; c--) U[d++] = fade ? (U[src++] | bswap(c)) >>> 0 : U[src++];
+      for (c = half; c !== 0; c--) U[d++] = fade ? (U[src--] | bswap(c >>> 2)) >>> 0 : U[src--];
+    }
+    if (!fade) {
+      do { U[d++] = 0; rest = (rest - 1) | 0; } while (rest !== 0);
+    } else if (rest !== 0) {
+      var rh = (rest >>> 0) >>> 1, rf = rh + ((rest & 1) ? 1 : 0), v = p0;
+      for (c = rf; c !== 0; c--) { U[d++] = v; v = (v + 0x1000000) >>> 0; }
+      for (c = rh; c !== 0; c--) U[d++] = (p200 | bswap((c + 0x14) >>> 0)) >>> 0;
+    }
+  }
   /** layer 1's image or the work buffer it selects (0xa10) */
   layer1Src(): number {
-    var s = this.m.I, p = s[0x980 >> 2];
-    if (s[0xa10 >> 2] === 1) p = s[0xa14 >> 2];
-    if (s[0xa10 >> 2] === 2) p = s[0xaf8 >> 2];
+    var s = this.m.I, b1 = LY(1), p = s[b1 + lf(0x794)];
+    if (s[b1 + lf(0x824)] === 1) p = s[b1 + lf(0x828)];
+    if (s[b1 + lf(0x824)] === 2) p = s[b1 + lf(0x90c)];
     return p;
   }
   /** vt+0x24 0x55c10f98: layer 3 := the strip of layer 1 that ends at row spec[bin], read upward by
    *  obj+0x47f8 BYTES per row (so for small steps the reads straddle neighbouring pixels). */
   barStrip(): void {
+    if (this.ver) { this.barStripPlus(); return; }
     var m = this.m, s = m.I, U = m.U, bin = s[0x4ee8 >> 2];
     s[(0x1740 >> 2) + bin] &= 0xff;
     s[0x44a8 >> 2] = 1;
@@ -782,18 +1166,54 @@ export class Core {
       if (a < lo) a = lo;
     } while (--n !== 0);
   }
+  /** the Plus builds' barStrip (Blazing Colors 0x10015a20): wmpvis.dll's without the bin's & 0xff, other scratch
+   *  fields, and it clears layer 3's buffer selector */
+  barStripPlus(): void {
+    var m = this.m, s = m.I, U = m.U, bin = s[0x4ee8 >> 2], b1 = LY(1), b3 = LY(3);
+    s[0x44a8 >> 2] = 1;
+    s[0x43ec >> 2] = s[b1 + lf(0x794)];
+    if (s[b1 + lf(0x824)] === 1) s[0x43ec >> 2] = s[b1 + lf(0x828)];
+    if (s[b1 + lf(0x824)] === 2) s[0x43ec >> 2] = s[b1 + lf(0x90c)];
+    var lo = s[0x43ec >> 2];
+    s[0x4390 >> 2] = s[b3 + lf(0x794)];
+    s[0x4b8c >> 2] = lo;
+    s[b3 + lf(0x824)] = 0;
+    var v = s[(0x1740 >> 2) + bin];
+    s[0x43ec >> 2] = (lo + Math.imul(s[b1 + lf(0x7f4)], v) * 4) | 0;
+    s[0x4c70 >> 2] = s[b3 + lf(0x7f4)];
+    var n = (v + 1) | 0;
+    s[0x4ec4 >> 2] = n;
+    if (s[b3 + lf(0x7f8)] < n) s[0x4ec4 >> 2] = n = s[b3 + lf(0x7f8)];
+    var d = s[0x4390 >> 2], a = (s[0x43ec >> 2] + s[0x47f8 >> 2]) >>> 0, st = s[0x47f8 >> 2], low = lo >>> 0;
+    m.B[d - 4] = 0;
+    var w = s[0x4c70 >> 2] >>> 0;
+    d >>= 2;
+    do {
+      if (w > 2) {
+        U[d++] = this.ld(a); U[d++] = this.ld(a + 4); U[d++] = this.ld(a + 8);
+        a = (a + 8 - st) >>> 0;
+      } else if (w === 2) {
+        U[d++] = this.ld(a); U[d++] = this.ld(a + 4);
+        a = (a + 4 - st) >>> 0;
+      } else {
+        U[d++] = this.ld(a);
+        a = (a - st) >>> 0;
+      }
+      if (a < low) a = low;
+    } while (--n !== 0);
+  }
   /** vt+0x1dc 0x55c110ff: layer 3 := layer 1's ramp rotated by obj+0x441c rows (+8 per frame). */
   rampScroll(): void {
-    var m = this.m, s = m.I, U = m.U;
-    s[0x4c08 >> 2] = s[0xd58 >> 2];
+    var m = this.m, s = m.I, U = m.U, b3 = LY(3);
+    s[0x4c08 >> 2] = s[b3 + lf(0x794)];
     s[0x4b5c >> 2] = this.layer1Src();
     s[0x441c >> 2] += 8;
-    var h = s[0xdbc >> 2];
+    var h = s[b3 + lf(0x7f8)];
     s[0x4b8c >> 2] = s[0x4b5c >> 2];
     if (s[0x441c >> 2] >= h) s[0x441c >> 2] = 0;
     var off = s[0x441c >> 2];
     s[0x4ec4 >> 2] = h - off;
-    s[0x4c70 >> 2] = s[0xdb8 >> 2];
+    s[0x4c70 >> 2] = s[b3 + lf(0x7f4)];
     s[0x4b5c >> 2] = (s[0x4b5c >> 2] + off * 12) | 0;
     var d = s[0x4c08 >> 2];
     m.B[d - 4] = 0;
@@ -993,7 +1413,8 @@ export class Core {
           if (s[0x47ac >> 2] !== 0 && d < 2) s[b + lf(0x77c)] = 2;
           bind = s[b + lf(0x77c)] >= 2;
         }
-        if (bind && s[b + lf(0x770)] !== -1 && this.bindImage() !== 0) this.project();
+        if (this.ver === 2) { if (bind && (s[b + lf(0x770)] === -1 || this.bindImage() !== 0)) this.project(); }   // Trilogy 0x10003c00
+        else if (bind && s[b + lf(0x770)] !== -1 && this.bindImage() !== 0) this.project();
       }
       s = this.m.I;
       k = s[0x44a8 >> 2] + 1;
@@ -1129,16 +1550,22 @@ export class Core {
     var s = this.m.I, b = LY(s[0x44a8 >> 2]);
     if (s[b] === -1) return;
     if (s[0x47ac >> 2] === 0 && s[b + lf(0x77c)] < 2) return;
-    var off = (): void => { s[b + lf(0x77c)] = 0; };
+    var plus = this.ver !== 0;                     // the Plus builds flag a culled layer at 0x93c
+    var off = (): void => { s[b + lf(0x77c)] = 0; if (plus) s[b + lf(0x93c)] = 1; };
     if (s[b + lf(0x798)] < s[0x46d4 >> 2]) { off(); return; }
+    if (plus) s[b + lf(0x93c)] = 0;
     s[b + lf(0x810)] = 0;
     var y = s[b + lf(0x784)];
     if (y >= s[0x47a8 >> 2]) { off(); return; }
     var x = s[b + lf(0x780)], W = s[0x47a0 >> 2];
     if (x >= W) { off(); return; }
     var e = (x + s[b + lf(0x79c)]) | 0;
-    if (e - 1 < 0) { off(); return; }
-    if (((s[b + lf(0x7a0)] + y) | 0) - 1 < 0) { off(); return; }
+    if (this.ver === 2) {                          // Trilogy 0x10001640: tested with the image's size, not the projected one
+      if (((x + s[b + lf(0x7f4)]) | 0) - 1 < 0 || ((s[b + lf(0x7f8)] + y) | 0) - 1 < 0) { off(); return; }
+    } else {
+      if (e - 1 < 0) { off(); return; }
+      if (((s[b + lf(0x7a0)] + y) | 0) - 1 < 0) { off(); return; }
+    }
     if (x < 0) {
       s[b + lf(0x79c)] = e > W ? W : e;
       s[b + lf(0x810)] = 1;
@@ -1165,7 +1592,7 @@ export class Core {
     s[0x4f30 >> 2] = 0;
     for (;;) {
       s = this.m.I;
-      var k = s[(0x16cc >> 2) + s[0x4f30 >> 2]];
+      var k = s[ORD + s[0x4f30 >> 2]];
       s[0x44a8 >> 2] = k;
       if (k === -1) break;
       if (s[LY(k) + lf(0x7a4)] === 2) s[LY(k) + lf(0x7a4)] = 1;
@@ -1189,7 +1616,7 @@ export class Core {
         s[0x4e90 >> 2]++;
       }
     }
-    s[(0x16cc >> 2) + s[0x4f30 >> 2]] = -1;
+    s[ORD + s[0x4f30 >> 2]] = -1;
   }
   /** 0x55c02788: obj+0x4e90 += the smallest (depth - 0x4e90) >= 0 among the candidates */
   nextDepth(): void {
@@ -1228,7 +1655,7 @@ export class Core {
           s[0x4c7c >> 2] = z;
           if (z > 0x80000000) s[0x4c7c >> 2] = 0;
           if (p0 === 0 || p0 === 1 || p0 === 2) s[0x4be0 >> 2] = s[0x4c7c >> 2];
-          if (s[0x4e90 >> 2] === s[0x4be0 >> 2]) { s[(0x16cc >> 2) + s[0x4f30 >> 2]] = k; s[0x4f30 >> 2]++; }
+          if (s[0x4e90 >> 2] === s[0x4be0 >> 2]) { s[ORD + s[0x4f30 >> 2]] = k; s[0x4f30 >> 2]++; }
         }
       }
       k++;
@@ -1255,16 +1682,28 @@ export class Core {
     s[0x45f4 >> 2] = w;
     s[0x45f8 >> 2] = h;
     s[0x45fc >> 2] = s[0x4378 >> 2];
+    if (this.ver === 2) this.fpsCount();
   }
 
   /** vt+0x1d0 0x55c0cb97: the 350 x 320 canvas scaled to the window (8.8 factors, at most 3x) into a
    *  fresh buffer; when the window changed size, or every 17th frame, padded to the window with black. */
   scaleOut(): void {
-    var m = this.m, s = m.I, cw = s[0x47a0 >> 2];
-    s[0x47e0 >> 2] = ftol(s[0x467c >> 2] * 256 / cw);
-    s[0x47e4 >> 2] = ftol(s[0x4680 >> 2] * 256 / s[0x47a8 >> 2]);
-    if (s[0x47e0 >> 2] > 0x300) s[0x47e0 >> 2] = 0x300;
-    if (s[0x47e4 >> 2] > 0x300) s[0x47e4 >> 2] = 0x300;
+    var m = this.m, s = m.I, cw = s[0x47a0 >> 2], ch = s[0x47a8 >> 2];
+    if (this.ver === 2) {
+      for (;;) {
+        s[0x47e0 >> 2] = ftol(s[0x467c >> 2] * 256 / cw);
+        s[0x47e4 >> 2] = ftol(s[0x4680 >> 2] * 256 / ch);
+        if (s[0x47e0 >> 2] < 0x301 && s[0x47e4 >> 2] < 0x301) break;
+        this.double();
+        s = m.I;
+        cw <<= 1; ch <<= 1;
+      }
+    } else {
+      s[0x47e0 >> 2] = ftol(s[0x467c >> 2] * 256 / cw);
+      s[0x47e4 >> 2] = ftol(s[0x4680 >> 2] * 256 / s[0x47a8 >> 2]);
+      if (s[0x47e0 >> 2] > 0x300) s[0x47e0 >> 2] = 0x300;
+      if (s[0x47e4 >> 2] > 0x300) s[0x47e4 >> 2] = 0x300;
+    }
     s[0x4708 >> 2] = s[0x4444 >> 2];
     s[0x4704 >> 2] = s[0x4440 >> 2];
     s[0x439c >> 2] = s[0x4378 >> 2];
@@ -1273,7 +1712,7 @@ export class Core {
     this.scaleLen();                               // vt+0x5c 0x55c0be6c
     s[0x4444 >> 2] = s[0x4e78 >> 2];
     s[0x4ce0 >> 2] = s[0x47e4 >> 2];
-    s[0x4e78 >> 2] = s[0x47a8 >> 2];
+    s[0x4e78 >> 2] = ch;
     this.scaleLen();
     s[0x4440 >> 2] = s[0x4e78 >> 2];
     s[0x4370 >> 2] = 0;                            // vt+0x1a8 0x55c0202d: no row padding at 32 bpp
@@ -1284,8 +1723,9 @@ export class Core {
     this.scaleRows();                              // vt+0x1d4 0x55c0c197
     s[0x439c >> 2] = s[0x46c8 >> 2];
     if (s[0x4664 >> 2]) { m.release(s[0x4664 >> 2]); s[0x4664 >> 2] = 0; }
-    var ww = s[0x4444 >> 2], wh = s[0x4440 >> 2];
     s[0x4664 >> 2] = s[0x4668 >> 2];
+    if (this.ver && s[0x4680 >> 2] < s[0x4440 >> 2]) s[0x4440 >> 2] = s[0x4680 >> 2];   // the Plus builds: no taller than the window
+    var ww = s[0x4444 >> 2], wh = s[0x4440 >> 2];
     if (s[0x46cc >> 2] === 1 && (s[0x4680 >> 2] !== wh || s[0x467c >> 2] !== ww)) {
       s[0x4540 >> 2] = ww; s[0x453c >> 2] = wh;
       s[0x4544 >> 2] = ww << 2; s[0x4448 >> 2] = s[0x467c >> 2] << 2;
@@ -1297,7 +1737,8 @@ export class Core {
       s = m.I;
       var U = m.U;
       s[0x4668 >> 2] = q; s[0x4378 >> 2] = q;
-      var n = Math.imul(s[0x4680 >> 2], s[0x467c >> 2]) >>> 0, d = q >> 2;
+      // wmpvis.dll clears the window's area of the padded buffer, the Plus builds all of it
+      var n = (this.ver ? Math.imul(s[0x4440 >> 2], s[0x4444 >> 2]) : Math.imul(s[0x4680 >> 2], s[0x467c >> 2])) >>> 0, d = q >> 2;
       U.fill(s[0x4b34 >> 2] >>> 0, d, d + n);
       var a = s[0x439c >> 2] >> 2, rows = s[0x453c >> 2], cols = s[0x4540 >> 2], stride = s[0x4448 >> 2] >> 2;
       for (var r = 0; r < rows; r++) for (var c2 = 0; c2 < cols; c2++) U[d + r * stride + c2] = U[a++];
@@ -1306,6 +1747,24 @@ export class Core {
       s[0x4664 >> 2] = s[0x4668 >> 2];
       s[0x4668 >> 2] = 0;
     }
+  }
+
+  /** Trilogy vt+0xc4 0x1000e450: the picture (obj+0x4378, 0x4444 x 0x4440) doubled, each pixel 2 x 2 */
+  double(): void {
+    var m = this.m, s = m.I, w = s[0x4444 >> 2], h = s[0x4440 >> 2];
+    s[0x439c >> 2] = s[0x4378 >> 2];
+    s[0x453c >> 2] = h; s[0x4540 >> 2] = w; s[0x4544 >> 2] = w * 4;
+    var q = m.malloc(Math.imul(h, w) * 0x10);
+    s = m.I;
+    var U = m.U, a = s[0x439c >> 2] >> 2, d = q >> 2;
+    s[0x4378 >> 2] = q;
+    for (var y = 0; y < h; y++) {
+      for (var r = 0; r < 2; r++) for (var x = 0; x < w; x++) { var v = U[a + y * w + x]; U[d++] = v; U[d++] = v; }
+    }
+    if (s[0x4664 >> 2]) { m.release(s[0x4664 >> 2]); s[0x4664 >> 2] = 0; }
+    s[0x4664 >> 2] = q;
+    s[0x4444 >> 2] = w << 1;
+    s[0x4440 >> 2] = h << 1;
   }
 
   /** vt+0x5c 0x55c0be6c: 0x4e78 := its length at scale 0x4ce0 */
@@ -1406,7 +1865,7 @@ export class Core {
       return true;
     };
     doit: {
-      if (s[0x439c >> 2] === 0) { fail = true; break doit; }
+      if (s[0x439c >> 2] === 0 || (this.ver === 2 && (s[0x4540 >> 2] === 0 || s[0x453c >> 2] === 0))) { fail = true; break doit; }
       s[0x4df4 >> 2] = s[b + lf(0x7e4)];
       if (s[b + lf(0x810)] === 1) {
         s[0x4c74 >> 2] = s[b + lf(0x814)]; s[0x4c7c >> 2] = s[b + lf(0x818)];
@@ -1434,7 +1893,7 @@ export class Core {
       }
       s = m.I; F = m.F;
       if ((s[b + lf(0x864)] !== 0 && s[b + lf(0x860)] !== 0) || (s[b + lf(0x850)] !== 0 && s[b + lf(0x84c)] !== 0) ||
-          s[b + lf(0x8f4)] !== 0) this.glowRing();  // vt+0x12c 0x55c06f06
+          s[b + lf(0x8f4)] !== 0 || (this.ver === 2 && s[b + lf(0x898)] > 1)) this.glowRing();  // vt+0x12c 0x55c06f06
       s = m.I; F = m.F;
       if (s[b + lf(0x77c)] === 3) {
         s[b + lf(0x824)] = 0;
@@ -1460,6 +1919,8 @@ export class Core {
         if (F[x + xf(0x11c)] !== 0 || F[x + xf(0x120)] !== 0) { if (!fx(unported(0x55c0b9bc))) break doit; }
         s = m.I;
         if (s[b + lf(0x858)] !== 0) { if (!fx(() => this.melt())) break doit; }   // vt+0xa0 0x55c0ae1e
+        s = m.I;
+        if (this.ver && s[b + lf(0x938)] > 0 && s[b + lf(0x938)] <= s[0x4ebc >> 2]) { if (!fx(unported(0x10011300))) break doit; }
       }
       s = m.I;
       var sel = s[b + lf(0x824)], buf: number;
@@ -1514,7 +1975,7 @@ export class Core {
       }
       s = m.I;
       if (swapped) { s[0x4398 >> 2] = s[0x439c >> 2]; s[0x439c >> 2] = s[0x4c08 >> 2]; }
-      if (s[0x456c >> 2] === 1) { unported(0x55c05162)(); break doit; }
+      if (!this.ver && s[0x456c >> 2] === 1) { unported(0x55c05162)(); break doit; }   // (gone in the Plus builds)
       this.draw();                                 // vt+0x144 0x55c052c6
       fail = true;                                 // falls into the dirty := 1 tail
     }
@@ -1659,7 +2120,7 @@ export class Core {
     s = m.I; U = m.U;
     s[0x44ec >> 2] = s[0x44e8 >> 2] << 2;
     var b = LY(s[0x44a8 >> 2]), skip = s[0x44f4 >> 2] << 2;
-    if (s[b + lf(0x770)] === -1) {
+    if (!this.ver && s[b + lf(0x770)] === -1) {   // (gone in the Plus builds)
       var k2 = s[b + lf(0x918)];
       s[0x4420 >> 2] = k2;
       s[0x4f08 >> 2] = (s[LY(k2) + lf(0x7f4)] - s[b + lf(0x7f4)]) << 2;
@@ -1694,17 +2155,24 @@ export class Core {
       }
     }
     s[0x4f08 >> 2] = 0;
-    var v918 = s[b + lf(0x918)];
-    if ((s[b + lf(0x8c0)] !== 0 && s[b + lf(0x8b8)] === 1) || (s[b + lf(0x8f4)] !== 0 && s[b + lf(0x858)] !== 0) ||
-        (s[b + lf(0x864)] !== 0 && s[b + lf(0x860)] !== 0) || (s[b + lf(0x850)] !== 0 && s[b + lf(0x84c)] !== 0) ||
-        s[b + lf(0x940)] !== 0 || v918 === -1) { this.blend(); return; }
-    if (s[b + lf(0x770)] === -1) {
-      if (s[0x4520 >> 2] === 0) {
-        s[0x4420 >> 2] = v918;
-        s[0x4f08 >> 2] = (s[LY(v918) + lf(0x7f4)] - s[0x4540 >> 2]) << 2;
-      } else s[0x4f08 >> 2] = 0;
-      this.blend();                                // vt+0x154 0x55c05562
-      return;
+    if (this.ver) {                                // the Plus builds (Blazing Colors 0x10009e10): no source-layer draws;
+      if ((s[b + lf(0x8c0)] !== 0 && s[b + lf(0x8b8)] === 1) || (s[b + lf(0x8f4)] !== 0 && s[b + lf(0x858)] !== 0) ||
+          (s[b + lf(0x864)] !== 0 && s[b + lf(0x860)] !== 0) || (s[b + lf(0x850)] !== 0 && s[b + lf(0x84c)] !== 0) ||
+          ftol(m.F[XF(k) + xf(0x144)]) !== 0 || s[b + lf(0x94c)] !== 0 ||
+          (this.ver === 2 && s[b + lf(0x898)] > 1)) { this.blend(); return; }   // the trail is 0x144
+    } else {
+      var v918 = s[b + lf(0x918)];
+      if ((s[b + lf(0x8c0)] !== 0 && s[b + lf(0x8b8)] === 1) || (s[b + lf(0x8f4)] !== 0 && s[b + lf(0x858)] !== 0) ||
+          (s[b + lf(0x864)] !== 0 && s[b + lf(0x860)] !== 0) || (s[b + lf(0x850)] !== 0 && s[b + lf(0x84c)] !== 0) ||
+          s[b + lf(0x940)] !== 0 || v918 === -1) { this.blend(); return; }
+      if (s[b + lf(0x770)] === -1) {
+        if (s[0x4520 >> 2] === 0) {
+          s[0x4420 >> 2] = v918;
+          s[0x4f08 >> 2] = (s[LY(v918) + lf(0x7f4)] - s[0x4540 >> 2]) << 2;
+        } else s[0x4f08 >> 2] = 0;
+        this.blend();                                // vt+0x154 0x55c05562
+        return;
+      }
     }
     if (m.F[XF(k) + xf(0x124)] !== 0) { unported(0x55c05b99)(); return; }
     var d = (Math.imul((s[0x4c7c >> 2] + s[0x453c >> 2] - s[0x4f24 >> 2] - 1) | 0, s[0x4444 >> 2] << 2) +
@@ -1729,7 +2197,9 @@ export class Core {
    *  its red (BSWAP of r,r). obj+0x4f08 = extra source bytes per row. */
   blend(): void {
     var m = this.m, s = m.I, F = m.F, U = m.U, b = LY(s[0x44a8 >> 2]);
+    if (this.ver && s[b + lf(0x94c)] === 2) { unported(0x1000a760)(); return; }
     if (s[b + lf(0x94c)] !== 0) { this.fade(); return; }   // vt+0x250 0x55c05ab7
+    var plus = this.ver !== 0;
     s[0x4448 >> 2] = s[0x4444 >> 2] << 2;
     s[0x4cf4 >> 2] = s[0x4540 >> 2];
     s[0x4ce8 >> 2] = s[0x453c >> 2];
@@ -1770,7 +2240,8 @@ export class Core {
           if (r < 0) r = 0;
           if (bb < 0) bb = 0;
           if (g < 0) g = 0;
-          out = ((r << 24) | (r << 16) | (g << 8) | bb) >>> 0;
+          // wmpvis.dll leaves red in the top byte (BSWAP of r, r); the Plus builds keep the source's alpha there
+          out = plus ? (((src & 0xff000000) | (r << 16) | (g << 8) | bb) >>> 0) : ((r << 24) | (r << 16) | (g << 8) | bb) >>> 0;
         }
         U[di] = out;
       }
@@ -1793,6 +2264,7 @@ export class Core {
     var di = (Math.imul((s[0x4c7c >> 2] + s[0x453c >> 2] - s[0x4f24 >> 2] - 1) | 0, s[0x4444 >> 2] << 2) +
               ((s[0x4c74 >> 2] - s[0x4f10 >> 2]) << 2) + s[0x4378 >> 2]) >> 2;
     var si = s[0x439c >> 2] >> 2, key = s[0x4df4 >> 2] >>> 0, w = s[0x4540 >> 2], up = s[0x4448 >> 2] >> 2;
+    var keep = this.ver ? 0xff000000 : 0;          // the Plus builds keep the alpha byte (Blazing Colors 0x1000a670)
     do {
       for (var i = 0; i < w; i++) {
         var px = U[si++];
@@ -1801,7 +2273,7 @@ export class Core {
           if (a === 0) U[di] = px;
           else if (a !== 0xff) {
             var r = ((px >>> 16) & 0xff) - a, g = ((px >>> 8) & 0xff) - a, bl = (px & 0xff) - a;
-            U[di] = ((r < 0 ? 0 : r) << 16 | (g < 0 ? 0 : g) << 8 | (bl < 0 ? 0 : bl)) >>> 0;
+            U[di] = ((px & keep) | (r < 0 ? 0 : r) << 16 | (g < 0 ? 0 : g) << 8 | (bl < 0 ? 0 : bl)) >>> 0;
           }
         }
         di++;
@@ -1964,6 +2436,7 @@ export class Core {
    *  just before the pixels is unchanged. */
   glowRing(): void {
     var m = this.m, s = m.I, F = m.F, U = m.U, k = s[0x44a8 >> 2], b = LY(k), x = XF(k), i: number;
+    if (this.ver && s[b + lf(0x898)] > 1) unported(0x1000bc20)();   // the Plus builds' mask-from-another-layer extras
     if (s[b + lf(0x950)] === 2) s[b + lf(0x950)] = 1;
     else {
       var sig = (s[b + lf(0x850)] + Math.imul(s[b + lf(0x84c)], 0xff) + (s[b + lf(0x864)] << 9) + s[b + lf(0x860)] +
@@ -2163,7 +2636,8 @@ export class Core {
     s[0x45cc >> 2] = 0;
     if (path === 2) m.B[0x4578] = 1;
     var srcp = s[0x43ec >> 2] >> 2, cx = s[0x4474 >> 2], cy = s[0x447c >> 2], wu = w >>> 0, end = s[0x4394 >> 2] >>> 0;
-    for (i = 0; i <= n; i++) {
+    var last = this.ver === 2 ? n - 1 : n;         // wmpvis.dll warps one pixel past the image; Trilogy does not
+    for (i = 0; i <= last; i++) {
       var px = U[srcp + i];
       if (px === key) continue;
       s[0x4c50 >> 2] = px;
@@ -2676,28 +3150,40 @@ export class Core {
   // ---------------------------------------------------------------- one-time setup
   /** vt+0x1cc 0x55c1510e: clear the layer and transform records and the spectrum buffers, defaults. */
   init(): void {
-    var s = this.m.I, i: number;
-    s[0x4ebc >> 2] = 7;                            // last layer index
-    s[0x463c >> 2] = 8;                            // layer count
-    for (var k = 0; k <= 7; k++) {
+    var s = this.m.I, i: number, nl = this.ver ? 0x34 : 8;
+    s[0x4ebc >> 2] = nl - 1;                       // last layer index
+    s[0x463c >> 2] = nl;                           // layer count
+    for (var k = 0; k < nl; k++) {
       for (i = 0; i < 0x7b; i++) s[LY(k) + i] = 0;
       for (i = 0; i < 0x38; i++) s[XF(k) + i] = 0;
       s[0x45cc >> 2] = 0x7b; s[0x45f0 >> 2] = 0x38;
     }
-    s[0x44a8 >> 2] = 8;
+    s[0x44a8 >> 2] = nl;
     for (i = 0; i < 10; i++) s[(0x43c0 >> 2) + i] = 0;
     for (i = 0; i < 0x208; i++) { s[(0x1740 >> 2) + i] = 0; s[(0x1f60 >> 2) + i] = 0; s[(0x2780 >> 2) + i] = 0; }
-    for (i = 0; i < 9; i++) s[(0x16cc >> 2) + i] = 0;
+    for (i = 0; i < 9; i++) s[ORD + i] = 0;
     s[0x45cc >> 2] = 9;
-    store(s, INIT_FIELDS);
+    store(s, this.ver ? PLUS_INIT : INIT_FIELDS);
     s[0x4734 >> 2] = (s[0x464c >> 2] / 2) | 0;
     s[0x4738 >> 2] = s[0x4650 >> 2];
-    store(s, INIT_FIELDS2);
+    store(s, this.ver ? PLUS_INIT2 : INIT_FIELDS2);
+    if (this.ver === 2) { s[TR_FRAMES >> 2] = 0; s[TR_LAST >> 2] = this.clock(); s[TR_FPS >> 2] = 0; }
   }
 
   /** vt+0x168 0x55c15597: the bitmap table, decoded once (cached per table index at obj+0x43c0). */
   loadTable(): void {
     var s = this.m.I;
+    if (this.ver) {                                // the Plus builds (Blazing Colors 0x10014600): index 1 = DATATABLE_n
+      s[0x4454 >> 2] = s[0x4620 >> 2] ? 32 : 0;
+      var ti = s[0x4618 >> 2], tt = s[(0x43c0 >> 2) + ti];
+      s[0x43b4 >> 2] = tt;
+      if (tt === 0 && ti === this.plus!.table) {
+        this.decodeTable();
+        s[(0x43c0 >> 2) + ti] = s[0x466c >> 2];
+        s[0x43b4 >> 2] = s[0x466c >> 2];
+      }
+      return;
+    }
     s[0x16f0 >> 2] = s[0x4810 >> 2];
     s[0x4454 >> 2] = s[0x4620 >> 2] ? 32 : 0;      // GetDeviceCaps(hdc, BITSPIXEL); 0 before the 1st HDC
     var t = s[(0x43c0 >> 2) + s[0x4618 >> 2]];
@@ -2783,7 +3269,7 @@ export class Core {
   /** decodeTable's block from the generated images (images.ts): {size, count, offsets[]} then per image
    *  {type, w, h, flags byte, pixels}, laid out exactly as the decoder lays out the resource's. */
   buildTable(): void {
-    var m = this.m, im = musicalImages(), n = im.length - 1, i: number, total = 8 + n * 4;
+    var m = this.m, im = this.plus ? this.plus.images() : musicalImages(), n = im.length - 1, i: number, total = 8 + n * 4;
     for (i = 1; i <= n; i++) total += 16 + im[i].w * im[i].h * 4;
     var s = m.I;
     s[0x47dc >> 2] = total;
@@ -2830,6 +3316,7 @@ export class Core {
 
   /** vt+0x184 0x55c15726: the scene every preset starts from (layers 0..5). */
   defaultScene(): void {
+    if (this.ver) { this.defaultScenePlus(); return; }
     var s = this.m.I, i: number;
     this.freeLayerBufs();                          // vt+0x100 0x55c0d4c6
     for (var k = 0; k <= s[0x4ebc >> 2]; k++) {
@@ -2848,11 +3335,52 @@ export class Core {
     }
   }
 
+  /** the Plus builds' default scene (Blazing Colors 0x100147c0): 52 records cleared, the same globals, six layers
+   *  on the one table (index 1), layer 2's trail as its transform's float 0x144 */
+  defaultScenePlus(): void {
+    var s = this.m.I, i: number;
+    this.freeLayerBufs();
+    for (var k = 0; k <= s[0x4ebc >> 2]; k++) {
+      for (i = 0; i < 0x7b; i++) s[LY(k) + i] = 0;
+      for (i = 0; i < 0x38; i++) s[XF(k) + i] = 0;
+      s[0x45cc >> 2] = 0x7b; s[0x45f0 >> 2] = 0x38;
+    }
+    s[0x44a8 >> 2] = s[0x4ebc >> 2] + 1;
+    store(s, SCENE0);
+    for (i = 0; i < 0x208; i++) s[(0x2fa0 >> 2) + i] = 0;
+    for (i = 0; i < 10; i++) s[(0x1718 >> 2) + i] = 0;
+    s[0x4ee8 >> 2] = 10;
+    var sc = this.plus!.scene || PLUS_SCENE;
+    for (k = 0; k < 6; k++) {
+      var t = sc[k];
+      for (i = 0; i < t.length; i += 2) {
+        var f = t[i];
+        if (f >= 0x1000) s[f >> 2] = t[i + 1];       // a global
+        else if (f >= 0x76c) s[LY(k) + lf(f)] = t[i + 1];
+        else s[XF(k) + xf(f)] = t[i + 1];
+      }
+      s[0x44a8 >> 2] = k;
+      this.bindImage();
+      s = this.m.I;
+    }
+  }
+  /** the Plus builds' preset setup helper (Blazing Colors vt+0x1ac 0x100128b0): a 352 x 320 canvas */
+  canvasPlus(): void {
+    var m = this.m, s = m.I;
+    if (s[0x47a0 >> 2] === 0x160 && s[0x47a8 >> 2] === 0x140) return;
+    if (s[0x4660 >> 2]) m.release(s[0x4660 >> 2]);
+    s[0x47a0 >> 2] = 0x160;
+    s[0x47a8 >> 2] = 0x140;
+    var c = m.malloc(0x6e000);
+    m.I[0x4660 >> 2] = c;
+  }
+
   /** vt+0x100 0x55c0d4c6: free every layer's three work buffers. */
   freeLayerBufs(): void {
     var m = this.m, s = m.I;
     for (var k = 0; k <= s[0x4ebc >> 2]; k++) {
       var b = LY(k);
+      if (this.ver === 2 && s[b + lf(0x770)] === -1 && s[b + lf(0x794)]) { m.release(s[b + lf(0x794)]); s[b + lf(0x794)] = 0; }
       s[b + lf(0x824)] = 0;
       if (s[b + lf(0x82c)]) { m.release(s[b + lf(0x82c)]); s[b + lf(0x82c)] = 0; }
       if (s[b + lf(0x828)]) { m.release(s[b + lf(0x828)]); s[b + lf(0x828)] = 0; }
@@ -2865,7 +3393,7 @@ export class Core {
    *  (the layer is switched off). A changed size frees the layer's work buffers. */
   bindImage(): number {
     var m = this.m, s = m.I, b = LY(s[0x44a8 >> 2]);
-    if (s[b + lf(0x770)] === -1) return 1;
+    if (!this.ver && s[b + lf(0x770)] === -1) return 1;   // (gone in the Plus builds)
     s[0x4618 >> 2] = s[b + lf(0x78c)];
     this.loadTable();
     s = m.I;
@@ -2995,6 +3523,23 @@ const INIT_FIELDS2 = [
   0x47e0, 0x100, 0x47e4, 0x100, 0x47f0, 0, 0x47f8, 0x14, 0x480c, 0, 0x4c68, 1, 0x4b9c, 0, 0x4ba0, 0,
   0x4ba4, 0, 0x4ba8, 0, 0x4be4, 0, 0x4be8, 0, 0x4bec, 0, 0x4c00, 0, 0x4bfc, 0, 0x4c04, 0, 0x4c8c, 0,
   0x4cec, 0, 0x4cf0, 0, 0x4e94, 0, 0x4e90, 0, 0x4e98, 0, 0x4eec, 0, 0x4ef0, 0, 0x4ef4, 0, 0x4f30, 0,
+];
+// the Plus builds' init (Blazing Colors 0x10014120): wmpvis.dll's stores in the same order, less the four it dropped
+// (0x4810, 0x4648, 0x47a0, 0x47a8 = 400 x 400) and plus the level average (0x4414) cleared
+const PLUS_INIT = INIT_FIELDS.filter((v, i, a) => !(i & 1 ? a[i - 1] === 0x4810 || a[i - 1] === 0x4648 : v === 0x4810 || v === 0x4648))
+  .flatMap((v, i, a) => (i & 1 || v !== 0x441c ? [v] : [0x4414, 0, v]));
+const PLUS_INIT2 = INIT_FIELDS2.filter((v, i, a) => !(i & 1 ? a[i - 1] === 0x47a0 || a[i - 1] === 0x47a8 : v === 0x47a0 || v === 0x47a8));
+// the Plus builds' six default layers: field offsets as layer 0 / transform 0 have them (>= 0x76c a layer field, below
+// a transform field), then 0x44a8 := the layer and bindImage
+const F2 = 0x40000000, F300 = 0x43960000, F1 = 0x3f800000, FH = 0x3f000000;
+export const PLUS_SCENE = [
+  [0x910, 0, 0x76c, 2, 0x7fc, 0x479, 0x7e8, 0x453, 0x7ec, -0x1da, 0x808, 0, 0x78c, 1, 0x790, 1, 0x7e4, 0, 0x94c, 1, 0x77c, 2],
+  [0x76c, 2, 0x7fc, 0x58c, 0x7e8, 0x522, 0x7ec, -0x191, 0x808, 0, 0x78c, 1, 0x790, 2, 0x7e4, -1, 0x77c, 2],
+  [0x76c, 2, 0x910, 0, 0x7fc, 0x58c, 0x7e8, 0x453, 0x7ec, -0x1db, 0x808, 0, 0x78c, 1, 0x790, 1, 0x7e4, -1, 0x144, F2,
+    0x94c, 1, 0xf0, F300, 0x114, F1, 0x118, FH, 0x944, 2, 0x77c, 2],
+  [0x76c, 2, 0x7fc, 0x58c, 0x7e8, 0x524, 0x7ec, -0x191, 0x808, 0, 0x78c, 1, 0x790, 2, 0x7e4, 0, 0x94c, 1, 0x910, -1, 0x77c, 2],
+  [0x808, 0, 0x7e4, 0, 0x76c, 2, 0x7fc, 0x58c, 0x7e8, 0x524, 0x7ec, -0x191, 0x78c, 1, 0x790, 2, 0x910, -1, 0x77c, 2],
+  [0x76c, 2, 0x7fc, 0x58c, 0x7e8, 0x4f5, 0x7ec, 0x35, 0x808, -0x2e, 0x78c, 1, 0x790, 2, 0x7e4, -1, 0x910, -1, 0x77c, 2],
 ];
 // 0x55c15726: globals, then per layer the stores before each bindImage (the current-layer field 0x44a8
 // is among them)

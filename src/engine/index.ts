@@ -17,11 +17,13 @@ import './particle/index';
 import './plenoptic/index';
 import './ambience/index';
 import './musical/index';
+import './musical/plus';
 
 export { A };
 export type { Surface, TimedLevel };
 
-export type VisKind = 'alchemy' | 'bars' | 'battery' | 'spikes' | 'particle' | 'plenoptic' | 'ambience' | 'musical';
+export type VisKind = 'alchemy' | 'bars' | 'battery' | 'spikes' | 'particle' | 'plenoptic' | 'ambience' | 'musical'
+  | 'blazing' | 'colorcubes' | 'pulsing' | 'trilogy1' | 'trilogy2' | 'trilogy3';
 /** 'original' = each DLL's own surface size; 'auto' = the view, capped near 720p worth of pixels; n = view * n. */
 export type Scale = 'original' | 'auto' | number;
 
@@ -55,7 +57,8 @@ export interface CreateEngineOptions {
 export interface PresetEntry {
   vis: VisKind;
   preset: number;
-  group: 'Alchemy' | 'Bars and Waves' | 'Battery' | 'Spikes' | 'Particle' | 'Plenoptic' | 'Ambience' | 'Musical Colors';
+  group: 'Alchemy' | 'Bars and Waves' | 'Battery' | 'Spikes' | 'Particle' | 'Plenoptic' | 'Ambience' | 'Musical Colors'
+    | 'Blazing Colors' | 'Color Cubes' | 'Pulsing Colors' | 'Trilogy I' | 'Trilogy II' | 'Trilogy III';
   name: string;
   /** the family's registry key, HKLM\SOFTWARE\Microsoft\MediaPlayer\Objects\Effects\<key> (its place in the list) */
   key: string;
@@ -110,6 +113,13 @@ const FAMILIES: readonly { key: string; vis: VisKind; group: PresetEntry['group'
   { key: 'Ambience', vis: 'ambience', group: 'Ambience', names: A.Ambience.PRESET_NAMES },
   // WMP 7 and 8's wmpvis.dll, key "WMPVis": after Spikes in their walk
   { key: 'WMPVis', vis: 'musical', group: 'Musical Colors', names: A.MusicalColors.PRESET_NAMES },
+  // Microsoft's downloadable packs for WMP 7 and 8, on Musical Colors' engine (musical/plus.ts)
+  { key: 'BlazingColors', vis: 'blazing', group: 'Blazing Colors', names: A.BlazingColors.PRESET_NAMES },
+  { key: 'ColorCubes', vis: 'colorcubes', group: 'Color Cubes', names: A.ColorCubes.PRESET_NAMES },
+  { key: 'PulsingColors', vis: 'pulsing', group: 'Pulsing Colors', names: A.PulsingColors.PRESET_NAMES },
+  { key: 'TrilogyI', vis: 'trilogy1', group: 'Trilogy I', names: A.TrilogyI.PRESET_NAMES },
+  { key: 'TrilogyII', vis: 'trilogy2', group: 'Trilogy II', names: A.TrilogyII.PRESET_NAMES },
+  { key: 'TrilogyIII', vis: 'trilogy3', group: 'Trilogy III', names: A.TrilogyIII.PRESET_NAMES },
 ];
 
 /** Every preset of every family, in WMP's order: the flat list its next/previous walks, wrapping. */
@@ -160,7 +170,7 @@ export function samplingOf(kind: VisKind, preset = 0): Sampling {
 export function nativeSize(kind: VisKind, viewW: number, viewH: number, preset = 0): [number, number] {
   if (kind === 'plenoptic' || kind === 'ambience') return [256, 192];
   if (kind === 'alchemy' && preset === 1) return [384, 288];          // Random (WMP 9)
-  if (kind === 'bars' || kind === 'spikes' || kind === 'particle' || kind === 'musical') return [Math.min(1920, viewW), Math.min(1080, viewH)];
+  if (kind === 'bars' || kind === 'spikes' || kind === 'particle' || kind === 'musical' || PLUS[kind]) return [Math.min(1920, viewW), Math.min(1080, viewH)];
   return kind === 'battery' ? [384, 288] : [640, 480];
 }
 
@@ -209,6 +219,11 @@ export function blit(px: Uint32Array, out32: Uint32Array): void {
 }
 
 type RawCtor = new (cfg: { width: number; height: number; options: EngineOptions; preset?: number }) => RawEngine;
+/** the packs on Musical Colors' engine: drawn, sized and fed as it is */
+const PLUS: Partial<Record<VisKind, RawCtor>> = {
+  blazing: A.BlazingColors, colorcubes: A.ColorCubes, pulsing: A.PulsingColors,
+  trilogy1: A.TrilogyI, trilogy2: A.TrilogyII, trilogy3: A.TrilogyIII,
+} as unknown as Partial<Record<VisKind, RawCtor>>;
 
 function makeRaw(kind: VisKind, preset: number, options: EngineOptions): RawEngine {
   if (kind === 'bars') return new (A.Bars as unknown as RawCtor)({ width: 16, height: 16, options, preset });
@@ -221,6 +236,8 @@ function makeRaw(kind: VisKind, preset: number, options: EngineOptions): RawEngi
   if (kind === 'plenoptic') return new (A.Plenoptic as unknown as RawCtor)({ width: 256, height: 192, options, preset });
   if (kind === 'ambience') return new (A.Ambience as unknown as RawCtor)({ width: 256, height: 192, options, preset });
   if (kind === 'musical') return new (A.MusicalColors as unknown as RawCtor)({ width: 16, height: 16, options, preset });
+  const P = PLUS[kind];
+  if (P) return new P({ width: 16, height: 16, options, preset });
   return new (A.Engine as unknown as RawCtor)({ width: 16, height: 16, options, preset });
 }
 

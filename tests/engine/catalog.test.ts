@@ -23,9 +23,15 @@ describe('the catalog', () => {
       'Ambience, WMP 10 14, WMP 9 1, WMP 7–9 6, WMP 8 1, WMP 7–8 1, WMP 7 1',
       'Bars and Waves, WMP 12 4, WMP 10 2, WMP 7–10 2, WMP 9 2, WMP 7–8 2',
       'Battery, WMP 12 26, WMP 11 22, WMP 9–11 4, WMP 10 9, WMP 9–10 5, WMP 8–10 8, WMP 9 6, WMP 8–9 3, WMP 8 15',
+      'Blazing Colors, WMP 7–8 3',
+      'Color Cubes, WMP 7–8 3',
       'Particle, WMP 10 2, WMP 7–8 2',
       'Plenoptic, WMP 10 7, WMP 8 2, WMP 7 7',
+      'Pulsing Colors, WMP 7–8 3',
       'Spikes, WMP 10 2',
+      'Trilogy I, WMP 7–8 4',
+      'Trilogy II, WMP 7–8 4',
+      'Trilogy III, WMP 7–8 4',
       'Musical Colors, WMP 7–8 20, WMP 7 1',
     ]);
   });

@@ -25,6 +25,7 @@ const CURRENT: Record<VisKind, Versions> = {
   alchemy: [12, 12], bars: [12, 12], battery: [12, 12],
   spikes: [10, 10], particle: [10, 10], plenoptic: [10, 10], ambience: [10, 10],
   musical: [7, 8],
+  blazing: [7, 8], colorcubes: [7, 8], pulsing: [7, 8], trilogy1: [7, 8], trilogy2: [7, 8], trilogy3: [7, 8],
 };
 
 /** A preset's name as its name and the versions its suffix gives ("Swirl (WMP 7-9)": Swirl, [7, 9]); none: null. */

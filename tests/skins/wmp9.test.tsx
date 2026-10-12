@@ -82,7 +82,8 @@ describe('menus', () => {
   it('a click outside closes; the picker ▾ opens the visualizations', async () => {
     const { $ } = setup();
     press($('#vpick')!);
-    expect([...menu(0)!.querySelectorAll<HTMLElement>('[role^=menuitem]')].map((b) => b.children[1]!.textContent)).toEqual(['Alchemy', 'Ambience', 'Bars and Waves', 'Battery', 'Particle', 'Plenoptic', 'Spikes', 'Musical Colors']);   // by registry key: Particle is "Dotplane"
+    expect([...menu(0)!.querySelectorAll<HTMLElement>('[role^=menuitem]')].map((b) => b.children[1]!.textContent)).toEqual(['Alchemy', 'Ambience', 'Bars and Waves', 'Battery', 'Blazing Colors', 'Color Cubes', 'Particle', 'Plenoptic', 'Pulsing Colors', 'Spikes',
+      'Trilogy I', 'Trilogy II', 'Trilogy III', 'Musical Colors']);   // by registry key: Particle is "Dotplane"
     await act(() => new Promise((r) => setTimeout(r, 0)));     // Radix listens for outside presses from the next tick
     press(document.body);
     expect(menu(0)).toBeNull();
@@ -308,15 +309,15 @@ describe('transport', () => {
     fireEvent.click($('#vnext')!);
     expect(at()).toBe('alchemy:0');
     act(() => S().actions.setVis('particle', 0));
-    fireEvent.click($('#vprev')!);                                     // out of Particle: Battery's last preset
-    expect(at()).toBe(lastOf('battery'));
+    fireEvent.click($('#vprev')!);                                     // out of Particle ("Dotplane"): Color Cubes' last preset
+    expect(at()).toBe(lastOf('colorcubes'));
     fireEvent.click($('#vnext')!);
     expect(at()).toBe('particle:0');
-    act(() => S().actions.setVis('battery', 3));
+    act(() => S().actions.setVis('colorcubes', 1));
     fireEvent.click($('#vnext')!, { shiftKey: true });                 // next family, its first preset
     expect(at()).toBe('particle:0');
     fireEvent.click($('#vprev')!, { shiftKey: true });                 // previous family, its last preset
-    expect(at()).toBe(lastOf('battery'));
+    expect(at()).toBe(lastOf('colorcubes'));
     act(() => S().actions.setVis('alchemy', 0));
     fireEvent.click($('#vprev')!, { shiftKey: true });                 // wraps: the last family, its last preset
     expect(at()).toBe(last.vis + ':' + last.preset);
