@@ -196,8 +196,17 @@ function useBacklight(secs: number): readonly [boolean, () => void] {
     };
     const kinds = ['pointerdown', 'keydown', 'wheel'] as const;
     kinds.forEach((k) => window.addEventListener(k, poke, { capture: true, passive: true }));
+    // back in front (the app reopened from the background) counts as a touch: it stayed dark until one
+    // (the owner, 2026-10-12)
+    const shown = () => { if (!document.hidden) poke(); };
+    document.addEventListener('visibilitychange', shown);
     poke();
-    return () => { clearTimeout(t); kinds.forEach((k) => window.removeEventListener(k, poke, { capture: true })); setDim(false); };
+    return () => {
+      clearTimeout(t);
+      kinds.forEach((k) => window.removeEventListener(k, poke, { capture: true }));
+      document.removeEventListener('visibilitychange', shown);
+      setDim(false);
+    };
   }, [secs]);
   return [dim, () => setDim(false)] as const;
 }
