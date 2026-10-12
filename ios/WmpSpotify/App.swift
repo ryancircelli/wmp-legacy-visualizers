@@ -697,7 +697,7 @@ func userScript() async -> String? {
 final class PageUpdate {
     static let shared = PageUpdate()
     private var mounted = false  // on the main thread: an overlay has mounted
-    private var update: (script: String, refresh: Bool)?  // on the main thread: waiting for the mount
+    private var update: (script: String, refresh: Data?)?  // on the main thread: waiting for the mount
 
     /// Behind the launch: `bundle` and `observer` are what this launch runs.
     func check(bundle: Data, observer: String) async {
@@ -713,7 +713,7 @@ final class PageUpdate {
               let inject = newBundle ?? parseBundle(bundle),
               let script = wrap(inject, newObserver ?? observer) else { return }
         DispatchQueue.main.async {
-            self.update = (script, newBundle != nil)
+            self.update = (script, newBundle == nil ? nil : site?.data)
             self.apply()
         }
     }
@@ -730,16 +730,17 @@ final class PageUpdate {
         let scripts = web.configuration.userContentController
         scripts.removeAllUserScripts()
         scripts.addUserScript(WKUserScript(source: update.script, injectionTime: .atDocumentStart, forMainFrameOnly: true))
-        guard update.refresh else { return }
+        guard let bundle = update.refresh else { return }
         HostLog.shared.log("page: bundle updated from site: refreshing in place")
         // Not at "overlay mounted" itself: the bundle has only begun mounting then (window.Alchemy, its
         // unmount, comes after its first render) and starts its adapter a frame after that render
         // (src/app/mount.tsx), so a refresh any sooner would leave the old page running behind the new
         // one. ponytail: half a second's margin past window.Alchemy, not a signal from the page.
+        // The bundle as it was downloaded (its JSON, a JS literal), so the page does not fetch it again.
         WebHolder.shared.run("""
-            (function go(n) { if (window.Alchemy) setTimeout(function () { window.alchemyRestart && window.alchemyRestart(); }, 500);
+            (function go(n) { if (window.Alchemy) setTimeout(function () { window.alchemyRestart && window.alchemyRestart(B); }, 500);
             else if (n) setTimeout(go, 100, n - 1); })(100)
-            """)
+            """.replacingOccurrences(of: "alchemyRestart(B)", with: "alchemyRestart(\(String(decoding: bundle, as: UTF8.self)))"))
     }
 }
 
