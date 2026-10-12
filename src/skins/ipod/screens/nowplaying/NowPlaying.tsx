@@ -5,8 +5,9 @@
 // after the last or on center; MENU cancels) -> Radio slider (the nano's Genius) -> back; each falls
 // back after 5 s idle (shuffle and Like: the status row's toggles). The track's lyrics show over the
 // cover whenever Lyrics is on, no mode of the center's (the owner's ruling, unlike the nano's mode 6).
-// Hold center: the nano's popup, Spotify's way (§4.3); the ⋯ in the cover's corner opens this page's
-// options (Visualizer…: VisMenu.tsx's pages; Lyrics, Karaoke). Play / next / prev and
+// Hold center (or the ♪): the song's menu, Spotify's way (§4.3); the ⋯ in the cover's corner opens this
+// page's options (Play On…, Visualizer…: VisMenu.tsx's pages; Lyrics, Karaoke); both are the nano's list
+// pages in a panel over the picture (ListPanel.tsx), their sub-menus pages of it. Play / next / prev and
 // their holds (fast-forward, rewind: useScan) are the chrome's. A track with a Spotify Canvas shows it
 // behind the whole screen instead of the cover, the two bands made translucent over it; a tap on the
 // cover's area cycles the Canvas -> the cover -> black -> the Canvas, remembered (only while the Canvas
@@ -33,12 +34,13 @@ import { useHostGlobal } from '../../host';
 import type { MenuItem, ScreenEntry } from '../contract';
 import { useVisualizers, visId } from '../settings';
 import { collection, startRadio as radioFrom, useEpisodeMarks } from '../lists';
-import { Bar, Marquee, MenuScreen, Popup, useNav, useScan, useWheel } from '../../ui';
+import { Bar, Marquee, MenuScreen, useNav, useScan, useWheel } from '../../ui';
 import { useTurn } from '../../wheel';
 import { pickAccent, rgbOf } from './accent';
 import { barsFit, IDLE_MS, nextMode, QUIET_MS, SCRUB_COMMIT_MS, scrubAccel, scrubStep, times, turnPct, volumeBy, VOLUME_MS, VOLUME_SEND_MS, VOLUME_TICK, type Mode } from './logic';
 import css from './nowplaying.module.css';
-import { VisMenu } from './VisMenu';
+import { ListPanel, type Page } from './ListPanel';
+import { useVisPages, type VisPage } from './VisMenu';
 
 export function nowPlaying(): ScreenEntry {
   return { key: 'nowplaying', title: 'Now Playing', render: () => <NowPlaying /> };
@@ -57,11 +59,14 @@ const canvasPref = createStore<{ show: Show }>()(persist((): { show: Show } => (
   name: 'ipod.canvas', version: 2, migrate: migrateCanvasPref,
 }));
 
+/** the menus' pages: the song's (main) and its Playlist… and Add to Playlist…; the page's options and its
+ *  Play On… (opened by itself too, from the device line); the Visualizer… pages */
 type Pop = 'main' | 'playlist' | 'playlists' | 'devices' | 'options';
+type PageKey = Pop | VisPage;
 /** a wheel scrub: the position shown, then (sent) held until the player reports the seek */
 type Scrub = { uri: string; ms: number; sent?: boolean };
 
-/** src/ui's menu entries (Add to playlist, Play on) as Popup rows; the Popup closes on a choice */
+/** src/ui's menu entries (Add to playlist, Play on) as list rows */
 const toItems = (es: MenuEntry[]): MenuItem[] => es.flatMap((e, i) =>
   'label' in e ? [{ id: String(i), label: e.label, right: e.check ? '✓' : undefined, disabled: e.disabled, onSelect: e.act }] : []);
 
@@ -77,7 +82,7 @@ function NowPlaying() {
   const [scrub, setScrub] = useState<Scrub | null>(null);
   const [vol, setVol] = useState<{ v: number } | null>(null);
   const [poke, setPoke] = useState(0);
-  const [popup, setPopup] = useState<Pop | null>(null), [visMenu, setVisMenu] = useState(false);
+  const [popup, setPopup] = useState<Pop | null>(null);
   const lastTick = useRef(0);
   const seeds = useRadioSeeds(), addTo = useAddTo(useApp(playingTrack)), plMenu = addTo.playlistMenu();
   const has: Record<Mode, boolean> = {
@@ -159,7 +164,7 @@ function NowPlaying() {
   // its ticks and its click consumed); the wheel's buttons and their keys act as ever too.
   const root = useRef<HTMLDivElement>(null), seen = useOnScreen(root), playing = useApp(isPlaying);
   const [quiet, setQuiet] = useState(false), [wasIdle, setWasIdle] = useState(false);
-  const idle = seen && playing && !popup && !visMenu && m === 'default';
+  const idle = seen && playing && !popup && m === 'default';
   // paused, a popup, a mode, off screen: awake, and kept so until it is idle again and the time passes
   if (idle !== wasIdle) { setWasIdle(idle); if (!idle) setQuiet(false); }
   const live = useRef({ quiet, idle, woke: false, timer: 0 });
@@ -203,7 +208,7 @@ function NowPlaying() {
   const active = useApp((s) => s.devices.list.find((x) => x.active && x.id !== s.devices.self));
   const speaker = useHostGlobal('__wmpSpeaker', 'wmp-speaker'), away = active && active.id !== speaker?.id ? deviceName(active) : '';
   const show = useStore(canvasPref, (x) => x.show);
-  const vz = useVisualizers();
+  const vz = useVisualizers(), visPages = useVisPages();
   /** song radio: the first seed's own station (§4.3) */
   const startRadio = () => {
     const seed = seeds[0];
@@ -212,43 +217,51 @@ function NowPlaying() {
       if (hit) c().playItem({ uri: hit.uri });
     }, () => {});
   };
-  /** this page's options (the ⋯): Play On… the Connect devices (as Settings > Play On); Visualizer… its
-   *  pages (VisMenu); Lyrics and Karaoke as Settings had them */
-  const options: MenuItem[] = [
-    { id: 'device', label: 'Play On…', disabled: !p.spotify, onSelect: () => setPopup('devices') },
-    { id: 'vis', label: 'Visualizer…', onSelect: () => setVisMenu(true) },
-    { id: 'lyrics', label: 'Lyrics', right: p.lyricsOn ? 'On' : 'Off', onSelect: () => get().actions.setLyricsEnabled(!p.lyricsOn) },
-    { id: 'karaoke', label: 'Karaoke', right: p.karaoke ? 'On' : 'Off', onSelect: () => get().actions.setKaraoke(!p.karaoke) },
-  ];
-  const cancel: MenuItem = { id: 'cancel', label: 'Cancel' };
-  const items: Record<Pop, MenuItem[]> = {
-    main: [
-      { id: 'radio', label: 'Start Radio', disabled: !seeds.length, onSelect: startRadio },
-      { id: 'add', label: 'Add to Playlist…', disabled: !addTo.uri, onSelect: () => { plMenu.onOpen?.(); setPopup('playlists'); } },
-      { id: 'like', label: addTo.saved ? 'Unlike' : 'Like', disabled: !addTo.uri, onSelect: addTo.toggle },
-      ...marks,
-      { id: 'album', label: 'Browse Album', disabled: !albumUri && !(artistUri && t?.album),
-        onSelect: () => nav.push(albumScreen({ uri: albumUri, artist: artistUri, name: t?.album ?? '' })) },
-      { id: 'artist', label: 'Browse Artist', disabled: !artistUri,
-        onSelect: () => { if (artistUri) nav.push(artistScreen(artistUri, t?.artist ?? '')); } },
-      // the playing playlist's own menu (the owner: "how can i get to the active playlist quickly", "split
-      // the current song menu and current playlist menu"): a second popup
-      ...(t?.ctx?.startsWith('spotify:playlist:') ? [{ id: 'playlist', label: 'Playlist…', onSelect: () => setPopup('playlist') }] : []),
-      cancel,   /* no page options here (the owner: "remove the visualizer stuff from that menu"): the ⋯ has them */
-    ],
-    playlist: [
-      { id: 'browse', label: 'Browse Playlist', onSelect: () => { if (t?.ctx) nav.push(collection(t.ctx, col.meta?.name ?? 'Playlist')); } },
-      { id: 'radio', label: 'Playlist Radio', onSelect: () => { if (t?.ctx) void radioFrom(sh, nav, t.ctx, col.meta?.name ?? 'Playlist'); } },
-      cancel,
-    ],
-    playlists: toItems(plMenu.sub ?? []),
-    devices: [...toItems(devices.items()),
-              ...(window.alchemyRoutePicker ? [{ id: 'airplay', label: 'AirPlay…', onSelect: () => window.alchemyRoutePicker?.() }] : [])],
-    options: [...options, cancel],
+  /** the menus' pages (ListPanel). A row that opens a page pushes it; every other row closes the menu and
+   *  acts, as the popups did; the Visualizer pages' rows keep it open (VisMenu). */
+  const close = () => setPopup(null);
+  const closing = (it: MenuItem): MenuItem => ({ ...it, onSelect: () => { close(); it.onSelect?.(); } });
+  const page = (k: PageKey, open: (k: PageKey) => void): Page => {
+    if (typeof k !== 'string') return visPages(k, open);
+    const pages: Record<Pop, Page> = {
+      // the song's menu, titled with the song as the nano titles a page with what it lists
+      main: { title: t?.title ?? '', items: [
+        closing({ id: 'radio', label: 'Start Radio', disabled: !seeds.length, onSelect: startRadio }),
+        { id: 'add', label: 'Add to Playlist…', chevron: true, disabled: !addTo.uri, onSelect: () => { plMenu.onOpen?.(); open('playlists'); } },
+        closing({ id: 'like', label: addTo.saved ? 'Unlike' : 'Like', disabled: !addTo.uri, onSelect: addTo.toggle }),
+        ...marks.map(closing),
+        closing({ id: 'album', label: 'Browse Album', disabled: !albumUri && !(artistUri && t?.album),
+                  onSelect: () => nav.push(albumScreen({ uri: albumUri, artist: artistUri, name: t?.album ?? '' })) }),
+        closing({ id: 'artist', label: 'Browse Artist', disabled: !artistUri,
+                  onSelect: () => { if (artistUri) nav.push(artistScreen(artistUri, t?.artist ?? '')); } }),
+        // the playing playlist's own menu (the owner: "how can i get to the active playlist quickly", "split
+        // the current song menu and current playlist menu"): a page of its own.
+        // No page options here (the owner: "remove the visualizer stuff from that menu"): the ⋯ has them
+        ...(t?.ctx?.startsWith('spotify:playlist:') ? [{ id: 'playlist', label: 'Playlist…', chevron: true, onSelect: () => open('playlist') }] : []),
+      ] },
+      playlist: { title: col.meta?.name ?? 'Playlist', items: [
+        closing({ id: 'browse', label: 'Browse Playlist', onSelect: () => { if (t?.ctx) nav.push(collection(t.ctx, col.meta?.name ?? 'Playlist')); } }),
+        closing({ id: 'radio', label: 'Playlist Radio', onSelect: () => { if (t?.ctx) void radioFrom(sh, nav, t.ctx, col.meta?.name ?? 'Playlist'); } }),
+      ] },
+      // ticks for the playlists holding the song, not one choice: it opens at the top, as Spotify's does
+      playlists: { title: 'Add to Playlist', items: toItems(plMenu.sub ?? []).map(closing), fromTop: true },
+      devices: { title: 'Play On', items: [...toItems(devices.items()),
+        ...(window.alchemyRoutePicker ? [{ id: 'airplay', label: 'AirPlay…', onSelect: () => window.alchemyRoutePicker?.() }] : [])].map(closing) },
+      // this page's options: Play On… the Connect devices (as Settings > Play On); Visualizer… its pages
+      // (VisMenu); Lyrics and Karaoke as Settings had them. Titled with the ⋯'s own name, as the nano titles a
+      // page with the row that opened it
+      options: { title: 'Options', items: [
+        { id: 'device', label: 'Play On…', chevron: true, disabled: !p.spotify, onSelect: () => open('devices') },
+        { id: 'vis', label: 'Visualizer…', chevron: true, onSelect: () => open({}) },
+        closing({ id: 'lyrics', label: 'Lyrics', right: p.lyricsOn ? 'On' : 'Off', onSelect: () => get().actions.setLyricsEnabled(!p.lyricsOn) }),
+        closing({ id: 'karaoke', label: 'Karaoke', right: p.karaoke ? 'On' : 'Off', onSelect: () => get().actions.setKaraoke(!p.karaoke) }),
+      ] },
+    };
+    return pages[k];
   };
 
   useWheel({
-    // an open Popup registers after this screen, so it takes the ticks, center and MENU while open
+    // an open menu (ListPanel) registers after this screen, so it takes the ticks, center and MENU while open
     onTick: (dir) => {
       const L = live.current;
       if (L.quiet || L.woke) { L.quiet = false; setQuiet(false); return false; }   // it only wakes the screen
@@ -279,7 +292,7 @@ function NowPlaying() {
   });
   // A turn of the ring in the progress mode is the volume's, continuously (no detents: no clicks, no
   // per-tick haptics; wheel.ts useTurn); a turn that wakes the quiet screen does nothing else.
-  useTurn(seen && m === 'default' && !popup && !visMenu ? (deg) => {
+  useTurn(seen && m === 'default' && !popup ? (deg) => {
     const L = live.current;
     if (L.quiet || L.woke) { L.quiet = false; setQuiet(false); return true; }
     volumeTo(turnPct(deg));
@@ -369,8 +382,7 @@ function NowPlaying() {
           </div>
         )}
       </div>
-      {popup && <Popup items={items[popup]} onClose={() => setPopup((x) => (x === popup ? null : x))} />}
-      {visMenu && <VisMenu onClose={() => setVisMenu(false)} />}
+      {popup && <ListPanel<PageKey> key={popup} first={popup} page={page} onClose={close} />}
     </div>
   );
 }

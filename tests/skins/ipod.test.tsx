@@ -2,7 +2,7 @@
 // the nano 5G's menus, the chevron on the selected row only, taps, the library's grid, Home's shelves, a
 // collection's header, and the hold-⏮/⏭ scan.
 import { act, cleanup, fireEvent, render, renderHook, within } from '@testing-library/react';
-import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, expect, it, onTestFinished, vi } from 'vitest';
 import type { ReactNode } from 'react';
 import { makeShell } from '../../src/app/App';
 import { hostSettings } from '../../src/adapters/spotify';
@@ -89,6 +89,25 @@ it('a tap selects a row and does what the centre would', async () => {
   expect(getByText('B').closest('[role=option]')!.getAttribute('aria-selected')).toBe('true');
   act(() => { fireEvent.click(getByText('C')); });
   expect(off).not.toHaveBeenCalled();
+});
+
+it('a list longer than its page has the scroll bar (the rows stop at it), its handle the part in view placed by the scroll; none when it all fits', () => {
+  const store = createAppStore({ persist: false });
+  let H = 1000;
+  onTestFinished(() => { vi.restoreAllMocks(); });
+  vi.spyOn(HTMLElement.prototype, 'scrollHeight', 'get').mockImplementation(() => H);
+  vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(200);
+  vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockReturnValue(40);
+  const items = Array.from({ length: 30 }, (_, i) => ({ id: String(i), label: 'Row ' + i }));
+  const { container } = render(<ShellContext.Provider value={makeShell(store, {} as Ticker)}><MenuScreen items={items} /></ShellContext.Provider>);
+  const list = container.querySelector<HTMLElement>('[role=listbox]')!, thumb = list.nextElementSibling as HTMLElement;
+  expect([list.parentElement!.hasAttribute('data-over'), thumb.hidden, thumb.style.height]).toEqual([true, false, '20%']);
+  list.scrollTop = 400;                              // a touch scroll: halfway, the handle halfway down its travel
+  act(() => { fireEvent.scroll(list); });
+  expect(thumb.style.top).toBe('80px');
+  H = 200;                                           // it all fits: no bar
+  act(() => { fireEvent.scroll(list); });
+  expect([list.parentElement!.hasAttribute('data-over'), thumb.hidden]).toEqual([false, true]);
 });
 
 it('a loading list says why it waits: signing in, signed out, or loading', () => {
@@ -597,16 +616,16 @@ it('the ⋯ over the cover opens this page\'s options: Lyrics and Karaoke toggle
   const pick = (label: string) => act(() => { fireEvent.click(options().find((x) => x.textContent === label)!); });
   const open = () => act(() => { fireEvent.click(within(np).getByRole('button', { name: 'Options' })); });
   open();
-  expect(rows()).toEqual(['Play On…', 'Visualizer…', 'LyricsOn', 'KaraokeOn', 'Cancel']);
+  expect(rows()).toEqual(['Play On…', 'Visualizer…', 'LyricsOn', 'KaraokeOn']);
   expect(haptic).toHaveBeenCalledWith('light');
   pick('LyricsOn');                                  // a choice closes it
   expect([m.S().settings.lyrics, rows()]).toEqual([false, []]);
   open();
   pick('KaraokeOn');
   open();
-  expect([m.S().settings.karaoke, rows()]).toEqual([false, ['Play On…', 'Visualizer…', 'LyricsOff', 'KaraokeOff', 'Cancel']]);
+  expect([m.S().settings.karaoke, rows()]).toEqual([false, ['Play On…', 'Visualizer…', 'LyricsOff', 'KaraokeOff']]);
   pick('Visualizer…');                               // its pages: the switch, Opacity, the families
-  const title = () => np.querySelector('[class*=vistitle]')?.textContent;
+  const title = () => np.querySelector('[class*=pagetitle]')?.textContent;
   expect([title(), rows()]).toEqual(['Visualizer', ['VisualizerOn', 'Opacity50%', 'Alchemy', 'Ambience', 'Bars and WavesBars', 'Battery', 'Particle', 'Plenoptic', 'Spikes', 'Musical Colors']]);
   pick('VisualizerOn');                              // off, the page kept open
   expect([rows().slice(0, 2), !!np.querySelector('canvas')]).toEqual([['VisualizerOff', 'Opacity50%'], false]);
@@ -620,7 +639,7 @@ it('the ⋯ over the cover opens this page\'s options: Lyrics and Karaoke toggle
   expect([title(), rows()]).toEqual(['Bars and Waves · WMP 7–8', ['Bars', 'Scope']]);
   pick('Scope');
   expect([m.S().vis.preset, rows()]).toEqual([7, ['Bars', 'Scope✓']]);
-  act(() => { fireEvent.click(np.querySelector('[class*=vismenu]')!); });   // a tap on the picture closes it
+  act(() => { fireEvent.click(np.querySelector('[class*=pages]')!); });   // a tap on the picture closes it
   expect(rows()).toEqual([]);
   open();
   pick('Visualizer…');
@@ -651,8 +670,28 @@ it('Visualizer…: the wheel walks its pages, the centre opens a page or picks (
   expect(m.sel()).toEqual(['WMP 10Bars']);
   key('Escape');
   expect(m.sel()).toEqual(['Bars and WavesBars · WMP 10']);
+  key('Escape');                                     // the ⋯ menu's page it opened from
+  expect(m.sel()).toEqual(['Visualizer…']);
   key('Escape');                                     // closed; Now Playing stays
-  expect([m.shown('[class*=vismenu]').length, m.shown('[aria-label="Options"]').length]).toEqual([0, 1]);
+  expect([m.shown('[class*=pages]').length, m.shown('[aria-label="Options"]').length]).toEqual([0, 1]);
+});
+
+it('the song\'s menu (hold centre): the nano\'s list page titled with the song, its Add to Playlist… a page of it (the playlists, a pick adds and closes); MENU back a page, then closed', async () => {
+  const m = mount();
+  act(() => { m.store.setState((s) => ({ playback: { ...s.playback, status: 'playing', track: { uri: 'spotify:track:a', title: 'Paper Planes', artist: 'A', duration: 100_000 } } })); });
+  act(() => { fireEvent.click(m.shown('[aria-label="Now Playing"][role=button]')[0]!); });
+  await settle();
+  const title = () => m.shown('[class*=pagetitle]').map((x) => x.textContent);
+  act(() => { fireEvent.click(m.shown('[aria-label="Track"]')[0]!); });
+  expect([title(), m.sel()]).toEqual([['Paper Planes'], ['Start Radio']]);
+  key('ArrowDown');
+  key('Enter');                                      // Add to Playlist…: a page of the same panel
+  await settle();
+  expect(title()).toEqual(['Add to Playlist']);
+  key('Escape');                                     // back to the song's page, on the row it left
+  expect([title(), m.sel()]).toEqual([['Paper Planes'], ['Add to Playlist…']]);
+  key('Escape');
+  expect(m.shown('[class*=pages]').length).toBe(0);
 });
 
 /** a track playing, and its plain lyrics in the store (as the app's lyrics loader puts them) */

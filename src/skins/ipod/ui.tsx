@@ -32,10 +32,13 @@ function strideNow(sp: { v: number; at: number }, rows: number): number {
 /** the scroll indicator over list `l` (hidden when it does not overflow) */
 function placeThumb(l: HTMLElement | null, t: HTMLElement | null) {
   if (!l || !t) return;
-  const H = l.scrollHeight;
-  t.hidden = !(H > l.clientHeight + 1);
-  t.style.top = (l.scrollTop / H) * 100 + '%';
-  t.style.height = (l.clientHeight / H) * 100 + '%';
+  const H = l.scrollHeight, h = l.clientHeight, over = H > h + 1;
+  t.hidden = !over;
+  t.parentElement?.toggleAttribute('data-over', over);   // the track, and the rows stopping at it
+  if (!over) return;
+  t.style.height = (h / H) * 100 + '%';
+  // its travel is what its own height (a short handle's minimum) leaves
+  t.style.top = (l.scrollTop / (H - h)) * (h - t.offsetHeight) + 'px';
 }
 
 /** scroll `box` the least that shows `el` with `pad` either side (`x`: across): the box only, never the page */

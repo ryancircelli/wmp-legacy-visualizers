@@ -39,7 +39,7 @@ function atNowPlaying() {
     pick: (label: string) => act(() => { fireEvent.click(row(label)); }),
     /** Visualizer… from the ⋯, closing the one open first (a tap on the picture under it) */
     menu: () => {
-      const open = np.querySelector('[class*=vismenu]');
+      const open = np.querySelector('[class*=pages]');
       if (open) act(() => { fireEvent.click(open); });
       act(() => { fireEvent.click(within(np).getByRole('button', { name: 'Options' })); }); act(() => { fireEvent.click(row('Visualizer…')); });
     },
@@ -152,15 +152,19 @@ it('two buttons over the art: ♪ (top-left) opens the track\'s menu, without th
   act(() => { m.store.setState((s) => ({ playback: { ...s.playback, status: 'playing',
     track: { uri: 'spotify:track:x', title: 'T', artist: 'A', duration: 100_000, ctx: 'spotify:playlist:pl', albumUri: 'spotify:album:al' } } })); });
   await settle();
+  const title = () => m.np.querySelector('[class*=pagetitle]')?.textContent;
   act(() => { fireEvent.click(within(m.np).getByRole('button', { name: 'Track' })); });
-  expect(m.options().map((x) => x.textContent)).toEqual(['Start Radio', 'Add to Playlist…', 'Like', 'Browse Album', 'Browse Artist', 'Playlist…', 'Cancel']);
-  m.pick('Playlist…');
-  expect(m.options().map((x) => x.textContent)).toEqual(['Browse Playlist', 'Playlist Radio', 'Cancel']);
+  // the nano's list page titled with the song; no Cancel (MENU and a tap on the picture close it)
+  expect([title(), m.options().map((x) => x.textContent)]).toEqual(['T', ['Start Radio', 'Add to Playlist…', 'Like', 'Browse Album', 'Browse Artist', 'Playlist…']]);
+  m.pick('Playlist…');                               // a page of the same panel, titled with the playlist
+  expect([title(), m.options().map((x) => x.textContent)]).toEqual(['Lawn', ['Browse Playlist', 'Playlist Radio']]);
   m.pick('Browse Playlist');
   await settle();
-  expect(m.np.querySelector('[role=listbox]')).toBeNull();      // the popup closed; the playlist's screen was pushed
+  expect(m.np.querySelector('[role=listbox]')).toBeNull();      // the menu closed; the playlist's screen was pushed
   act(() => { fireEvent.click(within(m.np).getByRole('button', { name: 'Options' })); });
-  expect(m.options().map((x) => x.textContent)).toEqual(['Play On…', 'Visualizer…', 'LyricsOn', 'KaraokeOn', 'Cancel']);
+  expect([title(), m.options().map((x) => x.textContent)]).toEqual(['Options', ['Play On…', 'Visualizer…', 'LyricsOn', 'KaraokeOn']]);
+  m.pick('LyricsOn');                                // a toggle acts and closes, as it did
+  expect([m.S().settings.lyrics, m.np.querySelector('[class*=pages]')]).toEqual([false, null]);
 });
 
 it('Bars, Ocean Mist and Fire Storm start under the info band (their peaks mid-screen); Scope and the engines fill the area', async () => {

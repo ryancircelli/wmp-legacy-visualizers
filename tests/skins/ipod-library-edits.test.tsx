@@ -33,8 +33,8 @@ function mount(data: Partial<FakeData> = {}, extra: Partial<Commands> = {}) {
   return {
     ...m, shown, option,
     rows: () => shown('[role=option]').map((x) => x.textContent),
-    /** the popup's rows (a popup over a list: its sheet's options), each with whether it is dimmed */
-    menu: () => shown('[role=option]').filter((x) => x.closest('[class*=sheet]')).map((x) => [x.textContent, x.hasAttribute('aria-disabled')]),
+    /** the popup's rows (a popup over a list: its sheet's options; Now Playing's menu panel's), each with whether it is dimmed */
+    menu: () => shown('[role=option]').filter((x) => x.closest('[class*=sheet], [class*=pages]')).map((x) => [x.textContent, x.hasAttribute('aria-disabled')]),
     click: async (text: string) => { act(() => { fireEvent.click(option(text)!); }); await settle(); },
     /** hold-centre (a right-click on the wheel's centre is its hold at once) */
     hold: () => act(() => {

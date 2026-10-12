@@ -414,12 +414,35 @@
   stroke: currentColor;
   stroke-width: 2.4;
 }
-/* the scroll indicator when a list overflows (reconstructed, as the classic's) */
+/* the scroll bar of a list longer than its page (ui.tsx placeThumb sets data-over), as the nano's and the
+   classic's: at the right edge, 7 wide, whenever the list scrolls (not only while it moves) and never when it
+   all fits; the rows (the blue selection with them) stop at it. The track light with a fine grey seam, the
+   handle a raised darker grey sized to the part in view and placed by the scroll, 12 tall at least */
+.list[data-over] > .scroll { padding-right: calc(var(--unit) * 7); }
+.list[data-over] > .grid { padding-right: calc(var(--unit) * 9); }
+.list[data-over]::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: 0;
+  width: calc(var(--unit) * 7);
+  box-sizing: border-box;
+  border-left: var(--unit) solid #A7ABAE;
+  background: linear-gradient(to right, #D9DCDE, #F7F7F7 60%, #E9EAEB);
+  pointer-events: none;
+}
 .thumb {
   position: absolute;
+  z-index: 1;
   right: 0;
-  width: calc(var(--unit) * 4);
-  background: rgb(154 154 154 / .6);
+  width: calc(var(--unit) * 6);
+  min-height: calc(var(--unit) * 12);
+  box-sizing: border-box;
+  border: var(--unit) solid #5A6066;
+  border-radius: calc(var(--unit) * 1.5);
+  background: linear-gradient(to right, #B4B9BD, #8C9297 40%, #6A7075);
+  box-shadow: inset var(--unit) 0 rgb(255 255 255 / .35);
   pointer-events: none;
 }
 /* the library as a grid (GridScreen, Tile): 2 columns of tiles, Spotify's library look: the square

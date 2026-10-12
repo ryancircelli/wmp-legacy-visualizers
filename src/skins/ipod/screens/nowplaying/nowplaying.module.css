@@ -209,17 +209,17 @@
 .root[data-quiet]:not(:has(.of)) .lyrics { background: linear-gradient(to top, rgb(0 0 0 / .45), rgb(0 0 0 / .3) calc(var(--unit) * 105), transparent calc(var(--unit) * 158)); }
 .root[data-quiet] .more { opacity: 0; pointer-events: none; }
 
-/* Visualizer… (VisMenu.tsx): the nano's list pages in a panel over the top of the screen, six rows of
-   the list's own height under a 20-tall title in the light status bar's look (its gradient, its seam, bold
+/* Now Playing's menus (ListPanel.tsx): the nano's list pages in a panel over the top of the screen, six rows
+   of the list's own height under a 20-tall title in the light status bar's look (its gradient, its seam, bold
    12, the title at x 10), the picture live under it; the rest of the area a tap target that closes it */
-.vismenu { position: absolute; inset: 0; z-index: 2; }
+.pages { position: absolute; inset: 0; z-index: 2; }
 .panel {
   display: flex; flex-direction: column;
   height: calc(var(--unit) * 20 + var(--ipod-row-h) * 6);
   background: var(--ipod-screen-bg); color: var(--ipod-ink); font-family: var(--ipod-font);
   box-shadow: 0 var(--unit) 0 #7A7E81, 0 calc(var(--unit) * 2) calc(var(--unit) * 6) rgb(0 0 0 / .5);
 }
-.vistitle {
+.pagetitle {
   flex: none; height: calc(var(--unit) * 20); line-height: calc(var(--unit) * 19); padding: 0 calc(var(--unit) * 10);
   background: linear-gradient(#FBFBFB, #B2B2B2); border-bottom: var(--unit) solid #7A7E81;
   font-size: calc(var(--unit) * 12); font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
