@@ -384,6 +384,8 @@
   box-shadow: inset 0 var(--unit) #97C4E3, inset 0 calc(var(--unit) * -1) #1855A6;
 }
 .row[data-disabled], .row[data-loading] { color: var(--ipod-dim); }
+/* on the blue selection the dim grey was unreadable: the selection's white, faded */
+.row[data-sel][data-disabled], .row[data-sel][data-loading] { color: rgb(255 255 255 / .55); }
 /* a section's header in a list (Settings): the iPod OS grouped list's short grey band, its name bold white */
 .section {
   height: calc(var(--unit) * 18);

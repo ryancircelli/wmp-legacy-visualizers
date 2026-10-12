@@ -683,8 +683,8 @@ it('the song\'s menu (hold centre): the nano\'s list page titled with the song, 
   await settle();
   const title = () => m.shown('[class*=pagetitle]').map((x) => x.textContent);
   act(() => { fireEvent.click(m.shown('[aria-label="Track"]')[0]!); });
-  expect([title(), m.sel()]).toEqual([['Paper Planes'], ['Start Radio']]);
-  key('ArrowDown');
+  // Start Radio has no seed here (greyed): the page opens on the first row that can be chosen
+  expect([title(), m.sel()]).toEqual([['Paper Planes'], ['Add to Playlist…']]);
   key('Enter');                                      // Add to Playlist…: a page of the same panel
   await settle();
   expect(title()).toEqual(['Add to Playlist']);

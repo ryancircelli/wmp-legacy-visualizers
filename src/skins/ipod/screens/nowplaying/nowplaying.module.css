@@ -209,13 +209,13 @@
 .root[data-quiet]:not(:has(.of)) .lyrics { background: linear-gradient(to top, rgb(0 0 0 / .45), rgb(0 0 0 / .3) calc(var(--unit) * 105), transparent calc(var(--unit) * 158)); }
 .root[data-quiet] .more { opacity: 0; pointer-events: none; }
 
-/* Now Playing's menus (ListPanel.tsx): the nano's list pages in a panel over the top of the screen, six rows
+/* Now Playing's menus (ListPanel.tsx): the nano's list pages in a panel over the top of the screen, up to six rows
    of the list's own height under a 20-tall title in the light status bar's look (its gradient, its seam, bold
    12, the title at x 10), the picture live under it; the rest of the area a tap target that closes it */
 .pages { position: absolute; inset: 0; z-index: 2; }
 .panel {
   display: flex; flex-direction: column;
-  height: calc(var(--unit) * 20 + var(--ipod-row-h) * 6);
+  height: calc(var(--unit) * 20 + var(--ipod-row-h) * var(--rows, 6));   /* the page's rows, six at most */
   background: var(--ipod-screen-bg); color: var(--ipod-ink); font-family: var(--ipod-font);
   box-shadow: 0 var(--unit) 0 #7A7E81, 0 calc(var(--unit) * 2) calc(var(--unit) * 6) rgb(0 0 0 / .5);
 }
