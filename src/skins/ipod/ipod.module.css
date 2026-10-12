@@ -1,0 +1,746 @@
+/* The iPod nano (5th generation) in CSS (docs/ipod-skin.md §1, §2). Every look is a custom property
+   on .body so it can be retuned without touching markup. Screen metrics are in nano pixels: the
+   screen is 240 x 376 of them and --unit is one, scaled to fit (.device is the size container). */
+
+/* the page round the device: on a phone the aluminium fills it edge to edge (behind the notch and
+   the home indicator); on a wide window it is a phone-shaped body centred on black (§1.6), which the
+   body's edges turn away into */
+.backdrop {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  background: #000000;
+}
+
+.body {
+  /* the aluminium: one hue knob (settings.ts bodyVars sets --h --s --l), everything else derives (§1.3) */
+  --h: 0;
+  --s: 0%;
+  --l: 66%;
+  --grain-alpha: .08;                /* the vertical brushing: 0 = polished */
+  /* the room and the hand (Root.tsx, from the phone): --lux scales the lights with the screen's
+     brightness, which follows the room's (.94 dim to 1.06 bright); --tilt, -1 to 1 as the phone rolls
+     left to right, slides the two bands of light across by up to 5 % of the width, as a reflection
+     moves. Both lightly (the owner, 2026-10-03); 1 and 0 where the host reports neither */
+  --lux: 1;
+  --tilt: 0;
+  transition: --tilt .25s linear, --pitch .3s linear, --lux 1.5s ease;   /* registered as numbers (Root.tsx useSheen): they ease */
+  --t: calc(var(--tilt) * 5%);
+  --L: calc(var(--l) * var(--lux));
+  --base: hsl(var(--h) var(--s) var(--L));
+  /* every tone is the body's own hue at a lightness relative to its own (orange, 50 %, gets the
+     owner's 68 / 58 / 42 / 30 / 14 / 6 %), never mixed with white: the lights are the hue brighter
+     and more saturated (silver, unsaturated, alone turns near-white there) */
+  --sh: min(100%, calc(var(--s) * 1.3));
+  /* the lights lean a touch warmer, as the photo's orange goes yellow in its highlight; they top out
+     at 72 % (silver's a light grey, never white) */
+  --hi: hsl(calc(var(--h) + 6) var(--sh) min(72%, calc(var(--L) * 1.36)));
+  --hi2: hsl(calc(var(--h) + 3) var(--sh) min(68%, calc(var(--L) * 1.16)));
+  --rise: hsl(calc(var(--h) + 4) var(--sh) min(70%, calc(var(--L) * 1.2)));
+  /* the centre: .84 read as a dark line down the middle (the owner, on Gold); .95 */
+  --mid: hsl(var(--h) var(--s) calc(var(--L) * .95));
+  --shade: hsl(var(--h) var(--s) calc(var(--L) * .6));
+  /* the thin edge line: the hue at about 25 % (orange's), never black */
+  --edge: hsl(var(--h) var(--s) calc(var(--l) * .5));
+  /* across the width the slab is a glossy cylinder lit from both sides, mirror-symmetric: a thin
+     darker line at each edge, a broad soft band near each side (its bright zone 14-24 % and 76-86 %,
+     with gentle ramps either side), the mid tone in the centre. It spans the whole width, so
+     nothing shows round it. In percent of the width, so any viewport scales it alike */
+  --metal: linear-gradient(90deg, var(--edge) 0, var(--edge) .4%, var(--shade) .9%, var(--rise) calc(6% + var(--t)),
+                           var(--hi) calc(14% + var(--t)), var(--hi) calc(24% + var(--t)), var(--hi2) calc(32% + var(--t)),
+                           var(--mid) calc(50% + var(--t)), var(--hi2) calc(68% + var(--t)), var(--hi) calc(76% + var(--t)),
+                           var(--hi) calc(86% + var(--t)), var(--rise) calc(94% + var(--t)),
+                           var(--shade) 99.1%, var(--edge) 99.6%, var(--edge) 100%);
+  --ipod-font: Helvetica, "Helvetica Neue", Arial, sans-serif;
+  /* the screen (screens read these names too) */
+  --ipod-screen-bg: #FFFFFF;
+  --ipod-ink: #000000;
+  --ipod-dim: #8E8E93;
+  --ipod-sel-bg: linear-gradient(180deg, #4EA0DC 0%, #4690D4 40%, #3F7FCD 70%, #336AC7 100%);
+  --ipod-sel-ink: #FFFFFF;
+  --ipod-value: #3E94E1;
+  --ipod-bar-bg: linear-gradient(#FFFFFF, #E8E8E8 55%, #C6C6C6);
+  --ipod-bar-fill: linear-gradient(#CEE4FF, #7A98CE 45%, #5181D6 55%, #6CA9E8);
+  /* the wheel (data-wheel): white ring, grey glyphs; black ring, light glyphs (§1.2, §1.5) */
+  --ipod-wheel-bg: radial-gradient(circle at 50% 38%, #FDFDFD, #EEEEEE 62%, #E1E1E1);
+  --ipod-wheel-ink: #8E8E93;
+
+  /* its width, which the margins are a fraction of */
+  --bw: 100vw;
+  position: relative;
+  width: var(--bw);
+  height: 100%;
+  /* the glass and the wheel keep clear of the safe area (Root sets --safe-*) plus --margin, 3 % of
+     the width, at the sides and 2 % (8 px on a phone) above and below */
+  --margin: calc(var(--bw) * .03);
+  padding: calc(var(--safe-top, 0px) + var(--bw) * .02) calc(var(--safe-right, 0px) + var(--margin))
+           calc(var(--safe-bottom, 0px) + var(--bw) * .02) calc(var(--safe-left, 0px) + var(--margin));
+  overflow: hidden;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+  font-family: var(--ipod-font);
+  /* the cylinder and a tone change from top to bottom */
+  background: linear-gradient(180deg, transparent 55%, rgb(0 0 0 / .2)), var(--metal);
+  isolation: isolate;                /* .metal's z-index -1 stays over this background */
+}
+/* Metal > Rendered (§1.7, metal/): the GPU's body on a canvas in the cylinder's place, under the
+   device and the grain; while it is there the cylinder is not painted */
+.metal {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+.body:has(> .metal) { background: none; }
+/* and the click wheel's ring and centre button with it (gl.ts): their backgrounds go, the seams stay
+   (the ring's edge against the body, the centre button's seat), crisp over the canvas's point grid */
+.body:has(> .metal) .wheel { background: none; box-shadow: 0 0 0 1px rgb(0 0 0 / .08); }
+.body:has(> .metal)[data-wheel="black"] .wheel { box-shadow: 0 0 0 1px rgb(0 0 0 / .3); }
+.body:has(> .metal) .hub { background: none; }
+/* the grain stays off the wheel, as it is under Classic's opaque ring (metal/index.ts sets where it is) */
+.body:has(> .metal)::before {
+  mask-image: radial-gradient(circle var(--wheel-r, 0px) at var(--wheel-at, 50% 50%), transparent var(--wheel-r, 0px), #000 calc(var(--wheel-r, 0px) + 1px));
+}
+/* and the glass's reflection (gl.ts) for its static glare while it is drawn: over the screen, light
+   added, the lip and seams kept */
+.bezel:has(> .glass) { background: #050505; }
+.bezel:has(> .glass)::after { content: none; }
+.glass {
+  position: absolute;
+  inset: 0;
+  z-index: 3;                        /* over the screen's own layers (its sleep is 2) */
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  pointer-events: none;
+}
+/* a text field types and selects its own text, whatever the body says */
+.body input { user-select: text; -webkit-user-select: text; }
+@media (min-aspect-ratio: 3/4) {
+  .body:not([data-phone]) {
+    --bw: min(100vw, 96vh * .46);
+    height: 96vh;
+    border-radius: 12% / 5.5%;
+  }
+}
+.body[data-wheel="black"] {
+  --ipod-wheel-bg: radial-gradient(#2A2A2A, #121212);
+  --ipod-wheel-ink: #E6E6E6;
+}
+/* the fine grain, brushed vertically as the nano's (noise fast across, slow down the body), its
+   strength the one knob --grain-alpha. Grey noise under overlay, so the hue stays the knob's */
+.body::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: var(--grain-alpha);
+  mix-blend-mode: overlay;
+  background-size: 180px 180px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9 .012' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+/* the screen leads: its glass (6 units round the 240 x 376 LCD) spans the whole width inside the
+   margins when the height allows, else as wide as leaves room for a wheel of 50 % and 2.5 % gaps.
+   The wheel hangs --gap below the glass, the same gap as from the phone's edge to the glass (the
+   margin, plus the glass's inset when it is narrower than the width), and is 68 % of the width, or
+   what is left above 2.5 % under it, so short of height it is the wheel that gives (never under 30 %).
+   In the iOS app a gap more (--grow), the chin a gap less, into the margin under the device, so it ends
+   at the home indicator's inset (the owner, 2026-10-07: "a little too much chin under the wheel … make
+   wheel bigger … about as much as the gap between the screen and wheel"); in a browser, with no inset
+   under it, that left it 5 px from the edge */
+.device {
+  container-type: size;
+  position: relative;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  /* resolved where used, against this container */
+  --unit: min(100cqw / 252, (100cqh - 55cqw) / 388);
+  --gap: calc(var(--safe-left, 0px) + var(--margin) + (100cqw - var(--unit) * 252) / 2);
+  --wheel-d: calc(clamp(30cqw, 100cqh - var(--unit) * 388 - var(--gap) - 2.5cqw, 68cqw) + var(--grow, 0px));
+}
+.body[data-phone] .device { --grow: var(--gap); }
+
+/* the glossy black glass round the LCD (§1.4), a little proud of the metal: a dark seam, a lip lit
+   from above and catching light below, the glare strong on the glass, a streak faint over the LCD */
+.bezel {
+  position: relative;
+  flex: none;
+  padding: calc(var(--unit) * 6);
+  border-radius: calc(var(--unit) * 5);
+  background: linear-gradient(155deg, rgb(255 255 255 / .14) 0%, rgb(255 255 255 / .03) 36%, transparent 36.5%), #050505;
+  box-shadow:
+    0 0 0 calc(var(--unit) * .5) rgb(0 0 0 / .5),
+    0 calc(var(--unit) * .8) 0 calc(var(--unit) * .3) color-mix(in srgb, var(--hi2) 50%, transparent),
+    inset 0 calc(var(--unit) * .6) 0 rgb(255 255 255 / .19),
+    inset 0 0 0 calc(var(--unit) * .5) rgb(255 255 255 / .07);
+}
+.bezel::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background:
+    linear-gradient(112deg, transparent 18.5%, rgb(255 255 255 / .021) 21%, rgb(255 255 255 / .005) 25%, transparent 27%),
+    linear-gradient(155deg, rgb(255 255 255 / .05) 0%, transparent 36.5%);
+}
+
+.screen {
+  position: relative;
+  width: calc(var(--unit) * 240);
+  height: calc(var(--unit) * 376);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  /* a plain list shows 12 rows in its 356 (§2.2) */
+  --ipod-row-h: calc(var(--unit) * 356 / 12);
+  /* the names some screens use for the same colours */
+  --ipod-text: var(--ipod-ink);
+  background: var(--ipod-screen-bg);
+  color: var(--ipod-ink);
+  font-size: calc(var(--unit) * 18);
+  font-weight: 700;
+  line-height: 1.2;
+  /* vertical pans scroll the lists; a horizontal swipe reaches Root (right = MENU) */
+  touch-action: pan-y;
+}
+/* Settings > Backlight (the iOS app, Root useBacklight): the whole screen dimmed after a while
+   untouched, over everything, so the touch that wakes it lands here and nowhere else */
+.dim {
+  position: absolute;
+  inset: 0;
+  z-index: 100;
+  background: #000000;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .15s;
+}
+.dim[data-on] { opacity: .6; pointer-events: auto; transition-duration: 1s; }
+/* asleep (hold Play): the LCD off */
+.screen[data-asleep]::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  background: #000000;
+}
+
+/* the status bar, 20 tall: light over menus, dark over Now Playing and the media pages (§2.2); three
+   columns, the two sides alike so the time stays centred and a long title stops short of it */
+.status {
+  flex: none;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  height: calc(var(--unit) * 20);
+  padding: 0 calc(var(--unit) * 4);
+  background: linear-gradient(#FBFBFB, #B2B2B2);
+  border-bottom: var(--unit) solid #7A7E81;
+  color: #000000;
+  font-size: calc(var(--unit) * 12);
+  font-weight: 700;
+}
+.status[data-dark] {
+  padding-left: calc(var(--unit) * 4);
+  background: linear-gradient(#4F4F4F, #474747);
+  border-bottom-color: #2E2E2E;
+  color: #FFFFFF;
+}
+.title { animation: fade .22s ease-out; }
+/* over menus, the title 10 from the edge (the row's own padding is even, so the time is centred) and a
+   gap between it and the time */
+.status:not([data-dark]) > :first-child { padding-left: calc(var(--unit) * 6); }
+.status:not([data-dark]) .clock { padding: 0 calc(var(--unit) * 4); }
+@keyframes fade { from { opacity: 0; } }
+.modes, .icons {
+  display: flex;
+  align-items: center;
+  gap: calc(var(--unit) * 4);
+}
+.icons { justify-content: flex-end; }
+/* shuffle, repeat and Like are toggles (data-off: dimmed): each a fingertip, 28 units square (44 px
+   on a phone), reaching 9 under the bar; above the screen there */
+.modes { position: relative; z-index: 1; gap: 0; }
+.mode {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: calc(var(--unit) * 28);
+  height: calc(var(--unit) * 19);
+}
+.mode::after { content: ""; position: absolute; inset: 0 0 calc(var(--unit) * -9); }
+.mode[data-off] { opacity: .4; }
+.glyph {
+  flex: none;
+  width: calc(var(--unit) * 12);
+  height: calc(var(--unit) * 9);
+  fill: currentColor;
+}
+.playing, .paused {
+  flex: none;
+  width: calc(var(--unit) * 8);
+  height: calc(var(--unit) * 9);
+}
+.playing {
+  clip-path: polygon(0 0, 100% 50%, 0 100%);
+  background: linear-gradient(#67CAFF, #3A9BE0);
+}
+.paused { background: linear-gradient(90deg, #6D6D6D 35%, transparent 35% 65%, #6D6D6D 65%); }
+.status[data-dark] .playing { background: #FFFFFF; }
+/* where the sound goes (headphones, AirPlay, the speaker), in ▶'s place and colour */
+.output { flex: none; width: calc(var(--unit) * 12); height: calc(var(--unit) * 12); fill: #3A9BE0; color: #3A9BE0; }
+.status[data-dark] .output { fill: #FFFFFF; color: #FFFFFF; }
+/* charging: a bolt over the fill */
+.bolt { position: absolute; z-index: 1; left: 50%; top: 50%; width: calc(var(--unit) * 6); height: calc(var(--unit) * 10); transform: translate(-50%, -50%); fill: #FFFFFF; filter: drop-shadow(0 0 1px rgb(0 0 0 / .6)); }
+.status[data-dark] .paused { background: linear-gradient(90deg, #FFFFFF 35%, transparent 35% 65%, #FFFFFF 65%); }
+.battery {
+  position: relative;
+  flex: none;
+  width: calc(var(--unit) * 22);
+  height: calc(var(--unit) * 11);
+  margin-right: calc(var(--unit) * 2);
+  color: #3B3B3B;
+  border: var(--unit) solid currentColor;
+  border-radius: calc(var(--unit) * 2);
+}
+.status[data-dark] .battery { color: #FFFFFF; }
+/* the terminal nub: 24 wide in all */
+.battery::before {
+  content: "";
+  position: absolute;
+  left: 100%;
+  top: 25%;
+  bottom: 25%;
+  width: calc(var(--unit) * 2);
+  background: currentColor;
+}
+.battery::after {
+  content: "";
+  position: absolute;
+  inset: var(--unit) auto var(--unit) var(--unit);
+  width: calc((100% - var(--unit) * 2) * var(--v, 1));
+  background: #A2C871;
+}
+
+/* the stack: each screen fills it; the top one slides in (from the right pushed, the left popped) */
+.frames {
+  position: relative;
+  flex: auto;
+  min-height: 0;
+  overflow: hidden;
+}
+.frame {
+  position: absolute;
+  inset: 0;
+  animation: slide .22s cubic-bezier(.2, .8, .2, 1);
+}
+@keyframes slide {
+  from { transform: translateX(calc(var(--dir, 0) * 100%)); }
+}
+
+/* lists: Helvetica Bold 18, text at x 10, the chevron's right edge at x 233, values 9 from the right */
+.list {
+  position: relative;
+  overflow: hidden;
+}
+/* a list scrolls by touch too, with momentum; the indicator is ours (.thumb), not the browser's */
+.scroll {
+  height: 100%;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+}
+.scroll::-webkit-scrollbar { display: none; }
+.row {
+  display: flex;
+  align-items: center;
+  gap: calc(var(--unit) * 6);
+  height: var(--ipod-row-h);
+  padding: 0 calc(var(--unit) * 7) 0 calc(var(--unit) * 10);
+  white-space: nowrap;
+  cursor: default;
+}
+.label {
+  flex: auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* the selected row's label marquees (ui.tsx), so it clips instead and its text can move */
+.row[data-sel] .label { text-overflow: clip; }
+.row[data-sel] .label > span { display: inline-block; }
+.row[data-sel] {
+  background: var(--ipod-sel-bg);
+  color: var(--ipod-sel-ink);
+  box-shadow: inset 0 var(--unit) #97C4E3, inset 0 calc(var(--unit) * -1) #1855A6;
+}
+.row[data-disabled], .row[data-loading] { color: var(--ipod-dim); }
+/* a section's header in a list (Settings): the iPod OS grouped list's short grey band, its name bold white */
+.section {
+  height: calc(var(--unit) * 18);
+  line-height: calc(var(--unit) * 18);
+  padding: 0 calc(var(--unit) * 10);
+  background: linear-gradient(#A5B1BA, #8F9CA6);
+  border-top: var(--unit) solid #98A3AC;
+  color: #FFFFFF;
+  font-size: calc(var(--unit) * 13);
+  font-weight: bold;
+  text-shadow: 0 var(--unit) 0 rgb(0 0 0 / .3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.value {
+  flex: none;
+  margin-right: calc(var(--unit) * 2);
+  color: var(--ipod-value);
+  font-size: calc(var(--unit) * 14);
+}
+.row[data-sel] .value { color: var(--ipod-sel-ink); }
+.chevron {
+  flex: none;
+  width: calc(var(--unit) * 7);
+  height: calc(var(--unit) * 11);
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.4;
+}
+/* the scroll indicator when a list overflows (reconstructed, as the classic's) */
+.thumb {
+  position: absolute;
+  right: 0;
+  width: calc(var(--unit) * 4);
+  background: rgb(154 154 154 / .6);
+  pointer-events: none;
+}
+/* the library as a grid (GridScreen, Tile): 2 columns of tiles, Spotify's library look: the square
+   art, the name under it in bold 14, one line, its description in 12, dim; the selected tile ringed
+   in the selection's blue. 4 round the edge, 4 between: the art is 104 */
+.grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-content: start;
+  padding: calc(var(--unit) * 2);
+}
+.cell {
+  min-width: 0;
+  margin: calc(var(--unit) * 2);
+  padding: calc(var(--unit) * 5);
+  border-radius: calc(var(--unit) * 6);
+  cursor: default;
+}
+.cell[data-sel] {
+  outline: calc(var(--unit) * 2.5) solid #3F7FCD;
+  outline-offset: calc(var(--unit) * -2.5);
+}
+.cell[data-disabled] { opacity: .45; }
+.art {
+  display: grid;
+  place-items: center;
+  aspect-ratio: 1;
+  overflow: hidden;
+  border-radius: calc(var(--unit) * 3);
+  background: linear-gradient(#D6D6DA, #B2B2B8);
+  color: #FFFFFF;
+}
+.art img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.art svg { width: 38%; fill: currentColor; }
+.name, .sub {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.name {
+  margin-top: calc(var(--unit) * 4);
+  font-size: calc(var(--unit) * 14);
+  line-height: 1.25;
+}
+.sub {
+  font-size: calc(var(--unit) * 12);
+  font-weight: 400;
+  line-height: 1.25;
+  color: var(--ipod-dim);
+}
+/* two-line rows (MenuScreen `tall`: a collection's songs, Spotify's): 44 high, the cover 40 at the
+   left, the title bold 15 over the artist, dim */
+.list[data-tall] { --ipod-row-h: calc(var(--unit) * 44); }
+.list[data-tall] .row[role=option] {
+  display: grid;
+  /* the two lines together, centred: the outer rows take the slack */
+  grid-template: 1fr auto auto 1fr / auto minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 0 calc(var(--unit) * 8);
+}
+.pic { grid-row: 1 / -1; width: calc(var(--unit) * 40); border-radius: calc(var(--unit) * 2); }
+.list[data-tall] .label { grid-column: 2; grid-row: 2; font-size: calc(var(--unit) * 15); line-height: 1.2; }
+.list[data-tall] .row > .sub { grid-column: 2; grid-row: 3; }
+.list[data-tall] .row > .value, .list[data-tall] .row > .chevron { grid-row: 1 / -1; }
+.row[data-sel] .sub { color: inherit; opacity: .85; }
+/* a collection's header (CollectionHeader), Spotify's: the cover 120 centred, the title bold 18 and
+   the dim line 10 in, then the round buttons: Play a green disc, the selected one ringed in blue */
+.head { grid-column: 1 / -1; padding: calc(var(--unit) * 12) calc(var(--unit) * 10) calc(var(--unit) * 8); }
+.cover {
+  width: calc(var(--unit) * 120);
+  margin: 0 auto;
+  box-shadow: 0 calc(var(--unit) * 3) calc(var(--unit) * 10) rgb(0 0 0 / .3);
+}
+.headTitle {
+  margin-top: calc(var(--unit) * 10);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.acts {
+  display: flex;
+  align-items: center;
+  gap: calc(var(--unit) * 10);
+  margin-top: calc(var(--unit) * 8);
+}
+.act {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: calc(var(--unit) * 30);
+  height: calc(var(--unit) * 30);
+  border-radius: 50%;
+  cursor: default;
+}
+.act svg { width: 55%; fill: currentColor; }
+.act[data-kind=play] { width: calc(var(--unit) * 36); height: calc(var(--unit) * 36); background: #1ED760; color: #000000; }
+.act[data-kind=play] svg { width: 34%; margin-left: 8%; }
+.act[data-kind=more] { margin-left: auto; }
+.act[data-off] { opacity: .4; }
+.act[data-sel] { outline: calc(var(--unit) * 2.5) solid #3F7FCD; outline-offset: calc(var(--unit) * 1.5); }
+/* the Library's filter chips (FilterChips), Spotify's: pills in a row over the grid, scrolling
+   sideways when they overflow; the chosen filter filled dark, the others outlined */
+/* the Library's filters (FilterChips) as the nano's segmented control: adjoining glossy segments,
+   1-unit dark dividers, the outer corners rounded; the active one the selection blue, white; full
+   width inside 6-unit margins, 24 tall; the wheel's place ringed blue (white on the active one) */
+.chips {
+  position: relative;
+  grid-column: 1 / -1;
+  display: flex;
+  overflow: hidden;
+  padding: calc(var(--unit) * 7) calc(var(--unit) * 6);
+  /* its height set: a block in the grid gets none of its own once the tiles overflow */
+  height: calc(var(--unit) * 38);
+}
+.chip {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: calc(var(--unit) * 24);
+  padding: 0 calc(var(--unit) * 5);
+  overflow: hidden;
+  border: var(--unit) solid #5A5F64;
+  border-left-width: 0;
+  background: linear-gradient(#FDFDFD, #E6E6E6 50%, #D0D0D0 51%, #E4E4E4);
+  color: #000000;
+  font-size: calc(var(--unit) * 13);
+  font-weight: 700;
+  line-height: calc(var(--unit) * 22);
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: default;
+}
+.chip:first-child { border-left-width: var(--unit); border-radius: calc(var(--unit) * 5) 0 0 calc(var(--unit) * 5); }
+.chip:last-child { border-radius: 0 calc(var(--unit) * 5) calc(var(--unit) * 5) 0; }
+.chip[data-on] { background: var(--ipod-sel-bg); color: var(--ipod-sel-ink); }
+.chip[data-sel] { box-shadow: inset 0 0 0 calc(var(--unit) * 2) #3F7FCD; }
+.chip[data-on][data-sel] { box-shadow: inset 0 0 0 calc(var(--unit) * 1.5) #FFFFFF; }
+/* Home as Spotify's (ShelvesScreen): the shelves down one page, each its title (bold 14, 10 in)
+   over one strip of tiles 100 wide (3 + 2 at the ends, 4 between: the art is 90, 10 in like the
+   title), 2.3 of them across; a strip scrolls across on its own */
+.shelf { padding-top: calc(var(--unit) * 8); }
+.shelfTitle {
+  padding: 0 calc(var(--unit) * 10);
+  font-size: calc(var(--unit) * 14);
+  line-height: 1.25;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.strip {
+  position: relative;
+  display: flex;
+  overflow: auto hidden;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+  padding: 0 calc(var(--unit) * 3);
+}
+.strip::-webkit-scrollbar { display: none; }
+.strip > .cell { flex: none; width: calc(var(--unit) * 100); }
+/* the main menu: 9 rows (276) over the 80-tall preview panel */
+.split {
+  flex: none;
+  height: calc(var(--unit) * 276);
+  --ipod-row-h: calc(var(--unit) * 276 / 9);
+}
+.preview {
+  flex: none;
+  display: flex;
+  height: calc(var(--unit) * 80);
+  overflow: hidden;
+  background: #000000;
+}
+/* the Now Playing bar (Root, ui.tsx NowPlayingBar) in the nano's own language: flush across the foot
+   of the screen, a dark line over it, the light status bar's gloss, the cover in a thin dark frame,
+   the title black bold 14 over dim 11, a grey play / pause, and the nano's blue progress bar along
+   its foot. 44 tall, so a plain list above it keeps whole rows: 11 in the 312 left. It keeps the
+   light look over dark screens too, as the nano mixes its light menus and dark pages */
+.screen[data-bar] { --ipod-row-h: calc(var(--unit) * 312 / 11); }
+.npbar {
+  position: relative;
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: calc(var(--unit) * 7);
+  height: calc(var(--unit) * 44);
+  padding: 0 calc(var(--unit) * 5) calc(var(--unit) * 6) calc(var(--unit) * 6);
+  overflow: hidden;
+  background: linear-gradient(#FBFBFB, #B2B2B2);
+  border-top: var(--unit) solid #7A7E81;
+  color: #000000;
+  touch-action: none;
+  cursor: pointer;
+  /* a long press is the wheel's own, never a text selection (the loupe came up over MENU on the phone) */
+  -webkit-user-select: none; user-select: none; -webkit-touch-callout: none;
+}
+.nparts { flex: none; width: calc(var(--unit) * 28); border: var(--unit) solid #4A4A4A; border-radius: 0; }
+.nptext { flex: auto; min-width: 0; }
+/* A marquee's own margins (ui.tsx Marquee): the box reaches 6 units past its text on each side, into the
+   space around it, and fades there, so a line sliding by fades out instead of being cut at the text's
+   edge, and the spacing is the text's own (the owner, 2026-10-04: "add faded edges… move where spacing is
+   so the text controls the space"). The text at rest sits wholly inside, untouched. */
+.marquee {
+  overflow: hidden; white-space: nowrap;
+  margin-left: calc(var(--unit) * -6); margin-right: calc(var(--unit) * -6);
+  padding-left: calc(var(--unit) * 6); padding-right: calc(var(--unit) * 6);
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 calc(var(--unit) * 6), #000 calc(100% - var(--unit) * 6), transparent);
+  mask-image: linear-gradient(90deg, transparent, #000 calc(var(--unit) * 6), #000 calc(100% - var(--unit) * 6), transparent);
+}
+.nptitle { font-size: calc(var(--unit) * 14); line-height: 1.25; }
+.npartist, .npline { font-size: calc(var(--unit) * 11); font-weight: 400; color: var(--ipod-dim); }
+.npline { line-height: 1.3; }
+.npbtn { flex: none; display: grid; place-items: center; width: calc(var(--unit) * 26); height: calc(var(--unit) * 26); color: #6D6D6D; }
+.npbtn svg { width: calc(var(--unit) * 12); fill: currentColor; }
+/* the progress: the nano's blue bar on its light track, 3 tall along the foot */
+.npbar::after {
+  content: "";
+  position: absolute;
+  left: calc(var(--unit) * 6);
+  right: calc(var(--unit) * 6);
+  bottom: calc(var(--unit) * 3);
+  height: calc(var(--unit) * 3);
+  border-radius: var(--unit);
+  box-shadow: inset 0 0 0 calc(var(--unit) * .5) rgb(0 0 0 / .18);
+  background: var(--ipod-bar-fill) 0 0 / calc(var(--v, 0) * 100%) 100% no-repeat, var(--ipod-bar-bg);
+}
+.bar {
+  position: relative;
+  height: calc(var(--unit) * 9);
+  border-radius: var(--unit);
+  background: var(--ipod-bar-bg);
+}
+.bar::after {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: calc(var(--v, 0) * 100%);
+  border-radius: inherit;
+  background: var(--ipod-bar-fill);
+}
+/* seekable (onSeek): a finger-sized target round the thin bar */
+.bar[data-seek] { touch-action: none; cursor: pointer; }
+.bar[data-seek]::before {
+  content: "";
+  position: absolute;
+  inset: calc(var(--unit) * -12) 0;
+}
+
+/* hold-centre popup: 30-tall rows from the top over the screen dimmed to half (§2.2) */
+.popup {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  background: rgb(0 0 0 / .5);
+}
+.sheet {
+  display: flex;
+  flex-direction: column;
+  max-height: 100%;
+  overflow: hidden;
+  --ipod-row-h: calc(var(--unit) * 30);
+}
+.sheet .row {
+  justify-content: center;
+  background: rgb(80 80 80 / .94);
+  color: #FFFFFF;
+  font-size: calc(var(--unit) * 16);
+  border-top: var(--unit) solid #6A6A6A;
+  border-bottom: var(--unit) solid #3A3A3A;
+}
+.sheet .label { flex: 0 1 auto; }
+.sheet .row[data-sel] { background: linear-gradient(#4A9FE2, #3367CA); box-shadow: none; }
+/* a row that cannot act now (the Queue's Move Up on its first song, Mark as Unplayed while the dot shows) */
+.sheet .row[data-disabled] { color: rgb(255 255 255 / .4); }
+
+/* the 12-spoke activity wheel, 16 tall */
+.spinner {
+  width: calc(var(--unit) * 16);
+  height: calc(var(--unit) * 16);
+  fill: currentColor;
+  animation: spin 1s steps(12) infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* the click wheel (§1.5); its zones are found by angle (ClickWheel.tsx zoneAt), the glyphs only show them */
+.wheel {
+  position: relative;
+  flex: none;
+  width: var(--wheel-d);
+  aspect-ratio: 1;
+  margin-top: var(--gap);
+  border-radius: 50%;
+  background: var(--ipod-wheel-bg);
+  color: var(--ipod-wheel-ink);
+  box-shadow: inset 0 1px 1px #FFFFFF, inset 0 -1px 2px rgb(0 0 0 / .12), 0 0 0 1px rgb(0 0 0 / .08);
+  touch-action: none;
+  cursor: pointer;
+}
+.body[data-wheel="black"] .wheel { box-shadow: inset 0 1px 1px rgb(255 255 255 / .12), 0 0 0 1px rgb(0 0 0 / .3); }
+/* glyph centres 0.39 D from the wheel's centre: 11 % / 89 % of its box */
+.menu, .prev, .next, .play {
+  position: absolute;
+  translate: -50% -50%;
+  fill: currentColor;
+}
+.menu {
+  left: 50%;
+  top: 11%;
+  font-size: calc(var(--wheel-d) * .072);
+  font-weight: 700;
+  letter-spacing: .02em;
+  line-height: 1;
+}
+.prev, .next { top: 50%; width: 10.7%; height: 4.7%; }
+.prev { left: 11%; }
+.next { left: 89%; }
+.play { left: 50%; top: 89%; width: 10%; height: 4.7%; }
+/* the centre button, 0.49 D: the body's own aluminium, lit from the upper left, sitting in the ring */
+.hub {
+  position: absolute;
+  inset: 25.5%;
+  border-radius: 50%;
+  background: radial-gradient(120% 95% at calc(32% - var(--tilt, 0) * 14%) calc(22% + var(--pitch, 0) * 14%), var(--hi), var(--base) 45%, var(--mid) 70%, var(--shade) 100%);
+  box-shadow: inset 0 1px 2px rgb(0 0 0 / .35), 0 1px 0 rgb(255 255 255 / .5);
+}

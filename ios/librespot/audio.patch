@@ -1,0 +1,28 @@
+# librespot-audio 0.8.0 as the app builds it (build.sh applies this to the crate from crates.io): StreamLoaderController::ahead,
+# the bytes downloaded past the read position, for the buffer line the player logs (playback.patch). diff -ruN against
+# the crate, paths a/ b/.
+--- a/src/fetch/mod.rs
++++ b/src/fetch/mod.rs
+@@ -190,6 +190,22 @@
+         }
+     }
+ 
++    /// wmp: the bytes downloaded from the read position on, without a gap (all of it, read from a file).
++    pub fn ahead(&self) -> usize {
++        match self.stream_shared {
++            Some(ref shared) => {
++                let read_position = shared.read_position();
++                shared
++                    .download_status
++                    .lock()
++                    .expect(DOWNLOAD_STATUS_POISON_MSG)
++                    .downloaded
++                    .contained_length_from_value(read_position)
++            }
++            None => self.len(),
++        }
++    }
++
+     pub fn ping_time(&self) -> Option<Duration> {
+         self.stream_shared.as_ref().map(|shared| shared.ping_time())
+     }

@@ -1,0 +1,100 @@
+// The iPod skin's own options (screens/contract.ts IpodSettings), apart from the app's settings and
+// persisted in localStorage under 'ipod.settings'. The body colours are the nano 5G's nine, as HSL
+// (docs/ipod-skin.md §1.2: sampled from Apple's render, saturated to match photos), then the owner's
+// Mocha Tan and Espresso Brown.
+import type { CSSProperties } from 'react';
+import { useStore } from 'zustand';
+import { persist } from 'zustand/middleware';
+import { createStore } from 'zustand/vanilla';
+import type { IpodSettings } from './screens/contract';
+export type { IpodSettings } from './screens/contract';
+
+type Preset = Exclude<IpodSettings['color'], 'custom'>;
+/** hue, saturation %, lightness % of each body colour */
+export const COLORS: Record<Preset, readonly [number, number, number]> = {
+  silver: [0, 0, 66], black: [0, 0, 19], purple: [268, 42, 44], blue: [196, 89, 44], green: [140, 70, 34],
+  yellow: [52, 89, 49], orange: [30, 85, 50], red: [357, 62, 47], pink: [331, 70, 62],
+  // the owner's two (2026-10-02): a greyed tan and a deep brown, set darker and greyer than they read,
+  // since the cylinder's lights (below) lift a muted colour more than a vivid one (his: "a little too bright")
+  // Mocha again (the owner: "not mocha enough and too pale", "too orangish"): the hue toward brown, darker, a touch richer
+  mocha: [24, 32, 40], espresso: [22, 36, 17],
+  // the owner's Custom pick (2026-10-02, "add this red": hue 0, saturation 100, lightness 29), as its base (the three over LOOK)
+  crimson: [0, 87, 25],
+  // gold (the owner, 2026-10-03): the owner's mustard sweater, sampled at 40° 65% 43% in its mid tones and about 41° 69% 46% where lit (after two guesses at a brighter gold, #d4af37's neighbourhood), so its
+  // base is that over LOOK, the cylinder's lights lifting it back
+  gold: [41, 60, 40],
+  // navy (the owner, 2026-10-05): his washed-navy tee, #2C3A5B (222° 34% 26%) in an evenly lit listing photo (a
+  // first photo under a train's warm light had read grey); as gold, its base is that over LOOK
+  navy: [222, 31, 24],
+  // forest (the owner, 2026-10-07, "a forest green but muted like the navy (so not aggressively)"): navy's
+  // saturation, a touch darker for green's greater brightness at the same lightness; the hue forest green's
+  // own (#228B22's 120°, a touch warmer: at 145° he found it "a little blue")
+  forest: [118, 30, 22],
+};
+/** Custom's lightness range: the body's lights top out at 72 % (ipod.module.css --hi), so past 75 the
+ *  cylinder goes flat (its centre as bright as its bands); under 15 its edge and shade go black */
+export const LIGHT = [15, 75] as const;
+/** Settings > Backlight's choices, seconds untouched before the screen dims (0: Always On) */
+export const BACKLIGHT = [10, 30, 60, 120, 300, 0] as const;
+export const DEFAULTS: IpodSettings = { color: 'green', hue: 0, sat: 85, light: 50, clicker: true, wheel: 'white', metal: 'classic', backlight: 60 };
+
+const clamp = (v: unknown, lo: number, hi: number, d: number) => (typeof v === 'number' && v >= lo && v <= hi ? v : d);
+/** Whatever localStorage held (an older or hand-edited blob) as valid settings. */
+function normalize(p: Partial<IpodSettings>): IpodSettings {
+  return {
+    color: p.color === 'custom' || (p.color && p.color in COLORS) ? p.color : DEFAULTS.color,
+    hue: clamp(p.hue, 0, 360, DEFAULTS.hue),
+    sat: clamp(p.sat, 0, 100, DEFAULTS.sat),
+    light: clamp(p.light, LIGHT[0], LIGHT[1], DEFAULTS.light),
+    clicker: typeof p.clicker === 'boolean' ? p.clicker : DEFAULTS.clicker,
+    wheel: p.wheel === 'black' ? 'black' : 'white',
+    metal: p.metal === 'rendered' ? 'rendered' : 'classic',
+    backlight: (BACKLIGHT as readonly unknown[]).includes(p.backlight) ? p.backlight! : DEFAULTS.backlight,
+  };
+}
+
+const store = createStore<IpodSettings>()(persist(() => DEFAULTS, {
+  name: 'ipod.settings',
+  // version 0 had no lightness (Custom was 50) and its saturation 0 meant the spec's 85
+  version: 1,
+  migrate: (old) => ({ ...(old as Partial<IpodSettings>), sat: (old as Partial<IpodSettings>).sat || DEFAULTS.sat }),
+  merge: (saved, cur) => normalize({ ...cur, ...(saved as Partial<IpodSettings>) }),
+}));
+/** a patch that changes nothing writes nothing (a drag reports every move) */
+const set = (p: Partial<IpodSettings>) => {
+  const cur = store.getState(), next = normalize({ ...cur, ...p });
+  if ((Object.keys(next) as (keyof IpodSettings)[]).some((k) => next[k] !== cur[k])) store.setState(next);
+};
+
+export function useIpodSettings(): [IpodSettings, (patch: Partial<IpodSettings>) => void] {
+  return [useStore(store), set];
+}
+/** For what runs outside render (the wheel's clicker). */
+export const ipodSettings = () => store.getState();
+
+/** A body colour (the one chosen, by default) as [hue, saturation %, lightness %]: a preset's, or Custom's three. */
+export const bodyHsl = (s: IpodSettings, color = s.color): readonly [number, number, number] =>
+  color === 'custom' ? [s.hue, s.sat, s.light] : COLORS[color];
+
+/** The body's base colour, what both looks light (Custom's taken down by LOOK, below). */
+function bodyBase(s: IpodSettings): readonly [number, number, number] {
+  const [h, sat, l] = bodyHsl(s), k = s.color === 'custom' ? LOOK : 1;
+  return [h, sat / k, l / k];
+}
+/** The body colour as it reads, its base lifted by LOOK (Custom's: the colour picked): the rendered
+ *  metal's dye (metal/), whose light lifts the lightness as the cylinder's does, but not the saturation. */
+export function bodyLook(s: IpodSettings): readonly [number, number, number] {
+  const [h, sat, l] = bodyBase(s);
+  return [h, Math.min(100, sat * LOOK), Math.min(100, l * LOOK)];
+}
+/** The body colour as the one hue knob the module's .body reads (§1.3: --h --s --l; the highlight,
+ *  shadow and centre button derive from it). */
+export function bodyVars(s: IpodSettings): CSSProperties {
+  const [h, sat, l] = bodyBase(s);
+  return { '--h': h, '--s': sat + '%', '--l': l + '%' } as CSSProperties;
+}
+/** The cylinder's lights (ipod.module.css --hi and its neighbours: up to 1.36 times the base's lightness
+ *  and 1.3 its saturation, over most of what shows beside the screen) make the body read about this much
+ *  brighter and richer than its base. A preset's numbers are the base, tuned by eye; Custom's are what the
+ *  picker shows, so its base is taken down to look like the colour picked. */
+const LOOK = 1.15;

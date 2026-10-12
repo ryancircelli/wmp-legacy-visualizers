@@ -1,0 +1,10 @@
+/* Brick (docs/ipod-skin.md §4.2): the canvas fills the area under the status row and draws it all
+   (logic.ts lays it out in units). A drag on it moves the paddle, so the page neither scrolls nor zooms. */
+.root {
+  height: 100%;
+  background: #000;
+  /* as Now Playing's: the area can end a hair short of the white screen behind it */
+  box-shadow: 1px 0 0 #000, 0 1px 0 #000, 1px 1px 0 #000;
+  touch-action: none;
+}
+.root canvas { display: block; width: 100%; height: 100%; }

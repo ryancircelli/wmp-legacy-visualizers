@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>WMP Legacy Visualizers</title>
+    <!-- Transparent, not a colour: the title bar's top corners are rounded but the native host
+         window is a rectangle, so the pixels outside the radius must show nothing at all. The host
+         applies a matching rounded window region (8px, top corners only) — see NOTES-ui.md. The
+         skin's own styles never touch html/body (they also run inside a shadow root). -->
+    <style>html, body { margin: 0; height: 100%; overflow: hidden; background: transparent; }</style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

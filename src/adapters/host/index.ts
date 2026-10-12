@@ -1,0 +1,177 @@
+// What both adapters share with the Deno host: mode detection, the window bindings, the audio
+// socket (PCM binary frames + `media` / `lyrics` JSON text frames, CONTRACT v4/v5) and the
+// page -> host messages (mediaCmd, lyricsPref, wake).
+import './globals';
+import type { HostCheck } from './globals';
+import type { AppStore, Mode, UpdateCheck, WinAction } from '../../model';
+
+/** A newer exe is out (the host's page-update check found another host build): recorded, and
+ *  asked about in a dialog at most once a day. Page fixes arrive by themselves; this is the rest. */
+export function announceHostUpdate(store: AppStore): void {
+  const on = window.alchemyHostUpdate === true;
+  store.getState().actions.setAuth({ hostUpdate: on });
+  if (!on) return;
+  const today = new Date().toISOString().slice(0, 10), KEY = 'wmp.updateAsked';
+  try {
+    if (localStorage.getItem(KEY) === today) return;
+    localStorage.setItem(KEY, today);
+  } catch { /* no storage: ask every launch */ }
+  store.getState().actions.setUi({ dialog: 'update' });
+}
+
+/** The website's build when this page loaded (version.json), for the website's check. */
+let loaded: Promise<string | null> | null = null;
+const siteVersion = () => fetch('version.json', { cache: 'no-store' })
+  .then((r) => (r.ok ? r.json() as Promise<{ version?: string }> : null)).then((j) => j?.version ?? null, () => null);
+/** Served by a web server (not alchemy.html opened from disk, which has no version.json to ask). */
+const served = () => location.protocol === 'https:' || location.protocol === 'http:';
+/** Called once as the website starts: remembers which build it is. */
+export function rememberSiteVersion(): void { if (served()) loaded ??= siteVersion(); }
+
+export async function checkForUpdates(): Promise<UpdateCheck> {
+  try {
+    if (detectMode() === 'web') {
+      if (!served()) return { state: 'error', message: 'This copy was opened from a file.' };
+      const [was, now] = await Promise.all([loaded ?? siteVersion(), siteVersion()]);
+      if (!now) return { state: 'error', message: 'The website could not be reached.' };
+      return was && now !== was ? { state: 'ready' } : { state: 'latest' };
+    }
+    // the apps: the same signed check a launch makes — the Tauri host's command, else the Deno
+    // host's worker (its server.ts /update)
+    const r = window.alchemyCheckUpdate ? await window.alchemyCheckUpdate() : await hostWorkerCheck();
+    if (r.hostUpdate) return { state: 'app' };
+    if (r.ready) return { state: 'ready' };
+    if (r.error) return { state: 'error', message: r.error };
+    return { state: 'latest' };
+  } catch {
+    return { state: 'error', message: 'The check could not be made.' };
+  }
+}
+
+async function hostWorkerCheck(): Promise<HostCheck> {
+  const u = new URL(window.alchemyScreensaver?.url ?? '');
+  u.protocol = 'http:';
+  u.pathname = '/update';
+  return await (await fetch(u, { cache: 'no-store' })).json() as HostCheck;
+}
+
+/** One boot stage into the host's startup log (a no-op in a plain browser). */
+export function mark(n: string): void {
+  window.alchemyMarks?.push(n + '=' + Math.round(performance.now()));
+}
+
+/** Screensaver: the host's /s window, or ?mode=screensaver|ss=1 to test the layout in a browser. */
+export function detectMode(): Mode {
+  if (window.alchemyElectron?.mode === 'screensaver' || /(^|[?&])(mode=screensaver|ss=1)/.test(location.search)) {
+    return 'screensaver';
+  }
+  return window.alchemyElectron || window.alchemyScreensaver ? 'app' : 'web';
+}
+
+export const hostWindow = () => typeof window.alchemyWinDrag === 'function';
+export const nativeTitle = () => window.alchemyNativeTitle === true;
+
+export function win(action: WinAction): void {
+  const f = { drag: window.alchemyWinDrag, min: window.alchemyWinMin, max: window.alchemyWinMax,
+              close: window.alchemyWinClose, size: window.alchemyWinSize }[action];
+  if (typeof f === 'function') f();
+  else if (action === 'close') window.close();
+}
+
+// ----------------------------------------------------------------- the host socket
+export interface MediaFrame {
+  type: 'media';
+  status: 'playing' | 'paused' | 'stopped' | 'none';
+  title?: string; artist?: string; album?: string; app?: string;
+  /** seconds */
+  position?: number; duration?: number;
+  art?: string | null;
+  canSeek?: boolean; canNext?: boolean; canPrev?: boolean;
+}
+export interface LyricsFrame {
+  type: 'lyrics';
+  status: 'synced' | 'plain' | 'none' | 'error';
+  source?: string;
+  /** seconds */
+  lines?: { t: number; text: string; words?: { t: number; text: string }[] }[] | null;
+  plain?: string | null;
+  track?: { title: string; artist: string; album?: string; duration?: number };
+}
+
+export interface SocketHandlers {
+  /** the first text frame, {"rate":n}: PCM follows */
+  onRate(rate: number): void;
+  /** interleaved stereo float32 */
+  onPcm(pcm: Float32Array): void;
+  onMedia(m: MediaFrame): void;
+  onLyrics(l: LyricsFrame): void;
+  /** the socket failed or closed; `attached` = a rate frame had arrived */
+  onLost(why: string, attached: boolean): void;
+  onOpen(): void;
+}
+
+export interface HostSocket {
+  send(o: object): void;
+  close(): void;
+}
+
+function parse(t: string): { type?: string; rate?: number } | null {
+  try { return JSON.parse(t) as { type?: string; rate?: number } | null; } catch { return null; }
+}
+
+/** The one socket to the host; null when it cannot even be constructed. */
+export function openSocket(url: string, h: SocketHandlers): HostSocket | null {
+  let ws: WebSocket;
+  try { ws = new WebSocket(url); } catch { return null; }
+  let attached = false, dead = false;
+  ws.binaryType = 'arraybuffer';
+  ws.onopen = () => h.onOpen();
+  ws.onmessage = (e: MessageEvent) => {
+    if (typeof e.data === 'string') {
+      const msg = parse(e.data);
+      if (msg?.type === 'media') return h.onMedia(msg as MediaFrame);
+      if (msg?.type === 'lyrics') return h.onLyrics(msg as LyricsFrame);
+      mark('audioSocket');                        // {"rate":48000}, always first
+      attached = true;
+      return h.onRate(msg ? (msg.rate ?? 0) | 0 : 0);
+    }
+    if (attached) h.onPcm(new Float32Array(e.data as ArrayBuffer));
+  };
+  const lost = (why: string) => { if (!dead) { dead = true; h.onLost(why, attached); } };
+  ws.onerror = () => lost('socket error');
+  ws.onclose = () => lost('socket closed');
+  return {
+    send(o) { if (ws.readyState === 1) ws.send(JSON.stringify(o)); },
+    close() { try { ws.close(); } catch { /* already closed */ } },
+  };
+}
+
+/** The socket URL when this page should use the host's system audio, else null. */
+export function socketUrl(): string | null {
+  const host = window.alchemyScreensaver;
+  if (host?.audio) return host.url || 'ws://' + location.host + '/audio';
+  return /(^|[?&])audio=ws/.test(location.search) ? 'ws://' + location.host + '/audio' : null;
+}
+
+/** Full screen keeps the display awake (not in the screensaver: Windows owns power there): the
+ *  host's SetThreadExecutionState via {"type":"wake"} and the Screen Wake Lock. Also moves the
+ *  desktop host's window in and out of full screen. */
+export function followFullscreen(store: AppStore, send: (o: object) => void): () => void {
+  let lock: WakeLockSentinel | null = null;
+  const wake = (on: boolean) => {
+    if (store.getState().auth.mode === 'screensaver') return;
+    send({ type: 'wake', on });
+    const wl = typeof navigator !== 'undefined' ? navigator.wakeLock : undefined;
+    if (!wl) return;
+    if (on && !lock && document.visibilityState === 'visible') {
+      wl.request('screen').then((l) => { lock = l; l.onrelease = () => { lock = null; }; }, () => {});
+    } else if (!on && lock) { void lock.release(); lock = null; }
+  };
+  const full = (s: ReturnType<AppStore['getState']>) => s.ui.fullscreen || s.ui.bare;
+  const offWake = store.subscribe(full, wake);
+  const offWin = store.subscribe((s) => s.ui.fullscreen, (on) => window.alchemyWinFull?.(on));
+  // The engine drops the lock when the page is hidden; take it back when a full-screen view returns.
+  const vis = () => { if (full(store.getState())) wake(true); };
+  document.addEventListener('visibilitychange', vis);
+  return () => { offWake(); offWin(); document.removeEventListener('visibilitychange', vis); };
+}

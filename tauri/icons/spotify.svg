@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+  <!-- WMP Spotify emblem: the WMP 9 glossy orb in green with its white play triangle.
+       Original artwork, not Spotify's mark. -->
+  <defs>
+    <radialGradient id="wsp-orb" cx="38%" cy="34%" r="72%">
+      <stop offset="0" stop-color="#1ED760"/><stop offset="0.5" stop-color="#1DB954"/>
+      <stop offset="1" stop-color="#0E6B35"/>
+    </radialGradient>
+    <radialGradient id="wsp-spec" cx="50%" cy="50%" r="50%">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.85"/><stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <circle cx="128" cy="128" r="120" fill="url(#wsp-orb)"/>
+  <!-- the specular highlight at 10 o'clock -->
+  <ellipse cx="82" cy="74" rx="60" ry="36" transform="rotate(-38 82 74)" fill="url(#wsp-spec)"/>
+  <circle cx="128" cy="128" r="117" fill="none" stroke="#0A4F27" stroke-width="6"/>
+  <!-- the play triangle, its centroid a little right of centre (optical centring) -->
+  <path d="M102 76 L102 180 L192 128 Z" fill="#FFFFFF" stroke="#FFFFFF" stroke-width="8" stroke-linejoin="round"/>
+</svg>

@@ -1,0 +1,67 @@
+# The xcodegen spec for the iOS app; the .xcodeproj is not committed. CI runs
+# `xcodegen generate --spec ios/project.yml` and builds the ios/WmpSpotify.xcodeproj it writes.
+name: WmpSpotify
+targets:
+  WmpSpotify:
+    type: application
+    platform: iOS
+    deploymentTarget: "17.0"
+    # xcodegen writes a shared scheme only for targets that ask for one; CI builds -scheme WmpSpotify.
+    scheme: {}
+    # Listed file by file so the generated Info.plist next to them is never a resource.
+    sources:
+      - path: WmpSpotify/App.swift
+      - path: WmpSpotify/observer.js
+        buildPhase: resources
+      - path: WmpSpotify/Assets.xcassets
+    info:
+      path: WmpSpotify/Info.plist
+      properties:
+        CFBundleDisplayName: WMP Spotify
+        # xcodegen's defaults are the literals "1.0" and "1": these let CI's build number through.
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        LSRequiresIPhoneOS: true
+        UILaunchScreen: {}
+        UIBackgroundModes: [audio]
+        ITSAppUsesNonExemptEncryption: false
+        # librespot's discovery (ios/README.md, "Librespot"): the app advertised to the Spotify app
+        # through Bonjour, which iOS allows only for the types listed here, after asking the user once.
+        NSBonjourServices: [_spotify-connect._tcp]
+        NSLocalNetworkUsageDescription: WMP Spotify shows itself to the Spotify app on this network as a speaker to play to.
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        UISupportedInterfaceOrientations~ipad:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationPortraitUpsideDown
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+    # The App Group holds host.log. It was made for the broadcast extension (gone 2026-10-02, ios/README.md
+    # "History") and stays: host.log lives in its container, so dropping the group would lose the log at
+    # the update, and the App ID's provisioning already carries it. xcodegen writes the file (not
+    # committed) and sets CODE_SIGN_ENTITLEMENTS.
+    entitlements:
+      path: WmpSpotify/WmpSpotify.entitlements
+      properties:
+        com.apple.security.application-groups: [group.com.rcircelli.wmpspotify]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.rcircelli.wmpspotify
+        DEVELOPMENT_TEAM: QKSF9UQ8WT
+        CODE_SIGN_STYLE: Automatic
+        MARKETING_VERSION: "0.1"
+        CURRENT_PROJECT_VERSION: 1
+        TARGETED_DEVICE_FAMILY: "1,2"
+        SWIFT_VERSION: "5.9"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        # every Icon-<name> set ios/icons.py makes is an alternate icon (UIApplication.setAlternateIconName)
+        ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS: "YES"
+        GENERATE_INFOPLIST_FILE: "NO"
+        # librespot (ios/librespot), built by its build.sh before xcodegen runs (.github/workflows/ios.yml),
+        # with what rustc says the library needs besides (build.sh prints native-static-libs; libSystem is
+        # linked anyway).
+        SWIFT_OBJC_BRIDGING_HEADER: WmpSpotify/Bridging.h
+        LIBRARY_SEARCH_PATHS: $(PROJECT_DIR)/librespot/out
+        OTHER_LDFLAGS: -lwmp_librespot -framework CoreFoundation -liconv

@@ -1,0 +1,108 @@
+# Builds the iPhone app (ios/, ios/README.md) and uploads it to TestFlight on every push to master that touches it;
+# ios/librespot (the Connect speaker, ios/README.md "Librespot") is built first.
+# The Xcode project is generated from ios/project.yml by xcodegen; none is checked in.
+# Signing is Xcode's cloud-managed signing: no certificate or profile is stored anywhere. xcodebuild signs in to
+# App Store Connect with the API key (-allowProvisioningUpdates) and creates or fetches what it needs, so:
+#   - the key must have the Admin role, which cloud signing needs to create the distribution certificate;
+#   - the App ID com.rcircelli.wmpspotify is registered by hand (the archive step does not do it, measured
+#     2026-09-30; com.rcircelli.wmpspotify.broadcast, the retired broadcast extension's, is no longer used),
+#     and the upload fails until the App Store Connect app record for that bundle id exists (made by hand, once).
+# Secrets: ASC_KEY_ID, ASC_ISSUER_ID, ASC_KEY_P8 (the whole AuthKey_<id>.p8 file), from App Store Connect >
+# Users and Access > Integrations > App Store Connect API; DEV_CERT_P12 (base64) and DEV_CERT_PASSWORD, one
+# Apple Development certificate with its key: cloud signing manages distribution certificates only, and
+# without a development identity in the keychain every fresh runner minted a new one for the archive
+# until the account's cap (ten in a day, 2026-09-30). The team id is not secret: it is in project.yml.
+name: ios
+on:
+  push:
+    branches: [master]
+    paths: ['ios/**', '!ios/WmpSpotify/observer.js', '!ios/README.md', '.github/workflows/ios.yml'] # the observer reaches the phone from the site (deploy.yml)
+  workflow_dispatch:
+concurrency: { group: 'ios-${{ github.ref }}', cancel-in-progress: true }
+jobs:
+  testflight:
+    runs-on: macos-26
+    permissions: { contents: read }
+    steps:
+      - uses: actions/checkout@v4
+      # The librespot branch's Rust receiver (ios/librespot), linked into the app: skipped where it is absent.
+      # Cargo's downloads and build are cached by Cargo.lock, saved as soon as librespot builds.
+      - uses: actions/cache/restore@v4
+        id: cargo-cache
+        if: hashFiles('ios/librespot/build.sh') != ''
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ios/librespot/target
+          key: librespot-${{ hashFiles('ios/librespot/Cargo.lock') }}
+          restore-keys: librespot-
+      - name: Build librespot
+        if: hashFiles('ios/librespot/build.sh') != ''
+        run: |
+          rustup target add aarch64-apple-ios
+          ios/librespot/build.sh
+      - uses: actions/cache/save@v4
+        if: hashFiles('ios/librespot/build.sh') != '' && steps.cargo-cache.outputs.cache-hit != 'true'
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ios/librespot/target
+          key: librespot-${{ hashFiles('ios/librespot/Cargo.lock') }}
+      - run: brew install xcodegen
+      # the alternate icons, one per body colour, drawn from the one green icon (ios/icons.py)
+      - run: python3 -m pip install --user --break-system-packages pillow && python3 ios/icons.py
+      - run: xcodegen generate --spec ios/project.yml
+      # The key stays out of every command line (printf is a shell builtin). SIGN holds the four flags both
+      # xcodebuild steps need, written once; it is expanded unquoted below on purpose, as four words.
+      - name: Install the API key
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+        run: |
+          key="$HOME/private_keys/AuthKey_$ASC_KEY_ID.p8"
+          mkdir -p "$HOME/private_keys"
+          printf '%s' "$ASC_KEY_P8" > "$key"
+          chmod 600 "$key"
+          echo "SIGN=-allowProvisioningUpdates -authenticationKeyPath $key -authenticationKeyID $ASC_KEY_ID -authenticationKeyIssuerID $ASC_ISSUER_ID" >> "$GITHUB_ENV"
+      # The development identity the archive signs with (the export re-signs for distribution with the
+      # cloud-managed certificate), in a keychain of its own that the runner takes with it.
+      - name: Install the development certificate
+        env:
+          DEV_CERT_P12: ${{ secrets.DEV_CERT_P12 }}
+          DEV_CERT_PASSWORD: ${{ secrets.DEV_CERT_PASSWORD }}
+        run: |
+          kc="$RUNNER_TEMP/ci.keychain-db"
+          security create-keychain -p ci "$kc"
+          security set-keychain-settings -lut 21600 "$kc"
+          security unlock-keychain -p ci "$kc"
+          printf '%s' "$DEV_CERT_P12" | base64 -d > "$RUNNER_TEMP/dev.p12"
+          security import "$RUNNER_TEMP/dev.p12" -P "$DEV_CERT_PASSWORD" -A -t cert -f pkcs12 -k "$kc"
+          security set-key-partition-list -S apple-tool:,apple: -s -k ci "$kc" > /dev/null
+          security list-keychain -d user -s "$kc"
+          security find-identity -v -p codesigning "$kc"
+      # TestFlight takes a build number only once per version: the run number rises with every run.
+      - name: Archive
+        run: >-
+          xcodebuild archive -project ios/WmpSpotify.xcodeproj -scheme WmpSpotify -configuration Release
+          -destination 'generic/platform=iOS' -archivePath build/WmpSpotify.xcarchive
+          CURRENT_PROJECT_VERSION=${{ github.run_number }} $SIGN -quiet
+      # What the app weighs, by part (the owner, 2026-10-03: "break down why the app is 23mb"): the bundle's
+      # files largest first, the executable's segments, and how much of the catalog is icons.
+      - name: Size report
+        run: |
+          app=$(ls -d build/WmpSpotify.xcarchive/Products/Applications/*.app)
+          echo "== the bundle"; du -sk "$app" | awk '{printf "%.1f MB total\n", $1/1024}'
+          find "$app" -type f -exec ls -l {} + | awk '{printf "%8.2f MB  %s\n", $5/1048576, $9}' | sort -rn | head -15
+          echo "== the executable"; size -m "$app/WmpSpotify" | grep -E "^Segment|total" || true
+          echo "== the asset catalog"; xcrun assetutil --info "$app/Assets.car" | grep -c '"Name"' || true
+          xcrun assetutil --info "$app/Assets.car" | python3 -c "import json,sys; d=json.load(sys.stdin); t={};
+          [t.__setitem__(x.get('Name','?').split('-')[0], t.get(x.get('Name','?').split('-')[0],0)+x.get('SizeOnDisk',0)) for x in d if isinstance(x,dict)];
+          [print('%8.2f MB  %s' % (v/1048576,k)) for k,v in sorted(t.items(), key=lambda kv:-kv[1])[:6]]" || true
+      # ExportOptions.plist has destination upload: exporting is the upload to App Store Connect.
+      - name: Upload to TestFlight
+        run: >-
+          xcodebuild -exportArchive -archivePath build/WmpSpotify.xcarchive
+          -exportOptionsPlist ios/ExportOptions.plist -exportPath build/out $SIGN

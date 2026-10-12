@@ -1,0 +1,328 @@
+//! What the desktop apps give the page (CONTRACT.md; the Deno host's main.ts before): the window globals
+//! (`host.js`), the page's own title bar driving this window, full screen over every monitor, the
+//! covered-window pause, page updates on demand, and the page's share of the log.
+
+use crate::{mark, mode::Mode, update::Updates};
+use std::sync::atomic::{AtomicBool, Ordering};
+use tauri::{
+    AppHandle, Manager, PhysicalPosition, PhysicalSize, Runtime, WebviewWindow, WindowEvent,
+};
+
+/// The init script every document gets before its own. `native`: the window opens with the host's
+/// title bar, not without it for a page that draws its own (`own_chrome`).
+pub fn script(mode: Mode, host_update: bool, native: bool) -> String {
+    let chrome = cfg!(windows) && mode != Mode::Saver;
+    let h = serde_json::json!({
+        "mode": if mode == Mode::Saver { "screensaver" } else { "config" },
+        "hostUpdate": host_update,
+        // the host can draw the title bar (titlebar.rs) and take it away (`win_chrome`)
+        "chrome": chrome,
+        // it does now: the page hides its own
+        "nativeTitle": chrome && native,
+    });
+    format!("{}({h});", include_str!("host.js"))
+}
+
+/// `alchemyNativeChrome(on, edge)`: the host's XP window round the page (titlebar.rs), or none for a
+/// skin that draws a window of its own (iTunes), whose top row is `edge` ('#RRGGBB': Windows 11's
+/// row or two of frame above the page is painted in it, win.rs `chrome`). The page says so as the
+/// skin comes and goes; the last word is kept (`chrome.json`), so the window opens the way that
+/// skin wants it next time, rather than with a frame of XP strip until the page takes it away.
+#[tauri::command]
+pub fn win_chrome<R: Runtime>(
+    window: WebviewWindow<R>,
+    native: bool,
+    edge: Option<String>,
+) -> Result<(), String> {
+    let edge = match native {
+        true => None,
+        false => Some(edge.filter(|e| rgb(e).is_some()).ok_or("edge: not #RRGGBB")?),
+    };
+    #[cfg(windows)]
+    {
+        let hwnd = window.hwnd().map(|h| h.0 as isize).unwrap_or_default();
+        let top = edge.as_deref().and_then(rgb);
+        // the strips live on the main thread (titlebar.rs)
+        let _ = window.run_on_main_thread(move || {
+            crate::titlebar::native(hwnd, native);
+            crate::win::chrome(hwnd, top);
+        });
+    }
+    if let Some(f) = chrome_file() {
+        remember(&f, window.label(), edge.as_deref());
+    }
+    log::info!("{}: native chrome {native}", window.label());
+    Ok(())
+}
+
+/// The windows whose page draws its own (`win_chrome`), by label, each with its top row's colour.
+fn chrome_file() -> Option<std::path::PathBuf> {
+    crate::data_root().map(|r| r.join("chrome.json"))
+}
+
+fn saved(f: &std::path::Path) -> std::collections::BTreeMap<String, String> {
+    std::fs::read(f)
+        .ok()
+        .and_then(|b| serde_json::from_slice(&b).ok())
+        .unwrap_or_default()
+}
+
+fn remember(f: &std::path::Path, label: &str, edge: Option<&str>) {
+    let mut all = saved(f);
+    let before = all.clone();
+    match edge {
+        Some(e) => all.insert(label.into(), e.into()),
+        None => all.remove(label),
+    };
+    if all != before
+        && let Err(e) = std::fs::write(f, serde_json::to_vec(&all).unwrap_or_default())
+    {
+        log::error!("{}: {e}", f.display());
+    }
+}
+
+/// The top row's colour (0xRRGGBB) of window `label` if its page last drew the window itself.
+pub fn own_chrome(label: &str) -> Option<u32> {
+    saved(&chrome_file()?).get(label).and_then(|e| rgb(e))
+}
+
+/// '#RRGGBB' as 0xRRGGBB.
+fn rgb(s: &str) -> Option<u32> {
+    let hex = s
+        .strip_prefix('#')
+        .filter(|h| h.len() == 6 && h.bytes().all(|b| b.is_ascii_hexdigit()))?;
+    u32::from_str_radix(hex, 16).ok()
+}
+
+/// Whether the player window is covered (win.rs `occluded`); the page is told on each change and
+/// again when it has painted, since a change before that reached no page.
+static COVERED: AtomicBool = AtomicBool::new(false);
+
+fn tell_covered<R: Runtime>(w: &WebviewWindow<R>, on: bool) {
+    let _ = w.eval(format!(
+        "window.alchemyOccluded && window.alchemyOccluded({on})"
+    ));
+}
+
+/// Ask whether the window can be seen, and tell the page when that changed.
+#[cfg(windows)]
+fn seen<R: Runtime>(w: &WebviewWindow<R>, hwnd: isize) {
+    let now = crate::win::occluded(hwnd);
+    if COVERED.swap(now, Ordering::Relaxed) != now {
+        log::info!("{}: {}", w.label(), if now { "covered" } else { "seen" });
+        tell_covered(w, now);
+    }
+}
+
+/// Everything a window needs beyond what its builder set. `top`: its page draws the window, its
+/// top row this colour (`own_chrome`).
+pub fn attach<R: Runtime>(w: &WebviewWindow<R>, mode: Mode, top: Option<u32>) {
+    #[cfg(windows)]
+    let hwnd = w.hwnd().map(|h| h.0 as isize).unwrap_or_default();
+    #[cfg(windows)]
+    crate::win::chrome(hwnd, top);
+    #[cfg(not(windows))]
+    let _ = top;
+    #[cfg(windows)]
+    crate::win::animate(hwnd); // off while it was created maximized (win.rs `maximized`)
+    if mode == Mode::Saver {
+        return;
+    }
+    // the title bar keeps the web view below it
+    #[cfg(windows)]
+    let _ = w.with_webview(move |pw| crate::titlebar::adopt(hwnd, pw.controller()));
+    // Four times a second and whenever the window is activated, as the Deno host did: WebView2 keeps
+    // drawing a window nobody can see, at 60 fps (docs/history/deno-webview.md: 27 % of a core).
+    #[cfg(windows)]
+    {
+        let w = w.clone();
+        std::thread::spawn(move || {
+            while crate::win::alive(hwnd) {
+                seen(&w, hwnd);
+                std::thread::sleep(std::time::Duration::from_millis(250));
+            }
+        });
+    }
+    let w2 = w.clone();
+    w.on_window_event(move |e| match e {
+        #[cfg(windows)]
+        WindowEvent::Focused(true) => seen(&w2, hwnd),
+        // Closed while full screen: come back to the window's own box first, so that box and not
+        // the desktop's is the one remembered (the window-state plugin records it as it closes).
+        WindowEvent::CloseRequested { api, .. } if w2.is_fullscreen().unwrap_or(false) => {
+            api.prevent_close();
+            let _ = full(&w2, false);
+            let _ = w2.close();
+        }
+        _ => {}
+    });
+}
+
+/// The page's first painted frame: the startup mark the Deno host's `alchemyReady` gave, and the
+/// window state that reached no page before it.
+#[tauri::command]
+pub fn ready<R: Runtime>(window: WebviewWindow<R>) {
+    let epoch = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis();
+    mark(&format!("{}: page painted (epoch {epoch})", window.label()));
+    if window.label() == "player" && COVERED.load(Ordering::Relaxed) {
+        tell_covered(&window, true);
+    }
+}
+
+/// `alchemyLog`: the page's lines (its startup marks, its periodic report) into the host's log.
+#[tauri::command]
+pub fn host_log<R: Runtime>(window: WebviewWindow<R>, line: String) {
+    let line: String = line.chars().take(2000).collect();
+    log::info!("{}: {line}", window.label());
+}
+
+/// The screensaver's page saw input: it ends. Only the saver window can be dismissed this way.
+#[tauri::command]
+pub fn dismiss<R: Runtime>(window: WebviewWindow<R>, why: String) {
+    if window.label() == "saver" {
+        log::info!("saver: exit: {why}");
+        let _ = window.destroy(); // the process ends with its last window
+    }
+}
+
+/// F / Esc in the page (`alchemyWinFull`): the window over every monitor, on top, the display
+/// kept awake; off, back to the box it left.
+#[tauri::command]
+pub fn win_full<R: Runtime>(window: WebviewWindow<R>, on: bool) -> Result<(), String> {
+    full(&window, on).map_err(|e| e.to_string())
+}
+
+fn full<R: Runtime>(w: &WebviewWindow<R>, on: bool) -> tauri::Result<()> {
+    // Tauri's own full screen, which it also enters by itself when the page's element goes full
+    // screen: frameless over this monitor, and it keeps the box (and maximized) to come back to.
+    w.set_fullscreen(on)?;
+    if on {
+        // Then the whole virtual screen. Twice: tao keeps a full-screen window on the monitor a
+        // new box mostly covers, so the first box moves its idea of "this monitor" to the one
+        // the whole desktop covers most, and the second, on that same monitor, is left alone. On
+        // Windows the position and the size go in one move: apart, each half is a box of its own,
+        // mostly on some other monitor, and with a small monitor left of a larger one they take
+        // turns clamping the window to one monitor or the other.
+        let (pos, size) = virtual_screen(w.app_handle())?;
+        #[cfg(windows)]
+        let hwnd = w.hwnd().map(|h| h.0 as isize).unwrap_or_default();
+        for _ in 0..2 {
+            #[cfg(windows)]
+            crate::win::place(hwnd, pos.x, pos.y, size.width, size.height);
+            #[cfg(not(windows))]
+            {
+                w.set_position(pos)?;
+                w.set_size(size)?;
+            }
+        }
+    }
+    w.set_always_on_top(on)?;
+    #[cfg(windows)]
+    let was = crate::win::keep_awake(on);
+    #[cfg(not(windows))]
+    let was = 0;
+    log::info!(
+        "{}: full screen {on} (execution state was {was:#x})",
+        w.label()
+    );
+    Ok(())
+}
+
+/// The union of every monitor, in physical pixels: the virtual screen, which the screensaver and
+/// full screen cover with one window (docs/history/deno-webview.md "Trade-offs").
+pub fn virtual_screen<R: Runtime>(
+    app: &AppHandle<R>,
+) -> tauri::Result<(PhysicalPosition<i32>, PhysicalSize<u32>)> {
+    let monitors = app.available_monitors()?;
+    let all = span(monitors.iter().map(|m| (*m.position(), *m.size())));
+    all.ok_or(tauri::Error::WindowNotFound) // no monitor at all
+}
+
+/// The box round a set of boxes.
+fn span(
+    boxes: impl Iterator<Item = (PhysicalPosition<i32>, PhysicalSize<u32>)>,
+) -> Option<(PhysicalPosition<i32>, PhysicalSize<u32>)> {
+    let (mut l, mut t, mut r, mut b) = (i32::MAX, i32::MAX, i32::MIN, i32::MIN);
+    for (p, s) in boxes {
+        (l, t) = (l.min(p.x), t.min(p.y));
+        (r, b) = (r.max(p.x + s.width as i32), b.max(p.y + s.height as i32));
+    }
+    (l <= r).then(|| {
+        (
+            PhysicalPosition::new(l, t),
+            PhysicalSize::new((r - l) as u32, (b - t) as u32),
+        )
+    })
+}
+
+/// Help > Check for Player Updates (`alchemyCheckUpdate`): the launch's check, again, on demand.
+#[tauri::command]
+pub async fn check_update<R: Runtime>(app: AppHandle<R>) -> crate::update::CheckResult {
+    match app.try_state::<Updates>() {
+        Some(u) => u.check().await,
+        None => crate::update::CheckResult {
+            running: String::new(),
+            ready: None,
+            host_update: false,
+            error: Some("This build does not update.".into()),
+        },
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{remember, rgb, saved, span};
+    use tauri::{PhysicalPosition as P, PhysicalSize as S};
+
+    /// What the page last said of each window's chrome is what the next launch reads, one window's
+    /// word leaving the other's alone; a colour that is not '#RRGGBB' is none.
+    #[test]
+    fn own_chrome() {
+        let f = std::env::temp_dir().join(format!("wmp-chrome-test-{}.json", std::process::id()));
+        let _ = std::fs::remove_file(&f);
+        let of = |label: &str| saved(&f).get(label).and_then(|e| rgb(e));
+        assert_eq!(of("player"), None);
+        remember(&f, "player", Some("#F3F3F4"));
+        remember(&f, "spotify", Some("#000000"));
+        assert_eq!((of("player"), of("spotify")), (Some(0xF3F3F4), Some(0)));
+        remember(&f, "player", None);
+        assert_eq!((of("player"), of("spotify")), (None, Some(0)));
+        std::fs::remove_file(&f).unwrap();
+        for bad in ["F3F3F4", "#F3F3F", "#F3F3F44", "#+3F3F4", "#GGGGGG", ""] {
+            assert_eq!(rgb(bad), None, "{bad}");
+        }
+    }
+
+    fn of(boxes: &[(i32, i32, u32, u32)]) -> Option<(i32, i32, u32, u32)> {
+        span(
+            boxes
+                .iter()
+                .map(|&(x, y, w, h)| (P::new(x, y), S::new(w, h))),
+        )
+        .map(|(p, s)| (p.x, p.y, s.width, s.height))
+    }
+
+    #[test]
+    fn virtual_screen() {
+        assert_eq!(of(&[]), None);
+        assert_eq!(of(&[(0, 0, 2400, 1600)]), Some((0, 0, 2400, 1600)));
+        // side by side, a smaller one to the right, bottoms not lined up
+        assert_eq!(
+            of(&[(0, 0, 2560, 1440), (2560, 360, 1920, 1080)]),
+            Some((0, 0, 4480, 1440))
+        );
+        // left of the primary and above it: the corner is on neither monitor
+        assert_eq!(
+            of(&[(0, 0, 1920, 1080), (-1920, -300, 1920, 1080)]),
+            Some((-1920, -300, 3840, 1380))
+        );
+        // stacked, with a gap in the union's corner
+        assert_eq!(
+            of(&[(0, 0, 1920, 1080), (400, 1080, 3840, 2160)]),
+            Some((0, 0, 4240, 3240))
+        );
+    }
+}

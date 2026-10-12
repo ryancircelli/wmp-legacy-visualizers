@@ -1,0 +1,326 @@
+// The iTunes 10 skin: Spotify mapped onto the source list, the view switcher (per source, kept), the
+// LCD's lines and times, iTunes DJ's edits as Up Next orders, and Spotify's features in the desktop
+// window's iTunes places (the ♥ column, iTunes DJ's played songs, podcast dots, the search's kinds, a
+// page's radio, the host player's sound, Get Info; New Playlist and Delete, Mark as Played, iTunes DJ's
+// Clear, Smart Shuffle), and a cover's single click playing nothing. Mounted over the harness's fake catalogue.
+import { act, cleanup, fireEvent } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { LIKED, type ShuffleMode, type Track } from '../../src/model';
+// the harness first: it loads the app, and so the skin registry, before the skin (the registry and the
+// skins' View > Skin import each other; the app's own load order is registry first)
+import { emptyResults, fakeData, mountSkinNow, settle, type FakeData } from './harness';
+import { itunes } from '../../src/skins/itunes';
+import { Root } from '../../src/skins/itunes/Root';
+import { runShortcut } from '../../src/ui';
+import { buildSources, DEFAULT_VIEW, itunesView, LCD_TURN, lcdSub, lcdTimes, queueOrder, viewActions } from '../../src/skins/itunes/shared';
+import { openInfo, played } from '../../src/skins/itunes/desktop/spotify';
+
+const PL = 'spotify:playlist:a';
+const track = (n: number, o: Partial<Track> = {}): Track =>
+  ({ uri: 'spotify:track:' + n, title: 'Song ' + n, artist: 'Band', album: 'LP ' + (n % 2), albumUri: 'spotify:album:' + (n % 2), duration: 125000, ctx: PL, ...o });
+
+beforeEach(() => { localStorage.clear(); itunesView.setState(DEFAULT_VIEW); played.setState({ list: [] }); });
+afterEach(() => { cleanup(); vi.useRealTimers(); });
+
+/** the skin over the catalogue, a playlist in the library (and `o`'s data); queries inside its own box
+ *  (WMP 9 mounts beside it) */
+async function mount(o: Partial<FakeData> = {}) {
+  const m = mountSkinNow('spotify', fakeData({
+    ...o,
+    list: [{ uri: PL, name: 'Road Trip', editable: true }, { uri: 'spotify:album:9', name: 'Saved LP', artist: 'Band' }],
+    collections: { [PL]: { tracks: [1, 2, 3].map((n) => track(n)), meta: { kind: 'playlist', name: 'Road Trip', total: 3 } }, ...o.collections },
+  }), <div data-testid="itunes"><Root /></div>);
+  await settle();
+  // ids by attribute: WMP 9 beside it has the same ids, and jsdom's '#id' looks in the document's id map
+  const box = m.getByTestId('itunes'), q = (s: string) => box.querySelector<HTMLElement>(s.replace(/#([\w-]+)/g, '[id="$1"]'));
+  const source = async (id: string) => { act(() => { fireEvent.mouseDown(q(`[data-source="${id}"]`)!); }); await settle(); };
+  return { ...m, box, q, source };
+}
+
+describe('the source list', () => {
+  it('lays Spotify on iTunes\' sections: the playlists (not the saved albums), no DEVICES (the AirPlay menu has them), Search Results while a search is typed', () => {
+    const sections = buildSources({ spotify: true, searchQ: 'queen', queue: 2,
+      library: [{ uri: PL, name: 'Road Trip' }, { uri: 'spotify:album:x', name: 'An Album' }] });
+    expect(sections.map((s) => [s.title, s.items.map((x) => x.label)])).toEqual([
+      ['LIBRARY', ['Music', 'Podcasts', 'Radio']],
+      ['STORE', ['Spotify', 'Search Results']],
+      ['GENIUS', ['Genius', 'Genius Mixes']],
+      ['PLAYLISTS', ['iTunes DJ', 'Recently Played', 'Road Trip']],
+    ]);
+    expect(sections[3]!.items[0]!.badge).toBe('2');                       // Up Next's length on iTunes DJ
+    expect(sections[0]!.items[0]!.uri).toBe('spotify:collection:tracks');  // Music is Liked Songs
+    const none = buildSources({ spotify: true, searchQ: '', queue: 0, library: [] });
+    expect(none.map((s) => s.title)).toEqual(['LIBRARY', 'STORE', 'GENIUS', 'PLAYLISTS']);
+    expect(none[1]!.items.map((x) => x.id)).toEqual(['store']);
+    expect(buildSources({ spotify: false, searchQ: '', queue: 0, library: [] })).toEqual([]);
+  });
+
+  it('a playlist selected lists its songs; a double-click plays the row in the playlist', async () => {
+    const m = await mount();
+    await m.source(PL);
+    const rows = [...m.box.querySelectorAll('[id="tracks"] tbody tr')];
+    expect(rows.map((r) => r.children[1]!.textContent)).toEqual(['Song 1', 'Song 2', 'Song 3']);
+    fireEvent.doubleClick(rows[1]!);
+    expect(m.cmd.playContext).toHaveBeenCalledWith(PL, 'spotify:track:2');
+    expect(m.q('#status')!.textContent).toBe('3 songs, 6 minutes');
+  });
+});
+
+describe('the view switcher', () => {
+  it('switches List / Album List / Grid / Cover Flow, kept per source; Ctrl+Alt+3..6 too', async () => {
+    const m = await mount();
+    await m.source(PL);
+    expect(m.q('#tracks')).toBeTruthy();
+    act(() => { fireEvent.click(m.q('#valbum')!); });
+    expect(m.q('#albumlist')!.textContent).toContain('LP 1');
+    act(() => { fireEvent.click(m.q('#vgrid')!); });
+    expect([...m.box.querySelectorAll('[id="grid"] [data-uri]')].map((t) => t.getAttribute('data-uri'))).toEqual(['spotify:album:1', 'spotify:album:0']);
+    act(() => { fireEvent.click(m.q('#vflow')!); });
+    expect(m.q('#coverflow')).toBeTruthy();
+    expect(m.q('#vflow')!.getAttribute('aria-checked')).toBe('true');
+    // another source keeps its own (List), and coming back finds Cover Flow
+    await m.source('music');
+    expect(m.q('#vlist')!.getAttribute('aria-checked')).toBe('true');
+    await m.source(PL);
+    expect(m.q('#coverflow')).toBeTruthy();
+    // the skin's table (the harness's shell has WMP 9's)
+    act(() => { runShortcut(m.sh, new KeyboardEvent('keydown', { key: '3', ctrlKey: true, altKey: true, cancelable: true }), itunes.shortcuts); });
+    expect(itunesView.getState().views[PL]).toBe('list');
+    expect((JSON.parse(localStorage.getItem('itunes.view')!) as { state: { views: Record<string, string> } }).state.views[PL]).toBe('list');
+  });
+
+  it('is greyed where a source has one view (the store\'s covers)', async () => {
+    const m = await mount();
+    await m.source('store');
+    expect((m.q('#vgrid') as HTMLButtonElement).disabled).toBe(true);
+  });
+});
+
+describe('the LCD', () => {
+  it('idle shows the glyph; playing, the song, then the artist and the album taking turns, and the times', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const m = await mount();
+    expect(m.q('#lcd')!.getAttribute('data-state')).toBe('idle');
+    act(() => m.S().actions.setPlayback({ status: 'paused', track: track(7, { title: 'Under Pressure', artist: 'Queen', album: 'Hot Space', duration: 248000 }),
+                                          position: 65000, at: Date.now(), canSeek: true }));
+    expect(m.q('#lcdtitle')!.textContent).toBe('Under Pressure');
+    expect(m.q('#lcdsub')!.textContent).toBe('Queen');
+    act(() => { vi.advanceTimersByTime(LCD_TURN); });
+    expect(m.q('#lcdsub')!.textContent).toBe('Hot Space');
+    expect([m.q('#time')!.textContent, m.q('#timeleft')!.textContent]).toEqual(['1:05', '-3:03']);
+    act(() => { fireEvent.click(m.q('#timeleft')!); });                 // the length instead of the time left
+    expect(m.q('#timeleft')!.textContent).toBe('4:08');
+  });
+
+  it('words its lines and times as iTunes did', () => {
+    expect([lcdSub({ artist: 'Queen', album: 'Jazz' }, 0), lcdSub({ artist: 'Queen', album: 'Jazz' }, 1), lcdSub({ artist: 'Queen' }, 1)]).toEqual(['Queen', 'Jazz', 'Queen']);
+    expect(lcdTimes(61000, 200000, false)).toEqual(['1:01', '-2:19']);
+    expect(lcdTimes(61000, 200000, true)).toEqual(['1:01', '3:20']);
+  });
+});
+
+it('iTunes DJ: a drag and a removal become Up Next orders', () => {
+  expect(queueOrder(4, { move: [3, 0] })).toEqual([3, 0, 1, 2]);
+  expect(queueOrder(4, { move: [0, 2] })).toEqual([1, 2, 0, 3]);
+  expect(queueOrder(4, { remove: 1 })).toEqual([0, 2, 3]);
+});
+
+describe('Spotify in the window\'s iTunes places', () => {
+  const rows = (m: Awaited<ReturnType<typeof mount>>) => [...m.box.querySelectorAll<HTMLElement>('[id="tracks"] tbody tr')];
+  const open = async (uri: string) => { act(() => { viewActions.open(uri); }); await settle(); };
+
+  it('the ♥ column (Rating\'s place): ♥ where liked; a click on it likes or unlikes, and plays nothing', async () => {
+    const m = await mount({ saved: { 'spotify:track:2': true } });
+    await m.source(PL);
+    expect(rows(m).map((r) => r.lastElementChild!.textContent)).toEqual(['', '♥', '']);
+    fireEvent.click(rows(m)[0]!.lastElementChild!);
+    expect(m.cmd.addTo).toHaveBeenLastCalledWith('spotify:track:1', LIKED, true);
+    fireEvent.click(rows(m)[1]!.lastElementChild!);
+    expect(m.cmd.addTo).toHaveBeenLastCalledWith('spotify:track:2', LIKED, false);
+    fireEvent.doubleClick(rows(m)[1]!.lastElementChild!);
+    expect(m.cmd.playContext).not.toHaveBeenCalled();
+  });
+
+  it('iTunes DJ: the songs played here, the playing one, then Up Next; only Up Next moves or leaves', async () => {
+    const m = await mount(), reorderQueue = vi.fn();
+    act(() => m.S().actions.setCommands({ ...m.S().commands, reorderQueue }));
+    for (const n of [9, 3]) act(() => m.S().actions.setPlayback({ status: 'playing', track: track(n), position: 0, at: Date.now() }));
+    act(() => m.S().actions.setQueue([4, 5, 6].map((n) => track(n))));
+    await m.source('dj');
+    expect(rows(m).map((r) => r.children[1]!.textContent)).toEqual(['Song 9', 'Song 3', 'Song 4', 'Song 5', 'Song 6']);
+    const del = (i: number) => { fireEvent.mouseDown(rows(m)[i]!); fireEvent.keyDown(m.q('#tracks')!, { key: 'Delete' }); };
+    del(0);                                                              // a played song stays
+    expect(reorderQueue).not.toHaveBeenCalled();
+    del(3);                                                              // Up Next's second
+    expect(reorderQueue).toHaveBeenLastCalledWith([0, 2]);
+  });
+
+  it('a show\'s episodes: iTunes\' blue dot where unplayed, counted as episodes', async () => {
+    const SHOW = 'spotify:show:s', ep = (n: number, unplayed: boolean) => track(n, { uri: 'spotify:episode:' + n, ctx: SHOW, unplayed });
+    const m = await mount({ collections: { [SHOW]: { tracks: [ep(1, true), ep(2, false)], meta: { kind: 'playlist', name: 'A Show', total: 2 } } } });
+    await m.source('music');
+    await open(SHOW);
+    expect(rows(m).map((r) => [r.children[1]!.textContent, r.children[2]!.textContent])).toEqual([['●', 'Song 1'], ['', 'Song 2']]);
+    expect(m.q('#status')!.textContent).toBe('2 episodes, 4 minutes');
+  });
+
+  it('Search Results: the store\'s kinds on the strip, one kind alone', async () => {
+    const m = await mount({ search: { queen: { ...emptyResults(), tracks: { items: [track(1)], total: 1, offset: 0, exact: true, hasMore: false } } } });
+    act(() => m.S().actions.setUi({ searchQ: 'queen' }));
+    await m.source('search');
+    const tabs = [...m.box.querySelectorAll<HTMLElement>('[id="strip"] [role=tab]')];
+    expect(tabs.map((t) => t.textContent)).toEqual(['All', 'Songs', 'Artists', 'Albums', 'Playlists']);
+    fireEvent.click(tabs[1]!);
+    expect(m.S().ui.searchOnly).toBe('tracks');
+  });
+
+  it('an opened album\'s strip: its radio (the station seeded from it, played) and ♥ (Save to Your Library)', async () => {
+    const AL = 'spotify:album:1';
+    const m = await mount({ collections: { [AL]: { tracks: [track(1)], meta: { kind: 'album', name: 'LP 1', total: 1 } } },
+                            stations: [{ uri: 'spotify:playlist:other', name: 'Other Radio' }, { uri: 'spotify:playlist:st', name: 'LP 1 Radio' }] });
+    await m.source('music');
+    await open(AL);
+    fireEvent.click(m.q('#pageradio')!);
+    await settle();
+    expect(m.queries.fetchRadio).toHaveBeenLastCalledWith([{ seed: AL, name: 'LP 1 Radio', sub: '' }]);
+    expect(m.cmd.playContext).toHaveBeenLastCalledWith('spotify:playlist:st', null);
+    fireEvent.click(m.q('#pagesave')!);
+    expect(m.cmd.addTo).toHaveBeenLastCalledWith(AL, LIKED, true);
+  });
+
+  it('the host player\'s equalizer: iTunes\' Equalizer window, its presets applied at once, On / off', async () => {
+    const m = await mount();
+    act(() => m.S().actions.setAuth({ hostPlayer: true }));
+    act(() => m.S().actions.setUi({ dialog: 'eq' }));
+    const eq = document.getElementById('dlgEq')!, preset = eq.querySelector<HTMLSelectElement>('#eqpreset')!;
+    expect([(eq.querySelector('#eqon') as HTMLInputElement).checked, preset.disabled]).toEqual([false, true]);
+    fireEvent.click(eq.querySelector('#eqon')!);
+    expect(m.S().settings.eq).toBe('flat');
+    fireEvent.change(preset, { target: { value: 'rock' } });
+    expect(m.S().settings.eq).toBe('rock');
+    expect(eq.querySelector('[aria-label="32 Hz"]')!.getAttribute('aria-valuenow')).toBe('5');   // Rock's 32 Hz band
+  });
+
+  it('Get Info: the song\'s summary; Lyrics, for the playing song, with the line sung now lit', async () => {
+    const m = await mount(), t = track(1, { playcount: 1234 });
+    act(() => m.S().actions.setPlayback({ status: 'paused', track: t, position: 12000, at: Date.now(), canSeek: true }));
+    act(() => m.S().actions.setLyrics({ status: 'synced', plain: null, source: 'spotify', track: { uri: t.uri, title: t.title, artist: t.artist },
+                                        lines: [{ t: 0, text: 'Line one' }, { t: 10000, text: 'Line two' }, { t: 20000, text: 'Line three' }] }));
+    act(() => openInfo(m.sh, t));
+    const dlg = document.getElementById('dlgInfo')!;
+    expect(dlg.textContent).toContain('1,234');
+    fireEvent.click(dlg.querySelector('[data-tab="lyrics"]')!);
+    expect(document.querySelector('#infolyrics [data-on]')!.textContent).toBe('Line two');
+  });
+});
+
+describe('the app\'s newer commands in the window, and a cover\'s click', () => {
+  const rows = (m: Awaited<ReturnType<typeof mount>>) => [...m.box.querySelectorAll<HTMLElement>('[id="tracks"] tbody tr')];
+  // the pointer menus and the menu bar portal to the body; Radix opens the menu bar's on a pointerdown
+  const menu = (d = 0) => document.querySelector<HTMLElement>(`[role=menu][data-depth="${d}"]`)!;
+  const items = (d = 0) => [...menu(d).querySelectorAll<HTMLElement>('[role^=menuitem]')];
+  const item = (label: string, d = 0) => items(d).find((b) => b.children[1]!.textContent === label)!;
+  const plays = (m: Awaited<ReturnType<typeof mount>>) => (['playContext', 'playItem', 'playAll', 'playPause', 'play'] as const).filter((k) => m.cmd[k].mock.calls.length);
+
+  it('a single click on a cover selects it and plays nothing (the ▶ is the corner\'s, and no target until shown); a double-click opens it', async () => {
+    const m = await mount();
+    act(() => { viewActions.setMode('grid', 'music'); });
+    await m.source('music');
+    const tile = m.q('[id="grid"] [data-uri="spotify:album:9"]')!;
+    fireEvent.click(tile.querySelector('span')!, { detail: 1 });     // the cover (no image: the skin's box)
+    fireEvent.click(tile, { detail: 1 });
+    expect(tile.hasAttribute('data-sel')).toBe(true);
+    expect(tile.querySelector('[role=button]')!.className).toMatch(/\bpointer-events-none\b/);
+    fireEvent.doubleClick(tile);
+    expect(itunesView.getState().stack).toEqual(['spotify:album:9']);
+    expect(plays(m)).toEqual([]);
+  });
+
+  it('New Playlist: the + and Ctrl+N name "untitled playlist" at the end of the source list; Enter makes it and selects it, Esc drops it', async () => {
+    const m = await mount(), createPlaylist = vi.fn(() => Promise.resolve('spotify:playlist:new'));
+    expect((m.q('#bnew') as HTMLButtonElement).disabled).toBe(true);    // no such command: greyed
+    act(() => m.S().actions.setCommands({ ...m.S().commands, createPlaylist }));
+    act(() => { fireEvent.click(m.q('#bnew')!); });
+    const field = () => m.q('#newplaylist input') as HTMLInputElement | null;
+    expect(field()!.value).toBe('untitled playlist');
+    fireEvent.change(field()!, { target: { value: 'Road Mix' } });
+    act(() => { fireEvent.keyDown(field()!, { key: 'Enter' }); });
+    await settle();
+    expect(createPlaylist).toHaveBeenCalledExactlyOnceWith('Road Mix');
+    expect(field()).toBeNull();
+    expect(itunesView.getState().source).toBe('spotify:playlist:new');
+    act(() => { runShortcut(m.sh, new KeyboardEvent('keydown', { key: 'n', ctrlKey: true, cancelable: true }), itunes.shortcuts); });
+    act(() => { fireEvent.keyDown(field()!, { key: 'Escape' }); });
+    expect(field()).toBeNull();
+    expect(createPlaylist).toHaveBeenCalledOnce();
+  });
+
+  it('Delete on one of the user\'s playlists (its right-click in the source list), asked first; Music shows after', async () => {
+    const m = await mount(), deletePlaylist = vi.fn(() => Promise.resolve(true));
+    act(() => m.S().actions.setCommands({ ...m.S().commands, deletePlaylist }));
+    await m.source(PL);
+    act(() => { fireEvent.contextMenu(m.q(`[data-source="${PL}"]`)!); });
+    act(() => { fireEvent.click(item('Delete')); });
+    const dlg = document.getElementById('dlgDelete')!;
+    expect(dlg.textContent).toContain('“Road Trip”');
+    expect(deletePlaylist).not.toHaveBeenCalled();
+    act(() => { fireEvent.click(dlg.querySelector('[id="delOK"]')!); });
+    await settle();
+    expect(deletePlaylist).toHaveBeenCalledExactlyOnceWith(PL);
+    expect(itunesView.getState().source).toBe('music');
+  });
+
+  it('an episode\'s right-click marks it played or unplayed (the dot follows); Get Info\'s Played too', async () => {
+    const SHOW = 'spotify:show:s', ep = (n: number, unplayed: boolean) => track(n, { uri: 'spotify:episode:' + n, ctx: SHOW, unplayed });
+    const m = await mount({ collections: { [SHOW]: { tracks: [ep(1, true), ep(2, false)], meta: { kind: 'playlist', name: 'A Show', total: 2 } } } });
+    const markPlayed = vi.fn((uri: string, on: boolean) => { m.S().actions.setPlayed(uri, on); return Promise.resolve(); });
+    act(() => m.S().actions.setCommands({ ...m.S().commands, markPlayed }));
+    await m.source('music');
+    act(() => { viewActions.open(SHOW); });
+    await settle();
+    act(() => { fireEvent.contextMenu(rows(m)[0]!); });
+    act(() => { fireEvent.click(item('Mark as Played')); });
+    expect(markPlayed).toHaveBeenLastCalledWith('spotify:episode:1', true);
+    expect(rows(m)[0]!.children[1]!.textContent).toBe('');
+    act(() => { fireEvent.contextMenu(rows(m)[1]!); });
+    act(() => { fireEvent.click(item('Mark as Unplayed')); });
+    expect(markPlayed).toHaveBeenLastCalledWith('spotify:episode:2', false);
+    act(() => openInfo(m.sh, ep(2, false)));
+    const played = document.querySelector<HTMLInputElement>('#dlgInfo #infoplayed')!;
+    expect(played.checked).toBe(false);                                 // the mark made here, over the row's
+    act(() => { fireEvent.click(played); });
+    expect(markPlayed).toHaveBeenLastCalledWith('spotify:episode:2', true);
+  });
+
+  it('iTunes DJ\'s Clear, only while songs the user queued are in Up Next', async () => {
+    const m = await mount(), clearQueue = vi.fn(() => Promise.resolve());
+    act(() => { m.S().actions.setCommands({ ...m.S().commands, clearQueue }); m.S().actions.setQueue([track(4), track(5)]); });
+    await m.source('dj');
+    expect(m.q('#djclear')).toBeNull();
+    act(() => m.S().actions.setQueue([track(4, { queued: true }), track(5)]));
+    act(() => { fireEvent.click(m.q('#djclear')!); });
+    expect(clearQueue).toHaveBeenCalledOnce();
+  });
+
+  it('the shuffle button cycles Off, Shuffle, Smart Shuffle (where offered: a sparkle), Off; Controls > Shuffle names the three', async () => {
+    const m = await mount();
+    const setShuffleMode = vi.fn((mode: ShuffleMode) => { m.S().actions.setPlayback({ shuffle: mode !== 'off', shuffleMode: mode }); return Promise.resolve(); });
+    act(() => { m.S().actions.setCommands({ ...m.S().commands, setShuffleMode }); m.S().actions.setPlayback({ canSmartShuffle: true }); });
+    const b = () => m.q('#bshuffle')!, click = () => act(() => { fireEvent.click(b()); });
+    click();
+    expect([setShuffleMode.mock.lastCall?.[0], b().getAttribute('data-mode'), b().querySelectorAll('svg').length]).toEqual(['shuffle', 'shuffle', 1]);
+    click();
+    expect([setShuffleMode.mock.lastCall?.[0], b().getAttribute('data-mode'), b().querySelectorAll('svg').length]).toEqual(['smart', 'smart', 2]);
+    click();
+    expect(setShuffleMode).toHaveBeenLastCalledWith('off');
+    // where the player has none (the phone's own speaker, a context that allows none): Shuffle, then Off
+    act(() => m.S().actions.setPlayback({ canSmartShuffle: false }));
+    click();
+    click();
+    expect(setShuffleMode.mock.calls.slice(-2).map((c) => c[0])).toEqual(['shuffle', 'off']);
+    act(() => { fireEvent.pointerDown(m.q('[data-menu="controls"]')!, { button: 0, ctrlKey: false, pointerType: 'mouse' }); });
+    act(() => { fireEvent.click(item('Shuffle')); });
+    expect(items(1).map((x) => [x.children[1]!.textContent, x.getAttribute('aria-checked'), x.hasAttribute('data-disabled')]))
+      .toEqual([['Off', 'true', false], ['Shuffle', 'false', false], ['Smart Shuffle', 'false', true]]);
+  });
+});

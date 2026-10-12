@@ -1,0 +1,276 @@
+// The iPod nano (5th generation), portrait: the screen in its glass on top, the click wheel below.
+// No visualizer and no audio capture: the screens are menus over the store (menus.tsx, screens/*).
+// Every screen in the stack stays mounted (hidden under the top one), so going back finds it as it
+// was; the wheel reaches the top screen only (wheel.ts), and the real iPod's buttons that a screen
+// does not take keep their usual meaning here: Play / Prev / Next and their holds work everywhere
+// (hold ⏯ sleeps, hold ⏮ / ⏭ scan: ui.tsx scan). docs/ipod-skin.md §3.
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent, type PointerEvent } from 'react';
+import { useStore } from 'zustand';
+import { useApp, usePreloadNext, useShell, useWindowControls } from '../../ui';
+import { Boot } from './Boot';
+import { ClickWheel } from './ClickWheel';
+import { pointPx, useHostChrome, useHostGlobal, useDesktopViewport } from './host';
+import { iconFor } from './icon';
+import { mainMenu } from './menus';
+import { brick, fmRadio, nowPlaying } from './screens';
+import { createNav, top, type NavStore, type Slot } from './nav';
+import type { WheelInput } from './screens/contract';
+import { useMetal } from './metal';
+import { bodyLook, bodyVars, ipodSettings, useIpodSettings } from './settings';
+import { NowPlayingBar, scan, StatusRow, useBusy } from './ui';
+import { FrameContext, handler, NavContext, type Hub } from './wheel';
+import s from './ipod.module.css';
+
+/** §3.4: mouse-wheel pixels per tick over the device, accumulated and dropped after 250 ms idle (a
+ *  line, Firefox's unit, counts as one tick) */
+const WHEEL_PX = 40, WHEEL_IDLE = 250;
+/** §3.3: at most 30 clicks a second; past that the list still moves, silently */
+const CLICK_GAP = 1000 / 30;
+/** a swipe right on the screen at least this far (px), more across than down, is MENU */
+const SWIPE_PX = 50;
+type Plain = 'onPlay' | 'onPrev' | 'onNext' | 'onHoldPlay';
+
+export function Root() {
+  const sh = useShell(), [ipod] = useIpodSettings();
+  usePreloadNext();   // the next songs' covers and Canvas clips, from any screen
+  // the app's icon in the body's colour (the iOS app; the owner, 2026-10-03), once the colour has stood
+  // three seconds (Custom's drags; iOS announces every change). The app does nothing when it is the one it has.
+  const icon = iconFor(ipod);
+  useEffect(() => {
+    const t = window.setTimeout(() => {
+      // said in the host's log, so a change that does not show can be told from one never asked for
+      if (window.alchemyLayout) window.alchemyLog?.('ipod: icon ' + icon + (window.alchemyIcon ? '' : ' (this app build or its observer has no alchemyIcon yet)'));
+      // Forest came after build 90, which asks iOS for any name and has no Icon-forest (a name iOS has no
+      // icon for once left its icon service stuck until a restart); the builds that list their icons
+      // (__wmpHost.icons) refuse a missing one themselves
+      if (icon === 'forest' && !window.__wmpHost?.icons) return;
+      window.alchemyIcon?.(icon);
+    }, 3000);
+    return () => clearTimeout(t);
+  }, [icon]);
+  const [nav] = useState(() => createNav(mainMenu(), () => nowPlaying())), [hub] = useState<Hub>(() => new Map());
+  // the screens under the dark status bar (§2.2: Now Playing, Radio, the Extras apps)
+  const [dark] = useState(() => new Set([nowPlaying, fmRadio, brick].map((f) => f().key))), [npKey] = useState(() => nowPlaying().key);
+  const { stack, dir } = useStore(nav.store), topSlot = stack[stack.length - 1]!, busy = useBusy(topSlot.id);
+  // the Now Playing bar: under every screen but Now Playing while a track is loaded
+  const bar = useApp((x) => !!x.playback.track) && topSlot.entry.key !== npKey;
+  const safe = useHostGlobal('__wmpSafeArea', 'wmp-safe-area');
+  const win = useWindowControls(), caption = useApp((x) => x.auth.hostWindow && !x.auth.nativeTitle);
+  const [asleep, setAsleep] = useState(false), [dim, wake] = useBacklight(ipod.backlight);
+  useHostChrome();
+  useDesktopViewport();
+
+  const c = () => sh.store.getState().commands;
+  const h = <K extends keyof WheelInput>(k: K) => handler(hub, top(nav.store.getState()).id, k);
+  /** the top screen's handler, else the chrome's */
+  const or = (k: Plain, dflt: () => void) => () => (h(k) ?? dflt)();
+  const clicked = useRef(0);
+  /** a detent that moved something: the haptic and the clicker (a screen's onTick returning false moved nothing) */
+  const tick = (d: 1 | -1) => {
+    const f = h('onTick');
+    if (!f || (f(d) as unknown) === false) return;
+    const now = performance.now();
+    if (now - clicked.current < CLICK_GAP) return;
+    clicked.current = now;
+    window.alchemyHaptic?.('selection');
+    if (ipodSettings().clicker) click();
+  };
+  const menu = () => { if (h('onMenu')?.() !== true) nav.pop(); };
+  // the mouse wheel over the device ticks; it never scrolls a list (a native, non-passive listener)
+  const wheel = useRef({ px: 0, at: 0 }), device = useRef<HTMLDivElement>(null);
+  const onWheel = (e: WheelEvent) => {
+    const w = wheel.current, now = performance.now();
+    if (now - w.at > WHEEL_IDLE) w.px = 0;
+    w.at = now;
+    w.px += e.deltaY * (e.deltaMode ? WHEEL_PX : 1);
+    while (Math.abs(w.px) >= WHEEL_PX) {
+      const d = w.px > 0 ? 1 : -1;
+      w.px -= d * WHEEL_PX;
+      tick(d);
+    }
+  };
+  const wheelNow = useRef(onWheel);
+  useLayoutEffect(() => { wheelNow.current = onWheel; });
+  useEffect(() => {
+    const el = device.current, f = (e: WheelEvent) => { e.preventDefault(); wheelNow.current(e); };
+    el?.addEventListener('wheel', f, { passive: false });
+    return () => el?.removeEventListener('wheel', f);
+  }, []);
+  // the touch screen: a swipe right is MENU (and not also a tap on the row it ended on)
+  const swipe = useRef<{ id: number; x: number; y: number } | null>(null), swiped = useRef(false);
+  const screenTouch = {
+    onPointerDown: (e: PointerEvent) => { swiped.current = false; swipe.current = { id: e.pointerId, x: e.clientX, y: e.clientY }; },
+    onPointerUp: (e: PointerEvent) => {
+      const g = swipe.current;
+      swipe.current = null;
+      if (!g || g.id !== e.pointerId) return;
+      const dx = e.clientX - g.x, dy = e.clientY - g.y;
+      if (dx >= SWIPE_PX && Math.abs(dy) < dx / 2) { swiped.current = true; menu(); }
+    },
+    onPointerCancel: () => { swipe.current = null; },
+    onClickCapture: (e: MouseEvent) => { if (swiped.current) { swiped.current = false; e.stopPropagation(); } },
+  };
+  // hold ⏮ / ⏭: the top screen's own hold, repeated (contract.ts), else the chrome's scan
+  const held = useRef<{ repeat?: number; release?: () => void }>({});
+  const hold = (k: 'onHoldPrev' | 'onHoldNext', d: 1 | -1) => {
+    const f = h(k);
+    if (f) { f(); held.current = { repeat: window.setInterval(f, 200) }; return; }
+    const release = scan(sh.store, d);
+    if (!release) { window.alchemyHaptic?.('warning'); return false; }   // cannot seek: the press stays a press
+    held.current = { release };
+  };
+  const unhold = () => { clearInterval(held.current.repeat); held.current.release?.(); held.current = {}; };
+  // hold ⏯: sleep, the nano's off (pause, LCD dark); the next press only wakes it
+  useEffect(() => {
+    if (!asleep) return;
+    const wake = (e: Event) => { if (e.type === 'pointerdown') e.stopPropagation(); setAsleep(false); };
+    window.addEventListener('pointerdown', wake, true);
+    window.addEventListener('keydown', wake, true);
+    return () => { window.removeEventListener('pointerdown', wake, true); window.removeEventListener('keydown', wake, true); };
+  }, [asleep]);
+  // §3.4: under a desktop host that draws no title, the aluminium (and the backdrop) is the caption
+  const drag = (e: MouseEvent) => { if (!(e.target as Element).closest(`.${s.bezel}, .${s.wheel}`)) win.onCaptionMouseDown(e); };
+  // the insets come in points (host.ts pointPx)
+  const k = pointPx();
+  const insets = safe && ({ '--safe-top': safe.top * k + 'px', '--safe-right': safe.right * k + 'px', '--safe-bottom': safe.bottom * k + 'px', '--safe-left': safe.left * k + 'px' } as CSSProperties);
+
+  const sheen = useSheen();
+  useMetal(sheen, ipod.metal === 'rendered', bodyLook(ipod), ipod.wheel);
+  return (
+    <NavContext.Provider value={nav}>
+      <div className={s.backdrop} data-ui-root="" onMouseDown={caption ? drag : undefined}>
+        {/* on the phone (the iOS app) the body always fills the screen, whatever shape its viewport */}
+        <div className={s.body} ref={sheen} data-wheel={ipod.wheel} data-phone={window.alchemyLayout ? '' : undefined} style={{ ...bodyVars(ipod), ...insets }}>
+          <div className={s.device} ref={device}>
+            <div className={s.bezel}>
+              <div className={s.screen} data-asleep={asleep || undefined} data-bar={bar || undefined} {...screenTouch}>
+                <StatusRow title={topSlot.entry.title} dark={dark.has(topSlot.entry.key)} busy={busy} />
+                <div className={s.frames} style={{ '--dir': dir } as CSSProperties}>
+                  {stack.map((slot, i) => <Frame key={slot.id} hub={hub} slot={slot} nav={nav} shown={i === stack.length - 1} />)}
+                </div>
+                {bar && <NowPlayingBar onOpen={() => nav.toNowPlaying()} />}
+                <Boot />
+              </div>
+            </div>
+            <ClickWheel
+              onTick={tick}
+              onCenter={() => h('onCenter')?.()}
+              onMenu={menu}
+              onPlay={or('onPlay', () => void c().playPause())}
+              onPrev={or('onPrev', () => void c().prev())}
+              onNext={or('onNext', () => void c().next())}
+              // a hold on centre: the screen's (a row's own menu, Now Playing's), else Now Playing itself
+              // while a track plays (the owner, 2026-10-02: "long press center button should open now playing")
+              onHoldCenter={() => { const f = h('onHoldCenter'); if (f) { f(); return; } if (!bar) return false; nav.toNowPlaying(); }}
+              onHoldMenu={() => nav.home()}
+              onHoldPlay={or('onHoldPlay', () => { void c().pause(); setAsleep(true); })}
+              onHoldPrev={() => hold('onHoldPrev', -1)}
+              onHoldNext={() => hold('onHoldNext', 1)}
+              onHoldEnd={unhold} />
+          </div>
+          <div className={s.dim} data-on={dim || undefined} onClick={wake} onPointerUp={() => window.setTimeout(wake, 300)} />
+        </div>
+      </div>
+    </NavContext.Provider>
+  );
+}
+
+/** Settings > Backlight, in the iOS app (which keeps the phone awake, host.ts): whether the screen is dimmed,
+ *  after `secs` without a touch, a key or the wheel (the owner, 2026-10-07: "a screen dimming (app only)
+ *  after a set amount of time"), and its waking. A touch wakes it from the dim layer, which stays over
+ *  everything until the tap is over (its click, or a moment after the finger lifts): cleared at the touch,
+ *  the tap's click went through to the row under it. */
+function useBacklight(secs: number): readonly [boolean, () => void] {
+  const [dim, setDim] = useState(false);
+  useEffect(() => {
+    if (!secs || !window.alchemyLayout) return;
+    // dimmed by this timer and not since woken by a key or the wheel (the dim layer's own wake leaves it
+    // set, and a touch then only restarts the timer: the screen is lit already)
+    let t = 0, dimmed = false;
+    const poke = (e?: Event) => {
+      clearTimeout(t);
+      t = window.setTimeout(() => { dimmed = true; setDim(true); }, secs * 1000);
+      if (dimmed && e?.type === 'pointerdown') return;
+      dimmed = false;
+      setDim(false);
+    };
+    const kinds = ['pointerdown', 'keydown', 'wheel'] as const;
+    kinds.forEach((k) => window.addEventListener(k, poke, { capture: true, passive: true }));
+    poke();
+    return () => { clearTimeout(t); kinds.forEach((k) => window.removeEventListener(k, poke, { capture: true })); setDim(false); };
+  }, [secs]);
+  return [dim, () => setDim(false)] as const;
+}
+
+/** One stacked screen: its own wheel registrations (FrameContext), hidden unless on top. */
+function Frame({ hub, slot, nav, shown }: { hub: Hub; slot: Slot; nav: NavStore; shown: boolean }) {
+  const frame = useMemo(() => ({ hub, id: slot.id }), [hub, slot.id]);
+  return (
+    <FrameContext.Provider value={frame}>
+      <div className={s.frame} hidden={!shown}>{slot.entry.render(nav)}</div>
+    </FrameContext.Provider>
+  );
+}
+
+let audio: { ac: AudioContext; noise: AudioBuffer } | null = null;
+/** The clicker (§3.3): the iOS keyboard tick where the app has it; elsewhere Web Audio, one shared
+ *  context: a 4 ms burst of white noise under a 1.5 ms decay, through a 3 kHz high-pass at gain .12,
+ *  silent while the page is hidden. */
+function click() {
+  if (window.alchemySound) { window.alchemySound(1104); return; }
+  if (document.hidden || typeof AudioContext === 'undefined') return;
+  if (!audio) {
+    const ac = new AudioContext(), noise = ac.createBuffer(1, Math.ceil(ac.sampleRate * .004), ac.sampleRate), d = noise.getChannelData(0);
+    for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * Math.exp(-i / (ac.sampleRate * .0015));
+    audio = { ac, noise };
+  }
+  const { ac, noise } = audio, src = ac.createBufferSource(), hp = ac.createBiquadFilter(), g = ac.createGain();
+  void ac.resume();
+  src.buffer = noise;
+  hp.type = 'highpass';
+  hp.frequency.value = 3000;
+  g.gain.value = .12;
+  src.connect(hp).connect(g).connect(ac.destination);
+  src.start();
+}
+
+/** The metal answers the room and the hand, lightly (the owner, 2026-10-03): --lux from the screen's
+ *  brightness (the phone's follows the room's light; apps are not given the sensor itself), --tilt from
+ *  the phone's roll (the iOS app's __wmpTilt), --pitch from how far it is tipped from the way it is held
+ *  (__wmpPitch against a reference that follows it over HOLD_MS, so it settles back; -1..1 at 25°): the
+ *  wheel's and the centre's highlights move with both (the owner, 2026-10-06: "why isnt the wheel or wheel
+ *  highlight mark moving"). Set on the body's style, no render; registered as numbers so the changes ease
+ *  (ipod.module.css .body's transition). */
+const HOLD_MS = 4000;
+function useSheen() {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    for (const [name, v] of [['--tilt', '0'], ['--lux', '1'], ['--pitch', '0']] as const) {
+      try { CSS.registerProperty({ name, syntax: '<number>', inherits: true, initialValue: v }); } catch { /* registered already, or not supported: it steps */ }
+    }
+    const set = () => {
+      const el = ref.current, b = window.__wmpBrightness, t = window.__wmpTilt;
+      if (!el) return;
+      if (typeof b === 'number') el.style.setProperty('--lux', String(Math.round((0.94 + 0.12 * Math.max(0, Math.min(1, b))) * 1000) / 1000));
+      if (typeof t === 'number') el.style.setProperty('--tilt', String(Math.max(-1, Math.min(1, t))));
+    };
+    let held = window.__wmpPitch ?? 0, heldAt = performance.now(), again = 0;
+    const pitch = () => {
+      clearTimeout(again);
+      const el = ref.current, p = window.__wmpPitch;
+      if (!el || typeof p !== 'number') return;
+      const now = performance.now();
+      held += (p - held) * Math.min(1, (now - heldAt) / HOLD_MS); heldAt = now;
+      const rel = p - held;
+      el.style.setProperty('--pitch', String(Math.round(Math.max(-1, Math.min(1, rel / 25)) * 1000) / 1000));
+      if (Math.abs(rel) > .5) again = window.setTimeout(pitch, 300);    // settling back to how it is held
+    };
+    set(); pitch();
+    window.addEventListener('wmp-brightness', set); window.addEventListener('wmp-tilt', set); window.addEventListener('wmp-pitch', pitch);
+    return () => {
+      clearTimeout(again);
+      window.removeEventListener('wmp-brightness', set); window.removeEventListener('wmp-tilt', set); window.removeEventListener('wmp-pitch', pitch);
+    };
+  }, []);
+  return ref;
+}

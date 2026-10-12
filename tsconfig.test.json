@@ -1,0 +1,12 @@
+{
+  // tests/**: the app's settings plus Node's types (fixtures are read with node:fs). Kept apart so
+  // browser code under src/ can never pick up a Node global by accident.
+  "extends": "./tsconfig.app.json",
+  "compilerOptions": {
+    "tsBuildInfoFile": "node_modules/.tmp/tsconfig.test.tsbuildinfo",
+    "types": ["vite/client", "vitest/globals", "node"]
+  },
+  "include": ["src", "tests"],
+  "exclude": ["src/engine"],
+  "references": [{ "path": "./tsconfig.engine.json" }]
+}

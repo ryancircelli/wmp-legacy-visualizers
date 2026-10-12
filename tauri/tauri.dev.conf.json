@@ -1,0 +1,8 @@
+{
+  "$schema": "./node_modules/@tauri-apps/cli/config.schema.json",
+  "identifier": "com.ryancircelli.wmp-legacy-visualizers.dev",
+  "build": {
+    "devUrl": "http://localhost:5173",
+    "beforeDevCommand": { "script": "npm run dev -- --strictPort", "cwd": ".." }
+  }
+}

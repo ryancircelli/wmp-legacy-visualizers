@@ -1,0 +1,84 @@
+# librespot-playback 0.8.0 as the app builds it (build.sh applies this to the crate from crates.io): Player::keep_position,
+# so a take-back after a lost connection plays on the song still playing where it is heard rather than seeking back
+# to the position Spotify last had (src/lib.rs says when); and a buffer line in the log every 15 s while playing. diff -ruN against the crate, paths a/ b/.
+--- a/src/player.rs
++++ b/src/player.rs
+@@ -1423,6 +1423,7 @@
+ 
+             if self.state.is_playing() {
+                 self.ensure_sink_running();
++                health(&self.state, &self.preload);
+ 
+                 if let PlayerState::Playing {
+                     ref track_id,
+@@ -1944,6 +1945,10 @@
+         play: bool,
+         position_ms: u32,
+     ) -> PlayerResult {
++        // wmp: a take-back after a lost connection (Player::keep_position) hands the track still playing
++        // here back at Spotify's last word on its position, seconds behind what is heard; it plays on.
++        let kept = KEEP_UNTIL.swap(0, Ordering::Relaxed) > keep_now();
++        let keep = kept && play && matches!(self.state, PlayerState::Playing { .. });
+         let play_request_id =
+             play_request_id_option.unwrap_or(self.play_request_id_generator.get());
+ 
+@@ -2013,7 +2018,7 @@
+         {
+             if *current_track_id == track_id {
+                 // we can use the current decoder. Ensure it's at the correct position.
+-                if position_ms != *stream_position_ms {
++                if position_ms != *stream_position_ms && !keep {
+                     // This may be blocking.
+                     *stream_position_ms = decoder.seek(position_ms)?;
+                 }
+@@ -2647,3 +2652,50 @@
+         Some(self.length)
+     }
+ }
++
++// wmp: every 15 s while playing, how far the download is ahead of the decoder and whether the next
++// song is ready, into the log ("can we log preloaded song health", the owner, 2026-10-12).
++static HEALTH_AT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
++
++fn health(state: &PlayerState, preload: &PlayerPreload) {
++    let now = keep_now();
++    if now < HEALTH_AT.load(Ordering::Relaxed) + 15_000 {
++        return;
++    }
++    HEALTH_AT.store(now, Ordering::Relaxed);
++    if let PlayerState::Playing { stream_loader_controller: c, bytes_per_second, .. } = state {
++        let ahead = c.ahead();
++        let rest = if c.range_to_end_available() { ", the rest of the song here" } else { "" };
++        let ping = c.ping_time().map_or(String::new(), |p| format!(", ping {} ms", p.as_millis()));
++        let next = match preload {
++            PlayerPreload::None => "not loaded yet".to_string(),
++            PlayerPreload::Loading { .. } => "loading".to_string(),
++            PlayerPreload::Ready { loaded_track, .. } => {
++                let n = &loaded_track.stream_loader_controller;
++                format!("ready, {} s fetched", n.ahead() / loaded_track.bytes_per_second.max(1))
++            }
++        };
++        info!(
++            "buffer: {:.1} s fetched ahead of the decoder{rest}{ping}; the next song {next}",
++            ahead as f64 / (*bytes_per_second).max(1) as f64
++        );
++    }
++}
++
++// wmp: Player::keep_position (see handle_command_load).
++static KEEP_UNTIL: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
++
++fn keep_now() -> u64 {
++    std::time::SystemTime::now()
++        .duration_since(std::time::UNIX_EPOCH)
++        .map(|d| d.as_millis() as u64)
++        .unwrap_or(0)
++}
++
++impl Player {
++    /// wmp: the next load within `for_ms`, if it plays the track already playing, keeps the position
++    /// heard rather than seeking to the one it carries. Spent by the next load either way.
++    pub fn keep_position(&self, for_ms: u64) {
++        KEEP_UNTIL.store(keep_now() + for_ms, std::sync::atomic::Ordering::Relaxed);
++    }
++}

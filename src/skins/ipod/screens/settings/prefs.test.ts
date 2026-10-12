@@ -1,0 +1,28 @@
+// Settings > Menus > Main Menu / Library Filters: what shows out of the box, and that only the user's own
+// choices are stored (so a later change of the defaults reaches everyone who never touched a row);
+// Library View's default.
+import { act, renderHook } from '@testing-library/react';
+import { afterEach, expect, it } from 'vitest';
+import { resetMenu, setMenuItem, useLibraryView, useMenuVisibility } from './prefs';
+
+afterEach(() => localStorage.clear());
+
+it('shows every row and chip until one is turned off', () => {
+  const { result } = renderHook(() => useMenuVisibility());
+  expect(result.current.main).toEqual({ home: true, search: true, library: true, radio: true, brick: true });
+  expect(result.current.music).toEqual({ playlists: true, albums: true, artists: true, podcasts: true });
+  act(() => setMenuItem('music', 'podcasts', false));
+  expect(result.current.music.podcasts).toBe(false);
+  expect(JSON.parse(localStorage.getItem('ipod.menus')!)).toEqual({ main: {}, music: { podcasts: false } });
+  act(() => resetMenu('music'));
+  expect(result.current.music.podcasts).toBe(true);
+});
+
+it('Library View is Grid until List is chosen', () => {
+  const { result } = renderHook(() => useLibraryView());
+  expect(result.current[0]).toBe('grid');
+  act(() => result.current[1]('list'));
+  expect(result.current[0]).toBe('list');
+  expect(localStorage.getItem('ipod.view')).toBe('"list"');
+});
+

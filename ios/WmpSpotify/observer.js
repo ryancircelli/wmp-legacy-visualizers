@@ -1,0 +1,476 @@
+// The iOS app's user script (CONTRACT.md v6.1): Spotify's own web player runs in the WKWebView, and
+// this puts our player on top of it. App.swift wraps it as
+//   (function (HTML, CSS, RUN) { <this file> })(<bundle.html>, <bundle.css>, function () { <bundle.js> });
+// with dist/spotify-inject.js fetched from wmp.ryancircelli.com, and injects it at document start
+// in the main frame. It is the retired Deno host's spotify.ts (git history, deno-webview/) with the
+// host bindings that Swift cannot provide answered in-page.
+//
+// Everything here runs inside open.spotify.com's document, under its CSP. That CSP (measured
+// 2026-09-24) is a header with `script-src` and `frame-ancestors` only, so: our JS is this script
+// itself (a <script> element or eval would need script-src), styles are a constructed sheet (never a
+// style-src question), and the page's own fetches/WebSockets are not restricted.
+//
+// Order on open.spotify.com:
+//   1. at document creation: fetch/XHR/WebSocket observed (window.__wmpSpotify, events);
+//   2. as soon as document.body exists (DOMContentLoaded waits seconds more for Spotify's own
+//      scripts): #wmp-root + open shadow root mounted, sheet adopted, HTML set,
+//      window.alchemyEngine/alchemyRoot set, then RUN() runs synchronously.
+// A token can arrive before step 2: our JS reads window.__wmpSpotify first and then listens for
+// "wmp-spotify-token".
+if (location.hostname !== 'open.spotify.com' || window.top !== window) return;
+var SPOTIFY_LOGIN = 'https://accounts.spotify.com/login?continue=' + encodeURIComponent('https://open.spotify.com/');
+var SPOTIFY_LOGOUT = 'https://accounts.spotify.com/logout?continue=' + encodeURIComponent(SPOTIFY_LOGIN);
+// What this app is called in Spotify Connect (the web player would say "Web Player (Safari)").
+var DEVICE_NAME = 'WMP Spotify';
+
+// ---- the host bindings (CONTRACT.md v4-v6) this host answers in-page
+window.alchemyLog = function (m) { try { webkit.messageHandlers.log.postMessage(String(m)); } catch (e) {} };
+var log = function (m) { window.alchemyLog('spotify: ' + m); };
+// An app, not the website: no share picker, and no microphone. The audio is the host's "socket"
+// (CONTRACT v8's frames), but no socket in the page: WebKit refuses ws:// from Spotify's https page
+// (measured, build 6), so the WebSocket wrapper below answers this one URL with a stand-in that
+// App.swift feeds by evaluateJavaScript, __wmpAudio.rate(n) and __wmpAudio.pcm(<base64 stereo
+// int16 LE>, n) per batch, from the app's own Spotify Connect speaker (librespot) as the app plays
+// it (ios/README.md, "Librespot"). The stand-in is never closed: a pause and the next song carry on
+// in it.
+window.alchemyElectron = { loopback: false, mode: 'app' };
+// Spotify's own page plays nothing here: the app's speaker plays, and an <audio> of the web player's
+// (a silent one it keeps alive as a Connect controller) made WebKit hold the phone's audio session and
+// take it back after another app's interruption (the owner, 2026-10-02: a reel in Instagram "starts
+// playing… our app starts trying to take over the audio and they fight, and i was paused"), the web
+// content process never idle meanwhile. Unmuted media of the page's is kept paused; the overlay's own
+// muted media (the Canvas clip) plays as ever.
+// WebKit runs the page's audio in a process of its own, which iOS takes for another app: a session coming
+// up there (silent) interrupted the app's speaker with nothing to see or hear (2026-10-03: "audio:
+// interrupted (reason 0, other audio silent)", every other app closed).
+// (navigator.audioSession.type = 'ambient' was set here for a day: taken out, the app's own audio stalling
+// after a pause with it in place; the block on the page's media below is what stops the interruptions.)
+// What the web view itself does with audio, into the host's log with its times, to set beside the app's
+// "audio: interrupted" lines (the owner, 2026-10-04, no other app having taken the audio: "any way to
+// confirm self interference…?"): WebKit's own audio session as it changes state (navigator.audioSession,
+// where WebKit has it), every Web Audio context made and each change of its state, and every media
+// element asked to play, allowed or not. A web-view line a moment before an interruption names it.
+(function () {
+  var n = 0, say = function (m) { if (n++ < 200) log('web audio: ' + m); };
+  try {
+    var as = navigator.audioSession;
+    if (!as) say('no navigator.audioSession here');
+    else {
+      say('session ' + as.type + ', ' + as.state);
+      as.addEventListener('statechange', function () { say('session ' + as.type + ', ' + as.state); });
+    }
+  } catch (e) { say('session: ' + e); }
+  ['AudioContext', 'webkitAudioContext'].forEach(function (name) {
+    var C = window[name];
+    if (!C || C.__wmp) return;
+    var W = function () {
+      var c = arguments.length ? new C(arguments[0]) : new C();
+      say('a context made (' + c.state + ')');
+      try { c.addEventListener('statechange', function () { say('context ' + c.state); }); } catch (e) {}
+      return c;
+    };
+    W.prototype = C.prototype; W.__wmp = true;
+    try { window[name] = W; } catch (e) {}
+  });
+  var play = HTMLMediaElement.prototype.play;
+  HTMLMediaElement.prototype.play = function () {
+    var where = this.getRootNode() instanceof ShadowRoot ? 'the overlay\'s' : this.isConnected ? 'the page\'s' : 'the page\'s, unattached';
+    var what = this.tagName.toLowerCase() + (this.muted ? ' muted' : ' with sound') + ' ' + String(this.currentSrc || this.src || '').slice(-28);
+    // the overlay's own (in its shadow root) and anything muted; Spotify's player element is in no
+    // document at all (made and never attached), so "not in the document" let it through
+    if (this.muted || this.getRootNode() instanceof ShadowRoot) { say('play: ' + where + ' ' + what); return play.apply(this, arguments); }
+    say('play blocked (the speaker plays): ' + where + ' ' + what);
+    return Promise.resolve();
+  };
+})();
+var AUDIO_URL = 'ws://127.0.0.1:47831/audio';
+window.alchemyScreensaver = { audio: true, url: AUDIO_URL };
+var audioSock = null;
+window.__wmpAudio = {
+  rate: function (n) {
+    if (!audioSock || !audioSock.onmessage || audioSock.rated === n) return;
+    audioSock.rated = n;
+    audioSock.onmessage({ data: JSON.stringify({ rate: n }) });
+  },
+  pcm: function (b64, n) {
+    if (n) window.__wmpAudio.rate(n);
+    if (!audioSock || !audioSock.onmessage || !audioSock.rated) return;
+    var bin = atob(b64), cnt = bin.length >> 1, f = new Float32Array(cnt);
+    for (var i = 0; i < cnt; i++) {
+      var v = bin.charCodeAt(2 * i) | (bin.charCodeAt(2 * i + 1) << 8);
+      f[i] = (v >= 32768 ? v - 65536 : v) / 32768;
+    }
+    audioSock.onmessage({ data: f.buffer });
+  },
+  close: function () { var s = audioSock; audioSock = null; if (s && s.onclose) s.onclose({}); },
+};
+function fakeAudioSocket() {
+  var s = { url: AUDIO_URL, readyState: 0, binaryType: 'blob', rated: 0, onopen: null, onmessage: null, onerror: null, onclose: null,
+    send: function () {}, close: function () { if (audioSock === s) { audioSock = null; s.readyState = 3; if (s.onclose) s.onclose({}); } },
+    addEventListener: function (t, fn) { s['on' + t] = fn; } };
+  audioSock = s;
+  setTimeout(function () { if (audioSock === s) { s.readyState = 1; if (s.onopen) s.onopen({}); } }, 0);
+  return s;
+}
+window.alchemyMarks = [];
+window.alchemySpotifyLogout = function () { log('log out'); location.replace(SPOTIFY_LOGOUT); };
+// The skin's volume and mute as the phone's system volume (App.swift SystemVolume): a page cannot
+// change its own playback volume on iOS, so Spotify's volume command to this device does nothing.
+window.alchemySetVolume = function (pct) { try { webkit.messageHandlers.volume.postMessage(pct); } catch (e) {} };
+// Help's links in Safari (App.swift: the "open" message).
+window.alchemyOpenUrl = function (url) { try { webkit.messageHandlers.open.postMessage(String(url)); } catch (e) {} };
+// Help > Check for Player Updates: the site's build against the page's own (window.__wmpPageBuild,
+// set by the page at mount); Restart is then a refresh IN PLACE: the newest bundle fetched from the
+// site, the page torn down (window.Alchemy.unmount) and the new one run in this same document, so
+// Spotify's page underneath, and the music, go on. The page's build is a git sha (CI) or 'dev'.
+var SITE = 'https://wmp.ryancircelli.com/';
+window.alchemyCheckUpdate = function () {
+  return fetch(SITE + 'version.json', { cache: 'no-store' }).then(function (r) { return r.json(); }).then(function (j) {
+    var mine = window.__wmpPageBuild || '';
+    return j.version && j.version !== mine ? { ready: String(j.version).slice(0, 7) } : {};
+  }, function () { return { error: 'The site could not be reached.' }; });
+};
+// The bundle the app has already downloaded comes as the argument (App.swift PageUpdate): fetched again
+// here, a bad connection held the refresh up for nothing. Without one (an older app), the site's.
+window.alchemyRestart = function (given) {
+  log('restart: refreshing the page in place');
+  (given ? Promise.resolve(given) : fetch(SITE + 'spotify-inject.js', { cache: 'no-store' }).then(function (r) { return r.json(); })).then(function (B) {
+    var root = window.alchemyRoot;
+    if (!root || !B || typeof B.js !== 'string') throw new Error('no bundle');
+    try { if (window.Alchemy && window.Alchemy.unmount) window.Alchemy.unmount(); } catch (e) { log('unmount: ' + e); }
+    var sheet = root.adoptedStyleSheets[0];
+    if (sheet) sheet.replaceSync(B.css + '\n#chrome,#titlebar{border-radius:0!important}');
+    root.innerHTML = B.html;
+    // open.spotify.com's CSP allows 'unsafe-eval' (measured 2026-09-24: the Deno host's dev mode ran on it)
+    (0, eval)('(function () {"use strict";\n' + B.js + '\n})()');
+    log('refreshed in place');
+  }).catch(function (e) { log('refresh failed (' + e + '): reloading'); location.reload(); });
+};
+// For a skin made for the phone: the web view edge to edge ('edge') or inside the safe area
+// ('safe', the default); the insets in points arrive as window.__wmpSafeArea with a 'wmp-safe-area'
+// event on window; alchemyShowLog opens the host's log sheet, which edge to edge has no band for.
+window.__wmpSafeArea = { top: 0, right: 0, bottom: 0, left: 0 };
+window.alchemyLayout = function (mode) { try { webkit.messageHandlers.layout.postMessage(mode === 'edge' ? 'edge' : 'safe'); } catch (e) {} };
+window.alchemyShowLog = function () { try { webkit.messageHandlers.showlog.postMessage(''); } catch (e) {} };
+// For a click-wheel skin (App.swift): a haptic ('selection' for a detent, 'light'|'medium'|'heavy'|
+// 'rigid'|'soft', 'success'|'warning'|'error', 'prepare' to warm the tick), the screen kept awake,
+// the status bar, and the orientations allowed ('portrait'|'landscape'|'any').
+var post = function (name, body) { try { webkit.messageHandlers[name].postMessage(String(body)); } catch (e) {} };
+window.alchemyHaptic = function (kind) { post('haptic', kind || 'selection'); };
+window.alchemyAwake = function (on) { post('awake', on ? 'on' : 'off'); };
+window.alchemyStatusBar = function (hidden) { post('statusbar', hidden ? 'hidden' : 'shown'); };
+window.alchemyOrientation = function (mode) { post('orientation', mode || 'any'); };
+// The app's own Spotify Connect speaker (librespot): window.__wmpSpeaker = {id, name}, id its device id
+// while its session is up and null otherwise, with a 'wmp-speaker' event on window at each change; the
+// app sends it with the host report. alchemySpeakerName(name) renames it (kept across launches).
+window.__wmpSpeaker = { id: null, name: '' };
+window.alchemySpeakerName = function (name) { post('speaker', String(name || '').trim()); };
+// The speaker driven locally (the host's player): a command string for librespot; its state comes back as window.__wmpPlayer / 'wmp-player'.
+// Only on a build with the handler: this file reaches older builds too, and the page feature-detects alchemyPlayer.
+if (window.webkit && webkit.messageHandlers && webkit.messageHandlers.player) window.alchemyPlayer = function (cmd) { post('player', String(cmd)); };
+// The broadcast (screen recording) is gone: the speaker feeds the visualizers. This file is served to
+// every installed build, and builds up to 32 still have the broadcast sheet and open it by themselves at
+// launch unless told 'manual'; a build without the handler throws here and `post` swallows it.
+post('broadcast', 'manual');
+// What the phone reports, each as a window global with an event of the same name on window when it
+// changes: __wmpVolume (0..100, the buttons too) 'wmp-volume'; __wmpBattery {level 0..100 or -1,
+// charging} 'wmp-battery'; __wmpRoute {name, type} (AirPods, Speaker) 'wmp-route'; __wmpBrightness
+// (0..1) 'wmp-brightness'; __wmpHost {build, version, ios, model} 'wmp-host'; and 'wmp-shake'.
+// alchemyHost() asks for all of them at once (a skin does so when it mounts).
+window.__wmpVolume = -1; window.__wmpBattery = { level: -1, charging: false }; window.__wmpRoute = { name: '', type: '' };
+window.__wmpBrightness = -1; window.__wmpHost = { build: '', version: '', ios: '', model: '' };
+window.alchemyHost = function () { post('host', ''); };
+window.alchemyBrightness = function (v) { post('brightness', typeof v === 'number' ? Math.max(0, Math.min(1, v)) : 'state'); };
+window.alchemyShare = function (text) { post('share', text); };
+window.alchemyHomeIndicator = function (hidden) { post('homeindicator', hidden ? 'hidden' : 'shown'); };
+window.alchemyOpenSettings = function () { post('open', 'settings'); };
+window.alchemyReset = function () { log('reset asked'); post('reset', ''); };
+// The rest of the phone, mapped whether a skin uses it or not (ios/README.md has each one):
+window.alchemyViewport = function (mode) { post('viewport', mode === 'mobile' ? 'mobile' : 'desktop'); };   // kept; reloads
+window.alchemyHapticPattern = function (events) { post('hapticpattern', JSON.stringify({ events: events || [] })); }; // [{t,i,s,d}]
+window.alchemySound = function (id) { post('sound', (id | 0) || 1104); };                                       // 1104 = the keyboard tick
+window.alchemyRoutePicker = function () { post('routepicker', ''); };                                          // AirPlay
+window.alchemyIcon = function (name) { post('icon', String(name)); };                                          // the app's icon, by body colour
+window.alchemyAudioSession = function (mode) { post('audiosession', mode || 'solo'); };                       // solo|mix|duck
+window.alchemyNotify = function (n) { post('notify', typeof n === 'string' ? n : JSON.stringify(n || {})); };  // {title,body,seconds,id} or 'cancel:<id>'
+window.alchemyAppearance = function (mode) { post('appearance', mode || 'auto'); };                           // light|dark|auto
+window.alchemyClipboard = function (text) { post('clipboard', text); };
+window.alchemyProximity = function (on) { post('proximity', on ? 'on' : 'off'); };                            // on: the screen blanks when covered
+window.alchemyBand = function (hidden) { post('band', hidden ? 'hidden' : 'shown'); };                         // the host's log band, in the safe-area layout
+window.alchemyBackground = function (hex) { post('background', hex || '#000000'); };                          // behind the web view (the safe-area bars)
+window.alchemyKeyboard = function (avoid) { post('keyboard', avoid ? 'avoid' : 'ignore'); };                  // the layout shrinks for the keyboard, or not
+window.alchemyScroll = function (on) { post('scroll', on ? 'on' : 'off'); };                                  // native scrolling of the whole page
+// Reports with an event of the same name: __wmpProximity 'wmp-proximity', __wmpLowPower 'wmp-lowpower',
+// __wmpThermal 'wmp-thermal', __wmpScene 'wmp-scene', __wmpKeyboard (pt) 'wmp-keyboard', and 'wmp-memory'.
+window.__wmpProximity = false; window.__wmpLowPower = false; window.__wmpThermal = 'nominal'; window.__wmpScene = 'active'; window.__wmpKeyboard = 0;
+
+
+// ---- 1. observers on the web player's own channels (never its DOM). Everything lands in
+// window.__wmpSpotify; each change is also a CustomEvent on window:
+//   wmp-spotify-token {token, clientId} · wmp-spotify-auth {loggedIn} · wmp-spotify-hash {op, sha}
+//   wmp-spotify-state = the last connect-state player_state · wmp-spotify-devices = W.devices
+var W = window.__wmpSpotify = { token: null, at: 0, clientToken: null, loggedIn: null, expiresAt: 0,
+  clientId: null, deviceId: null, activeDeviceId: '', connectionId: null, hashes: {}, state: null,
+  cluster: null, spclient: null, devices: [] };
+// Browsers keep 250 resource timing entries by default and the web player passes that within
+// seconds of load, so lazy chunks such as xpui-routes-search.*.js would never appear to the page's
+// hash scan.
+try { performance.setResourceTimingBufferSize(100000); } catch (e) {}
+var hobs = null; // our device id's first 35 hex digits, until the full 40 are known
+var names = {}; // device id -> the last real name a cluster gave it
+function emit(n, d) { window.dispatchEvent(new CustomEvent(n, { detail: d })); }
+// The web player's token to the app, for a librespot session on this account (the librespot branch's
+// "lstoken" message, "<clientId> <clientToken> <token>": librespot serves the web player's own token
+// and client token to spclient and the dealer in place of its own, which Spotify refuses a web login;
+// an app without the handler throws here, swallowed). Never logged.
+function lsToken() { try { if (W.token) webkit.messageHandlers.lstoken.postMessage((W.clientId || '') + ' ' + (W.clientToken || '') + ' ' + W.token); } catch (e) {} }
+var API = /^https:\/\/(api|api-partner|[a-z0-9-]*spclient[a-z0-9.-]*)\.spotify\.com\//;
+function hdr(h, name) {
+  if (!h) return null;
+  if (typeof Headers !== 'undefined' && h instanceof Headers) return h.get(name);
+  if (Array.isArray(h)) { for (var i = 0; i < h.length; i++) if (String(h[i][0]).toLowerCase() === name) return h[i][1]; return null; }
+  for (var k in h) if (k.toLowerCase() === name) return h[k];
+  return null;
+}
+function seenHeader(url, name, v) {
+  if (!v || !API.test(String(url))) return;
+  if (name === 'authorization') {
+    var m = /^Bearer\s+(\S+)/i.exec(v);
+    if (!m || m[1] === W.token) return; // the page's own calls repeat the same token: once each
+    W.token = m[1]; W.at = Date.now();
+    emit('wmp-spotify-token', { token: W.token, clientId: W.clientId });
+    lsToken();
+  } else if (name === 'client-token' && v !== W.clientToken) {
+    W.clientToken = v;
+    lsToken();
+  }
+}
+function seenHash(op, sha) {
+  if (!op || !/^[0-9a-f]{64}$/.test(sha || '') || W.hashes[op] === sha) return;
+  W.hashes[op] = sha;
+  emit('wmp-spotify-hash', { op: op, sha: sha });
+}
+function seenRequest(url, body) {
+  url = String(url);
+  if (/\/pathfinder\/v\d\/query/.test(url)) {
+    try {
+      var q = new URL(url).searchParams, j = q.get('extensions') ? { operationName: q.get('operationName'),
+        extensions: JSON.parse(q.get('extensions')) } : JSON.parse(body);
+      seenHash(j.operationName, j.extensions.persistedQuery.sha256Hash);
+    } catch (e) {}
+  }
+  // Our device: the full id is in track-playback's registration body; connect-state's URL only
+  // carries "hobs_" + its first 35 hex digits (measured), resolved against the cluster below.
+  if (/\/track-playback\/v1\/devices$/.test(url) && body) {
+    try {
+      var full = JSON.parse(body).device.device_id;
+      if (/^[0-9a-f]{40}$/.test(full)) { W.deviceId = full; log('registered as ' + full.slice(0, 8)); }
+    } catch (e) {}
+  }
+  var d = /^https:\/\/([a-z0-9.-]*spclient[a-z0-9.-]*\.spotify\.com)\/connect-state\/v1\/devices\/hobs_([0-9a-f]+)/.exec(url);
+  if (d) {
+    W.spclient = d[1];
+    // A new registration (every page load makes one) replaces an id that does not match it.
+    if (hobs !== d[2]) log('connect-state registration hobs_' + d[2].slice(0, 8) + (W.deviceId && W.deviceId.indexOf(d[2]) !== 0 ? ', dropping device ' + W.deviceId.slice(0, 8) : ''));
+    hobs = d[2];
+    if (W.deviceId && W.deviceId.indexOf(hobs) !== 0) W.deviceId = null;
+  }
+}
+function seenCluster(c) {
+  if (!c || typeof c !== 'object') return;
+  // Idle (nothing playing anywhere): Spotify omits active_device_id entirely while still sending
+  // the last player_state. "" then, never a stale id: the page shows such a state as paused.
+  if ((c.active_device_id || '') !== W.activeDeviceId) log('active device ' + (c.active_device_id || '(none)').slice(0, 8));
+  W.activeDeviceId = c.active_device_id || '';
+  // Play on Device: every cluster carries the account's Connect devices.
+  if (c.devices) {
+    // Names are kept by the FULL key Spotify uses. The registration answer keys Alexa speakers
+    // "<id>_amzn_1", "<id>_amzn_2" (a speaker and its "Everywhere" group share the id), while
+    // dealer pushes key them by the bare "<id>" and name them by it (measured). A bare key whose
+    // full keys are known is listed once per full key, so the group and the speaker stay two
+    // entries with the ids Spotify gave them (the transfer uses these ids).
+    var keys = Object.keys(c.devices);
+    keys.forEach(function (k) { var d = c.devices[k] || {}; if (d.name && d.name !== k) names[k] = d.name; });
+    W.devices = [];
+    keys.forEach(function (k) {
+      var d = c.devices[k] || {};
+      var full = Object.keys(names).filter(function (nk) { return nk.indexOf(k + '_') === 0 && !(nk in c.devices); });
+      (names[k] || !full.length ? [k] : full).forEach(function (id) {
+        W.devices.push({ id: id, name: names[id] || (d.name && d.name !== k ? d.name : '') || id,
+          type: d.device_type || '', active: id === W.activeDeviceId || k === W.activeDeviceId,
+          volume: typeof d.volume === 'number' ? d.volume : null, offline: !!d.is_offline });
+      });
+    });
+    emit('wmp-spotify-devices', W.devices);
+  }
+  if (!c.player_state) return;
+  W.cluster = c;
+  // W.deviceId is only ever a full 40-hex id: resolved here, before the state event goes out.
+  if (!W.deviceId && hobs) {
+    Object.keys(c.devices || {}).forEach(function (k) { if (k.indexOf(hobs) === 0) W.deviceId = k; });
+  }
+  W.state = c.player_state;
+  emit('wmp-spotify-state', c.player_state);
+}
+// Logged out: Spotify's login page instead of the anonymous web player. At most once a minute,
+// so a session that is still anonymous after signing in cannot bounce between the two; without
+// sessionStorage there is no guard, so no redirect either.
+function toLogin() {
+  try {
+    var k = 'wmp-login-redirect', ss = window.sessionStorage;
+    if (Date.now() - (+ss.getItem(k) || 0) < 60000) return;
+    ss.setItem(k, String(Date.now()));
+    log('logged out: to the login page');
+    location.replace(SPOTIFY_LOGIN);
+  } catch (e) {}
+}
+function seenResponse(url, res) {
+  url = String(url);
+  if (/^https:\/\/open\.spotify\.com\/api\/token/.test(url)) {
+    res.clone().json().then(function (j) {
+      W.clientId = j.clientId || null;
+      W.expiresAt = j.accessTokenExpirationTimestampMs || 0;
+      if (j.accessToken && j.accessToken !== W.token) { W.token = j.accessToken; W.at = Date.now(); emit('wmp-spotify-token', { token: W.token, clientId: W.clientId }); lsToken(); }
+      var li = j.isAnonymous === false;
+      if (li !== W.loggedIn) { W.loggedIn = li; emit('wmp-spotify-auth', { loggedIn: li }); }
+      if (j.isAnonymous === true) toLogin();
+    }).catch(function () {});
+  } else if (/\/connect-state\/v1\/devices\//.test(url) && res.ok) {
+    res.clone().json().then(seenCluster).catch(function () {}); // the PUT answers with the cluster
+  }
+}
+var ofetch = window.fetch;
+// Our device's name in Spotify Connect (the phone's picker, the cluster's device list): the
+// page registers itself as "Web Player (<browser>)"; the registration bodies are renamed on
+// their way out. Only a body that parses and has the name where it is expected is touched.
+// On the phone the web view's player is also hidden from every picker (Connect's `hidden`
+// capability, the one observer-only clients use): the app's own speaker (librespot) is what plays
+// there, and the page sends its commands to it (src/adapters/spotify/connect.ts, target).
+function renamed(url, body) {
+  if (typeof body !== 'string' || !/\/(connect-state\/v1\/devices\/hobs_|track-playback\/v1\/devices)/.test(String(url))) return body;
+  try {
+    var j = JSON.parse(body), d = j && j.device, hit = false;
+    if (d && d.device_info && typeof d.device_info.name === 'string') { d.device_info.name = DEVICE_NAME; hit = true; }
+    if (d && d.device_info && d.device_info.capabilities && typeof d.device_info.capabilities === 'object') d.device_info.capabilities.hidden = true;
+    if (d && typeof d.name === 'string') { d.name = DEVICE_NAME; hit = true; }
+    return hit ? JSON.stringify(j) : body;
+  } catch (e) { return body; }
+}
+window.fetch = function (input, init) {
+  var url = '';
+  try {
+    var u0 = typeof Request !== 'undefined' && input instanceof Request ? input.url : String(input && input.url || input);
+    var b0 = init && init.body, b1 = renamed(u0, b0);
+    if (b1 !== b0) init = Object.assign({}, init, { body: b1 });
+  } catch (e) {}
+  try {
+    var req = typeof Request !== 'undefined' && input instanceof Request ? input : null;
+    url = req ? req.url : String(input && input.url || input);
+    var h = init && init.headers;
+    ['authorization', 'client-token'].forEach(function (n) { seenHeader(url, n, hdr(h, n) || (req && req.headers.get(n))); });
+    seenRequest(url, init && typeof init.body === 'string' ? init.body : null);
+  } catch (e) {}
+  var args = [].slice.call(arguments);
+  if (init !== args[1] && init) args[1] = init; // the renamed registration
+  var p = ofetch.apply(this, args);
+  p.then(function (r) { try { seenResponse(url, r); } catch (e) {} }, function () {});
+  return p;
+};
+var XO = XMLHttpRequest.prototype.open, XH = XMLHttpRequest.prototype.setRequestHeader,
+  XS = XMLHttpRequest.prototype.send;
+XMLHttpRequest.prototype.open = function (m, url) { this.__wmpUrl = url; return XO.apply(this, arguments); };
+XMLHttpRequest.prototype.setRequestHeader = function (k, v) {
+  try { seenHeader(this.__wmpUrl, String(k).toLowerCase(), v); } catch (e) {}
+  return XH.apply(this, arguments);
+};
+XMLHttpRequest.prototype.send = function (body) {
+  try { body = renamed(this.__wmpUrl, body); } catch (e) {}
+  try { seenRequest(this.__wmpUrl, typeof body === 'string' ? body : null); } catch (e) {}
+  return XS.call(this, body);
+};
+// The dealer socket (wss://*dealer*.spotify.com) pushes hm://connect-state/v1/cluster on every
+// player change. Payloads are JSON or base64 (gzip when headers say so).
+function payload(m) {
+  var p = m.payloads && m.payloads[0];
+  if (p == null) return Promise.resolve(null);
+  if (typeof p === 'object') return Promise.resolve(p);
+  var bin = Uint8Array.from(atob(p), function (c) { return c.charCodeAt(0); });
+  var gz = m.headers && /gzip/i.test(m.headers['Transfer-Encoding'] || '');
+  var s = gz ? new Response(new Blob([bin]).stream().pipeThrough(new DecompressionStream('gzip'))).text()
+    : Promise.resolve(new TextDecoder().decode(bin));
+  return s.then(JSON.parse);
+}
+var dealerOpen = false;
+function dealer(ws) {
+  log('dealer socket opened');
+  dealerOpen = true;
+  ws.addEventListener('close', function (e) { dealerOpen = false; log('dealer socket closed (' + e.code + ')'); });
+  ws.addEventListener('error', function () { log('dealer socket error'); });
+  ws.addEventListener('message', function (e) {
+    if (typeof e.data !== 'string') return;
+    var m; try { m = JSON.parse(e.data); } catch (x) { return; }
+    if (m.headers && m.headers['Spotify-Connection-Id']) W.connectionId = m.headers['Spotify-Connection-Id'];
+    if (m.type === 'message' && /^hm:\/\/connect-state\/v1\/cluster/.test(m.uri || '')) {
+      payload(m).then(function (j) { seenCluster(j && (j.cluster || j)); }).catch(function () {});
+    }
+  });
+}
+var OWS = window.WebSocket;
+var WS = function WebSocket(url, protocols) {
+  if (String(url) === AUDIO_URL) return fakeAudioSocket();
+  var ws = protocols === undefined ? new OWS(url) : new OWS(url, protocols);
+  try { if (/^wss:\/\/[^/]*dealer[^/]*\.spotify\.com\//.test(String(url))) dealer(ws); } catch (e) {}
+  return ws;
+};
+WS.prototype = OWS.prototype;
+['CONNECTING', 'OPEN', 'CLOSING', 'CLOSED'].forEach(function (k) { WS[k] = OWS[k]; });
+window.WebSocket = WS;
+
+// The page in and out of the background (WebKit suspends it there): what the lines above follow.
+// Suspended, the dealer socket dies (1006, measured) and the web player did not open another on
+// its own; without it this page is no Connect device: commands answer 404 and no state arrives.
+// So, visible again with the dealer closed: an 'online' event 5 s in, the nudge its reconnect
+// listens for; still closed 15 s in, the page is reloaded, which registers a new device (the
+// overlay remounts; the host's audio goes on).
+document.addEventListener('visibilitychange', function () {
+  log('page ' + document.visibilityState);
+  if (document.visibilityState !== 'visible') return;
+  setTimeout(function () { if (!dealerOpen) { log('dealer still closed: online event'); window.dispatchEvent(new Event('online')); } }, 5000);
+  setTimeout(function () { if (!dealerOpen) { log('dealer still closed: reloading'); location.reload(); } }, 15000);
+});
+
+// ---- 2. the overlay, once there is a body to put it in
+function mount() {
+  if (document.getElementById('wmp-root')) return;
+  var host = document.createElement('div');
+  host.id = 'wmp-root';
+  host.style.cssText = 'position:fixed;inset:0;z-index:2147483647';
+  var root = host.attachShadow({ mode: 'open' });
+  var sheet = new CSSStyleSheet();
+  // The page fills the screen: square the skin's chrome, as the desktop hosts do.
+  // the overlay's own text (the click wheel's MENU) is not selectable either: the body rule below
+  // does not reach into this shadow root (the selection loupe came up on a long press on the wheel)
+  sheet.replaceSync(CSS + '\n#chrome,#titlebar{border-radius:0!important}\n*{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}input,textarea,[contenteditable]{-webkit-user-select:text;user-select:text}');
+  root.adoptedStyleSheets = [sheet];
+  root.innerHTML = HTML;
+  document.body.appendChild(host);
+  // Spotify's page under the overlay stays selectable to a long press (a selection flashed over the
+  // click wheel): none of it is, nor its link and image callouts. The overlay's own fields opt back in.
+  var nosel = document.createElement('style');
+  nosel.textContent = 'html,body,body *{-webkit-user-select:none!important;user-select:none!important;-webkit-touch-callout:none!important}';
+  document.documentElement.appendChild(nosel);
+  window.alchemyEngine = 'spotify';
+  window.alchemyRoot = root;
+  log('overlay mounted');
+  lsToken();  // a token seen before the handler was up (the in-place refresh)
+  RUN();
+}
+function go() { try { mount(); } catch (e) { log('mount failed: ' + (e && e.stack || e)); } }
+// As soon as there is a body, not at DOMContentLoaded: that waits for Spotify's deferred scripts,
+// seconds on a cold start, and the skin (with what the last session kept) needs none of them.
+if (document.body) go();
+else if (typeof MutationObserver === 'function') {
+  new MutationObserver(function (_, o) {
+    if (document.body) { o.disconnect(); go(); }
+  }).observe(document, { childList: true, subtree: true });
+} else document.addEventListener('DOMContentLoaded', go);

@@ -1,0 +1,27 @@
+{
+  // src/engine: the DLL ports, wrapped verbatim from the old src/*.js (ARCHITECTURE.md "Engine").
+  // Same strictness as the app EXCEPT noUncheckedIndexedAccess: the kernels read typed arrays in hot
+  // loops thousands of times, and a `!` on every read is noise with zero runtime effect. Everything
+  // outside src/engine sees these files through their emitted declarations (tsconfig.app.json references this).
+  "compilerOptions": {
+    "composite": true,
+    "tsBuildInfoFile": "node_modules/.tmp/tsconfig.engine.tsbuildinfo",
+    "outDir": "node_modules/.tmp/engine-types",
+    "emitDeclarationOnly": true,
+    "declaration": true,
+    "target": "ES2022",
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "types": [],
+    "strict": true,
+    "noUncheckedIndexedAccess": false,
+    "useDefineForClassFields": false,
+    "noFallthroughCasesInSwitch": true,
+    "isolatedModules": true,
+    "verbatimModuleSyntax": true,
+    "moduleDetection": "force",
+    "skipLibCheck": true
+  },
+  "include": ["src/engine"]
+}

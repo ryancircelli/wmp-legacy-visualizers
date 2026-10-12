@@ -1,0 +1,22 @@
+[package]
+name = "loopback-rec"
+version = "0.1.0"
+description = "Records the default render endpoint's WASAPI loopback to a float WAV"
+edition = "2024"
+publish = false
+
+[dependencies]
+# the crates and versions the Tauri host already uses for its loopback (tauri/src/audio/capture.rs)
+wasapi = "0.24.0"
+windows = { version = "0.62.2", features = [
+  "Win32_Foundation",
+  "Win32_Media_Audio_Endpoints",
+  "Win32_System_Com",
+  "Win32_System_Console",
+  "Win32_System_Diagnostics_ToolHelp",
+  "Win32_System_Performance",
+] }
+
+[profile.release]
+opt-level = "s"
+strip = true
