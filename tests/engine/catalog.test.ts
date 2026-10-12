@@ -27,6 +27,7 @@ describe('the catalog', () => {
       'Blazing Colors, WMP 7–8 3',
       'Color Cubes, WMP 7–8 3',
       'Particle, WMP 10 2, WMP 7–8 2',
+      'Picture Viz, WMP 8 7',
       'Plenoptic, WMP 10 7, WMP 8 2, WMP 7 7',
       'Pulsing Colors, WMP 7–8 3',
       'Spikes, WMP 10 2',

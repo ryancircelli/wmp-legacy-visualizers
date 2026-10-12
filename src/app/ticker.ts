@@ -6,7 +6,7 @@
 // state 1), and every other family's DLL then holds its picture, so those Renders change nothing and only
 // cost power (the phone); Particle's spin goes on, so it keeps rendering. The engine and the canvas come
 // and go with the <Visualizer/> that shows them.
-import { createEngine, makeLevel, nativeSize, type TimedLevel, type VisEngine } from '../engine';
+import { createEngine, loadPicture, makeLevel, nativeSize, type Picture, type TimedLevel, type VisEngine } from '../engine';
 import type { AppStore } from '../model';
 import { occluded, onSeen } from '../ui/shell';
 
@@ -19,6 +19,9 @@ export interface Ticker {
   paused: boolean;
   nativeSize(): [number, number];
   debugText(): string;
+  /** Picture Viz's "photo folder": these images (the playing song's cover, its Canvas still), decoded here
+   *  and kept for every engine made after; one that fails to load is left out. */
+  pictures(urls: readonly string[]): void;
 }
 
 /** ms: rAF timestamps jitter by about half a millisecond; any display under 500 Hz has vsyncs further apart than this. */
@@ -50,6 +53,7 @@ export function createTicker(store: AppStore, onFirstFrame: () => void): Ticker 
   const silent = makeLevel();
   let canvas: HTMLCanvasElement | null = null, eng: VisEngine | null = null, level: TimedLevel = silent;
   let acc = 0, last = 0, frames = 0, fpsAt = 0, fps = 0, raf = 0, first = true;
+  let picUrls = '', pics: Picture[] = [];
   // WMP pacing: when the next Render is due (0: at once), and the last render times (wmpDelay)
   let due = 0;
   const hist: number[] = [];
@@ -79,6 +83,7 @@ export function createTicker(store: AppStore, onFirstFrame: () => void): Ticker 
     const s = store.getState();
     eng = createEngine(s.vis.kind, canvas, { preset: s.vis.preset, scale: s.vis.scale ?? S().scale,
       options: { intended: S().intended, backgroundColor: S().bg, alpha: s.vis.alpha, tint: s.vis.tint } });
+    eng.setPictures(pics);
   }
 
   /** A preset or family change: WMP empties the render-time history (30 ms delays for 8 frames); the next
@@ -147,6 +152,16 @@ export function createTicker(store: AppStore, onFirstFrame: () => void): Ticker 
 
   const t: Ticker = {
     paused: false,
+    pictures(urls) {
+      const key = urls.join('\n');
+      if (key === picUrls) return;
+      picUrls = key;
+      void Promise.all(urls.map((u) => loadPicture(u).catch(() => null))).then((r) => {
+        if (key !== picUrls) return;               // another song since
+        pics = r.filter((p): p is Picture => !!p);
+        eng?.setPictures(pics);
+      });
+    },
     get engine() { return eng; },
     get level() { return level; },
     get fps() { return fps; },

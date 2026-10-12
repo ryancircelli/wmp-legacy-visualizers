@@ -69,7 +69,7 @@ const clamp = (v: number, lo: number, hi: number) => (v < lo ? lo : v > hi ? hi 
 /** Each visualizer's last preset (the engine's PRESETS has the names; tests/model/vis-kinds.test.ts keeps
  *  the two in step), so a saved choice from another build lands on a real preset. */
 export const VIS_PRESET_MAX: Readonly<Record<VisKind, number>> = { alchemy: 3, bars: 11, battery: 97, spikes: 1, particle: 3, plenoptic: 15, ambience: 23, musical: 20,
-  blazing: 2, colorcubes: 2, pulsing: 2, trilogy1: 3, trilogy2: 3, trilogy3: 3, alchemy3d: 5 };
+  blazing: 2, colorcubes: 2, pulsing: 2, trilogy1: 3, trilogy2: 3, trilogy3: 3, alchemy3d: 5, pictureviz: 6 };
 export const presetMax = (vis: VisKind) => VIS_PRESET_MAX[vis];
 
 /** Normalise any parsed blob (old builds included) to a valid Settings. */

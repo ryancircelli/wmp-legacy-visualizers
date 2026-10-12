@@ -19,12 +19,15 @@ import './ambience/index';
 import './musical/index';
 import './musical/plus';
 import './alchemy3d/index';
+import './pictureviz/index';
+import type { Picture } from './pictureviz/picture';
 
 export { A };
-export type { Surface, TimedLevel };
+export type { Surface, TimedLevel, Picture };
+export { pictureFromRGBA, loadPicture } from './pictureviz/picture';
 
 export type VisKind = 'alchemy' | 'bars' | 'battery' | 'spikes' | 'particle' | 'plenoptic' | 'ambience' | 'musical'
-  | 'blazing' | 'colorcubes' | 'pulsing' | 'trilogy1' | 'trilogy2' | 'trilogy3' | 'alchemy3d';
+  | 'blazing' | 'colorcubes' | 'pulsing' | 'trilogy1' | 'trilogy2' | 'trilogy3' | 'alchemy3d' | 'pictureviz';
 /** 'original' = each DLL's own surface size; 'auto' = the view, capped near 720p worth of pixels; n = view * n. */
 export type Scale = 'original' | 'auto' | number;
 
@@ -59,7 +62,7 @@ export interface PresetEntry {
   vis: VisKind;
   preset: number;
   group: 'Alchemy' | 'Bars and Waves' | 'Battery' | 'Spikes' | 'Particle' | 'Plenoptic' | 'Ambience' | 'Musical Colors'
-    | 'Blazing Colors' | 'Color Cubes' | 'Pulsing Colors' | 'Trilogy I' | 'Trilogy II' | 'Trilogy III' | '3D Alchemy';
+    | 'Blazing Colors' | 'Color Cubes' | 'Pulsing Colors' | 'Trilogy I' | 'Trilogy II' | 'Trilogy III' | '3D Alchemy' | 'Picture Viz';
   name: string;
   /** the family's registry key, HKLM\SOFTWARE\Microsoft\MediaPlayer\Objects\Effects\<key> (its place in the list) */
   key: string;
@@ -72,6 +75,7 @@ interface RawEngine {
   render(level: TimedLevel): Surface | null;
   resize(w: number, h: number): void;
   setPreset?(n: number): void;
+  setPictures?(p: Picture[]): void;
   seed(n: number): unknown;
   debug(): Record<string, unknown>;
 }
@@ -94,6 +98,9 @@ export interface VisEngine {
   setScale(scale: Scale): void;
   /** Same visualizer, other preset (keeps its state, like the shell's setVis with an unchanged vis). */
   setPreset(n: number): void;
+  /** The pictures Picture Viz shows in place of its photo folder (the playing song's cover art, its Canvas still);
+   *  the other families ignore them. */
+  setPictures(p: Picture[]): void;
   seed(n: number): void;
   debug(): Record<string, unknown>;
 }
@@ -125,6 +132,8 @@ const FAMILIES: readonly { key: string; vis: VisKind; group: PresetEntry['group'
   // WMP 9 lists it as a visualization of its own, first ("3" sorts before "A"). Its sixth preset, Draco's room,
   // is one WMP never offered (GetPresetCount says 5)
   { key: '3D-Alchemy', vis: 'alchemy3d', group: '3D Alchemy', names: A.Alchemy3D.PRESET_NAMES },
+  // the Windows Media Bonus Pack for Windows XP's PictureViz.dll
+  { key: 'PictureViz', vis: 'pictureviz', group: 'Picture Viz', names: A.PictureViz.PRESET_NAMES },
 ];
 
 /** Every preset of every family, in WMP's order: the flat list its next/previous walks, wrapping. */
@@ -157,7 +166,8 @@ export function makeLevel(): TimedLevel {
 // Particle (WMP 7-10) draw into a DIB of the window's own size and copy it 1:1, as Bars and Waves does (no
 // cap of their own; the same 1080p one here); Musical Colors (WMP 7-8) scales its 350x320
 // canvas itself (up to 3x) into the window's DC, black around it. 3D Alchemy draws through Direct3D into a back
-// buffer of the window's size, presented 1:1.
+// buffer of the window's size, presented 1:1. Picture Viz's canvas is the window
+// (its own 352x320 only for a transition's first frame).
 /** Families that draw at a size of their own whatever the window (Plenoptic and Ambience: their
  *  Plenoptic_Resolution / Assault_Resolution, 256x192 by default, StretchDIBits'd to the window): every
  *  scale renders them there, the canvas stretches. */
@@ -176,7 +186,7 @@ export function samplingOf(kind: VisKind, preset = 0): Sampling {
 export function nativeSize(kind: VisKind, viewW: number, viewH: number, preset = 0): [number, number] {
   if (kind === 'plenoptic' || kind === 'ambience') return [256, 192];
   if (kind === 'alchemy' && preset === 1) return [384, 288];          // Random (WMP 9)
-  if (kind === 'bars' || kind === 'spikes' || kind === 'particle' || kind === 'musical' || PLUS[kind] || kind === 'alchemy3d') return [Math.min(1920, viewW), Math.min(1080, viewH)];
+  if (kind === 'bars' || kind === 'spikes' || kind === 'particle' || kind === 'musical' || PLUS[kind] || kind === 'alchemy3d' || kind === 'pictureviz') return [Math.min(1920, viewW), Math.min(1080, viewH)];
   return kind === 'battery' ? [384, 288] : [640, 480];
 }
 
@@ -245,6 +255,7 @@ function makeRaw(kind: VisKind, preset: number, options: EngineOptions): RawEngi
   const P = PLUS[kind];
   if (P) return new P({ width: 16, height: 16, options, preset });
   if (kind === 'alchemy3d') return new (A.Alchemy3D as unknown as RawCtor)({ width: 640, height: 480, options, preset });
+  if (kind === 'pictureviz') return new (A.PictureViz as unknown as RawCtor)({ width: 16, height: 16, options, preset });
   return new (A.Engine as unknown as RawCtor)({ width: 16, height: 16, options, preset });
 }
 
@@ -361,6 +372,9 @@ export function createEngine(kind: VisKind, canvas: CanvasLike, opts: CreateEngi
       // a preset may bring its own surface size and stretch (Alchemy's WMP 9-11)
       sampling = samplingOf(kind, preset);
       eng.resize(canvas.width, canvas.height);
+    },
+    setPictures(p) {
+      raw.setPictures?.(p);
     },
     seed(n) {
       raw.seed(n);

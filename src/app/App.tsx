@@ -11,7 +11,7 @@ import { CATALOG } from '../engine/catalog';
 import type { AppStore } from '../model';
 import { skinFor } from '../skins/registry';
 import {
-  runShortcut, ShellContext, useApp, useForgetOnLogout, useIdlePrefetch, useLyricsFor, WMP9_SHORTCUTS, type Shell, type Shortcut,
+  runShortcut, ShellContext, useApp, useCanvas, useForgetOnLogout, useIdlePrefetch, useLyricsFor, WMP9_SHORTCUTS, type Shell, type Shortcut,
 } from '../ui';
 import '../ui/theme.css';
 import { TickerContext } from './Visualizer';
@@ -42,6 +42,7 @@ export function App({ store, ticker, root, client: given }: {
         </TickerContext.Provider>
         {engine === 'spotify' && <SpotifyLyrics />}
         {engine === 'spotify' && <SpotifyAhead />}
+        <VisPictures ticker={ticker} />
       </ShellContext.Provider>
       {Devtools && <Suspense fallback={null}><Devtools initialIsOpen={false} /></Suspense>}
     </QueryClientProvider>
@@ -53,6 +54,15 @@ export function App({ store, ticker, root, client: given }: {
 function SpotifyLyrics() {
   const { uri, art } = useApp((s) => ({ uri: s.playback.track?.uri ?? null, art: s.playback.track?.art ?? null }));
   useLyricsFor(uri, art);
+  return null;
+}
+
+/** Picture Viz's pictures: the playing song's cover, and its Canvas when that is a still (looked up only while
+ *  Picture Viz shows). */
+function VisPictures({ ticker }: { ticker: Ticker }) {
+  const { uri, art, on } = useApp((s) => ({ uri: s.playback.track?.uri ?? null, art: s.playback.track?.art ?? null, on: s.vis.kind === 'pictureviz' }));
+  const cv = useCanvas(on ? uri : null), still = cv?.type === 'image' ? cv.url : null;
+  useEffect(() => ticker.pictures([art, still].filter((u): u is string => !!u)), [ticker, art, still]);
   return null;
 }
 
