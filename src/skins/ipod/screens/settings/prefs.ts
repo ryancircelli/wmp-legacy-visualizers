@@ -3,8 +3,6 @@
 // that throws (blocked) falls back to memory for the session. (Earlier builds' 'ipod.clock',
 // 'ipod.volumeLimit' and 'ipod.shake' are read by nothing now; Reset Settings clears them with the rest.)
 import { useMemo, useSyncExternalStore } from 'react';
-import { useShell } from '../../../../ui';
-import type { MenuItem } from '../contract';
 
 const subs = new Set<() => void>();
 const mem = new Map<string, string>();
@@ -117,32 +115,18 @@ export function migrateVisPrefs(): void {
   mem.delete('ipod.visOverCover');
 }
 migrateVisPrefs();
-/** The visualizations for Now Playing's Visualizer… (its ⋯ and hold menus): `engines(open)` is the
- *  Visualizer toggle and Opacity (100 -> 75 -> 50 -> 25 -> 100; dim while it is off; over black it is
- *  not applied), then the registry's
- *  engines (Alchemy, Bars and Waves, Battery), the one holding the choice showing its name, each
- *  `open`ing its `presets(group)`, the choice checked; an engine of one preset (Alchemy's Random) is
- *  picked at its own row. A pick, the toggle or a step sets its pref; a pick turns it on. `preset`: the
- *  choice; `on`: it is on; `opacity`: its percent. */
+/** Now Playing's visualizer: `preset` the choice (a visId), `on` whether it shows, `opacity` its percent;
+ *  `pick` sets the choice and turns it on, `toggle` turns it on or off, `step` steps Opacity 100 -> 75 ->
+ *  50 -> 25 -> 100. Its menu is Now Playing's Visualizer… (nowplaying/VisMenu.tsx). */
 export function useVisualizers() {
-  const sh = useShell(), [cur, set] = useVisualizer(), [on, setOn] = useVisOn(), [opacity, setOpacity] = useVisOpacity();
-  const chosen = sh.presets.find((p) => visId(p) === cur);
-  const of = (g: string) => sh.presets.filter((p) => p.group === g);
-  const pick = (id: string, label: string): MenuItem => ({ id, label, right: id === cur ? '✓' : undefined, onSelect: () => { set(id); setOn(true); } });
+  const [cur, set] = useVisualizer(), [on, setOn] = useVisOn(), [opacity, setOpacity] = useVisOpacity();
   return {
     preset: cur,
     on,
     opacity,
-    presets: (g: string) => of(g).map((p) => pick(visId(p), p.name)),
-    engines: (open: (g: string) => void): MenuItem[] => [
-      { id: 'on', label: 'Visualizer', right: on ? 'On' : 'Off', onSelect: () => setOn(!on) },
-      { id: 'opacity', label: 'Opacity', right: opacity + '%', disabled: !on,
-        onSelect: () => setOpacity(VIS_OPACITY[(VIS_OPACITY.indexOf(opacity as 100) + 1) % VIS_OPACITY.length]!) },
-      ...[...new Set(sh.presets.map((p) => p.group))].map((g) => {
-        const ps = of(g);
-        return ps.length === 1 ? pick(visId(ps[0]!), g)
-          : { id: g, label: g, right: chosen?.group === g ? chosen.name : undefined, chevron: true, onSelect: () => open(g) };
-      })],
+    pick: (id: string) => { set(id); setOn(true); },
+    toggle: () => setOn(!on),
+    step: () => setOpacity(VIS_OPACITY[(VIS_OPACITY.indexOf(opacity as 100) + 1) % VIS_OPACITY.length]!),
   };
 }
 

@@ -37,7 +37,12 @@ function atNowPlaying() {
   return {
     ...m, np, log, options, row,
     pick: (label: string) => act(() => { fireEvent.click(row(label)); }),
-    menu: () => { act(() => { fireEvent.click(within(np).getByRole('button', { name: 'Options' })); }); act(() => { fireEvent.click(row('Visualizer…')); }); },
+    /** Visualizer… from the ⋯, closing the one open first (a tap on the picture under it) */
+    menu: () => {
+      const open = np.querySelector('[class*=vismenu]');
+      if (open) act(() => { fireEvent.click(open); });
+      act(() => { fireEvent.click(within(np).getByRole('button', { name: 'Options' })); }); act(() => { fireEvent.click(row('Visualizer…')); });
+    },
     play: async (uri: string, art?: string) => {
       act(() => { m.store.setState((s) => ({ playback: { ...s.playback, status: 'playing', track: { uri, title: 'T', artist: 'A', duration: 100_000, art } } })); });
       await settle();

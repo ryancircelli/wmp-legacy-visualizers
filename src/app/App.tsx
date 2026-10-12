@@ -7,6 +7,7 @@ import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
 import { useStore } from 'zustand';
 import { getQueries, type Queries } from '../adapters';
 import { PRESETS } from '../engine';
+import { CATALOG } from '../engine/catalog';
 import type { AppStore } from '../model';
 import { skinFor } from '../skins/registry';
 import {
@@ -69,6 +70,7 @@ export function makeShell(store: AppStore, ticker: Ticker, portal: HTMLElement |
     queries,
     client,
     presets: PRESETS,
+    catalog: CATALOG,
     portal,
     shortcuts,
     nativeSize: () => ticker.nativeSize(),

@@ -6,7 +6,7 @@
 // back after 5 s idle (shuffle and Like: the status row's toggles). The track's lyrics show over the
 // cover whenever Lyrics is on, no mode of the center's (the owner's ruling, unlike the nano's mode 6).
 // Hold center: the nano's popup, Spotify's way (§4.3); the ⋯ in the cover's corner opens this page's
-// options (Visualizer…, Lyrics, Karaoke), which the popup has too. Play / next / prev and
+// options (Visualizer…: VisMenu.tsx's pages; Lyrics, Karaoke). Play / next / prev and
 // their holds (fast-forward, rewind: useScan) are the chrome's. A track with a Spotify Canvas shows it
 // behind the whole screen instead of the cover, the two bands made translucent over it; a tap on the
 // cover's area cycles the Canvas -> the cover -> black -> the Canvas, remembered (only while the Canvas
@@ -38,6 +38,7 @@ import { useTurn } from '../../wheel';
 import { pickAccent, rgbOf } from './accent';
 import { barsFit, IDLE_MS, nextMode, QUIET_MS, SCRUB_COMMIT_MS, scrubAccel, scrubStep, times, turnPct, volumeBy, VOLUME_MS, VOLUME_SEND_MS, VOLUME_TICK, type Mode } from './logic';
 import css from './nowplaying.module.css';
+import { VisMenu } from './VisMenu';
 
 export function nowPlaying(): ScreenEntry {
   return { key: 'nowplaying', title: 'Now Playing', render: () => <NowPlaying /> };
@@ -56,7 +57,7 @@ const canvasPref = createStore<{ show: Show }>()(persist((): { show: Show } => (
   name: 'ipod.canvas', version: 2, migrate: migrateCanvasPref,
 }));
 
-type Pop = 'main' | 'playlist' | 'playlists' | 'devices' | 'vis' | 'presets' | 'options';
+type Pop = 'main' | 'playlist' | 'playlists' | 'devices' | 'options';
 /** a wheel scrub: the position shown, then (sent) held until the player reports the seek */
 type Scrub = { uri: string; ms: number; sent?: boolean };
 
@@ -76,7 +77,7 @@ function NowPlaying() {
   const [scrub, setScrub] = useState<Scrub | null>(null);
   const [vol, setVol] = useState<{ v: number } | null>(null);
   const [poke, setPoke] = useState(0);
-  const [popup, setPopup] = useState<Pop | null>(null);
+  const [popup, setPopup] = useState<Pop | null>(null), [visMenu, setVisMenu] = useState(false);
   const lastTick = useRef(0);
   const seeds = useRadioSeeds(), addTo = useAddTo(useApp(playingTrack)), plMenu = addTo.playlistMenu();
   const has: Record<Mode, boolean> = {
@@ -158,7 +159,7 @@ function NowPlaying() {
   // its ticks and its click consumed); the wheel's buttons and their keys act as ever too.
   const root = useRef<HTMLDivElement>(null), seen = useOnScreen(root), playing = useApp(isPlaying);
   const [quiet, setQuiet] = useState(false), [wasIdle, setWasIdle] = useState(false);
-  const idle = seen && playing && !popup && m === 'default';
+  const idle = seen && playing && !popup && !visMenu && m === 'default';
   // paused, a popup, a mode, off screen: awake, and kept so until it is idle again and the time passes
   if (idle !== wasIdle) { setWasIdle(idle); if (!idle) setQuiet(false); }
   const live = useRef({ quiet, idle, woke: false, timer: 0 });
@@ -201,7 +202,7 @@ function NowPlaying() {
   // the device it plays on when that is not this one: not this page's player, nor the phone's own speaker
   const active = useApp((s) => s.devices.list.find((x) => x.active && x.id !== s.devices.self));
   const speaker = useHostGlobal('__wmpSpeaker', 'wmp-speaker'), away = active && active.id !== speaker?.id ? deviceName(active) : '';
-  const show = useStore(canvasPref, (x) => x.show), [group, setGroup] = useState('');
+  const show = useStore(canvasPref, (x) => x.show);
   const vz = useVisualizers();
   /** song radio: the first seed's own station (§4.3) */
   const startRadio = () => {
@@ -211,12 +212,11 @@ function NowPlaying() {
       if (hit) c().playItem({ uri: hit.uri });
     }, () => {});
   };
-  /** this page's options (the ⋯, and the popup's): Play On… the Connect devices (as Settings > Play
-   *  On); Visualizer… lists Cover Bars and the engines, an engine its presets (a second popup); a pick
-   *  shows at once, the visualizer put on screen if it was not; Lyrics and Karaoke as Settings had them */
+  /** this page's options (the ⋯): Play On… the Connect devices (as Settings > Play On); Visualizer… its
+   *  pages (VisMenu); Lyrics and Karaoke as Settings had them */
   const options: MenuItem[] = [
     { id: 'device', label: 'Play On…', disabled: !p.spotify, onSelect: () => setPopup('devices') },
-    { id: 'vis', label: 'Visualizer…', onSelect: () => setPopup('vis') },
+    { id: 'vis', label: 'Visualizer…', onSelect: () => setVisMenu(true) },
     { id: 'lyrics', label: 'Lyrics', right: p.lyricsOn ? 'On' : 'Off', onSelect: () => get().actions.setLyricsEnabled(!p.lyricsOn) },
     { id: 'karaoke', label: 'Karaoke', right: p.karaoke ? 'On' : 'Off', onSelect: () => get().actions.setKaraoke(!p.karaoke) },
   ];
@@ -244,11 +244,6 @@ function NowPlaying() {
     playlists: toItems(plMenu.sub ?? []),
     devices: [...toItems(devices.items()),
               ...(window.alchemyRoutePicker ? [{ id: 'airplay', label: 'AirPlay…', onSelect: () => window.alchemyRoutePicker?.() }] : [])],
-    // Visualizer and Opacity keep the list open (it closes on a choice; it is opened again at once), so
-    // the values can be stepped through while the picture changes behind it
-    vis: vz.engines((g) => { setGroup(g); setPopup('presets'); })
-      .map((x) => (x.id === 'on' || x.id === 'opacity' ? { ...x, onSelect: () => { x.onSelect?.(); setPopup('vis'); } } : x)),
-    presets: vz.presets(group),
     options: [...options, cancel],
   };
 
@@ -284,7 +279,7 @@ function NowPlaying() {
   });
   // A turn of the ring in the progress mode is the volume's, continuously (no detents: no clicks, no
   // per-tick haptics; wheel.ts useTurn); a turn that wakes the quiet screen does nothing else.
-  useTurn(seen && m === 'default' && !popup ? (deg) => {
+  useTurn(seen && m === 'default' && !popup && !visMenu ? (deg) => {
     const L = live.current;
     if (L.quiet || L.woke) { L.quiet = false; setQuiet(false); return true; }
     volumeTo(turnPct(deg));
@@ -375,6 +370,7 @@ function NowPlaying() {
         )}
       </div>
       {popup && <Popup items={items[popup]} onClose={() => setPopup((x) => (x === popup ? null : x))} />}
+      {visMenu && <VisMenu onClose={() => setVisMenu(false)} />}
     </div>
   );
 }

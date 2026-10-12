@@ -4,6 +4,7 @@ import type { AppStore, VisKind } from '../model';
 import type { Shortcut } from './shortcuts';
 // type only: the functions arrive from the app (the engine's adapter), src/ui never imports adapters
 import type { Queries } from '../adapters';
+import type { CatalogFamily } from '../engine/catalog';
 
 /** One entry of the flat visualization list, in WMP's own order (its families by registry key: engine PRESETS). */
 export interface Preset {
@@ -16,6 +17,8 @@ export interface Preset {
 export interface Shell {
   store: AppStore;
   presets: readonly Preset[];
+  /** the same presets by family and WMP version (engine/catalog.ts), for a menu that pages */
+  catalog: readonly CatalogFamily[];
   /** the engine's query functions and keys (TanStack Query; src/ui/data.ts) */
   queries: Queries;
   /** the fetched-data cache, for what runs outside a component (Ctrl+D reads a saved flag) */

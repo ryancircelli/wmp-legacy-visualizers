@@ -605,23 +605,54 @@ it('the ⋯ over the cover opens this page\'s options: Lyrics and Karaoke toggle
   pick('KaraokeOn');
   open();
   expect([m.S().settings.karaoke, rows()]).toEqual([false, ['Play On…', 'Visualizer…', 'LyricsOff', 'KaraokeOff', 'Cancel']]);
-  pick('Visualizer…');                               // the switch, Opacity, the engines, then (a second popup) an engine's presets
-  expect(rows()).toEqual(['VisualizerOn', 'Opacity50%', 'Alchemy', 'Ambience', 'Bars and WavesBars', 'Battery', 'Particle', 'Plenoptic', 'Spikes', 'Musical Colors']);
-  pick('VisualizerOn');                              // off, the list kept open
+  pick('Visualizer…');                               // its pages: the switch, Opacity, the families
+  const title = () => np.querySelector('[class*=vistitle]')?.textContent;
+  expect([title(), rows()]).toEqual(['Visualizer', ['VisualizerOn', 'Opacity50%', 'Alchemy', 'Ambience', 'Bars and WavesBars', 'Battery', 'Particle', 'Plenoptic', 'Spikes', 'Musical Colors']]);
+  pick('VisualizerOn');                              // off, the page kept open
   expect([rows().slice(0, 2), !!np.querySelector('canvas')]).toEqual([['VisualizerOff', 'Opacity50%'], false]);
-  pick('Bars and WavesBars');
-  expect(rows()).toEqual(['Bars✓', 'Ocean Mist', 'Fire Storm', 'Scope', 'Bars (WMP 7-8)', 'Ocean Mist (WMP 7-10)', 'Fire Storm (WMP 7-10)',
-    'Scope (WMP 7-8)', 'Bars (WMP 9)', 'Scope (WMP 9)', 'Bars (WMP 10)', 'Scope (WMP 10)']);
-  pick('Fire Storm');                                // a pick turns it on
-  expect([localStorage.getItem('ipod.visualizer'), localStorage.getItem('ipod.visOn'), !!np.querySelector('canvas'), m.S().vis.kind, m.S().vis.preset, rows()])
-    .toEqual(['"bars:2"', 'true', true, 'bars', 2, []]);
+  pick('Bars and WavesBars');                        // a family: its current presets, then a row per older version
+  expect([title(), rows()]).toEqual(['Bars and Waves', ['Bars✓', 'Ocean Mist', 'Fire Storm', 'Scope', 'WMP 10', 'WMP 7–10', 'WMP 9', 'WMP 7–8']]);
+  expect([...np.querySelectorAll('[data-header]')].map((x) => x.textContent)).toEqual(['WMP 12', 'Older Versions']);
+  pick('Fire Storm');                                // a pick turns it on, the page kept open, the choice checked
+  expect([localStorage.getItem('ipod.visualizer'), localStorage.getItem('ipod.visOn'), !!np.querySelector('canvas'), m.S().vis.kind, m.S().vis.preset, rows().slice(0, 4)])
+    .toEqual(['"bars:2"', 'true', true, 'bars', 2, ['Bars', 'Ocean Mist', 'Fire Storm✓', 'Scope']]);
+  pick('WMP 7–8');                                   // an older version: its presets, named without it
+  expect([title(), rows()]).toEqual(['Bars and Waves · WMP 7–8', ['Bars', 'Scope']]);
+  pick('Scope');
+  expect([m.S().vis.preset, rows()]).toEqual([7, ['Bars', 'Scope✓']]);
+  act(() => { fireEvent.click(np.querySelector('[class*=vismenu]')!); });   // a tap on the picture closes it
+  expect(rows()).toEqual([]);
   open();
   pick('Visualizer…');
-  expect(rows()).toEqual(['VisualizerOn', 'Opacity50%', 'Alchemy', 'Ambience', 'Bars and WavesFire Storm', 'Battery', 'Particle', 'Plenoptic', 'Spikes', 'Musical Colors']);
-  pick('Alchemy');                                   // WMP 12's and WMP 9-11's: its presets
-  expect(rows()).toEqual(['Random', 'Random (WMP 9)', 'Random (WMP 10)', 'Random (WMP 11)']);
+  pick('Alchemy');                                   // WMP 12's, then WMP 9-11's each a page
+  expect(rows()).toEqual(['Random', 'WMP 11', 'WMP 10', 'WMP 9']);
   pick('Random');
-  expect([localStorage.getItem('ipod.visualizer'), m.S().vis.kind, rows()]).toEqual(['"alchemy:0"', 'alchemy', []]);
+  expect([localStorage.getItem('ipod.visualizer'), m.S().vis.kind, rows()[0]]).toEqual(['"alchemy:0"', 'alchemy', 'Random✓']);
+});
+
+it('Visualizer…: the wheel walks its pages, the centre opens a page or picks (the page kept open), MENU goes back a page and from the first closes it', async () => {
+  const m = mount();
+  act(() => { m.store.setState((s) => ({ playback: { ...s.playback, status: 'playing', track: { uri: 'spotify:track:a', title: 'T', artist: 'A', duration: 100_000 } } })); });
+  act(() => { fireEvent.click(m.shown('[aria-label="Now Playing"][role=button]')[0]!); });
+  await settle();
+  act(() => { fireEvent.click(m.shown('[aria-label="Options"]')[0]!); });
+  act(() => { fireEvent.click(m.row('Visualizer…')); });
+  expect(m.sel()).toEqual(['VisualizerOn']);
+  for (let i = 0; i < 4; i++) key('ArrowDown');
+  expect(m.sel()).toEqual(['Bars and WavesBars']);
+  key('Enter');                                      // opened on the choice
+  expect(m.sel()).toEqual(['Bars✓']);
+  for (let i = 0; i < 4; i++) key('ArrowDown');      // past the Older Versions header
+  expect(m.sel()).toEqual(['WMP 10']);
+  key('Enter');
+  key('Enter');                                      // its Bars: applied, the page kept open
+  expect([m.sel(), localStorage.getItem('ipod.visualizer'), m.S().vis.kind, m.S().vis.preset]).toEqual([['Bars✓'], '"bars:10"', 'bars', 10]);
+  key('Escape');
+  expect(m.sel()).toEqual(['WMP 10Bars']);
+  key('Escape');
+  expect(m.sel()).toEqual(['Bars and WavesBars · WMP 10']);
+  key('Escape');                                     // closed; Now Playing stays
+  expect([m.shown('[class*=vismenu]').length, m.shown('[aria-label="Options"]').length]).toEqual([0, 1]);
 });
 
 /** a track playing, and its plain lyrics in the store (as the app's lyrics loader puts them) */

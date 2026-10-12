@@ -4,20 +4,17 @@ import type { TimedLevel, VisKind } from '../../model';
 import { createAnalyserSource, type AnalyserLevelSource } from '../../engine/audio/analyser';
 import { createPcmSource } from '../../engine/audio/pcm';
 import type { WmpBuild } from '../../engine/audio/wmp';
-import { PRESETS } from '../../engine/index';
+import { versionsOf } from '../../engine/catalog';
 export { makeLevel } from '../../engine/index';
 
-/** Whose analyzer feeds a visualizer preset: that of the newest WMP whose frames it draws. That is the last version
- *  its name gives ("Random (WMP 11)", "Swirl (WMP 7-9)", "Particle (WMP 7-8)"), else its family's: WMP 7-8's for
- *  Musical Colors (only they have it), WMP 9/10's for Ambience, Spikes, Particle and Plenoptic (ported from those),
- *  today's for Alchemy, Bars and Waves and Battery. WMP 7.0 to 8 SP1 share one arithmetic ('wmp7'), as do 9 and 10
- *  ('wmp9'); the builds' bytes differ by 1 in a few thousandths of a percent of them. */
-const WMP9: readonly VisKind[] = ['ambience', 'spikes', 'particle', 'plenoptic'];
+/** Whose analyzer feeds a visualizer preset: that of the newest WMP whose frames it draws, its version group's
+ *  last (engine/catalog.ts: "Random (WMP 11)", "Swirl (WMP 7-9)", "Particle (WMP 7-8)", else its family's current:
+ *  WMP 7-8's for Musical Colors, WMP 10's for Ambience, Spikes, Particle and Plenoptic, WMP 12's for Alchemy, Bars
+ *  and Waves and Battery). WMP 7.0 to 8 SP1 share one arithmetic ('wmp7'), as do 9 and 10 ('wmp9'); the builds'
+ *  bytes differ by 1 in a few thousandths of a percent of them. */
 export function buildFor(kind: VisKind, preset: number): WmpBuild {
-  const name = PRESETS.find((p) => p.vis === kind && p.preset === preset)?.name ?? '';
-  const v = Number(/\(WMP (?:\d+-)?(\d+)\)/.exec(name)?.[1] ?? 0);
-  if (v) return v <= 8 ? 'wmp7' : v <= 10 ? 'wmp9' : v === 11 ? 'wmp11' : 'wmp12';
-  return kind === 'musical' ? 'wmp7' : WMP9.includes(kind) ? 'wmp9' : 'wmp12';
+  const v = versionsOf(kind, preset)[1];
+  return v <= 8 ? 'wmp7' : v <= 10 ? 'wmp9' : v === 11 ? 'wmp11' : 'wmp12';
 }
 /** Musical Colors' GetCapabilities sets EFFECT_VARIABLEFREQSTEP (wmpvis.dll 0x55c0db37): WMP 7 and 8's hosts
  *  hand it the fixed-step layout (wmpui.dll 7.1 0x5257955a / 0x525785a4, 8 0x59187485 / 0x5919452c). */
