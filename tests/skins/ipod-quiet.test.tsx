@@ -147,7 +147,7 @@ it('the status row: the output in ▶\'s place once the phone reports a route (h
   expect(pct()).toBeNull();
   const { result } = renderHook(() => useIpodSettings());
   act(() => result.current[1]({ batteryPct: true }));
-  expect(pct()).toBe('15%');
+  expect([pct(), !!ipod.querySelector('[class*=battery] [class*=pct]')]).toEqual(['15', true]);   // inside the icon
   act(() => result.current[1]({ batteryPct: false }));
   delete (window as unknown as Record<string, unknown>).__wmpRoute; delete (window as unknown as Record<string, unknown>).__wmpBattery;
   delete (window as unknown as Record<string, unknown>).__wmpLowPower;

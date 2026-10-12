@@ -333,8 +333,15 @@
 /* Low Power Mode yellow and low red, the iPhone's */
 .battery[data-fill=low-power]::after { background: #F2C230; }
 .battery[data-fill=low]::after { background: #E0453A; }
-/* Settings > Battery Percentage: the number beside the battery, the status row's own type */
-.pct { flex: none; margin-right: calc(var(--unit) * 3); font-size: calc(var(--unit) * 10); font-weight: 700; font-variant-numeric: tabular-nums; }
+/* Settings > Battery Percentage: the number inside the icon, as iOS shows it, over the fill; the icon a little
+   wider for "100" */
+.battery[data-pct] { width: calc(var(--unit) * 25); }
+.pct {
+  position: absolute; z-index: 1; inset: 0; display: flex; align-items: center; justify-content: center;
+  font-size: calc(var(--unit) * 8); font-weight: 800; line-height: 1; letter-spacing: -.02em; font-variant-numeric: tabular-nums;
+  color: #1D1D1D; text-shadow: 0 0 calc(var(--unit) * 1.5) rgb(255 255 255 / .9);
+}
+.status[data-dark] .pct { color: #FFFFFF; text-shadow: 0 0 calc(var(--unit) * 1.5) rgb(0 0 0 / .9); }
 
 /* the stack: each screen fills it; the top one slides in (from the right pushed, the left popped) */
 .frames {

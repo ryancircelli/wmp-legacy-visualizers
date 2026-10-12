@@ -366,6 +366,8 @@ export const StatusRow = ({ title, dark, busy: loading }: { title: string; dark?
   // the fill as the iPhone's: yellow in Low Power Mode, red at 20 % or under when not charging (the owner,
   // 2026-10-12); the percentage beside it with Settings > Battery Percentage
   const lowPower = useHostGlobal('__wmpLowPower', 'wmp-lowpower'), [ip] = useIpodSettings();
+  // the number inside the icon, as iOS shows it (the owner: "put the number in the battery icon")
+  const pct = ip.batteryPct && !!bat && bat.level >= 0;
   const fill = lowPower ? 'low-power' : bat && bat.level >= 0 && bat.level <= 20 && !bat.charging ? 'low' : undefined;
   // where the sound goes, in place of ▶ / ❚❚ (the owner, 2026-10-02): another Connect device's speaker
   // when it plays elsewhere; else the phone's route (the iOS app's __wmpRoute): headphones (wired,
@@ -395,10 +397,10 @@ export const StatusRow = ({ title, dark, busy: loading }: { title: string; dark?
         {loading ? <Spinner />
           : out ? st.media && <Output kind={out} away={away} />
           : st.media && (st.playing || st.paused) && <span className={st.playing ? s.playing : s.paused} role="img" aria-label={st.playing ? 'Playing' : 'Paused'} />}
-        {ip.batteryPct && bat && bat.level >= 0 && <span className={s.pct}>{bat.level}%</span>}
         <span className={s.battery} style={{ '--v': clamp01(level) } as CSSProperties} data-charging={bat?.charging || undefined} data-fill={fill}
+              data-pct={pct || undefined}
               aria-label={bat && bat.level >= 0 ? 'Battery ' + bat.level + '%' + (bat.charging ? ', charging' : '') : 'Battery'}>
-          {bat?.charging && <svg className={s.bolt} viewBox="0 0 6 10" aria-hidden="true"><path d="M3.6 0L0 5.6h2.4L2.2 10 6 4.2H3.5z" /></svg>}
+          {pct ? <span className={s.pct}>{bat.level}</span> : bat?.charging && <svg className={s.bolt} viewBox="0 0 6 10" aria-hidden="true"><path d="M3.6 0L0 5.6h2.4L2.2 10 6 4.2H3.5z" /></svg>}
         </span>
       </span>
     </div>
