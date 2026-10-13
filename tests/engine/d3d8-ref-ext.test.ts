@@ -8,9 +8,9 @@ type X = { m: bigint; e: number };
 const F64 = new Float64Array(1), U64 = new BigUint64Array(F64.buffer);
 function exact(v: number): X {
   F64[0] = v;
-  const b = U64[0], ex = Number((b >> 52n) & 0x7ffn), frac = b & 0xfffffffffffffn;
+  const b = U64[0], ex = Number((b! >> 52n) & 0x7ffn), frac = b! & 0xfffffffffffffn;
   const m = ex ? frac | (1n << 52n) : frac, e = (ex || 1) - 1075;
-  return { m: (b >> 63n) ? -m : m, e };
+  return { m: (b! >> 63n) ? -m : m, e };
 }
 function addX(a: X, b: X): X { const e = Math.min(a.e, b.e); return { m: (a.m << BigInt(a.e - e)) + (b.m << BigInt(b.e - e)), e }; }
 function mulX(a: X, b: X): X { return { m: a.m * b.m, e: a.e + b.e }; }

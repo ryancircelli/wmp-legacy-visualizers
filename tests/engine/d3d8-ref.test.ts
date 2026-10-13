@@ -18,7 +18,7 @@ function persp(fovy: number, aspect: number, zn: number, zf: number): Float32Arr
 }
 function mul(a: Float32Array, b: Float32Array): Float32Array {
   const o = new Float32Array(16);
-  for (let i = 0; i < 4; i++) for (let j = 0; j < 4; j++) { let s = 0; for (let k = 0; k < 4; k++) s += a[i * 4 + k] * b[k * 4 + j]; o[i * 4 + j] = s; }
+  for (let i = 0; i < 4; i++) for (let j = 0; j < 4; j++) { let s = 0; for (let k = 0; k < 4; k++) s += a[i * 4 + k]! * b[k * 4 + j]!; o[i * 4 + j] = s; }
   return o;
 }
 function world(rx: number, ry: number, tx: number, ty: number, tz: number): Float32Array {
@@ -32,10 +32,10 @@ function world(rx: number, ry: number, tx: number, ty: number, tz: number): Floa
 function verts(layout: string, rows: number[][]): Uint8Array {
   const out = new Uint8Array(rows.length * layout.length * 4), dv = new DataView(out.buffer);
   let o = 0;
-  for (const r of rows) for (let i = 0; i < layout.length; i++, o += 4) { if (layout[i] === 'c') dv.setUint32(o, r[i] >>> 0, true); else dv.setFloat32(o, r[i], true); }
+  for (const r of rows) for (let i = 0; i < layout.length; i++, o += 4) { if (layout[i] === 'c') dv.setUint32(o, r[i]! >>> 0, true); else dv.setFloat32(o, r[i]!, true); }
   return out;
 }
-function f32bits(x: number): number { return new Uint32Array(new Float32Array([x]).buffer)[0]; }
+function f32bits(x: number): number { return new Uint32Array(new Float32Array([x]).buffer)[0]!; }
 function material(d: number[], a: number[], s: number[], e: number[], p: number): ArrayBuffer {
   return new Float32Array([...d, ...a, ...s, ...e, p]).buffer;
 }
@@ -89,14 +89,14 @@ export const SCENES: Scene[] = [
       d.setTransform(2, ident()); d.setTransform(3, persp(0.9, W / H, 0.5, 50));
       d.setRenderState(Rs.LIGHTING, 0); d.setRenderState(Rs.CULLMODE, 1); d.setRenderState(Rs.ZENABLE, 1);
       d.setVertexShader(Fvf.XYZ | Fvf.DIFFUSE | 0x100);
-      d.setTexture(0, t0);
+      d.setTexture(0, t0!);
       d.setTextureStageState(0, Tss.MAGFILTER, 2); d.setTextureStageState(0, Tss.MINFILTER, 2); d.setTextureStageState(0, Tss.MIPFILTER, f === 1 ? 1 : 2);
       d.setTextureStageState(0, Tss.ALPHAOP, 4);
       // a floor receding into the distance (LOD and mip selection) and a wall crossing it (Z)
       d.setTransform(256, world(0.2 * f, 0.3 + 0.1 * f, 0, -1, 0));
       const floor = verts('fffcff', [[-8, 0, 1, 0xffffffff, 0, 0], [8, 0, 1, 0xffff8080, 6, 0], [-8, 0, 30, 0xff80ff80, 0, 12], [8, 0, 30, 0xff8080ff, 6, 12]]);
       d.drawPrimitiveUP(Prim.TRIANGLESTRIP, 2, floor, 24);
-      d.setTexture(0, t1);
+      d.setTexture(0, t1!);
       d.setTextureStageState(0, Tss.COLOROP, f === 2 ? 7 : 4); d.setTextureStageState(0, Tss.ADDRESSU, 3);
       d.setRenderState(Rs.ALPHABLENDENABLE, 1); d.setRenderState(Rs.SRCBLEND, 5); d.setRenderState(Rs.DESTBLEND, 6);
       d.setRenderState(Rs.ALPHATESTENABLE, 1); d.setRenderState(Rs.ALPHAREF, 8); d.setRenderState(Rs.ALPHAFUNC, 7);
@@ -228,7 +228,7 @@ export const SCENES: Scene[] = [
       d.beginScene();
       d.clear(null, ClearFlag.TARGET | ClearFlag.ZBUFFER, 0xff101010, 1, 0);
       const m = mul(world(0.3, 0.4 * f, 0, 0, 4), persp(0.9, W / H, 1, 10));
-      const t = new Float32Array(16); for (let i = 0; i < 4; i++) for (let j = 0; j < 4; j++) t[i * 4 + j] = m[j * 4 + i];
+      const t = new Float32Array(16); for (let i = 0; i < 4; i++) for (let j = 0; j < 4; j++) t[i * 4 + j] = m[j * 4 + i]!;
       d.setVertexShaderConstant(0, t, 4);
       d.setVertexShaderConstant(4, new Float32Array([0.9, 0.7, 0.5, 1, 0.05, 0.1, 0.2, 0]), 2);
       d.setRenderState(Rs.CULLMODE, 1); d.setRenderState(Rs.ZENABLE, 1);
@@ -254,7 +254,7 @@ export function hashBackBuffer(d: Device): string {
   let h = 0x811c9dc5;
   for (let y = 0; y < bb.height; y++) for (let x = 0; x < bb.width; x++) {
     const o = y * l.pitch + x * 4;
-    h = Math.imul(h ^ l.data[o], 16777619); h = Math.imul(h ^ l.data[o + 1], 16777619); h = Math.imul(h ^ l.data[o + 2], 16777619);
+    h = Math.imul(h ^ l.data[o]!, 16777619); h = Math.imul(h ^ l.data[o + 1]!, 16777619); h = Math.imul(h ^ l.data[o + 2]!, 16777619);
   }
   bb.unlockRect();
   return (h >>> 0).toString(16).padStart(8, '0');

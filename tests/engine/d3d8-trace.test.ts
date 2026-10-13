@@ -34,10 +34,10 @@ describe('TraceDevice', () => {
     d.frameEnd(0);
     const r = read(d.bytes());
     expect(r.map((x) => x.id)).toEqual([0xF200, 0xF000, 50, 72, 15, 0xF100]);
-    expect(r[0].args.slice(1)).toEqual([0x52, 64, 48]);
-    expect(r[2].args).toEqual([d.ptr, Rs.ZENABLE, 1]);
-    expect(r[3].args.slice(1)).toEqual([Prim.TRIANGLELIST, 1, 1, 16]);
-    expect(r[3].blobs[0]).toEqual(v);
+    expect(r[0]!.args.slice(1)).toEqual([0x52, 64, 48]);
+    expect(r[2]!.args).toEqual([d.ptr, Rs.ZENABLE, 1]);
+    expect(r[3]!.args.slice(1)).toEqual([Prim.TRIANGLELIST, 1, 1, 16]);
+    expect(r[3]!.blobs[0]).toEqual(v);
   });
 
   it('dumps exactly the locked rect of a texture level at unlock, and nothing for a read-only lock', () => {
@@ -49,12 +49,12 @@ describe('TraceDevice', () => {
     t.lockRect(0, null, Lock.READONLY);
     t.unlockRect(0);
     const r = read(d.bytes()).filter((x) => x.id >> 8 === 1);
-    const dump = r[1].blobs[0], hv = new DataView(dump.buffer);
+    const dump = r[1]!.blobs[0], hv = new DataView(dump!.buffer);
     expect(Array.from({ length: 8 }, (_, i) => hv.getUint32(i * 4, true))).toEqual([Fmt.A8R8G8B8, 8, 4, 2, 1, 4, 3, 32]);
-    expect(dump.length).toBe(32 + 2 * 8);
-    expect(dump[32]).toBe(0x11);
-    expect(dump[32 + 8 + 7]).toBe(0x22);
-    expect(r[3].blobs).toEqual([]);
+    expect(dump!.length).toBe(32 + 2 * 8);
+    expect(dump![32]).toBe(0x11);
+    expect(dump![32 + 8 + 7]).toBe(0x22);
+    expect(r[3]!.blobs).toEqual([]);
   });
 
   it('shares a level between the texture and its surface, and hands out odd shader handles', () => {

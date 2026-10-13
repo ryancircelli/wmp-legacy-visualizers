@@ -9,11 +9,11 @@ import { depth16, evalW, lerp32, linCoord, recip, subtract32 } from '../../src/e
 const f32 = Math.fround;
 function lcg(seed: number): () => number { let s = seed >>> 0; return () => { s = (Math.imul(s, 1664525) + 1013904223) >>> 0; return s / 4294967296; }; }
 const F = new Float32Array(1), I = new Int32Array(F.buffer);
-const bits = (x: number): number => { F[0] = x; return I[0]; };
+const bits = (x: number): number => { F[0] = x; return I[0]!; };
 /** a float32 in -scale..scale, often much smaller */
 const rf = (r: () => number, scale: number): number => f32((r() - 0.5) * 2 * scale * Math.pow(2, -Math.floor(r() * 12)));
 /** a float32 midpoint (half way between two adjacent floats) near x */
-function midpoint(x: number): number { F[0] = f32(x); const a = F[0]; I[0] += 1; return (a + F[0]) / 2; }
+function midpoint(x: number): number { F[0] = f32(x); const a = F[0]; I[0]! += 1; return (a + F[0]) / 2; }
 
 // the 64-bit references (the operation order of each helper's fallback)
 const evalWRef = (a: number, b: number, c: number, w: number): number => { E.ld(a); E.fadd(b); E.fadd(c); E.fmul(w); return E.st32(); };
@@ -25,8 +25,8 @@ const recipRef = (a: number, b: number, c: number): number => {
 function depthRef(a: number, b: number, c: number): number {
   E.ld(a); E.fadd(b); E.fadd(c); const z = E.st64();
   E.ld(z > 1 ? 1 : z >= 0 ? z : 0); E.fmul(65535); E.fadd(0.5);
-  const h = E.A[0], l = E.A[1], t = Math.trunc(h);
-  return t !== h || l === 0 ? t : (l < 0 ? t - 1 : t);
+  const h = E.A[0], l = E.A[1], t = Math.trunc(h!);
+  return t !== h || l === 0 ? t : (l! < 0 ? t - 1 : t);
 }
 const linRef = (c: number, n: number): number => { E.ld(c * n); E.fsub(0.5); E.fadd(393216); return (bits(E.st32()) << 10) >> 10; };
 const subRef = (x1: number, x2: number): number => { E.ld(1); E.fsub(x1); E.fadd(x2); E.fsubr(1); return E.st32(); };
@@ -56,8 +56,8 @@ describe('RefDevice fast paths agree with the 64-bit evaluation', () => {
     for (let i = 0; i < 20000; i++) {
       const n = [1, 2, 16, 64, 128, 256, 512, 1024][i & 7];
       let c = rf(r, 3);
-      if (i % 3 === 0) c = f32((Math.round(r() * 2 * n * 32) / 32 + 1 / 64 + 0.5) / n);   // c*n - 0.5 on a 1/64 tie
-      expect(linCoord(c, n)).toBe(linRef(c, n));
+      if (i % 3 === 0) c = f32((Math.round(r() * 2 * n! * 32) / 32 + 1 / 64 + 0.5) / n!);   // c*n - 0.5 on a 1/64 tie
+      expect(linCoord(c, n!)).toBe(linRef(c, n!));
     }
   }, 60000);
   it('decides the cases only the 64-bit evaluation gets right', () => {

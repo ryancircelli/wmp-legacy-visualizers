@@ -37,7 +37,7 @@ function level(loud: number, f: number) {
   const fr = new Uint8Array(1024), fr2 = new Uint8Array(1024);
   for (let i = 0; i < 1024; i++) {
     const v = loud * (200 - i * 0.18) * (0.6 + 0.4 * Math.sin(f * 0.7 + i * 0.05));
-    fr[i] = Math.max(0, Math.min(255, Math.round(v))); fr2[i] = fr[(i + 7) % 1024];
+    fr[i] = Math.max(0, Math.min(255, Math.round(v))); fr2[i] = fr[(i + 7) % 1024]!;
   }
   return { freq: [fr, fr2] as [Uint8Array<ArrayBuffer>, Uint8Array<ArrayBuffer>],
     wave: [new Uint8Array(1024).fill(128), new Uint8Array(1024).fill(128)] as [Uint8Array<ArrayBuffer>, Uint8Array<ArrayBuffer>],
@@ -79,10 +79,10 @@ describe('Yule Log scene', () => {
   });
 
   it('answers the music: the glow colour, the logs\' glow and the flames change with the spectrum', () => {
-    const c21 = (rs: Rec[], f: number) => Array.from(new Float32Array(frame(rs, f).find((r) => r.id === 79 && r.args[1] === 21)!.blobs[0].buffer));
+    const c21 = (rs: Rec[], f: number) => Array.from(new Float32Array(frame(rs, f).find((r) => r.id === 79 && r.args[1] === 21)!.blobs[0]!.buffer));
     const tf = (rs: Rec[], f: number) => frame(rs, f).filter((r) => r.id === 50 && r.args[1] === 60).map((r) => r.args[2]);
-    const flames = (rs: Rec[], f: number) => frame(rs, f).filter((r) => r.id === (2 << 8 | 10) && r.blobs.length && r.blobs[0].length > 32)
-      .map((r) => createHash('sha1').update(r.blobs[0]).digest('hex'));
+    const flames = (rs: Rec[], f: number) => frame(rs, f).filter((r) => r.id === (2 << 8 | 10) && r.blobs.length && r.blobs[0]!.length > 32)
+      .map((r) => createHash('sha1').update(r.blobs[0]!).digest('hex'));
     // silence: the nodes' offsets only (0.99, 0.11, 0.01) and no glow
     expect(c21(quiet, 3)).toEqual([Math.fround(0.99), Math.fround(0.11), Math.fround(0.01), 1]);
     expect(tf(quiet, 3).every((v) => v === 0)).toBe(true);
