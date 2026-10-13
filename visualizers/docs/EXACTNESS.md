@@ -66,6 +66,49 @@ WMP 7-12) and feeds each call the snapshot WMP's analyzer would have made, with 
 the WMP the preset draws (four arithmetics: WMP 7.0-8 SP1, 9-10, 11, 12), in the layout it asks for (Musical
 Colors, alone, the fixed-step one).
 
+## Goom (2026-10-13): What a GOOM! 2k4's plug-in for WMP 9
+
+Goom is not Microsoft's: iOS Software's LGPL visualizer, whose installer (archived by the Wayback Machine from the
+authors' own site, 2004) carries `wmp9_goom.dll`. It was ported from that binary alone, by decompile and A/B, like
+the Microsoft families; no source of Goom's was read. The DLL renders goom at the preset's size whatever the window
+(its four presets are the resolutions), from the first 512 waveform bytes of each channel and the play state; its
+only randomness is its own C runtime's `rand()` and a table it fills after one `srand()` given the heap address of
+its first pixel buffer, which the harness replaces with a pin. No clock is read (the fps counter, off by default
+here, is the one exception). The harness runs the DLL's own per-frame steps at each preset's size and hashes goom's
+output buffer; at 320x240 that is the same image IWMPEffects::Render draws. The output follows the sound on both
+sides: the composition opens with silence, and the DLL's frames on it are the silent stream's for the first 198
+frames and differ from there on, as the port's do.
+
+| Preset | Stream | Pin | Frames | Result |
+|---|---|---|---|---|
+| 0 (320x240) | the 8.5-minute composition | 1 | 30,000 | identical |
+| 0 | the paused and stopped stream: both idle credits roll, in the DLL's own font | 2 | 30,000 | identical |
+| 0 | rock | 3 | 30,000 | identical |
+| 0 | rock with a song title (MediaInfo at frame 5), in the DLL's own font | 7 | 400 | identical |
+| 0 | silence | 1 | 3,000 | identical |
+| 1 (480x360) | the composition | 1 | 30,000 | identical |
+| 1 | electronic | 4 | 30,000 | identical |
+| 2 (600x480, titled "640x480") | the composition | 1 | 30,000 | identical |
+| 2 | classical | 5 | 30,000 | identical |
+| 3 (800x600) | the composition | 1 | 30,000 | identical |
+| 3 | vocals | 6 | 30,000 | identical |
+| 0, then 3 from frame 3,000 | rock | 9 | 8,000 | identical |
+| 2, then 1 from frame 2,500 | electronic | 10 | 8,000 | identical |
+
+Every effect of the engine ran in these streams: all ten zoom modes (plus noise, the wave and hypercos warps and
+the plane effects), all eight effect states, the IFS fractal, the points, the 3D tentacles, the particle bursts,
+the scope lines in all three shapes, and (on the paused stream) both idle credits that roll up when playback
+stops, drawn in the DLL's own font from the DLL file itself; a song title (MediaInfo) was checked the same way.
+
+**Text needs the user's DLL.** The font is an image inside the DLL and the credits are its text, so neither is in
+this repository: `Alchemy.Goom` draws text only when given a copy of `wmp9_goom.dll` (`options.dll`); without one
+the engine runs the same but draws no text.
+
+**One CPU path.** On AMD processors (which report "extended MMX") the DLL takes a different zoom routine that also
+blanks the source's corner pixels and interpolates with an unsigned multiply, so the original drew slightly
+differently there. It ends in a 3DNow! instruction and cannot run on the Intel machine the harness uses; the port is
+the MMX path every Intel processor (and the harness) runs.
+
 ## History: the first runs (2026-09)
 
 **Totals (30 000-frame `frames_long30k.bin`, 2026-09-24, build 9a944f4+):** Alchemy 3 seeds, 90 000/90 000 frames identical; Bars and Waves 4 presets, 120 000/120 000 identical; Battery 26 presets at 1700000000 + 4 at 1234567890, 900 000/900 000 frames fully identical (index surface, `rand()` count and every palette block). All three visualizers are byte-exact against the real objects for 30 000 frames.

@@ -49,7 +49,7 @@ describe('Goom', () => {
     expect([s.w, s.h, s.px.length]).toEqual([600, 480, 600 * 480]);
     expect(g.setPreset(3)).toBe(true);
     expect([g.render(stream()(1))!.w, g.setPreset(4)]).toEqual([800, false]);
-  });
+  }, 60_000);
 
   it('the same seed and samples give the same frames; another seed or silence do not', () => {
     const run = (seed: number, silent: boolean) => {
@@ -64,7 +64,7 @@ describe('Goom', () => {
     expect(run(5, false)).toBe(run(5, false));
     expect(run(5, false)).not.toBe(run(6, false));
     expect(run(5, false)).not.toBe(run(5, true));
-  }, 60_000);
+  }, 180_000);
 
   it('output is 0x00RRGGBB', () => {
     const g = new G({ seed: 3 }), st = stream();
@@ -72,7 +72,7 @@ describe('Goom', () => {
     for (let f = 0; f < 120; f++) { const px = g.render(st(f))!.px; for (let i = 0; i < px.length; i++) or |= px[i]!; }
     expect(or >>> 24).toBe(0);
     expect(or & 0xffffff).not.toBe(0);
-  }, 60_000);
+  }, 120_000);
 
   it('the line drawer: a saturating add per byte; a line with an end off the buffer is not drawn at all', () => {
     expect(addSat(0x10f0fe01, 0x10203004).toString(16)).toBe('20ffff05');

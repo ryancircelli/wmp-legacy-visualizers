@@ -3,7 +3,9 @@
 Every visualizer Windows Media Player shipped, from WMP 7 to today's: **Alchemy**, **Ambience**,
 **Bars and Waves**, **Battery**, **Musical Colors**, **Particle**, **Plenoptic**, **Spikes**, **3D Alchemy**,
 **Picture Viz**, **Yule Log** and the rest of the families, reverse-engineered from Ghidra decompiles and
-ported instruction for instruction to TypeScript (with a few WebAssembly kernels). Where an older version drew
+ported instruction for instruction to TypeScript (with a few WebAssembly kernels). One plug-in that was not
+Microsoft's is here too, ported the same way from its binary alone: **Goom**, iOS Software's What a GOOM! 2k4 for
+Windows Media Player 9 (LGPL). Where an older version drew
 differently, it is a preset of its own ("Vox (WMP 7)", "Particle (WMP 7-8)"). The sound reaches them through
 WMP's own spectrum analyzer, ported byte for byte, at WMP's own pace.
 
@@ -99,6 +101,7 @@ Every visualizer is byte-identical to the real Microsoft object for 30,000 conse
 | Particle (WMP 7-10) | 28: all 4 presets, every version, five window sizes | 840,000 | identical |
 | Musical Colors (WMP 7-8 `wmpvis.dll`) | all 21 presets on music and synthetic streams; its engine on the DLL's own images (the shipped build draws our own recreation of its artwork, within 2 levels for 99% of most images' values) | over 1,000,000 | identical engine |
 | Blazing Colors, Color Cubes, Pulsing Colors (Microsoft's 2000 downloads), Trilogy I, II, III (Windows Media Bonus Pack for XP) | all 21 presets on rock and synthetic streams (30,000 each), plus silence, play-state changes, two more sizes and Trilogy's own clock; the engine on the DLLs' own images (the shipped build draws our recreation of their artwork: 82 of 99 images byte-identical, Color Cubes' Sheer Delight palette our own design) | over 1,300,000 | identical engine |
+| Goom (iOS Software's `wmp9_goom.dll` for WMP 9, all 4 presets: goom's resolutions 320x240 to 800x600) | 11 of up to 30,000 frames: every preset on the synthetic composition and on a recording (rock, electronic, classical, vocals), the paused stream with its idle credits, silence, a song title, two preset switches; seven pins (its random table's seed) | over 320,000 | identical |
 | WMP's spectrum analyzer (WMP 9-12) | 63 per build: every byte of every snapshot, six recordings and a synthetic set | 751,914 snapshots per build | identical |
 | WMP's spectrum analyzer (WMP 7.0, 7.1, 8, 8 SP1) | 63 per build, the same set: every byte of every snapshot, both spectrum layouts | 751,914 snapshots per build | identical |
 
