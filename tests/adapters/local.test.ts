@@ -252,6 +252,8 @@ describe('the analyzer build per preset', () => {
       'Particle: Particle (WMP 7-8)', 'Particle: Rotating Particle (WMP 7-8)',
       ...['Random', 'Smokey Circles', 'Smokey Lines', 'Vox', 'Flame', 'Fountain', 'Spyro'].map((n) => 'Plenoptic: ' + n + ' (WMP 7)'),
       'Plenoptic: Random (WMP 8)', 'Plenoptic: Spyro (WMP 8)',
+      // the Bonus Pack for Windows XP's (WMP 8); it reads no sound, so the build changes nothing it draws
+      ...PRESETS.filter((p) => p.vis === 'pictureviz').map((p) => 'Picture Viz: ' + p.name),
     ].sort());
     expect(map['Ambience: Random (WMP 9)']).toBe('wmp9');
     expect(map['Ambience: Swirl (WMP 7-9)']).toBe('wmp9');

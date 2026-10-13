@@ -20,6 +20,7 @@ import './musical/index';
 import './musical/plus';
 import './alchemy3d/index';
 import './pictureviz/index';
+import './pictureviz/pv2/index';
 import type { Picture } from './pictureviz/picture';
 
 export { A };
@@ -27,7 +28,7 @@ export type { Surface, TimedLevel, Picture };
 export { pictureFromRGBA, loadPicture } from './pictureviz/picture';
 
 export type VisKind = 'alchemy' | 'bars' | 'battery' | 'spikes' | 'particle' | 'plenoptic' | 'ambience' | 'musical'
-  | 'blazing' | 'colorcubes' | 'pulsing' | 'trilogy1' | 'trilogy2' | 'trilogy3' | 'alchemy3d' | 'pictureviz';
+  | 'blazing' | 'colorcubes' | 'pulsing' | 'trilogy1' | 'trilogy2' | 'trilogy3' | 'alchemy3d' | 'pictureviz' | 'pictureviz2';
 /** 'original' = each DLL's own surface size; 'auto' = the view, capped near 720p worth of pixels; n = view * n. */
 export type Scale = 'original' | 'auto' | number;
 
@@ -62,7 +63,7 @@ export interface PresetEntry {
   vis: VisKind;
   preset: number;
   group: 'Alchemy' | 'Bars and Waves' | 'Battery' | 'Spikes' | 'Particle' | 'Plenoptic' | 'Ambience' | 'Musical Colors'
-    | 'Blazing Colors' | 'Color Cubes' | 'Pulsing Colors' | 'Trilogy I' | 'Trilogy II' | 'Trilogy III' | '3D Alchemy' | 'Picture Viz';
+    | 'Blazing Colors' | 'Color Cubes' | 'Pulsing Colors' | 'Trilogy I' | 'Trilogy II' | 'Trilogy III' | '3D Alchemy' | 'Picture Viz' | 'Picture Viz II';
   name: string;
   /** the family's registry key, HKLM\SOFTWARE\Microsoft\MediaPlayer\Objects\Effects\<key> (its place in the list) */
   key: string;
@@ -134,6 +135,8 @@ const FAMILIES: readonly { key: string; vis: VisKind; group: PresetEntry['group'
   { key: '3D-Alchemy', vis: 'alchemy3d', group: '3D Alchemy', names: A.Alchemy3D.PRESET_NAMES },
   // the Windows Media Bonus Pack for Windows XP's PictureViz.dll
   { key: 'PictureViz', vis: 'pictureviz', group: 'Picture Viz', names: A.PictureViz.PRESET_NAMES },
+  // PictureViz_II.dll: the gallery's 1.0.0.5 (unsigned) as presets 0-30, the Winter Fun Pack 2002's 1.0.0.1 as 31-61
+  { key: 'PictureViz_II', vis: 'pictureviz2', group: 'Picture Viz II', names: A.PictureViz2.PRESET_NAMES },
 ];
 
 /** Every preset of every family, in WMP's order: the flat list its next/previous walks, wrapping. */
@@ -186,7 +189,7 @@ export function samplingOf(kind: VisKind, preset = 0): Sampling {
 export function nativeSize(kind: VisKind, viewW: number, viewH: number, preset = 0): [number, number] {
   if (kind === 'plenoptic' || kind === 'ambience') return [256, 192];
   if (kind === 'alchemy' && preset === 1) return [384, 288];          // Random (WMP 9)
-  if (kind === 'bars' || kind === 'spikes' || kind === 'particle' || kind === 'musical' || PLUS[kind] || kind === 'alchemy3d' || kind === 'pictureviz') return [Math.min(1920, viewW), Math.min(1080, viewH)];
+  if (kind === 'bars' || kind === 'spikes' || kind === 'particle' || kind === 'musical' || PLUS[kind] || kind === 'alchemy3d' || kind === 'pictureviz' || kind === 'pictureviz2') return [Math.min(1920, viewW), Math.min(1080, viewH)];
   return kind === 'battery' ? [384, 288] : [640, 480];
 }
 
@@ -256,6 +259,7 @@ function makeRaw(kind: VisKind, preset: number, options: EngineOptions): RawEngi
   if (P) return new P({ width: 16, height: 16, options, preset });
   if (kind === 'alchemy3d') return new (A.Alchemy3D as unknown as RawCtor)({ width: 640, height: 480, options, preset });
   if (kind === 'pictureviz') return new (A.PictureViz as unknown as RawCtor)({ width: 16, height: 16, options, preset });
+  if (kind === 'pictureviz2') return new (A.PictureViz2 as unknown as RawCtor)({ width: 16, height: 16, options, preset });
   return new (A.Engine as unknown as RawCtor)({ width: 16, height: 16, options, preset });
 }
 

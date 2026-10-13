@@ -28,6 +28,7 @@ describe('the catalog', () => {
       'Color Cubes, WMP 7–8 3',
       'Particle, WMP 10 2, WMP 7–8 2',
       'Picture Viz, WMP 8 7',
+      'Picture Viz II, WMP 9 62',
       'Plenoptic, WMP 10 7, WMP 8 2, WMP 7 7',
       'Pulsing Colors, WMP 7–8 3',
       'Spikes, WMP 10 2',

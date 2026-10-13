@@ -83,7 +83,7 @@ export function createTicker(store: AppStore, onFirstFrame: () => void): Ticker 
     const s = store.getState();
     eng = createEngine(s.vis.kind, canvas, { preset: s.vis.preset, scale: s.vis.scale ?? S().scale,
       options: { intended: S().intended, backgroundColor: S().bg, alpha: s.vis.alpha, tint: s.vis.tint } });
-    eng.setPictures(pics);
+    if (pics.length) eng.setPictures(pics);
   }
 
   /** A preset or family change: WMP empties the render-time history (30 ms delays for 8 frames); the next

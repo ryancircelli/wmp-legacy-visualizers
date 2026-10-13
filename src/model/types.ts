@@ -11,7 +11,7 @@ export type ShuffleMode = 'off' | 'shuffle' | 'smart';
 /** The task pane's views; Play on Device is the bottom bar's device button, not a view. */
 export type View = 'now' | 'guide' | 'library' | 'search' | 'radio';
 export type VisKind = 'alchemy' | 'bars' | 'battery' | 'spikes' | 'particle' | 'plenoptic' | 'ambience' | 'musical'
-  | 'blazing' | 'colorcubes' | 'pulsing' | 'trilogy1' | 'trilogy2' | 'trilogy3' | 'alchemy3d' | 'pictureviz';
+  | 'blazing' | 'colorcubes' | 'pulsing' | 'trilogy1' | 'trilogy2' | 'trilogy3' | 'alchemy3d' | 'pictureviz' | 'pictureviz2';
 export type Mode = 'web' | 'app' | 'screensaver';
 
 /** A track row anywhere: Now Playing, Up Next, a playlist/album/Liked Songs page, search. */
