@@ -171,6 +171,13 @@ ported above nor on this list, please [open an issue](https://github.com/ryancir
 with its name and where it came from (a pack, a download page, a CD). Please don't attach or link any files:
 the name and source are all that's needed.
 
+## Goom's licence
+
+Goom (`src/goom/`) reproduces "What a GOOM! 2k4", the Windows Media Player 9 plug-in by iOS Software, which its
+authors released under the GNU LGPL. That directory is therefore under the LGPL, version 2.1 (`src/goom/LICENSE`);
+nothing else in this package is. Like every port here it was written from the plug-in's binary, not from goom's
+source code.
+
 ## A note on the source material
 
 Windows Media Player's visualizers are Microsoft's. This repository contains only independently

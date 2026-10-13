@@ -2,6 +2,9 @@
 // Software, 2004; CLSID F6007847-E1CE-4c53-AAF4-52169C304783, Effects key Wmp9_goom). Our own
 // implementation of what that binary does, written from its machine code; frame for frame the same pixels.
 //
+// Licence: goom was released under the GNU LGPL by its authors (iOS Software). This directory, as a
+// reproduction of it, is under the LGPL too (version 2.1: ./LICENSE), not the rest of this package.
+//
 // The plug-in's four presets are goom's working resolution: 320x240, 480x360, 600x480 (titled "640x480",
 // the DLL sets 600) and 800x600. The engine renders at that size whatever the view, and the player
 // stretches it (the DLL's own Render stretched its 320x240 buffer to the window with StretchDIBits).
