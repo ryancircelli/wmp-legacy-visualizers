@@ -22,13 +22,15 @@ import './alchemy3d/index';
 import './pictureviz/index';
 import './pictureviz/pv2/index';
 import type { Picture } from './pictureviz/picture';
+import './yule/index';
+import { RefDevice } from './d3d8/ref';
 
 export { A };
 export type { Surface, TimedLevel, Picture };
 export { pictureFromRGBA, loadPicture } from './pictureviz/picture';
 
 export type VisKind = 'alchemy' | 'bars' | 'battery' | 'spikes' | 'particle' | 'plenoptic' | 'ambience' | 'musical'
-  | 'blazing' | 'colorcubes' | 'pulsing' | 'trilogy1' | 'trilogy2' | 'trilogy3' | 'alchemy3d' | 'pictureviz' | 'pictureviz2';
+  | 'blazing' | 'colorcubes' | 'pulsing' | 'trilogy1' | 'trilogy2' | 'trilogy3' | 'alchemy3d' | 'pictureviz' | 'pictureviz2' | 'yule';
 /** 'original' = each DLL's own surface size; 'auto' = the view, capped near 720p worth of pixels; n = view * n. */
 export type Scale = 'original' | 'auto' | number;
 
@@ -63,7 +65,7 @@ export interface PresetEntry {
   vis: VisKind;
   preset: number;
   group: 'Alchemy' | 'Bars and Waves' | 'Battery' | 'Spikes' | 'Particle' | 'Plenoptic' | 'Ambience' | 'Musical Colors'
-    | 'Blazing Colors' | 'Color Cubes' | 'Pulsing Colors' | 'Trilogy I' | 'Trilogy II' | 'Trilogy III' | '3D Alchemy' | 'Picture Viz' | 'Picture Viz II';
+    | 'Blazing Colors' | 'Color Cubes' | 'Pulsing Colors' | 'Trilogy I' | 'Trilogy II' | 'Trilogy III' | '3D Alchemy' | 'Picture Viz' | 'Picture Viz II' | 'Yule Log';
   name: string;
   /** the family's registry key, HKLM\SOFTWARE\Microsoft\MediaPlayer\Objects\Effects\<key> (its place in the list) */
   key: string;
@@ -137,6 +139,8 @@ const FAMILIES: readonly { key: string; vis: VisKind; group: PresetEntry['group'
   { key: 'PictureViz', vis: 'pictureviz', group: 'Picture Viz', names: A.PictureViz.PRESET_NAMES },
   // PictureViz_II.dll: the gallery's 1.0.0.5 (unsigned) as presets 0-30, the Winter Fun Pack 2002's 1.0.0.1 as 31-61
   { key: 'PictureViz_II', vis: 'pictureviz2', group: 'Picture Viz II', names: A.PictureViz2.PRESET_NAMES },
+  // Microsoft's downloadable Direct3D 8 visualizations (Bonus Pack, Winter Fun Packs), their own Effects keys
+  { key: 'YuleLog', vis: 'yule', group: 'Yule Log', names: A.YuleLog.PRESET_NAMES },
 ];
 
 /** Every preset of every family, in WMP's order: the flat list its next/previous walks, wrapping. */
@@ -175,19 +179,28 @@ export function makeLevel(): TimedLevel {
  *  Plenoptic_Resolution / Assault_Resolution, 256x192 by default, StretchDIBits'd to the window): every
  *  scale renders them there, the canvas stretches. */
 const FIXED_SIZE: ReadonlySet<VisKind> = new Set(['plenoptic', 'ambience']);
+/** The Direct3D 8 families (Yule Log): their DLLs render at the window's size through the GPU; the port renders
+ *  through the reference-rasterizer port (d3d8/ref.ts), in software, so it draws at most D3D_PIXELS and the canvas
+ *  stretches it, whatever the scale. ponytail: a fixed pixel budget; raise it as ref.ts gets faster. */
+const D3D: ReadonlySet<VisKind> = new Set(['yule']);
+const D3D_PIXELS = 320 * 240;
 /** ...and Alchemy's WMP 9-11 presets: those mpvis.dlls draw into a fixed surface (384x288 for WMP 9, 640x480
  *  for 10 and 11) StretchBlt'd COLORONCOLOR to the window; WMP 12's (preset 0) follows the scale. */
 export function fixedSize(kind: VisKind, preset = 0): boolean {
-  return FIXED_SIZE.has(kind) || (kind === 'alchemy' && preset > 0);
+  return FIXED_SIZE.has(kind) || D3D.has(kind) || (kind === 'alchemy' && preset > 0);
 }
 /** How the surface is stretched to the view: smooth for WMP 12's HALFTONE blits (Alchemy's Random, Bars and
  *  Waves), nearest for every COLORONCOLOR / DELETESCANS / 1:1 one. */
 export function samplingOf(kind: VisKind, preset = 0): Sampling {
-  return (kind === 'alchemy' && preset === 0) || kind === 'bars' ? 'smooth' : 'nearest';
+  return (kind === 'alchemy' && preset === 0) || kind === 'bars' || D3D.has(kind) ? 'smooth' : 'nearest';
 }
 
 export function nativeSize(kind: VisKind, viewW: number, viewH: number, preset = 0): [number, number] {
   if (kind === 'plenoptic' || kind === 'ambience') return [256, 192];
+  if (D3D.has(kind)) {                                                // the view's shape within the pixel budget
+    const k = Math.min(1, Math.sqrt(D3D_PIXELS / (viewW * viewH)));
+    return [Math.max(16, Math.round(viewW * k)), Math.max(16, Math.round(viewH * k))];
+  }
   if (kind === 'alchemy' && preset === 1) return [384, 288];          // Random (WMP 9)
   if (kind === 'bars' || kind === 'spikes' || kind === 'particle' || kind === 'musical' || PLUS[kind] || kind === 'alchemy3d' || kind === 'pictureviz' || kind === 'pictureviz2') return [Math.min(1920, viewW), Math.min(1080, viewH)];
   return kind === 'battery' ? [384, 288] : [640, 480];
@@ -260,8 +273,15 @@ function makeRaw(kind: VisKind, preset: number, options: EngineOptions): RawEngi
   if (kind === 'alchemy3d') return new (A.Alchemy3D as unknown as RawCtor)({ width: 640, height: 480, options, preset });
   if (kind === 'pictureviz') return new (A.PictureViz as unknown as RawCtor)({ width: 16, height: 16, options, preset });
   if (kind === 'pictureviz2') return new (A.PictureViz2 as unknown as RawCtor)({ width: 16, height: 16, options, preset });
+  if (kind === 'yule') {
+    // its options are the Preset1 registry values (defaults: the DLL's); the shell's options are set on it after
+    return new A.YuleLog({ width: 320, height: 240, preset }) as unknown as RawEngine;
+  }
   return new (A.Engine as unknown as RawCtor)({ width: 16, height: 16, options, preset });
 }
+
+// the reference rasterizer's WebAssembly kernel compiles in the background; until then it draws in JS (same pixels)
+if (typeof WebAssembly !== 'undefined') void RefDevice.prepare().catch(() => undefined);
 
 type Ctx2D = CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
 

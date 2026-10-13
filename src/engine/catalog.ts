@@ -30,6 +30,8 @@ const CURRENT: Record<VisKind, Versions> = {
   blazing: [7, 8], colorcubes: [7, 8], pulsing: [7, 8], trilogy1: [7, 8], trilogy2: [7, 8], trilogy3: [7, 8],
   alchemy3d: [9, 9],
   pictureviz: [8, 8], pictureviz2: [9, 9],
+  // Yule Log: the Windows Media Bonus Pack for Windows XP (WMP 8) and the Winter Fun Packs for WMP 9 and 10
+  yule: [8, 10],
 };
 
 /** A preset's name as its name and the versions its suffix gives ("Swirl (WMP 7-9)": Swirl, [7, 9]); none: null. */
