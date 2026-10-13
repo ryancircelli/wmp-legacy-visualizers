@@ -194,6 +194,7 @@ Every visualizer is byte-identical to the real Microsoft object for 30,000 conse
 | Spikes (WMP 7-10) | 72 (26 of 30,000 frames): both presets, every version, eleven window sizes | over 780,000 | identical |
 | Particle (WMP 7-10) | 28: all 4 presets, every version, five window sizes | 840,000 | identical |
 | Musical Colors (WMP 7-8 `wmpvis.dll`) | all 21 presets on music and synthetic streams; its engine on the DLL's own images (the shipped build draws our own recreation of its artwork, within 2 levels for 99% of most images' values) | over 1,000,000 | identical engine |
+| Blazing Colors, Color Cubes, Pulsing Colors (Microsoft's 2000 downloads), Trilogy I, II, III (Windows Media Bonus Pack for XP) | all 21 presets on rock and synthetic streams (30,000 each), plus silence, play-state changes, two more sizes and Trilogy's own clock; the engine on the DLLs' own images (the shipped build draws our recreation of their artwork: 82 of 99 images byte-identical, Color Cubes' Sheer Delight palette our own design) | over 1,300,000 | identical engine |
 | WMP's spectrum analyzer (WMP 9-12) | 63 per build: every byte of every snapshot, six recordings and a synthetic set | 751,914 snapshots per build | identical |
 | WMP's spectrum analyzer (WMP 7.0, 7.1, 8, 8 SP1) | 63 per build, the same set: every byte of every snapshot, both spectrum layouts | 751,914 snapshots per build | identical |
 

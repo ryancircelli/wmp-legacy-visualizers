@@ -27,6 +27,7 @@ a throwaway key, so no setting of the machine's is read or written. The output f
 | Spikes (WMP 7.0-10) | 72 runs (26 of 30,000 frames), every version, eleven window sizes | over 780,000 | identical |
 | Particle (WMP 7.0-10) | 28 runs, every version, five window sizes | 840,000 | identical |
 | Musical Colors (WMP 7.1, 8 SP1 wmpvis.dll) | all 21 presets on rock and synthetic (30,000) and four more recordings (4,000) | over 1,000,000 | engine identical on the DLL's own images (see below) |
+| Blazing Colors, Color Cubes, Pulsing Colors, Trilogy I-III (Microsoft's downloadable packs, wmpvis.dll's engine) | all 21 presets: rock and synthetic 30,000 each, Trilogy's 30 fps clock, silence and play-state changes, 320x240 and 1280x1024 | over 1,300,000 | engine identical on the DLLs' own images |
 | WMP's spectrum analyzer (WMP 9, 10, 11, 12 x64 and x86) | 63 runs per build: every byte of every snapshot, synthetic set and six recordings | 751,914 snapshots per build | identical |
 | WMP's spectrum analyzer (WMP 7.0, 7.1 wmpui.dll; 8, 8 SP1 wmpcore.dll) | 63 runs per build, the same set, both spectrum layouts (Musical Colors gets the fixed-step one) | 751,914 snapshots per build | identical |
 
