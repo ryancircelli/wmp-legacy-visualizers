@@ -23,6 +23,7 @@ import './pictureviz/index';
 import './pictureviz/pv2/index';
 import type { Picture } from './pictureviz/picture';
 import './yule/index';
+import './goom/index';
 import { RefDevice } from './d3d8/ref';
 
 export { A };
@@ -30,7 +31,8 @@ export type { Surface, TimedLevel, Picture };
 export { pictureFromRGBA, loadPicture } from './pictureviz/picture';
 
 export type VisKind = 'alchemy' | 'bars' | 'battery' | 'spikes' | 'particle' | 'plenoptic' | 'ambience' | 'musical'
-  | 'blazing' | 'colorcubes' | 'pulsing' | 'trilogy1' | 'trilogy2' | 'trilogy3' | 'alchemy3d' | 'pictureviz' | 'pictureviz2' | 'yule';
+  | 'blazing' | 'colorcubes' | 'pulsing' | 'trilogy1' | 'trilogy2' | 'trilogy3' | 'alchemy3d' | 'pictureviz' | 'pictureviz2' | 'yule'
+  | 'goom';
 /** 'original' = each DLL's own surface size; 'auto' = the view, capped near 720p worth of pixels; n = view * n. */
 export type Scale = 'original' | 'auto' | number;
 
@@ -65,7 +67,8 @@ export interface PresetEntry {
   vis: VisKind;
   preset: number;
   group: 'Alchemy' | 'Bars and Waves' | 'Battery' | 'Spikes' | 'Particle' | 'Plenoptic' | 'Ambience' | 'Musical Colors'
-    | 'Blazing Colors' | 'Color Cubes' | 'Pulsing Colors' | 'Trilogy I' | 'Trilogy II' | 'Trilogy III' | '3D Alchemy' | 'Picture Viz' | 'Picture Viz II' | 'Yule Log';
+    | 'Blazing Colors' | 'Color Cubes' | 'Pulsing Colors' | 'Trilogy I' | 'Trilogy II' | 'Trilogy III' | '3D Alchemy' | 'Picture Viz' | 'Picture Viz II' | 'Yule Log'
+    | 'Goom';
   name: string;
   /** the family's registry key, HKLM\SOFTWARE\Microsoft\MediaPlayer\Objects\Effects\<key> (its place in the list) */
   key: string;
@@ -141,6 +144,8 @@ const FAMILIES: readonly { key: string; vis: VisKind; group: PresetEntry['group'
   { key: 'PictureViz_II', vis: 'pictureviz2', group: 'Picture Viz II', names: A.PictureViz2.PRESET_NAMES },
   // Microsoft's downloadable Direct3D 8 visualizations (Bonus Pack, Winter Fun Packs), their own Effects keys
   { key: 'YuleLog', vis: 'yule', group: 'Yule Log', names: A.YuleLog.PRESET_NAMES },
+  // What a GOOM! 2k4's WMP 9 plug-in (wmp9_goom.dll, iOS Software, LGPL): key "Wmp9_goom", before WMPVis
+  { key: 'Wmp9_goom', vis: 'goom', group: 'Goom', names: A.Goom.PRESET_NAMES },
 ];
 
 /** Every preset of every family, in WMP's order: the flat list its next/previous walks, wrapping. */
@@ -178,7 +183,10 @@ export function makeLevel(): TimedLevel {
 /** Families that draw at a size of their own whatever the window (Plenoptic and Ambience: their
  *  Plenoptic_Resolution / Assault_Resolution, 256x192 by default, StretchDIBits'd to the window): every
  *  scale renders them there, the canvas stretches. */
-const FIXED_SIZE: ReadonlySet<VisKind> = new Set(['plenoptic', 'ambience']);
+const FIXED_SIZE: ReadonlySet<VisKind> = new Set(['plenoptic', 'ambience', 'goom']);
+/** Goom's presets: 320x240, 480x360, 600x480 (the DLL's "640x480" sets 600), 800x600; its Render stretched the
+ *  buffer to the window with StretchDIBits in the DC's default (non-HALFTONE) mode: nearest */
+const GOOM_SIZES: readonly [number, number][] = [[320, 240], [480, 360], [600, 480], [800, 600]];
 /** The Direct3D 8 families (Yule Log): their DLLs render at the window's size through the GPU; the port renders
  *  through the reference-rasterizer port (d3d8/ref.ts), in software, so it draws at most D3D_PIXELS and the canvas
  *  stretches it, whatever the scale. ponytail: a fixed pixel budget; raise it as ref.ts gets faster. */
@@ -197,6 +205,7 @@ export function samplingOf(kind: VisKind, preset = 0): Sampling {
 
 export function nativeSize(kind: VisKind, viewW: number, viewH: number, preset = 0): [number, number] {
   if (kind === 'plenoptic' || kind === 'ambience') return [256, 192];
+  if (kind === 'goom') return GOOM_SIZES[preset] ?? GOOM_SIZES[0];   // goom's resolution is the preset
   if (D3D.has(kind)) {                                                // the view's shape within the pixel budget
     const k = Math.min(1, Math.sqrt(D3D_PIXELS / (viewW * viewH)));
     return [Math.max(16, Math.round(viewW * k)), Math.max(16, Math.round(viewH * k))];
@@ -277,6 +286,8 @@ function makeRaw(kind: VisKind, preset: number, options: EngineOptions): RawEngi
     // its options are the Preset1 registry values (defaults: the DLL's); the shell's options are set on it after
     return new A.YuleLog({ width: 320, height: 240, preset }) as unknown as RawEngine;
   }
+  // the DLL seeded its random table with a heap address: a different one each time it was loaded
+  if (kind === 'goom') return new A.Goom({ preset, options, seed: (Math.random() * 0x100000000) >>> 0 }) as unknown as RawEngine;
   return new (A.Engine as unknown as RawCtor)({ width: 16, height: 16, options, preset });
 }
 
