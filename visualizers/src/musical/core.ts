@@ -125,6 +125,10 @@ export interface PlusDll {
   layers?: number;
   /** the 2001 bars' extras without Trilogy's clock (Eclectic Colors): y law 9, layer 3 hidden again at the end */
   tri?: boolean;
+  /** StarTime and SnowTime (2000-09, 2000-10): Trilogy's l_898 > 1 layers (glowRing's mask passes, draw, renderLayer),
+   *  scaleOut's doubling and freeLayerBufs' image release, but not its clock; spectrumToLayer2 ending in a warp, a
+   *  presetStep without the bars; ripple's and warp's zoom by the spin angle (l_91c, l_934) and warp's radial function */
+  star?: boolean;
   /** SetCurrentPreset when it is not wmpvis.dll's (Trilogy: the last preset is Random Selection) */
   setPreset?(c: Core, n: number): void;
   /** the preset program (the DLL's vt+0x18c-ish dispatcher on obj+0x47bc): first call builds, later ones animate */
@@ -175,6 +179,11 @@ export class Core {
     // bin 12 (obj+0x1770). Only Ice Crystals, which reuses a held spectrum, then draws differently; the
     // real DLL does so too in the runs where the heap left stale bytes there (zeros = this port).
   }
+
+  /** Trilogy's and StarTime's layers with l_898 > 1 (glowRing's masks, the blended draw), scaleOut's doubling and freeLayerBufs' release */
+  trail(): boolean { return this.ver === 2 || !!(this.plus && this.plus.star); }
+  /** StarTime's and SnowTime's builds (PlusDll.star) */
+  isStar(): boolean { return !!(this.plus && this.plus.star); }
 
   /** point LY / XF / the order list at this engine's records (every public entry calls it) */
   layout(): void {
@@ -711,6 +720,15 @@ export class Core {
     if (s[0x4600 >> 2] !== s[0x47bc >> 2]) {
       s[0x4600 >> 2] = s[0x47bc >> 2];
       s[0x4574 >> 2] = 0;
+      p.program(this);
+      return;
+    }
+    if (p.star) {                                  // StarTime 0x10016140: the trails in bar mode (which no preset sets), no bars
+      s[0x44a8 >> 2] = 0;
+      if (s[LY(0) + lf(0x794)] === 0) return;
+      var on = s[0x457c >> 2] !== 0;
+      if (on && s[LY(2) + lf(0x910)] !== -1) unported(0x10014680)();
+      if (on && s[LY(0) + lf(0x910)] !== -1) { s[0x44a8 >> 2] = 0; this.fillLayerBg(); }
       p.program(this);
       return;
     }
@@ -1417,7 +1435,7 @@ export class Core {
           if (s[0x47ac >> 2] !== 0 && d < 2) s[b + lf(0x77c)] = 2;
           bind = s[b + lf(0x77c)] >= 2;
         }
-        if (this.ver === 2) { if (bind && (s[b + lf(0x770)] === -1 || this.bindImage() !== 0)) this.project(); }   // Trilogy 0x10003c00
+        if (this.trail()) { if (bind && (s[b + lf(0x770)] === -1 || this.bindImage() !== 0)) this.project(); }   // Trilogy 0x10003c00
         else if (bind && s[b + lf(0x770)] !== -1 && this.bindImage() !== 0) this.project();
       }
       s = this.m.I;
@@ -1693,7 +1711,7 @@ export class Core {
    *  fresh buffer; when the window changed size, or every 17th frame, padded to the window with black. */
   scaleOut(): void {
     var m = this.m, s = m.I, cw = s[0x47a0 >> 2], ch = s[0x47a8 >> 2];
-    if (this.ver === 2) {
+    if (this.trail()) {
       for (;;) {
         s[0x47e0 >> 2] = ftol(s[0x467c >> 2] * 256 / cw);
         s[0x47e4 >> 2] = ftol(s[0x4680 >> 2] * 256 / ch);
@@ -1897,7 +1915,7 @@ export class Core {
       }
       s = m.I; F = m.F;
       if ((s[b + lf(0x864)] !== 0 && s[b + lf(0x860)] !== 0) || (s[b + lf(0x850)] !== 0 && s[b + lf(0x84c)] !== 0) ||
-          s[b + lf(0x8f4)] !== 0 || (this.ver === 2 && s[b + lf(0x898)] > 1)) this.glowRing();  // vt+0x12c 0x55c06f06
+          s[b + lf(0x8f4)] !== 0 || (this.trail() && s[b + lf(0x898)] > 1)) this.glowRing();  // vt+0x12c 0x55c06f06
       s = m.I; F = m.F;
       if (s[b + lf(0x77c)] === 3) {
         s[b + lf(0x824)] = 0;
@@ -2163,7 +2181,7 @@ export class Core {
       if ((s[b + lf(0x8c0)] !== 0 && s[b + lf(0x8b8)] === 1) || (s[b + lf(0x8f4)] !== 0 && s[b + lf(0x858)] !== 0) ||
           (s[b + lf(0x864)] !== 0 && s[b + lf(0x860)] !== 0) || (s[b + lf(0x850)] !== 0 && s[b + lf(0x84c)] !== 0) ||
           ftol(m.F[XF(k) + xf(0x144)]) !== 0 || s[b + lf(0x94c)] !== 0 ||
-          (this.ver === 2 && s[b + lf(0x898)] > 1)) { this.blend(); return; }   // the trail is 0x144
+          (this.trail() && s[b + lf(0x898)] > 1)) { this.blend(); return; }   // the trail is 0x144
     } else {
       var v918 = s[b + lf(0x918)];
       if ((s[b + lf(0x8c0)] !== 0 && s[b + lf(0x8b8)] === 1) || (s[b + lf(0x8f4)] !== 0 && s[b + lf(0x858)] !== 0) ||
@@ -2440,7 +2458,8 @@ export class Core {
    *  just before the pixels is unchanged. */
   glowRing(): void {
     var m = this.m, s = m.I, F = m.F, U = m.U, k = s[0x44a8 >> 2], b = LY(k), x = XF(k), i: number;
-    if (this.ver && s[b + lf(0x898)] > 1) unported(0x1000bc20)();   // the Plus builds' mask-from-another-layer extras
+    var star = !!(this.plus && this.plus.star), l898 = s[b + lf(0x898)];
+    if (this.ver && l898 > 1 && !star) unported(0x1000bc20)();   // the Plus builds' mask-from-another-layer extras
     if (s[b + lf(0x950)] === 2) s[b + lf(0x950)] = 1;
     else {
       var sig = (s[b + lf(0x850)] + Math.imul(s[b + lf(0x84c)], 0xff) + (s[b + lf(0x864)] << 9) + s[b + lf(0x860)] +
@@ -2467,10 +2486,12 @@ export class Core {
       if (s[0x461c >> 2] < r3) F[0x4630 >> 2] = (r3 - s[0x461c >> 2]) * F[0x44e0 >> 2] + F[0x4630 >> 2];
     }
     var src = s[0x439c >> 2] >> 2, edge = s[0x4398 >> 2] >> 2, key = s[0x4df4 >> 2] >>> 0;
-    if (s[b + lf(0x864)] === 0 && s[b + lf(0x860)] === 0 && F[x + xf(0x124)] === 0 && s[b + lf(0x84c)] >= 0 &&
-        ring !== 0 && s[b + lf(0x84c)] !== 0) {
+    var plain = s[b + lf(0x864)] === 0 && s[b + lf(0x860)] === 0 && F[x + xf(0x124)] === 0;
+    var masked = star && l898 > 1 && l898 <= s[0x4ebc >> 2];
+    if (plain && ring !== 0 && s[b + lf(0x84c)] !== 0 && (star || s[b + lf(0x84c)] >= 0)) {
       var a0 = ftol(F[0x4630 >> 2]);                // 0x55c0777e: alpha = a0 * (1 - distance / ring)
       s[0x4e64 >> 2] = a0;
+      if (masked && !this.maskPass(true)) return;   // StarTime: the mask layer's inverse as the alpha first, the ring added to it
       for (i = 0; i < (n >>> 0); i++) {
         var p0 = U[src + i];
         if (p0 === key) continue;
@@ -2478,9 +2499,14 @@ export class Core {
         if (d0 > (ring >>> 0)) continue;
         var q = (a0 - Math.floor((d0 * (a0 >>> 0)) / (ring >>> 0))) >>> 0;
         if (q > 0xff) q = 0xff;
-        U[src + i] = ((p0 & 0xffffff) | (q << 24)) >>> 0;
+        if (masked) { var t0 = p0 + (q << 24 >>> 0); U[src + i] = (t0 > 0xffffffff ? (t0 - 0x100000000) | 0xff000000 : t0) >>> 0; }
+        else U[src + i] = ((p0 & 0xffffff) | (q << 24)) >>> 0;
       }
       s[0x473c >> 2] = 0;
+      return;
+    }
+    if (star && plain) {                           // no ring, no brightness, no base alpha: only the mask
+      if (masked) this.maskPass(true);
       return;
     }
     var bright = s[b + lf(0x864)] !== 0 && s[b + lf(0x860)] !== 0;
@@ -2529,6 +2555,34 @@ export class Core {
       U[src + i] = bswap(((bswap(px) & 0xffffff00) | a) >>> 0);   // a < 0 smears into the colour, as the asm does
     }
     s[0x473c >> 2] = 0;
+    if (masked) this.maskPass(false);
+  }
+
+  /** StarTime's glowRing tail: where the layer is not the colour key, its alpha byte takes 0xff - the alpha-less low byte of
+   *  layer 0x898's image (its l_824 buffer if it has one): `low` clears the pixel's own alpha first, else the two add and a
+   *  carry makes it opaque. Returns false where the DLL returns from glowRing (a missing buffer). */
+  maskPass(low: boolean): boolean {
+    var m = this.m, s = m.I, U = m.U, b = LY(s[0x44a8 >> 2]);
+    var k = s[b + lf(0x898)], bk = LY(k);
+    s[0x45cc >> 2] = k;
+    var n = Math.imul(s[0x4cf4 >> 2], s[0x4ce8 >> 2]);
+    s[0x473c >> 2] = n;
+    if (n <= Math.imul(s[bk + lf(0x7f4)], s[bk + lf(0x7f8)])) {
+      var mask = s[bk + lf(0x794)], sel = s[bk + lf(0x824)];
+      s[0x4c08 >> 2] = mask;
+      if (sel === 1) { if (s[bk + lf(0x828)] === 0) return false; mask = s[bk + lf(0x828)]; }
+      else if (sel === 2) { if (s[bk + lf(0x90c)] === 0) return false; mask = s[bk + lf(0x90c)]; }
+      s[0x4c08 >> 2] = mask;
+      var d = s[0x439c >> 2] >> 2, q = mask >> 2, key = s[0x4df4 >> 2] >>> 0;
+      for (var i = 0; i < (n >>> 0); i++) {
+        var px = U[d + i];
+        if (px === key) continue;
+        var add = ((0xff - (U[q + i] & 0xff)) << 24) >>> 0, base = low ? px & 0xffffff : px, sum = add + base;
+        U[d + i] = (sum > 0xffffffff ? ((sum - 0x100000000) | 0xff000000) : sum) >>> 0;
+      }
+      s[0x473c >> 2] = 0;
+    }
+    return true;
   }
 
   /** vt+0x94 0x55c07811: the per-pixel forward warp. Every opaque pixel's offset from the layer centre
@@ -2564,7 +2618,11 @@ export class Core {
       F[0x4e00 >> 2] = P(0xc0);
       F[0x4df8 >> 2] = P(0xd4) * c001;
       ai = byAngle(s[b + lf(0x8c8)]);
-      if (ai >= 0) { F[0x4dfc >> 2] = cosA(ai) * F[0x4dfc >> 2]; F[0x4e00 >> 2] = cosA(ai) * F[0x4e00 >> 2]; }
+      if (ai >= 0) { F[0x4dfc >> 2] = cosA(ai) * F[0x4dfc >> 2]; if (!this.isStar()) F[0x4e00 >> 2] = cosA(ai) * F[0x4e00 >> 2]; }
+      if (this.isStar()) {                       // StarTime: the second field has its own spin (l_934)
+        ai = byAngle(s[b + lf(0x934)]);
+        if (ai >= 0) F[0x4e00 >> 2] = cosA(ai) * F[0x4e00 >> 2];
+      }
     }
     if (P(0xc8) !== 0 || P(0xc4) !== 0) {
       s[0x4e2c >> 2] = s[x + xf(0xc4)];
@@ -2652,7 +2710,7 @@ export class Core {
       if (path === 0) this.swirl();                 // vt+0x26c 0x55c0a7b5
       else if (path === 1) { this.wave(); this.swirl(); }   // vt+0x268 0x55c09e5f
       else {
-        if (P(0xbc) !== 0 || P(0xc0) !== 0) unported(0x55c09c48)();
+        if (P(0xbc) !== 0 || P(0xc0) !== 0) this.radial();
         if (P(0xc8) !== 0 || P(0xc4) !== 0) unported(0x55c099b2)();
         if (P(0xcc) !== 0 || P(0xd0) !== 0) this.wave();
         if (P(0xd8) !== 0 && s[b + lf(0x8e4)] !== 0) unported(0x55c0a239)();
@@ -2672,6 +2730,43 @@ export class Core {
     }
     s[0x45cc >> 2] = i;
     s[0x43ec >> 2] = (s[0x439c >> 2] + i * 4) | 0;
+  }
+
+  /** vt+0x240 0x55c09c48 (StarTime 0x1000b260): the radial warp of one pixel's offset (0x4760, 0x4764), by the mode l_8c4: 0..9 push
+   *  the offset along one axis by a function of the other's square (mode + 10: of the product), halves of the plane selected by
+   *  the sign of an axis (modes 1..8), 9 is the two-axis version. The coefficients are warp's 0x4df8 (the strength), 0x4dfc and
+   *  0x4e00 (the offsets, scaled by the spin angles). */
+  radial(): void {
+    var s = this.m.I, F = this.m.F, b = LY(s[0x44a8 >> 2]);
+    s[0x4dc0 >> 2] = s[0x4760 >> 2];
+    var mode = s[b + lf(0x8c4)], t: number, X = F[0x4760 >> 2], Y = F[0x4764 >> 2], D = F[0x4df8 >> 2];
+    if (mode < 10) {
+      s[0x4b80 >> 2] = mode;
+      F[0x4b84 >> 2] = Y * Y * D + F[0x4dfc >> 2];
+      t = X * X * D;
+    } else {
+      t = D * Y;
+      s[0x4b80 >> 2] = mode - 10;
+      F[0x4b84 >> 2] = t * X + F[0x4dfc >> 2];
+      t = t * Y;
+    }
+    var mm = s[0x4b80 >> 2];
+    F[0x4b88 >> 2] = t + F[0x4e00 >> 2];
+    var B4 = F[0x4b84 >> 2], B8 = F[0x4b88 >> 2], C0 = F[0x4dc0 >> 2];
+    var f3: number, sign: number;
+    // pivot: 'a' = the axis whose sign decides (Y for 1..4, X for 5..8), f3 = Y * b84 (the X push)
+    var end = (): void => { F[0x4760 >> 2] = f3 + F[0x4760 >> 2]; F[0x4764 >> 2] = C0 * B8 + F[0x4764 >> 2]; };
+    var neg = (): void => { F[0x4760 >> 2] = F[0x4760 >> 2] - f3; F[0x4764 >> 2] = F[0x4764 >> 2] - C0 * B8; };
+    f3 = Y * B4;
+    if (mm === 0) { end(); return; }
+    if (mm === 1 || mm === 5) { sign = mm === 1 ? Y : X; if (0 <= sign) return; end(); return; }
+    if (mm === 2 || mm === 6) { sign = mm === 2 ? Y : X; if (sign <= 0) return; end(); return; }
+    if (mm === 3 || mm === 7) { sign = mm === 3 ? Y : X; if (sign <= 0) neg(); else end(); return; }
+    if (mm === 4 || mm === 8) { sign = mm === 4 ? Y : X; if (0 < sign) neg(); else end(); return; }
+    if (mm !== 9) return;
+    F[0x4760 >> 2] = Y <= 0 ? Y * B8 + X : X - Y * B4;
+    if (0 < C0) { F[0x4764 >> 2] = Y - C0 * B4; return; }
+    F[0x4764 >> 2] = C0 * B8 + Y;
   }
 
   /** vt+0x26c 0x55c0a7b5: spin by distance (angle -= r^2 * 0x4ddc, per axis 0x88c / 0x890 / 0x894),
@@ -2989,7 +3084,8 @@ export class Core {
     var m = this.m, s = m.I, F = m.F, U = m.U, H = m.H, b = LY(s[0x44a8 >> 2]);
     var cosT = 0x37d8 >> 2, c100 = 100, L = (o: number): number => s[b + lf(o)];
     if (L(0x834) !== 0) {
-      var r0 = L(0x834);
+      var r0 = L(0x834), z91c = this.isStar() ? L(0x91c) : 0, aN = z91c === 1 ? XF(s[0x44a8 >> 2]) + xf(0xe0) : XF(s[0x44a8 >> 2]) + xf(0xe8);
+      if (z91c === 1 || z91c === 2) r0 = ftol(r0 * F[cosT + ftol(F[aN])]);   // StarTime
       if (r0 < 0) r0 = -r0 | 0;
       while (r0 > 0x5a) r0 -= 0x5a;
       s[0x4d54 >> 2] = r0;
@@ -3016,6 +3112,9 @@ export class Core {
     var n = Math.imul(s[0x4cf4 >> 2], s[0x4ce8 >> 2]);
     s[0x473c >> 2] = n;
     F[0x4d08 >> 2] = L(0x838);
+    if (this.isStar() && L(0x838) !== 0 && (L(0x91c) === 1 || L(0x91c) === 2)) {
+      F[0x4d08 >> 2] = F[0x4d08 >> 2] * F[cosT + ftol(F[XF(s[0x44a8 >> 2]) + xf(L(0x91c) === 1 ? 0xe0 : 0xe8)])];
+    }
     var key = s[0x4df4 >> 2] >>> 0, src = s[0x439c >> 2], dst = s[0x4374 >> 2];
     var R = 0x4d28 >> 2, G = 0x4d18 >> 2, B = 0x4d04 >> 2;
     var tR = 0x4d38 >> 2, tG = 0x4d34 >> 2, tB = 0x4d2c >> 2;
@@ -3384,7 +3483,7 @@ export class Core {
     var m = this.m, s = m.I;
     for (var k = 0; k <= s[0x4ebc >> 2]; k++) {
       var b = LY(k);
-      if (this.ver === 2 && s[b + lf(0x770)] === -1 && s[b + lf(0x794)]) { m.release(s[b + lf(0x794)]); s[b + lf(0x794)] = 0; }
+      if (this.trail() && s[b + lf(0x770)] === -1 && s[b + lf(0x794)]) { m.release(s[b + lf(0x794)]); s[b + lf(0x794)] = 0; }
       s[b + lf(0x824)] = 0;
       if (s[b + lf(0x82c)]) { m.release(s[b + lf(0x82c)]); s[b + lf(0x82c)] = 0; }
       if (s[b + lf(0x828)]) { m.release(s[b + lf(0x828)]); s[b + lf(0x828)] = 0; }

@@ -112,7 +112,7 @@ it('black (the tap\'s third art): WMP\'s own look, no art, no reflection, the vi
   m.menu();
   expect([m.options().map((x) => x.textContent), m.row('Opacity').getAttribute('aria-disabled')])
     .toEqual([['VisualizerOn', 'Opacity50%', '3D Alchemy', 'Alchemy', 'Ambience', 'Bars and WavesBars', 'Battery', 'Blazing Colors', 'Color Cubes', 'Particle', 'Eclectic Colors', 'Picture Viz', 'Picture Viz II', 'Plenoptic',
-      'Pulsing Colors', 'Spikes', 'Trilogy I', 'Trilogy II', 'Trilogy III', 'Goom', 'Musical Colors', 'Yule Log'], null]);   // no Background row; Opacity as ever
+      'Pulsing Colors', 'Spikes', 'StarTime', 'Trilogy I', 'Trilogy II', 'Trilogy III', 'Goom', 'Musical Colors', 'Yule Log'], null]);   // no Background row; Opacity as ever
   m.pick('Opacity');                                 // stepped: kept for the art, not applied here
   expect([readPref('ipod.visOpacity', 50), m.layer()?.style.opacity]).toEqual([25, '']);
   act(() => { fireEvent.keyDown(window, { key: 'Escape' }); });

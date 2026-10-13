@@ -2,5 +2,10 @@
   "eclectic-p0": ["237224ac","d4d81eed","8bfaef26"],
   "eclectic-p1": ["2696aaf3","68144e00","31498865"],
   "eclectic-p2": ["243b94de","884941d2","0e2650a3"],
-  "eclectic-p1-640x480-s12345": ["5a227943","0c30f343","c6930f82"]
+  "startime-p0": ["706d673a","5fa17c2a","820fe74b"],
+  "startime-p1": ["fa431661","cc834bf7","5e8e575c"],
+  "startime-p2": ["fa620192","366ccaf8","6fcf1c6f"],
+  "eclectic-p1-640x480-s12345": ["5a227943","0c30f343","c6930f82"],
+  "startime-p0-640x480-s12345": ["5fbaedc3","f91d9d6b","1b4bfb4a"],
+  "startime-p1-1280x1024": ["c255addd","f3ad431f","e2623478"]
 }

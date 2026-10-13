@@ -33,6 +33,7 @@ describe('the catalog', () => {
       'Plenoptic, WMP 10 7, WMP 8 2, WMP 7 7',
       'Pulsing Colors, WMP 7–8 3',
       'Spikes, WMP 10 2',
+      'StarTime, WMP 7–8 3',
       'Trilogy I, WMP 7–8 4',
       'Trilogy II, WMP 7–8 4',
       'Trilogy III, WMP 7–8 4',

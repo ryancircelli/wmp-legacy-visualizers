@@ -8,20 +8,22 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { A } from '../src/ns';
 import '../src/rand';
-import { EclecticColors } from '../src/musical/bonus';
+import { EclecticColors, StarTime } from '../src/musical/bonus';
 import type { PlusClass } from '../src/musical/plus';
 import { PRESETS, nativeSize } from '../src';
 import { InputGen } from './golden/harness';
 
-const FAMS: Record<string, PlusClass> = { eclectic: EclecticColors };
-const KEYS: Record<string, string> = { eclectic: 'EclecticColors' };
+const FAMS: Record<string, PlusClass> = { eclectic: EclecticColors, startime: StarTime };
+const KEYS: Record<string, string> = { eclectic: 'EclecticColors', startime: 'StarTime' };
 
 describe('the Bonus Pack families: presets and wiring', () => {
   it("each family's presets, in WMP's list by its registry key", () => {
     const keys = [...new Set(PRESETS.map((p) => p.key))];
     for (const k of Object.values(KEYS)) expect(keys).toContain(k);
     expect(EclecticColors.PRESET_NAMES).toEqual(['Rolling Colors', 'Ribbon Rhythm', 'Night Fire']);
+    expect(StarTime.PRESET_NAMES).toEqual(['Starlight', 'Star Clouds', 'Star Glow']);
     expect(keys.indexOf('EclecticColors')).toBe(keys.indexOf('Dotplane') + 1);
+    expect(keys.indexOf('StarTime')).toBe(keys.indexOf('Spikes') + 1);
     for (const [vis, C] of Object.entries(FAMS)) {
       expect(PRESETS.filter((p) => p.vis === vis).map((p) => p.name)).toEqual(C.PRESET_NAMES);
       expect(nativeSize(vis as never, 800, 600)).toEqual([800, 600]);
@@ -35,6 +37,8 @@ interface GRun { id: string; vis: string; preset: number; w: number; h: number; 
 const RUNS: GRun[] = [
   ...Object.entries(FAMS).flatMap(([vis, C]) => C.PRESET_NAMES.map((_, preset): GRun => ({ id: `${vis}-p${preset}`, vis, preset, w: 320, h: 240, seed: 1 }))),
   { id: 'eclectic-p1-640x480-s12345', vis: 'eclectic', preset: 1, w: 640, h: 480, seed: 12345 },
+  { id: 'startime-p0-640x480-s12345', vis: 'startime', preset: 0, w: 640, h: 480, seed: 12345 },
+  { id: 'startime-p1-1280x1024', vis: 'startime', preset: 1, w: 1280, h: 1024, seed: 1 },
 ];
 const FRAMES = 300;
 
