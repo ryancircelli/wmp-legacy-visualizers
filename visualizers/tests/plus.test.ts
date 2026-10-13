@@ -22,7 +22,9 @@ describe('the packs: presets and wiring', () => {
     const keys = [...new Set(PRESETS.map((p) => p.key))];
     for (const k of ['BlazingColors', 'ColorCubes', 'PulsingColors', 'TrilogyI', 'TrilogyII', 'TrilogyIII']) expect(keys).toContain(k);
     expect(keys.indexOf('BlazingColors')).toBe(keys.indexOf('Battery') + 1);
-    expect(keys.indexOf('TrilogyIII')).toBe(keys.indexOf('WMPVis') - 1);
+    // Goom's "Wmp9_goom" sorts between them ("WMP9" before "WMPV")
+    expect(keys.indexOf('TrilogyIII')).toBe(keys.indexOf('Wmp9_goom') - 1);
+    expect(keys.indexOf('Wmp9_goom')).toBe(keys.indexOf('WMPVis') - 1);
     expect(TrilogyIII.PRESET_NAMES).toEqual(['Lava', 'Mystic Cloud', 'Undulation', 'Random Selection']);
     for (const [vis, C] of Object.entries(FAMS)) {
       expect(PRESETS.filter((p) => p.vis === vis).map((p) => p.name)).toEqual(C.PRESET_NAMES);
