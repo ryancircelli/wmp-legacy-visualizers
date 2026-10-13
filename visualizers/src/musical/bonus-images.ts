@@ -11,6 +11,10 @@ import { fill, rampOf } from './plus-images';
 import type { Ramp } from './plus-images';
 
 const RAMPS: { [name: string]: Ramp } = {
+  dungeon20: { w: 3, h: 319, c: [
+    [0, 0xff6d02, 25, 0xff8002, 90, 0xffc201, 130, 0xfff000, 141, 0xfff800, 142, 0xfffd00, 175, 0xfffd00, 176, 0xfffb00, 229, 0xffbc00, 302, 0xff7600, 318, 0xff6e00],
+    [0, 0xff6e02, 25, 0xff8002, 88, 0xffc001, 118, 0xffe300, 148, 0xffff00, 171, 0xfffe00, 198, 0xffe200, 238, 0xffb100, 318, 0xff6900],
+    [0, 0xf6fe01, 34, 0xf7e501, 88, 0xfbb101, 143, 0xfe7401, 167, 0xfe7201, 186, 0xfd8101, 286, 0xf7e901, 318, 0xf6ff01]] },
   snowtime1: { w: 1, h: 320, c: [
     [0, 0x1ebb01, 29, 0x28b306, 277, 0xe81264, 319, 0xfd006f]] },
   snowtime13: { w: 1, h: 256, c: [
@@ -290,5 +294,244 @@ export function snowTimeImages(): MusicalImage[] {
   put(18, 156, 36, twig());
   put(19, 36, 36, heart());
   SNOWTIME = im;
+  return im;
+}
+
+// ---------------------------------------------------------------- Dungeon Siege (DATATABLE_9)
+// The DLL's table holds the game publisher's artwork (a portrait, the title, fire photographs). This is our own: the same 32
+// slots and sizes, and the same conventions the program relies on (black or white is the colour key, a blue picture is a mask, the
+// images are stored bottom-up), drawn from a few shapes, a seeded noise and a fire palette. The pictures are not copies of the
+// originals; only the ramp (image 20) and the flat fills (3, 4, 19, 21) are fitted or exact.
+
+/** a small seeded generator (mulberry32) */
+function rng(seed: number): () => number {
+  var a = seed >>> 0;
+  return (): number => {
+    a = (a + 0x6d2b79f5) >>> 0;
+    var t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+/** smooth value noise in 2D, one lattice per seed */
+function noise2(seed: number): (x: number, y: number) => number {
+  var r = rng(seed), g = new Float32Array(64 * 64);
+  for (var i = 0; i < g.length; i++) g[i] = r();
+  var at = (ix: number, iy: number): number => g[(iy & 63) * 64 + (ix & 63)];
+  return (x, y) => {
+    var ix = Math.floor(x), iy = Math.floor(y), fx = x - ix, fy = y - iy;
+    var u = fx * fx * (3 - 2 * fx), v = fy * fy * (3 - 2 * fy);
+    return (at(ix, iy) * (1 - u) + at(ix + 1, iy) * u) * (1 - v) + (at(ix, iy + 1) * (1 - u) + at(ix + 1, iy + 1) * u) * v;
+  };
+}
+
+/** fractal noise: n octaves, 0..1 */
+function fbm(n: (x: number, y: number) => number, x: number, y: number, oct: number): number {
+  var s = 0, a = 0.5, tot = 0;
+  for (var o = 0; o < oct; o++) { s += a * n(x, y); tot += a; x *= 2; y *= 2; a *= 0.5; }
+  return s / tot;
+}
+
+var clamp01 = (v: number): number => v < 0 ? 0 : v > 1 ? 1 : v;
+var smooth = (a: number, b: number, v: number): number => { var t = clamp01((v - a) / (b - a)); return t * t * (3 - 2 * t); };
+var lerpc = (a: number, b: number, t: number): number => mix(a, b, clamp01(t));
+
+/** the fire palette: black, deep red, orange, yellow, white (t 0..1) */
+function fire(t: number): number {
+  var K = [[0, 0x000000], [0.22, 0x5c0800], [0.45, 0xd23200], [0.68, 0xff9c00], [0.86, 0xffea5a], [1, 0xffffff]];
+  t = clamp01(t);
+  for (var i = 1; i < K.length; i++) if (t <= K[i][0]) return lerpc(K[i - 1][1], K[i][1], (t - K[i - 1][0]) / (K[i][0] - K[i - 1][0]));
+  return 0xffffff;
+}
+
+/** rows reversed: the table stores its pictures bottom-up */
+function flip(w: number, h: number, px: Uint32Array): Uint32Array {
+  var o = new Uint32Array(w * h);
+  for (var y = 0; y < h; y++) o.set(px.subarray(y * w, (y + 1) * w), (h - 1 - y) * w);
+  return o;
+}
+
+/** a picture from a per-pixel function of the upright picture (x, y from the top left) */
+function paint(w: number, h: number, f: (x: number, y: number) => number): Uint32Array {
+  var px = new Uint32Array(w * h);
+  for (var y = 0; y < h; y++) for (var x = 0; x < w; x++) px[y * w + x] = f(x, y) & 0xffffff;
+  return flip(w, h, px);
+}
+
+/** the flame intensity of a column (w x h): strongest down the middle, torn into tongues by the noise */
+function flameField(w: number, h: number, seed: number): (x: number, y: number) => number {
+  var n = noise2(seed);
+  return (x, y) => {
+    var u = (x + 0.5) / w - 0.5, col = Math.exp(-(u * u) / 0.06);
+    return clamp01(col * (0.25 + 1.15 * fbm(n, x * 0.09, y * 0.045, 4)) - 0.1);
+  };
+}
+/** a flame column on white (the white is its colour key) */
+function flameColumn(w: number, h: number, seed: number): Uint32Array {
+  var f = flameField(w, h, seed);
+  return paint(w, h, (x, y) => { var v = f(x, y); return v < 0.05 ? 0xffffff : lerpc(0xffffff, fire(0.28 + 0.5 * v), Math.min(1, v * 2.2)); });
+}
+/** the blue mask of a flame column (its blue byte is the alpha: dark where the flame is thick) */
+function flameMask(w: number, h: number, seed: number): Uint32Array {
+  var f = flameField(w, h, seed);
+  return paint(w, h, (x, y) => 255 - Math.round(210 * f(x, y)));
+}
+/** a full-bleed fire texture (a) or its mask (b) */
+function fireField(w: number, h: number, seed: number, mask: boolean): Uint32Array {
+  var n = noise2(seed);
+  return paint(w, h, (x, y) => {
+    var v = clamp01(fbm(n, x * 0.05, y * 0.07, 5) * 1.5 - 0.2);
+    return mask ? 255 - Math.round(200 * v) : fire(0.22 + 0.56 * v);
+  });
+}
+/** a flame sprite on black: lobes of fire with torn edges */
+function fireBlob(w: number, h: number, seed: number): Uint32Array {
+  var n = noise2(seed), r = rng(seed ^ 0x9e37), lobes: number[][] = [];
+  for (var i = 0; i < 4; i++) lobes.push([0.3 + 0.4 * r(), 0.3 + 0.4 * r(), 0.22 + 0.2 * r()]);
+  return paint(w, h, (x, y) => {
+    var u = (x + 0.5) / w, v = (y + 0.5) / h, m = 0;
+    for (var l of lobes) { var d = Math.hypot((u - l[0]) * w, (v - l[1]) * h) / (l[2] * Math.max(w, h)); m = Math.max(m, 1 - d); }
+    var edge = smooth(0, 0.7, m) * (0.55 + 0.9 * fbm(n, x * 0.07, y * 0.07, 4));
+    return edge < 0.05 ? 0 : fire(0.1 + 0.72 * Math.min(1, edge));
+  });
+}
+
+// the title: our own 5 x 7 letters, enlarged, bevelled in steel, on black
+var GLYPH: { [c: string]: string[] } = {
+  D: ['11110', '10001', '10001', '10001', '10001', '10001', '11110'], U: ['10001', '10001', '10001', '10001', '10001', '10001', '01110'],
+  N: ['10001', '11001', '10101', '10011', '10001', '10001', '10001'], G: ['01110', '10001', '10000', '10111', '10001', '10001', '01111'],
+  E: ['11111', '10000', '10000', '11110', '10000', '10000', '11111'], O: ['01110', '10001', '10001', '10001', '10001', '10001', '01110'],
+  S: ['01111', '10000', '10000', '01110', '00001', '00001', '11110'], I: ['01110', '00100', '00100', '00100', '00100', '00100', '01110'],
+};
+function titleText(): Uint32Array {
+  var w = 280, h = 164, sc = 6, cov = new Float32Array(w * h);
+  var word = (txt: string, x0: number, y0: number): void => {
+    for (var k = 0; k < txt.length; k++) {
+      var g = GLYPH[txt[k]];
+      for (var y = 0; y < 7 * sc; y++) {
+        for (var x = 0; x < 5 * sc; x++) {
+          var gx = (x + 0.5) / sc - 0.5, gy = (y + 0.5) / sc - 0.5, ix = Math.floor(gx), iy = Math.floor(gy), s = 0;
+          for (var dy = 0; dy < 2; dy++) for (var dx = 0; dx < 2; dx++) {
+            var px = Math.min(4, Math.max(0, ix + dx)), py = Math.min(6, Math.max(0, iy + dy));
+            s += (g[py][px] === '1' ? 1 : 0) * (dx ? gx - ix : 1 - (gx - ix)) * (dy ? gy - iy : 1 - (gy - iy));
+          }
+          cov[(y0 + y) * w + x0 + k * 6 * sc + x] = smooth(0.35, 0.65, s);
+        }
+      }
+    }
+  };
+  word('DUNGEON', 14, 22);
+  word('SIEGE', 96, 84);
+  return paint(w, h, (x, y) => {
+    var c = cov[y * w + x];
+    if (c <= 0) return 0;
+    var up = y > 0 ? cov[(y - 1) * w + x] : 0, lit = clamp01(0.55 + (c - up) * 1.4 + 0.25 * Math.sin(y * 0.55));
+    return lerpc(0x3a3a40, 0xe8eaf0, lit * c);
+  });
+}
+
+/** eyelids and eyes: a skin wedge under a curved lid line on black (w x h), `open` the white of an eye */
+function lid(w: number, h: number, curve: number, eye: boolean): Uint32Array {
+  return paint(w, h, (x, y) => {
+    var u = (x + 0.5) / w, edge = h * (0.15 + curve * Math.sin(Math.PI * u));
+    if (y > edge + 1) return 0;
+    if (y > edge - 1.2) return 0x2a1408;
+    if (eye) return Math.hypot((u - 0.55) * w, y - h * 0.35) < h * 0.3 ? 0x1c0c04 : lerpc(0xffffff, 0xe69a50, u * u);
+    return lerpc(0xf3c19a, 0xb06a38, (y / h) * 1.2 + u * 0.2);
+  });
+}
+
+/** the portrait (216 x 320): hair, face, steel shoulder with spikes, the sword at the right */
+function portrait(): Uint32Array {
+  var w = 216, h = 320, n = noise2(11);
+  var ell = (x: number, y: number, cx: number, cy: number, rx: number, ry: number): number => smooth(1, 0.82, Math.hypot((x - cx) / rx, (y - cy) / ry));
+  return paint(w, h, (x, y) => {
+    var c = 0, hair = Math.max(ell(x, y, 130, 70, 62, 70), ell(x, y, 150, 40, 40, 44), ell(x, y, 100, 130, 40, 90) * 0.9);
+    if (hair > 0) c = lerpc(0x701000, 0xff5a10, 0.5 + 0.7 * fbm(n, x * 0.06, y * 0.04, 3) + (130 - y) * 0.002);
+    var face = ell(x, y, 118, 100, 36, 48);
+    if (face > 0) c = lerpc(c, lerpc(0x8a3c22, 0xf0b08a, 0.45 + (x - 100) * 0.006 - (y - 100) * 0.003), face);
+    if (Math.abs(y - 92) < 2 && Math.abs(x - 108) < 14 || Math.abs(y - 92) < 2 && Math.abs(x - 134) < 12) c = 0x3a1a10;
+    if (Math.abs(y - 128) < 2 && Math.abs(x - 120) < 10) c = 0x8c2a22;
+    var body = Math.max(ell(x, y, 100, 270, 110, 100), ell(x, y, 40, 215, 48, 40));
+    if (body > 0) {
+      var steel = 0.35 + 0.45 * fbm(n, x * 0.1, y * 0.1, 3) + 0.2 * Math.sin((x + y) * 0.09);
+      c = lerpc(c, lerpc(0x2a2a30, 0xc8ccd6, steel), body);
+    }
+    for (var s = 0; s < 3; s++) { var sx = 20 + s * 26, sy = 168 + s * 6; if (Math.abs(x - sx) < (sy - y) * 0.16 && y < sy && y > sy - 34) c = 0xb8bcc8; }
+    var blade = smooth(8, 3, Math.abs(x - (190 + (y - 40) * 0.01))) * (y > 6 ? 1 : 0);
+    if (blade > 0) c = lerpc(c, lerpc(0xffc050, 0xffffff, 1 - Math.abs(x - 190) / 8), blade);
+    return c;
+  });
+}
+
+/** the sword and its glow (76 x 215) */
+function swordGlow(): Uint32Array {
+  var w = 76, h = 215, n = noise2(23);
+  return paint(w, h, (x, y) => {
+    var d = Math.abs((x + 0.5) / w - 0.52), gl = Math.exp(-(d * d) / 0.045), core = smooth(0.1, 0.03, d), c = lerpc(0x120800, 0xa8a800, gl * (0.85 + 0.3 * fbm(n, x * 0.1, y * 0.05, 3)));
+    c = lerpc(c, 0xfff6c0, core);
+    if (y < 34) { var wing = smooth(0.46, 0.2, d + y * 0.004) * smooth(0, 14, y); c = lerpc(c, lerpc(0x8a4a10, 0xf8e8c0, 1 - y / 34), wing * 0.9); }
+    if (x < 14) c = lerpc(c, 0x7a2a08, 0.7 * smooth(14, 0, x));
+    return c;
+  });
+}
+
+/** the dragon's two glowing slits (132 x 198) */
+function slitEyes(): Uint32Array {
+  return paint(132, 198, (x, y) => {
+    var best = 0;
+    for (var e = 0; e < 2; e++) {
+      var cx = e ? 98 : 34, u = (x - cx) / 20, v = (y - 126 + (e ? (x - cx) * 0.2 : -(x - cx) * 0.2)) / 6;
+      best = Math.max(best, 1 - Math.hypot(u, v * 1.8));
+    }
+    return best <= 0 ? 0 : fire(0.55 + 0.45 * smooth(0, 0.7, best));
+  });
+}
+
+/** the dragon's head: a dark spiky shape with fire on its rim (132 x 198) */
+function dragonHead(): Uint32Array {
+  var n = noise2(31);
+  return paint(132, 198, (x, y) => {
+    var dx = (x - 66) / 62, dy = (y - 110) / 84, r = Math.hypot(dx, dy), th = Math.atan2(dy, dx);
+    var spike = 0.62 + 0.3 * Math.abs(Math.sin(th * 3.5)) ** 2 + 0.06 * fbm(n, x * 0.1, y * 0.1, 3);
+    var e = smooth(spike + 0.04, spike - 0.04, r);
+    if (e <= 0) return 0;
+    var rim = smooth(spike - 0.22, spike, r);
+    return lerpc(0x120604, fire(0.35 + 0.5 * rim), rim * e);
+  });
+}
+
+var DUNGEON: MusicalImage[] | null = null;
+/** Dungeon Siege's 32 images, in the table's order and sizes: the portrait (2), the sword's glow (8), two flame columns on white
+ *  (5, 7) and their blue mask (6), the eyes' lids (1, 9, 10, 12, 18), the dragon's slits (11) and head (13), two fire fields (14, 15)
+ *  and their mask (16), the title (17), the flame sprites (22..32), a black canvas (19), the colour ramp (20) and its dark twin (21) */
+export function dungeonImages(): MusicalImage[] {
+  if (DUNGEON) return DUNGEON;
+  var { im, put } = table();
+  put(1, 16, 7, lid(16, 7, 0.45, false));
+  put(2, 216, 320, portrait());
+  put(3, 1, 1, fill(1, 1, 0xff8700));
+  put(4, 1, 1, fill(1, 1, 0xff8700));
+  put(5, 76, 221, flameColumn(76, 221, 5));
+  put(6, 76, 221, flameMask(76, 221, 5));
+  put(7, 76, 221, flameColumn(76, 221, 7));
+  put(8, 76, 215, swordGlow());
+  put(9, 48, 14, lid(48, 14, 0.5, false));
+  put(10, 48, 14, lid(48, 14, 0.4, false));
+  put(11, 132, 198, slitEyes());
+  put(12, 16, 9, lid(16, 9, 0.4, false));
+  put(13, 132, 198, dragonHead());
+  put(14, 200, 140, fireField(200, 140, 14, false));
+  put(15, 200, 140, fireField(200, 140, 15, false));
+  put(16, 200, 140, fireField(200, 140, 14, true));
+  put(17, 280, 164, titleText());
+  put(18, 40, 14, lid(40, 14, 0.5, true));
+  put(19, 350, 320, fill(350, 320, 0));
+  put(20, 3, 319, rampOf(RAMPS.dungeon20));
+  put(21, 3, 319, fill(3, 319, 0));
+  var SPR = [[108, 125], [112, 115], [88, 86], [140, 64], [84, 118], [92, 134], [84, 85], [120, 164], [140, 78], [120, 167], [100, 76]];
+  for (var i = 0; i < SPR.length; i++) put(22 + i, SPR[i][0], SPR[i][1], fireBlob(SPR[i][0], SPR[i][1], 100 + i));
+  DUNGEON = im;
   return im;
 }

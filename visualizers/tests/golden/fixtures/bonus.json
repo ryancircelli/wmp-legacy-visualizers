@@ -6,8 +6,12 @@
   "startime-p1": ["fa431661","cc834bf7","5e8e575c"],
   "startime-p2": ["fa620192","366ccaf8","6fcf1c6f"],
   "snowtime-p0": ["6756ca62","d862ee47","66acc38b"],
+  "dungeon-p0": ["fd79378f","d0ad6eed","a46d31ec"],
+  "dungeon-p1": ["2aa8f0da","aae025f7","aac60ba2"],
   "eclectic-p1-640x480-s12345": ["5a227943","0c30f343","c6930f82"],
   "startime-p0-640x480-s12345": ["5fbaedc3","f91d9d6b","1b4bfb4a"],
   "snowtime-p0-640x480-s12345": ["07c54716","6de890dc","daa290e7"],
-  "startime-p1-1280x1024": ["c255addd","f3ad431f","e2623478"]
+  "startime-p1-1280x1024": ["c255addd","f3ad431f","e2623478"],
+  "dungeon-p0-640x480-s12345": ["6e3365cc","e44c0852","48d51dbc"],
+  "dungeon-p1-640x480-s12345": ["f91f5f87","2bfc996b","d615a9f8"]
 }

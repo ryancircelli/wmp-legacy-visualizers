@@ -4,10 +4,10 @@
 // (the port keeps its object), VAs the DLL's own (image base 0x10000000).
 import { A } from '../ns';
 import type { Core, PlusDll } from './core';
-import { LY, XF, lf, xf, ftol } from './core';
+import { LY, XF, lf, xf, ftol, TR_FPS } from './core';
 import type { MusicalImage } from './images';
 import { family, head, setup, ls, gs, F } from './plus';
-import { eclectImages, starTimeImages, snowTimeImages } from './bonus-images';
+import { eclectImages, starTimeImages, snowTimeImages, dungeonImages } from './bonus-images';
 import type { PlusClass } from './plus';
 
 // ---------------------------------------------------------------- Eclectic Colors (ECLECT.dll, 2000-09-21)
@@ -552,19 +552,979 @@ const SNOWTIME: PlusDll = {
   },
 };
 
+// ---------------------------------------------------------------- Dungeon Siege (dungeon.dll, 2001)
+// Trilogy I's engine (`ver` 2: the fps clock, the 2001 bars) with 55 layer records, a presetStep of its own (step layer 3), a
+// default scene on table 8 and a program of two presets (Poster; Lurking in the dark lies an enemy...), each moved by the sound and,
+// in the second, by a story of whole seconds on the real clock (timeGetTime). Program 0x10017650. Fields of its own, kept above the
+// object: the time and speed scales (obj+0xcbc4 = 3 / (fps + 1), obj+0xcbc0 = (fps + 1) / 3), a countdown (+0x23c, 0x14 from the
+// constructor) and the story's state with its limit and stamps (+0x244..0x254).
+const DG_CBC4 = 0x4fa0, DG_CBC0 = 0x4fa4, DG_23C = 0x4fa8, DG_244 = 0x4fac, DG_248 = 0x4fb0, DG_24C = 0x4fb4, DG_250 = 0x4fb8,
+  DG_254 = 0x4fbc;
+
+/** vt+0x90 0x10003b10: the current layer's picture without alpha (every pixel & 0xffffff, w * h + 1 of them as the DLL's <= loop
+ *  has it), obj+0x43ec and obj+0x45cc left where that loop ended. The byte before the pixels is cleared too: it is the low byte
+ *  of glowRing's parameter signature, so the ring is worked out again over the stripped picture. */
+function stripAlpha(c: Core): void {
+  var s = c.m.I, b = LY(s[0x44a8 >> 2]), n = Math.imul(s[b + lf(0x7f8)], s[b + lf(0x7f4)]);
+  if (n === 0) return;
+  var p = s[b + lf(0x794)] >> 2, i = 0;
+  s[0x43ec >> 2] = s[b + lf(0x794)];
+  c.m.B[s[b + lf(0x794)] - 4] = 0;
+  if (n >= 0) for (; i <= n; i++) c.m.U[p + i] &= 0xffffff;
+  s[0x43ec >> 2] = (p + i) << 2;
+  s[0x45cc >> 2] = i;
+}
+
+const DUNGEON: PlusDll = {
+  ver: 2, presets: 2, stepLayer: 3, bars: true, table: 8, layers: 0x37, zeroClock: true, noSpec: true,
+  scene: [
+    [0x910, 0x0, 0x76c, 0x2, 0x7fc, 0x479, 0x7e8, 0x453, 0x7ec, -0x1da, 0x808, 0x0, 0x78c, 0x0, 0x790, 0x8, 0x7e4, 0x1, 0x94c, 0x1, 0x77c, 0x2],
+    [0x76c, 0x2, 0x7fc, 0x58c, 0x7e8, 0x522, 0x7ec, -0x191, 0x808, 0x0, 0x78c, 0x8, 0x790, 0x1, 0x7e4, -0x1, 0x77c, 0x2],
+    [0x76c, 0x2, 0x910, 0x0, 0x7fc, 0x58c, 0x7e8, 0x453, 0x7ec, -0x1db, 0x808, 0x0, 0x78c, 0x8, 0x790, 0x1, 0x7e4, -0x1, 0x144, F(2), 0x94c, 0x1, 0xf0, F(300), 0x114, F(1), 0x118, F(0.5), 0x944, 0x2, 0x77c, 0x2],
+    [0x76c, 0x2, 0x7fc, 0x58c, 0x7e8, 0x524, 0x7ec, -0x191, 0x808, 0x0, 0x78c, 0x8, 0x790, 0x1, 0x7e4, 0x0, 0x94c, 0x1, 0x910, -0x1, 0x77c, 0x2],
+    [0x808, 0x0, 0x7e4, 0x0, 0x76c, 0x2, 0x7fc, 0x58c, 0x7e8, 0x524, 0x7ec, -0x191, 0x78c, 0x8, 0x790, 0x1, 0x910, -0x1, 0x77c, 0x2],
+    [0x76c, 0x2, 0x7fc, 0x58c, 0x7e8, 0x4f5, 0x7ec, 0x35, 0x808, -0x2e, 0x78c, 0x8, 0x790, 0x1, 0x7e4, -0x1, 0x910, -0x1, 0x77c, 0x2],
+  ],
+  ctor: (c: Core): void => { c.m.I[DG_23C >> 2] = 0x14; },
+  images: (): MusicalImage[] => dungeonImages(),
+  program(c: Core): void {                       // 0x10017650
+    var s = head(c), fv = c.m.F, id = s[0x47bc >> 2], v = 0, r = 0, q = 0, now = 0;
+    if (id === 1) {
+      if (s[0x4574 >> 2] === 0) {
+        gs(s, [0x4574, 1]);
+        c.canvasPlus(); s = c.m.I; fv = c.m.F;
+        gs(s, [0x463c, 0x14, 0x457c, 0, 0x4efc, 0, 0x4f00, 0, 0x4f04, 0, 0x4ef8, 0]);
+        ls(s, 0, [0x7e8, 0x87, 0x7ec, 0, 0x78c, 3, 0x790, 1]);
+        ls(s, 1, [0x910, -1, 0x76c, -1]);
+        ls(s, 2, [0x910, -1, 0x76c, -1]);
+        ls(s, 3, [0x910, -1, 0x76c, -1]);
+        ls(s, 4, [0x910, 0, 0x76c, 2]);
+        ls(s, 5, [0x910, 0, 0x76c, 2]);
+        ls(s, 6, [0x910, -1, 0x76c, -1]);
+        ls(s, 7, [0x910, 0, 0x76c, 2]);
+        ls(s, 4, [0x7e8, 0x87, 0x7ec, 0, 0x78c, 8, 0x790, 2]);
+        ls(s, 5, [0x7e8, 0, 0x7ec, 0x9c, 0x808, 0x9d, 0x78c, 8, 0x790, 0x11, 0x7e4, 0]);
+        ls(s, 7, [0x7e8, 0x113, 0x7ec, 100, 0x808, 0x7c, 0x7e4, 0xffffff, 0x78c, 8, 0x790, 5, 0x870, 3, 0x830, 8, 0x850, 0x50, 0x84c, 0x100, 0x118, 0x40000000, 0x77c, 3]);
+        gs(s, [0x44a8, 7]);
+        c.bindImage(); s = c.m.I; fv = c.m.F;
+        stripAlpha(c); s = c.m.I; fv = c.m.F;
+        ls(s, 8, [0x7e8, 8, 0x7ec, 0, 0x808, 0, 0x78c, 8, 0x790, 6, 0x76c, 2, 0x7e4, -1, 0x910, -1, 0x77c, 2]);
+        gs(s, [0x44a8, 8]);
+        c.bindImage(); s = c.m.I; fv = c.m.F;
+        stripAlpha(c); s = c.m.I; fv = c.m.F;
+        c.alphaFromBlue(); s = c.m.I; fv = c.m.F;
+        ls(s, 9, [0x76c, 2, 0x7e8, 0x113, 0x7ec, 100, 0x808, 0x7c, 0x78c, 8, 0x830, 8]);
+        gs(s, [0x44a8, 9]);
+        ls(s, 9, [0x7e4, 0xffffff, 0x790, 7, 0x870, 3, 0x850, 0x50, 0x84c, 0x100, 0x118, 0x40c00000]);
+        c.bindImage(); s = c.m.I; fv = c.m.F;
+        stripAlpha(c); s = c.m.I; fv = c.m.F;
+        ls(s, 10, [0x7ec, 0x69, 0x808, 0x69]);
+        ls(s, 9, [0x77c, 3]);
+        ls(s, 10, [0x76c, 2, 0x7e8, 0x113, 0x7e4, 0xffffff, 0x78c, 8, 0x790, 8, 0x77c, 3]);
+        ls(s, 0xb, [0x76c, 2, 0x7e8, 0x102, 0x7ec, 0x132, 0x808, 0xca, 0x7e4, 0, 0x78c, 8, 0x790, 9, 0x77c, 3]);
+        ls(s, 0xc, [0x76c, 2, 0x7ec, -0xb7, 0x7e4, 0, 0x78c, 8, 0x790, 0xb, 0x77c, 3, 0x7cc, -4, 0x124, 0x437f0000, 0x870, 3, 0x850, 1, 0x84c, 200]);
+        r = rand();
+        s[LY(0xc) + lf(0x7d4)] = (r & 3) + 1;
+        r = rand();
+        s[LY(0xc) + lf(0x808)] = -0x78 - (r & 0x7f);
+        r = rand();
+        v = (r & 0xff) - 0x41;
+        s[LY(0xc) + lf(0x7e8)] = v;
+        if (100 < v) {
+          s[LY(0xc) + lf(0x7e8)] = (r & 0xff) - 0xa5;
+        }
+        ls(s, 0xd, [0x76c, 2]);
+        s[LY(0xd) + lf(0x7e8)] = s[LY(0xc) + lf(0x7e8)] + -0x1d;
+        ls(s, 0xd, [0x7ec, -0x7c]);
+        s[LY(0xd) + lf(0x808)] = s[LY(0xc) + lf(0x808)] + -0x2a;
+        ls(s, 0xd, [0x7e4, -1, 0x78c, 8, 0x790, 0xe, 0x910, -1, 0x77c, 3, 0x0e4, 0x41200000, 0x830, 0xf, 0x870, 3, 0x850, 1, 0x84c, 1, 0x118, 0x41200000]);
+        gs(s, [0x44a8, 0xd]);
+        c.bindImage(); s = c.m.I; fv = c.m.F;
+        stripAlpha(c); s = c.m.I; fv = c.m.F;
+        ls(s, 0xe, [0x76c, 2]);
+        s[LY(0xe) + lf(0x7e8)] = s[LY(0xc) + lf(0x7e8)] + -0x1d;
+        ls(s, 0xe, [0x7ec, -0xb7]);
+        s[LY(0xe) + lf(0x808)] = s[LY(0xc) + lf(0x808)] + -0x75;
+        ls(s, 0xe, [0x7e4, -1, 0x78c, 8, 0x790, 0xf, 0x910, -1, 0x830, 0xf, 0x77c, 3, 0x870, 3, 0x850, 1, 0x84c, 1, 0x118, 0x41600000]);
+        gs(s, [0x44a8, 0xe]);
+        c.bindImage(); s = c.m.I; fv = c.m.F;
+        stripAlpha(c); s = c.m.I; fv = c.m.F;
+        ls(s, 0xf, [0x76c, 2, 0x7e8, 0, 0x7ec, -0xb7, 0x808, -0xbe, 0x7e4, -1, 0x78c, 8, 0x790, 0x10, 0x910, -1, 0x77c, 2]);
+        gs(s, [0x44a8, 0xf]);
+        c.bindImage(); s = c.m.I; fv = c.m.F;
+        stripAlpha(c); s = c.m.I; fv = c.m.F;
+        c.alphaFromBlue(); s = c.m.I; fv = c.m.F;
+        ls(s, 0x10, [0x76c, 2]);
+        s[LY(0x10) + lf(0x7e8)] = s[LY(0xc) + lf(0x7e8)];
+        ls(s, 0x10, [0x7ec, -0xb7]);
+        s[LY(0x10) + lf(0x808)] = s[LY(0xc) + lf(0x808)];
+        ls(s, 0x10, [0x7e4, 0, 0x78c, 8, 0x790, 0xd, 0x77c, 3, 0x870, 2, 0x850, 0x23, 0x84c, 0x100, 0x124, 0x437f0000, 0x910, -1]);
+        ls(s, 0x11, [0x76c, 2, 0x7e8, 0x16, 0x7ec, -0xfa, 0x808, -0x32, 0x78c, 8]);
+        r = rand();
+        s[LY(0x11) + lf(0x790)] = (r & 7) + 0x16;
+        ls(s, 0x11, [0x7e4, 0]);
+        r = rand();
+        s[LY(0x11) + lf(0x7cc)] = (r & 0x3f) + 0x28;
+        ls(s, 0x11, [0x0e4, 0, 0x0e0, 0x42c80000]);
+        ls(s, 0x12, [0x76c, 2, 0x7e8, 0x135, 0x7ec, 0x131, 0x808, 0x4e, 0x7e4, 0, 0x78c, 8, 0x790, 0x12, 0x910, -1, 0x77c, 2]);
+        gs(s, [0x44cc, 0xaf, 0x44c0, 5, 0x44bc, 0x3c, 0x44c8, 1, 0x44d0, 0x14]);
+        return;
+      }
+      fv[DG_CBC4 >> 2] = (3.0 / (s[TR_FPS >> 2] + 1));
+      fv[DG_CBC0 >> 2] = ((s[TR_FPS >> 2] + 1) * 0.3333333333333333);
+      fv[XF(0xd) + xf(0x0e4)] = (fv[DG_CBC4 >> 2] * 10.0);
+      fv[XF(0xe) + xf(0x118)] = (fv[DG_CBC4 >> 2] * 14.0);
+      fv[XF(0xd) + xf(0x118)] = (fv[DG_CBC4 >> 2] * 10.0);
+      fv[XF(9) + xf(0x118)] = (fv[DG_CBC4 >> 2] * 6.0);
+      fv[XF(7) + xf(0x118)] = (fv[DG_CBC4 >> 2] + fv[DG_CBC4 >> 2]);
+      if (s[0x440c >> 2] < 0x29) {
+        ls(s, 0x12, [0x910, -1]);
+      } else {
+        v = s[LY(0x12) + lf(0x7d0)];
+        if (v === 0) {
+          v = s[LY(0x12) + lf(0x7d4)];
+          if (v === 0) {
+            q = ftol((rand() & 0x1f) * fv[DG_CBC0 >> 2] + 20);
+            s[LY(0x12) + lf(0x7d0)] = q;
+            r = rand();
+            s[0x4e78 >> 2] = r & 3;
+            if ((r & 3) === 0) {
+              q = ftol((rand() & 0x1f) * fv[DG_CBC0 >> 2] + 7);
+              s[LY(0x12) + lf(0x7d4)] = q;
+              ls(s, 0x12, [0x790, 1, 0x7e8, 0x102, 0x7ec, 0x13c, 0x808, 0xda]);
+            }
+            v = s[0x4e78 >> 2];
+            if (1 < v) {
+              q = ftol((rand() & 0xf) * fv[DG_CBC0 >> 2] + 17);
+              s[LY(0x12) + lf(0x7d4)] = q;
+              ls(s, 0x12, [0x790, 0xc, 0x7e8, 0x10a, 0x7ec, 0x137, 0x808, 0xb0]);
+              v = s[0x4e78 >> 2];
+            }
+            if (v === 1) {
+              q = ftol((rand() & 0x7f) * fv[DG_CBC0 >> 2] + 60);
+              s[LY(0x12) + lf(0x7d4)] = q;
+              ls(s, 0x12, [0x790, 0x12, 0x7e8, 0x131, 0x7ec, 0x132, 0x808, 0x4b]);
+            }
+          } else {
+            s[LY(0x12) + lf(0x7d4)] = v + -1;
+            if (s[0x440c >> 2] < s[LY(0x12) + lf(0x7cc)]) {
+              ls(s, 0x12, [0x910, -1]);
+            } else {
+              ls(s, 0x12, [0x910, 0]);
+            }
+          }
+          s[LY(0x12) + lf(0x7cc)] = s[0x440c >> 2];
+          if (s[LY(0x12) + lf(0x790)] === 0xc) {
+            ls(s, 0x12, [0x7cc, 0]);
+          }
+        } else {
+          s[LY(0x12) + lf(0x7d0)] = v + -1;
+          ls(s, 0x12, [0x910, -1]);
+        }
+      }
+      v = s[LY(7) + lf(0x850)];
+      if (s[0x440c >> 2] < 0xb) {
+        if (v < 0xa1) {
+          s[LY(7) + lf(0x850)] = v + 4;
+          v = s[LY(9) + lf(0x850)];
+          ls(s, 7, [0x910, 0]);
+          s[LY(9) + lf(0x850)] = v + 4;
+          ls(s, 9, [0x910, 0]);
+          ls(s, 7, [0x77c, 3]);
+          ls(s, 9, [0x77c, 3]);
+        } else {
+          ls(s, 7, [0x910, -1]);
+          ls(s, 9, [0x910, -1]);
+          ls(s, 10, [0x910, -1]);
+          ls(s, 0xb, [0x790, 9, 0x910, 0]);
+        }
+      } else if (v === 9) {
+        ls(s, 10, [0x910, 0]);
+      } else {
+        s[LY(7) + lf(0x850)] = v + -1;
+        s[LY(9) + lf(0x850)] = s[LY(9) + lf(0x850)] + -1;
+        if (v + -1 < 9) {
+          ls(s, 7, [0x850, 9]);
+          ls(s, 9, [0x850, 9]);
+        }
+      }
+      v = s[LY(7) + lf(0x7cc)];
+      if (v === 0) {
+        ls(s, 7, [0x910, 0]);
+        ls(s, 9, [0x910, 0]);
+      } else {
+        s[LY(7) + lf(0x7cc)] = v + -1;
+      }
+      ls(s, 7, [0x77c, 3]);
+      ls(s, 9, [0x77c, 3]);
+      v = (s[0x17e0 >> 2] + (s[0x17e0 >> 2] >> 0x1f & 3)) >> 2;
+      s[LY(7) + lf(0x874)] = v;
+      if (0xf < v) {
+        ls(s, 7, [0x874, 0xf]);
+      }
+      v = (s[0x17b8 >> 2] / 3) | 0;
+      s[LY(9) + lf(0x878)] = v;
+      if (0xf < v) {
+        ls(s, 9, [0x878, 0xf]);
+      }
+      v = ((s[0x440c >> 2] + (s[0x440c >> 2] >> 0x1f & 0xf)) >> 4) * 0x20;
+      s[0x4e78 >> 2] = v;
+      if (0xff < v) {
+        gs(s, [0x4e78, 0xff]);
+      }
+      fv[XF(10) + xf(0x124)] = (0xff - s[0x4e78 >> 2]);
+      ls(s, 10, [0x77c, 3]);
+      if (fv[XF(0x11) + xf(0x124)] < 200.0) {
+        if (s[LY(0x11) + lf(0x7d0)] === 1) {
+          q = ftol(fv[DG_CBC0 >> 2] * 20);
+          s[LY(0x11) + lf(0x7cc)] = q;
+        } else {
+          v = s[LY(0x11) + lf(0x7cc)];
+          if (v === 0) {
+            fv[XF(0x11) + xf(0x0e4)] = (fv[DG_CBC4 >> 2] * 5.0);
+            s[LY(0x11) + lf(0x7e8)] = 0x41 - ((s[LY(0x11) + lf(0x7f4)] / 2) | 0);
+            s[LY(0x11) + lf(0x808)] = ((s[LY(0x11) + lf(0x7f8)] / 2) | 0) - 0x1ea;
+            v = s[LY(0x11) + lf(0x7f8)];
+            if (0x85 < v) {
+              s[LY(0x11) + lf(0x808)] = ((v / 2) | 0) - 0x1ea;
+            }
+            v = s[LY(0x11) + lf(0x7f8)];
+            if (v < 0x69) {
+              s[LY(0x11) + lf(0x808)] = ((v + (v >> 0x1f & 3)) >> 2) + -0x1ef;
+            }
+            if (180.0 <= fv[XF(0x11) + xf(0x0e0)]) {
+              fv[XF(0x11) + xf(0x128)] = (fv[DG_CBC4 >> 2] * 5.0);
+              if (fv[XF(0x11) + xf(0x124)] < 100.0) {
+                ls(s, 0x11, [0x0e0, 0x43340000]);
+              }
+            } else {
+              ls(s, 0x11, [0x124, 0, 0x128, 0]);
+            }
+            q = ftol((fv[(0x37d8 >> 2) + ftol(fv[XF(0x11) + xf(0xe0)])] + 1) * s[LY(0x11) + lf(0x7f8)]);
+            s[LY(0x11) + lf(0x808)] = s[LY(0x11) + lf(0x808)] - q;
+            ls(s, 0x11, [0x910, 0, 0x77c, 3]);
+            if (s[LY(0xd) + lf(0x910)] === -1) {
+              gs(s, [0x44a8, 0xd]);
+              stripAlpha(c); s = c.m.I; fv = c.m.F;
+              gs(s, [0x44a8, 0xe]);
+              stripAlpha(c); s = c.m.I; fv = c.m.F;
+            }
+            ls(s, 0xd, [0x7e8, -0x22, 0x7ec, 0xc3, 0x808, -0x28, 0x124, 0x429c0000]);
+            ls(s, 0xe, [0x124, 0]);
+            ls(s, 0xd, [0x910, 0]);
+            ls(s, 0xe, [0x7e8, -0x2b, 0x7ec, -0xb7, 0x808, -0x1cb, 0x910, 0]);
+            ls(s, 0xd, [0x77c, 3]);
+            ls(s, 0xe, [0x77c, 3]);
+            if (130.0 < fv[XF(0x11) + xf(0x124)]) {
+              q = ftol(fv[XF(0x11) + xf(0x124)] - 130);
+              s[LY(0xd) + lf(0x808)] = -0x28 - q;
+              q = ftol(fv[XF(0x11) + xf(0x124)] - 130);
+              s[LY(0xe) + lf(0x808)] = -0x1cb - q;
+            }
+          } else {
+            s[LY(0x11) + lf(0x7cc)] = v + -1;
+          }
+        }
+      } else {
+        ls(s, 0x11, [0x124, 0, 0x128, 0, 0x910, -1]);
+        q = ftol((rand() & 0x1f) * fv[DG_CBC0 >> 2] + 20);
+        s[LY(0x11) + lf(0x7cc)] = q;
+        ls(s, 0x11, [0x0e0, 0x42c80000, 0x0e4, 0]);
+        ls(s, 0xd, [0x910, -1]);
+        ls(s, 0xe, [0x910, -1]);
+        r = rand();
+        v = s[LY(0x11) + lf(0x790)] + (r & 3) + 1;
+        s[LY(0x11) + lf(0x790)] = v;
+        if (0x1f < v) {
+          r = rand();
+          s[LY(0x11) + lf(0x790)] = (r & 1) + 0x16;
+        }
+      }
+      l1851c: {
+        v = s[LY(0xb) + lf(0x7cc)];
+        if (v === 0) {
+          if (s[DG_23C >> 2] === 0) {
+            q = ftol(((rand() & 0x3f) + 0x18) * fv[DG_CBC0 >> 2]);
+            s[DG_23C >> 2] = q;
+            ls(s, 0xb, [0x910, 0]);
+          } else {
+            s[DG_23C >> 2] = s[DG_23C >> 2] + -1;
+            ls(s, 0xb, [0x910, -1]);
+            if (5 < s[0x440c >> 2]) break l1851c;
+            q = ftol(((rand() & 0x3f) + 0x18) * fv[DG_CBC0 >> 2]);
+            s[DG_23C >> 2] = q;
+            ls(s, 0xb, [0x910, 0]);
+          }
+        } else {
+          s[LY(0xb) + lf(0x7cc)] = v + -1;
+          ls(s, 0xb, [0x910, 0]);
+          ls(s, 10, [0x910, 0]);
+        }
+        if ((s[LY(7) + lf(0x910)] === -1) && (s[LY(10) + lf(0x910)] === 0)) {
+          ls(s, 0xb, [0x910, -1]);
+        } else if (s[LY(10) + lf(0x910)] !== -1 && fv[XF(10) + xf(0x124)] <= 180.0) {
+          ls(s, 0xb, [0x790, 10]);
+        } else {
+          ls(s, 0xb, [0x790, 9]);
+        }
+      }
+      if (s[LY(0x10) + lf(0x910)] === 0) {
+        ls(s, 7, [0x910, -1]);
+        ls(s, 9, [0x910, -1]);
+        ls(s, 10, [0x910, -1]);
+        ls(s, 0xb, [0x790, 9, 0x910, 0, 0x7cc, 10]);
+        ls(s, 7, [0x7cc, 0x11]);
+        ls(s, 0x12, [0x910, -1]);
+      }
+      if (s[XF(0xc) + xf(0x124)] === 0x437f0000) {
+        ls(s, 0xc, [0x910, -1]);
+      } else {
+        ls(s, 0xc, [0x910, 0]);
+        s[LY(0xc) + lf(0x850)] = ((0xff - s[0x440c >> 2]) / 0x32) | 0;
+        gs(s, [0x44a8, 0xc]);
+        ls(s, 0xc, [0x77c, 3]);
+        stripAlpha(c); s = c.m.I; fv = c.m.F;
+      }
+      if (s[XF(0xe) + xf(0x124)] === 0x437f0000) {
+        ls(s, 0xe, [0x910, -1]);
+        ls(s, 0x11, [0x7d0, 0]);
+      }
+      if (s[XF(0x10) + xf(0x124)] === 0x437f0000) {
+        ls(s, 0x10, [0x910, -1]);
+      }
+      if (fv[XF(0x10) + xf(0x124)] < 100.0 && fv[XF(0x10) + xf(0x128)] < 0.0) {
+        ls(s, 0x10, [0x128, 0]);
+      }
+      if (fv[XF(0xe) + xf(0x124)] === 0.0 && s[LY(0xe) + lf(0x910)] === 0) {
+        if (s[LY(0xd) + lf(0x910)] === -1) {
+          ls(s, 0xd, [0x910, 0]);
+          gs(s, [0x44a8, 0xd]);
+          stripAlpha(c); s = c.m.I; fv = c.m.F;
+          ls(s, 0xd, [0x0e0, 0]);
+          fv[XF(0x10) + xf(0x128)] = (fv[DG_CBC4 >> 2] * -20.0);
+          ls(s, 0x10, [0x910, 0]);
+        }
+        if (s[LY(0x11) + lf(0x910)] === -1) {
+          if (350.0 <= fv[XF(0xd) + xf(0x0e0)]) {
+            ls(s, 0xd, [0x910, -1]);
+            ls(s, 0xc, [0x7d0, 0]);
+            fv[XF(0xe) + xf(0x128)] = (fv[DG_CBC4 >> 2] * 10.0);
+            fv[XF(0x10) + xf(0x128)] = (fv[DG_CBC4 >> 2] * 10.0);
+          } else {
+            q = ftol(fv[XF(0xd) + xf(0xe0)]);
+            fv[XF(0xd) + xf(0x124)] = ((fv[(0x37d8 >> 2) + q] + 1.0) * 128.0);
+            ls(s, 0xd, [0x77c, 3]);
+          }
+        }
+      }
+      v = s[LY(0xc) + lf(0x7d0)];
+      if (v !== 0) {
+        s[LY(0xc) + lf(0x7d0)] = v + -1;
+        return;
+      }
+      fv[XF(0xc) + xf(0x124)] = (s[LY(0xc) + lf(0x7cc)] + fv[XF(0xc) + xf(0x124)]);
+      ls(s, 0xc, [0x77c, 3]);
+      ls(s, 0x10, [0x77c, 3]);
+      if (fv[XF(0xc) + xf(0x124)] <= 0.0) {
+        ls(s, 0xc, [0x124, 0]);
+        q = ftol((((rand() >> 2) & 0xf) + 3) * fv[DG_CBC0 >> 2]);
+        s[LY(0xc) + lf(0x7cc)] = q;
+        q = ftol((rand() & 0xf) * fv[DG_CBC0 >> 2] + 10);
+        s[LY(0xc) + lf(0x7d0)] = q;
+        v = s[LY(0xc) + lf(0x7d4)];
+        if (v !== 0) {
+          s[LY(0xc) + lf(0x7d4)] = v + -1;
+          return;
+        }
+        if (0x40 < s[LY(0xc) + lf(0x7e8)]) {
+          return;
+        }
+        if (-0xfb < s[LY(0xc) + lf(0x808)]) {
+          return;
+        }
+        if (s[LY(0xd) + lf(0x910)] !== -1) {
+          return;
+        }
+        if (s[LY(0xe) + lf(0x910)] !== -1) {
+          return;
+        }
+        if (s[LY(0x11) + lf(0x910)] !== -1) {
+          return;
+        }
+        ls(s, 0x11, [0x7d0, 1]);
+        r = rand();
+        s[LY(0xc) + lf(0x7d4)] = (r & 3) + 3;
+        ls(s, 0xe, [0x124, 0x43020000]);
+        fv[XF(0xe) + xf(0x128)] = (fv[DG_CBC4 >> 2] * -25.0);
+        gs(s, [0x44a8, 0xe]);
+        stripAlpha(c); s = c.m.I; fv = c.m.F;
+        ls(s, 0xe, [0x910, 0, 0x77c, 3]);
+      }
+      if (fv[XF(0xc) + xf(0x124)] < 255.0 || s[LY(0x10) + lf(0x910)] !== -1) {
+        return;
+      }
+      ls(s, 0xc, [0x124, 0x437f0000]);
+      q = ftol((-3 - ((rand() >> 2) & 0xf)) * fv[DG_CBC4 >> 2]);
+      s[LY(0xc) + lf(0x7cc)] = q;
+      q = ftol((rand() & 0xf) * fv[DG_CBC0 >> 2] + 20);
+      s[LY(0xc) + lf(0x7d0)] = q;
+      if ((((s[LY(0xc) + lf(0x7d4)] < 1) && (s[LY(0xd) + lf(0x910)] === -1)) && (s[LY(0xe) + lf(0x910)] === -1)) &&
+      (s[LY(0x11) + lf(0x910)] === -1)) {
+        r = rand();
+        s[LY(0xc) + lf(0x808)] = -0x122 - (r & 0x3f);
+        r = rand();
+        s[LY(0xc) + lf(0x7e8)] = (r & 0x3f) - 0x14;
+        ls(s, 0x11, [0x7d0, 1]);
+      } else {
+        r = rand();
+        s[LY(0xc) + lf(0x808)] = -0x78 - (r & 0x7f);
+        r = rand();
+        v = (r & 0xff) - 0x41;
+        s[LY(0xc) + lf(0x7e8)] = v;
+        if (100 < v) {
+          s[LY(0xc) + lf(0x7e8)] = (r & 0xff) - 0xa5;
+        }
+      }
+      if (s[LY(0x11) + lf(0x910)] !== 0) {
+        s[LY(0xd) + lf(0x7e8)] = s[LY(0xc) + lf(0x7e8)] + -0x1d;
+        ls(s, 0xd, [0x7ec, -0x7c]);
+        s[LY(0xd) + lf(0x808)] = s[LY(0xc) + lf(0x808)] + -0x2a;
+        s[LY(0xe) + lf(0x7e8)] = s[LY(0xc) + lf(0x7e8)] + -0x1d;
+        s[LY(0xe) + lf(0x808)] = s[LY(0xc) + lf(0x808)] + -0x75;
+      }
+      s[LY(0x10) + lf(0x7e8)] = s[LY(0xc) + lf(0x7e8)];
+      s[LY(0x10) + lf(0x808)] = s[LY(0xc) + lf(0x808)];
+      return;
+    }
+    if (id === 2) {
+      if (s[0x4574 >> 2] === 0) {
+        gs(s, [0x4574, 1, 0x4efc, 0, 0x4f00, 0, 0x4f04, 0, 0x4ef8, 0]);
+        c.canvasPlus(); s = c.m.I; fv = c.m.F;
+        gs(s, [0x463c, 0x14, 0x457c, 1, 0x44cc, 0x15e, 0x44bc, 0x32, 0x44d0, 0x43, 0x44d4, 2, 0x44c0, 5]);
+        s[DG_244 >> 2] = 0;
+        ls(s, 0, [0x910, 0, 0x76c, 2]);
+        ls(s, 1, [0x910, -1, 0x76c, 2]);
+        ls(s, 2, [0x910, -1, 0x76c, -1]);
+        ls(s, 3, [0x910, -1, 0x76c, 2]);
+        ls(s, 4, [0x910, -1, 0x76c, 2]);
+        ls(s, 5, [0x910, 0, 0x76c, 2]);
+        ls(s, 0x13, [0x910, -1]);
+        ls(s, 0, [0x7e8, 0, 0x7ec, 0, 0x870, 1, 0x850, 0x74, 0x84c, 0xfa, 0x78c, 8, 0x790, 0x13, 0x7e4, -1, 0x85c, 100, 0x840, 0xff, 0x844, 1, 0x848, 0x41]);
+        ls(s, 1, [0x7e8, 0x154, 0x7ec, 1, 0x808, 2, 0x78c, 8, 0x790, 0x14]);
+        ls(s, 3, [0x7e8, 0x159, 0x7ec, 1, 0x808, 2, 0x78c, 8, 0x790, 0x15]);
+        ls(s, 4, [0x7e8, 0x87, 0x7ec, 0, 0x78c, 8, 0x124, 0x437f0000, 0x790, 2]);
+        ls(s, 5, [0x7e8, 0x2c, 0x7ec, 0x9c, 0x808, 0x79, 0x78c, 8, 0x790, 0x11, 0x7e4, 0, 0x870, 3, 0x124, 0x437f0000, 0x128, 0]);
+        ls(s, 7, [0x7e8, 0x113, 0x7ec, 100, 0x808, 0x7c, 0x7e4, 0xffffff, 0x78c, 8, 0x790, 5, 0x870, 3, 0x830, 8, 0x850, 0x50, 0x84c, 0x100, 0x118, 0x40000000, 0x910, -1]);
+        gs(s, [0x44a8, 7]);
+        c.bindImage(); s = c.m.I; fv = c.m.F;
+        stripAlpha(c); s = c.m.I; fv = c.m.F;
+        ls(s, 7, [0x77c, 3]);
+        ls(s, 8, [0x7e8, 8, 0x7ec, 0, 0x808, 0, 0x78c, 8, 0x790, 6, 0x76c, 2, 0x7e4, -1, 0x910, -1, 0x77c, 2]);
+        gs(s, [0x44a8, 8]);
+        c.bindImage(); s = c.m.I; fv = c.m.F;
+        stripAlpha(c); s = c.m.I; fv = c.m.F;
+        c.alphaFromBlue(); s = c.m.I; fv = c.m.F;
+        ls(s, 9, [0x76c, 2, 0x7e8, 0x113, 0x7ec, 100, 0x808, 0x7c, 0x7e4, 0xffffff, 0x78c, 8, 0x790, 7, 0x870, 3, 0x830, 8, 0x850, 0x50, 0x84c, 0x100, 0x118, 0x40c00000, 0x910, -1]);
+        gs(s, [0x44a8, 9]);
+        ls(s, 9, [0x77c, 3]);
+        c.bindImage(); s = c.m.I; fv = c.m.F;
+        stripAlpha(c); s = c.m.I; fv = c.m.F;
+        ls(s, 10, [0x7ec, 0x69, 0x808, 0x69, 0x76c, 2, 0x7e8, 0x113, 0x7e4, 0xffffff, 0x78c, 8, 0x790, 8, 0x910, -1, 0x77c, 3]);
+        ls(s, 0xb, [0x76c, 2, 0x7e8, 0x102, 0x7ec, 0x132, 0x808, 0xca, 0x7e4, 0, 0x78c, 8, 0x790, 9, 0x910, -1, 0x77c, 3]);
+        ls(s, 0xc, [0x76c, 2, 0x7e8, 0, 0x7ec, -0xb7, 0x808, -0x108, 0x7e4, 0, 0x78c, 8, 0x790, 0xb, 0x77c, 3, 0x124, 0x437f0000, 0x870, 3, 0x850, 1, 0x84c, 200]);
+        r = rand();
+        s[LY(0xc) + lf(0x7d4)] = (r & 3) + 1;
+        ls(s, 0xc, [0x910, -1]);
+        ls(s, 0xd, [0x76c, 2]);
+        s[LY(0xd) + lf(0x7e8)] = s[LY(0xc) + lf(0x7e8)] + -0x1d;
+        ls(s, 0xd, [0x7ec, -0x7c]);
+        s[LY(0xd) + lf(0x808)] = s[LY(0xc) + lf(0x808)] + -0x2a;
+        ls(s, 0xd, [0x7e4, -1, 0x78c, 8, 0x790, 0xe, 0x910, -1, 0x77c, 3, 0x0e4, 0x41200000, 0x830, 0xf, 0x870, 3, 0x850, 1, 0x84c, 1, 0x118, 0x41200000]);
+        gs(s, [0x44a8, 0xd]);
+        c.bindImage(); s = c.m.I; fv = c.m.F;
+        stripAlpha(c); s = c.m.I; fv = c.m.F;
+        ls(s, 0xe, [0x76c, 2]);
+        s[LY(0xe) + lf(0x7e8)] = s[LY(0xc) + lf(0x7e8)] + -0x1d;
+        ls(s, 0xe, [0x7ec, -0xb7]);
+        s[LY(0xe) + lf(0x808)] = s[LY(0xc) + lf(0x808)] + -0x75;
+        ls(s, 0xe, [0x7e4, -1, 0x78c, 8, 0x790, 0xf, 0x910, -1, 0x830, 0xf, 0x77c, 3, 0x870, 3, 0x850, 1, 0x84c, 1, 0x118, 0x41600000]);
+        gs(s, [0x44a8, 0xe]);
+        c.bindImage(); s = c.m.I; fv = c.m.F;
+        stripAlpha(c); s = c.m.I; fv = c.m.F;
+        ls(s, 0xf, [0x76c, 2, 0x7e8, 0, 0x7ec, -0xb7, 0x808, -0xbe, 0x7e4, -1, 0x78c, 8, 0x790, 0x10, 0x910, -1, 0x77c, 2]);
+        gs(s, [0x44a8, 0xf]);
+        c.bindImage(); s = c.m.I; fv = c.m.F;
+        stripAlpha(c); s = c.m.I; fv = c.m.F;
+        c.alphaFromBlue(); s = c.m.I; fv = c.m.F;
+        ls(s, 0x10, [0x76c, 2]);
+        s[LY(0x10) + lf(0x7e8)] = s[LY(0xc) + lf(0x7e8)];
+        ls(s, 0x10, [0x7ec, -0xb7]);
+        s[LY(0x10) + lf(0x808)] = s[LY(0xc) + lf(0x808)];
+        ls(s, 0x10, [0x7e4, 0, 0x78c, 8, 0x790, 0xd, 0x77c, 3, 0x870, 2, 0x850, 0x23, 0x84c, 0x100, 0x124, 0x437f0000, 0x910, -1]);
+        ls(s, 0x11, [0x76c, 2, 0x7e8, 0x6e, 0x7ec, 0x6e, 0x808, -0xa0, 0x78c, 8, 0x790, 0x16, 0x7e4, 0, 0x124, 0x437f0000, 0x910, -1]);
+        ls(s, 0x12, [0x76c, 2, 0x7e8, 0x135, 0x7ec, 0x131, 0x808, 0x4e, 0x7e4, 0, 0x78c, 8, 0x790, 0x12, 0x910, -1, 0x77c, 2]);
+        r = rand();
+        s[DG_248 >> 2] = (r & 3) + 5;
+        now = c.clock();
+        s[DG_250 >> 2] = now;
+        ls(s, 0x10, [0x7cc, 0]);
+        return;
+      }
+      fv[DG_CBC4 >> 2] = (3.0 / (s[TR_FPS >> 2] + 1));
+      fv[DG_CBC0 >> 2] = ((s[TR_FPS >> 2] + 1) * 0.3333333333333333);
+      fv[XF(0xd) + xf(0x0e4)] = (fv[DG_CBC4 >> 2] * 10.0);
+      fv[XF(0xe) + xf(0x118)] = (fv[DG_CBC4 >> 2] * 14.0);
+      fv[XF(0xd) + xf(0x118)] = (fv[DG_CBC4 >> 2] * 10.0);
+      fv[XF(9) + xf(0x118)] = (fv[DG_CBC4 >> 2] * 6.0);
+      fv[XF(7) + xf(0x118)] = (fv[DG_CBC4 >> 2] + fv[DG_CBC4 >> 2]);
+      if (s[DG_244 >> 2] === 0) {
+        gs(s, [0x44a8, 0]);
+        c.markLayer(); s = c.m.I; fv = c.m.F;
+        ls(s, 0, [0x94c, 1]);
+        ls(s, 5, [0x910, -1]);
+        ls(s, 0, [0x910, 0]);
+        if (s[XF(0xc) + xf(0x124)] === 0x437f0000) {
+          ls(s, 0xc, [0x910, -1, 0x7cc, 0]);
+        } else {
+          fv[XF(0xc) + xf(0x128)] = (fv[DG_CBC4 >> 2] * 20.0);
+        }
+        v = s[LY(0) + lf(0x850)];
+        if (v < 0x75) {
+          ls(s, 0, [0x850, 0x74]);
+        } else {
+          s[LY(0) + lf(0x850)] = v + -0x14;
+        }
+        v = s[LY(0) + lf(0x84c)];
+        if (v < 0xfb) {
+          ls(s, 0, [0x84c, 0xfa]);
+        } else {
+          s[LY(0) + lf(0x84c)] = v + -0x14;
+        }
+        now = c.clock();
+        s[DG_254 >> 2] = now;
+        v = ((((now - s[DG_250 >> 2]) | 0) / 1000) | 0);
+        s[DG_24C >> 2] = v;
+        if (s[DG_248 >> 2] <= v) {
+          s[DG_244 >> 2] = 1;
+          ls(s, 5, [0x124, 0x437f0000]);
+          fv[XF(5) + xf(0x128)] = (fv[DG_CBC4 >> 2] * -15.0);
+          ls(s, 5, [0x910, 0, 0x7e8, 0x2c, 0x808, 0x91, 0x850, 0, 0x77c, 3]);
+        }
+      }
+      if (s[DG_244 >> 2] === 1) {
+        gs(s, [0x44a8, 0]);
+        c.markLayer(); s = c.m.I; fv = c.m.F;
+        if (fv[XF(5) + xf(0x124)] === 0.0) {
+          s[DG_244 >> 2] = 2;
+          r = rand();
+          s[DG_248 >> 2] = (r & 3) + 5;
+          now = c.clock();
+          s[DG_250 >> 2] = now;
+        }
+      }
+      if (s[DG_244 >> 2] === 2) {
+        gs(s, [0x44a8, 0]);
+        c.markLayer(); s = c.m.I; fv = c.m.F;
+        now = c.clock();
+        s[DG_254 >> 2] = now;
+        v = ((((now - s[DG_250 >> 2]) | 0) / 1000) | 0);
+        s[DG_24C >> 2] = v;
+        if (s[DG_248 >> 2] <= v) {
+          s[DG_244 >> 2] = 3;
+          fv[XF(5) + xf(0x128)] = (fv[DG_CBC4 >> 2] * 15.0);
+          ls(s, 5, [0x77c, 3]);
+        }
+      }
+      if (s[DG_244 >> 2] === 3) {
+        gs(s, [0x44a8, 0]);
+        c.markLayer(); s = c.m.I; fv = c.m.F;
+        if (s[LY(0x10) + lf(0x7cc)] !== 3) {
+          s[LY(0) + lf(0x850)] = s[LY(0) + lf(0x850)] + 7;
+          s[LY(0) + lf(0x84c)] = s[LY(0) + lf(0x84c)] + 7;
+        }
+        if ((230.0 <= fv[XF(5) + xf(0x124)]) && (s[LY(0x10) + lf(0x7cc)] === 3)) {
+          ls(s, 5, [0x910, -1]);
+          s[DG_244 >> 2] = 8;
+        }
+        if (230.0 <= fv[XF(5) + xf(0x124)] && 0x15d < s[LY(0) + lf(0x850)]) {
+          s[DG_244 >> 2] = 4;
+          r = rand();
+          s[DG_248 >> 2] = (r & 3) + 7;
+          now = c.clock();
+          s[DG_250 >> 2] = now;
+          ls(s, 0xc, [0x7cc, -0x14]);
+          if (s[LY(0x10) + lf(0x7cc)] === 0) {
+            ls(s, 0xc, [0x128, 0]);
+            s[DG_244 >> 2] = 4;
+          }
+          v = s[LY(0x10) + lf(0x7cc)];
+          if ((v === 1) || (v === 2)) {
+            s[DG_244 >> 2] = 5;
+            ls(s, 5, [0x808, 0x6d, 0x124, 0x43660000, 0x850, 0, 0x77c, 3]);
+          }
+        }
+      }
+      if (s[DG_244 >> 2] === 4) {
+        ls(s, 0, [0x910, -1]);
+        ls(s, 5, [0x910, -1]);
+        if (s[XF(0xc) + xf(0x124)] === 0x437f0000) {
+          ls(s, 0xc, [0x910, -1]);
+        } else {
+          ls(s, 0xc, [0x910, 0]);
+          s[LY(0xc) + lf(0x850)] = ((0xff - s[0x440c >> 2]) / 0x32) | 0;
+          gs(s, [0x44a8, 0xc]);
+          ls(s, 0xc, [0x77c, 3]);
+          stripAlpha(c); s = c.m.I; fv = c.m.F;
+        }
+        if (s[XF(0xe) + xf(0x124)] === 0x437f0000) {
+          ls(s, 0xe, [0x910, -1]);
+        }
+        if (s[XF(0x10) + xf(0x124)] === 0x437f0000) {
+          ls(s, 0x10, [0x910, -1]);
+        }
+        if (fv[XF(0x10) + xf(0x124)] < 100.0 && fv[XF(0x10) + xf(0x128)] < 0.0) {
+          ls(s, 0x10, [0x128, 0]);
+        }
+        if (fv[XF(0xe) + xf(0x124)] === 0.0 && s[LY(0xe) + lf(0x910)] === 0) {
+          if (s[LY(0xd) + lf(0x910)] === -1) {
+            ls(s, 0xd, [0x910, 0, 0x0e0, 0]);
+            fv[XF(0x10) + xf(0x128)] = (fv[DG_CBC4 >> 2] * -20.0);
+            ls(s, 0x10, [0x910, 0]);
+          }
+          if (350.0 <= fv[XF(0xd) + xf(0x0e0)]) {
+            ls(s, 0xd, [0x910, -1]);
+            ls(s, 0xc, [0x7d0, 0]);
+            ls(s, 0x10, [0x7cc, 1]);
+            fv[XF(0xe) + xf(0x128)] = (fv[DG_CBC4 >> 2] * 10.0);
+            fv[XF(0x10) + xf(0x128)] = (fv[DG_CBC4 >> 2] * 10.0);
+          } else {
+            q = ftol(fv[XF(0xd) + xf(0xe0)]);
+            fv[XF(0xd) + xf(0x124)] = ((fv[(0x37d8 >> 2) + q] + 1.0) * 128.0);
+            ls(s, 0xd, [0x77c, 3]);
+          }
+        }
+        l198ca: {
+          v = s[LY(0xc) + lf(0x7d0)];
+          if (v === 0) {
+            fv[XF(0xc) + xf(0x124)] = (s[LY(0xc) + lf(0x7cc)] * fv[DG_CBC4 >> 2] + fv[XF(0xc) + xf(0x124)]);
+            ls(s, 0xc, [0x77c, 3]);
+            ls(s, 0x10, [0x77c, 3]);
+            if (fv[XF(0xc) + xf(0x124)] <= 0.0) {
+              ls(s, 0xc, [0x124, 0]);
+              r = rand();
+              s[LY(0xc) + lf(0x7cc)] = (r & 0xf) + 0x14;
+              r = rand();
+              s[LY(0xc) + lf(0x7d0)] = (r & 7) + 7;
+              v = s[LY(0xc) + lf(0x7d4)];
+              if (v !== 0) {
+                s[LY(0xc) + lf(0x7d4)] = v + -1;
+                break l198ca;
+              }
+              r = rand();
+              s[LY(0xc) + lf(0x7d4)] = (r & 1) + 2;
+              ls(s, 0xe, [0x124, 0x43020000]);
+              fv[XF(0xe) + xf(0x128)] = (fv[DG_CBC4 >> 2] * -25.0);
+              ls(s, 0xe, [0x910, 0, 0x77c, 3]);
+            }
+            if (255.0 <= fv[XF(0xc) + xf(0x124)] && s[LY(0x10) + lf(0x910)] === -1) {
+              ls(s, 0xc, [0x124, 0x437f0000]);
+              r = rand();
+              s[LY(0xc) + lf(0x7cc)] = -0x14 - (r & 0xf);
+              r = rand();
+              s[LY(0xc) + lf(0x7d0)] = (r & 7) + 7;
+              r = rand();
+              s[LY(0xc) + lf(0x7e8)] = r & 0xff;
+              r = rand();
+              s[LY(0xc) + lf(0x808)] = -0x7c - (r & 0xff);
+              s[LY(0xd) + lf(0x7e8)] = s[LY(0xc) + lf(0x7e8)] + -0x1d;
+              s[LY(0xd) + lf(0x808)] = s[LY(0xc) + lf(0x808)] + -0x2a;
+              s[LY(0xe) + lf(0x7e8)] = s[LY(0xc) + lf(0x7e8)] + -0x1d;
+              s[LY(0xe) + lf(0x808)] = s[LY(0xc) + lf(0x808)] + -0x75;
+              s[LY(0x10) + lf(0x7e8)] = s[LY(0xc) + lf(0x7e8)];
+              s[LY(0x10) + lf(0x808)] = s[LY(0xc) + lf(0x808)];
+              if (s[LY(0x10) + lf(0x7cc)] === 1) {
+                ls(s, 0x10, [0x7cc, 2]);
+                ls(s, 0xc, [0x910, -1]);
+                ls(s, 0xd, [0x910, -1]);
+                ls(s, 0xe, [0x910, -1]);
+                ls(s, 0xf, [0x910, -1]);
+                ls(s, 0x10, [0x910, -1]);
+              }
+            }
+          } else {
+            s[LY(0xc) + lf(0x7d0)] = v + -1;
+          }
+        }
+        if (s[LY(0x10) + lf(0x7cc)] === 2) {
+          now = c.clock();
+          s[DG_254 >> 2] = now;
+          v = ((((now - s[DG_250 >> 2]) | 0) / 1000) | 0);
+          s[DG_24C >> 2] = v;
+          if (s[DG_248 >> 2] <= v) {
+            s[DG_244 >> 2] = 0;
+            r = rand();
+            s[DG_248 >> 2] = (r & 7) + 0x14;
+            now = c.clock();
+            s[DG_250 >> 2] = now;
+          }
+        }
+      }
+      if (s[DG_244 >> 2] === 5) {
+        ls(s, 0, [0x910, -1]);
+        ls(s, 5, [0x910, 0]);
+        v = s[LY(5) + lf(0x7e8)];
+        if (v < 1) {
+          ls(s, 5, [0x124, 0]);
+        } else {
+          s[LY(5) + lf(0x7e8)] = v + -1;
+          s[LY(5) + lf(0x808)] = s[LY(5) + lf(0x808)] + 1;
+        }
+        if (fv[XF(5) + xf(0x124)] === 0.0) {
+          now = c.clock();
+          s[DG_254 >> 2] = now;
+          v = ((((now - s[DG_250 >> 2]) | 0) / 1000) | 0);
+          s[DG_24C >> 2] = v;
+          if (s[DG_248 >> 2] <= v) {
+            s[DG_244 >> 2] = 6;
+            r = rand();
+            s[DG_248 >> 2] = (r & 7) + 200;
+            now = c.clock();
+            s[DG_250 >> 2] = now;
+            fv[XF(4) + xf(0x128)] = (fv[DG_CBC4 >> 2] * -6.0);
+            ls(s, 4, [0x910, 0]);
+          }
+        } else {
+          ls(s, 5, [0x128, -0x3f400000]);
+        }
+      }
+      if (s[DG_244 >> 2] === 6) {
+        if (s[0x440c >> 2] < 0x29) {
+          ls(s, 0x12, [0x910, -1]);
+        } else {
+          v = s[LY(0x12) + lf(0x7d0)];
+          if (v === 0) {
+            v = s[LY(0x12) + lf(0x7d4)];
+            if (v === 0) {
+              r = rand();
+              s[LY(0x12) + lf(0x7d0)] = (r & 0x1f) + 0x14;
+              r = rand();
+              s[0x4e78 >> 2] = r & 3;
+              if ((r & 3) === 0) {
+                r = rand();
+                s[LY(0x12) + lf(0x7d4)] = (r & 0x1f) + 7;
+                ls(s, 0x12, [0x790, 1, 0x7e8, 0x102, 0x7ec, 0x13c, 0x808, 0xda]);
+              }
+              v = s[0x4e78 >> 2];
+              if (1 < v) {
+                r = rand();
+                s[LY(0x12) + lf(0x7d4)] = (r & 0xf) + 0x11;
+                ls(s, 0x12, [0x790, 0xc, 0x7e8, 0x10a, 0x7ec, 0x137, 0x808, 0xb0]);
+                v = s[0x4e78 >> 2];
+              }
+              if (v === 1) {
+                r = rand();
+                s[LY(0x12) + lf(0x7d4)] = (r & 0x7f) + 0x3c;
+                ls(s, 0x12, [0x790, 0x12, 0x7e8, 0x131, 0x7ec, 0x132, 0x808, 0x4b]);
+              }
+            } else {
+              s[LY(0x12) + lf(0x7d4)] = v + -1;
+              if (s[0x440c >> 2] < s[LY(0x12) + lf(0x7cc)]) {
+                ls(s, 0x12, [0x910, -1]);
+              } else {
+                ls(s, 0x12, [0x910, 0]);
+              }
+            }
+            s[LY(0x12) + lf(0x7cc)] = s[0x440c >> 2];
+            if (s[LY(0x12) + lf(0x790)] === 0xc) {
+              ls(s, 0x12, [0x7cc, 0]);
+            }
+          } else {
+            s[LY(0x12) + lf(0x7d0)] = v + -1;
+            ls(s, 0x12, [0x910, -1]);
+          }
+        }
+        v = s[LY(7) + lf(0x850)];
+        if (s[0x440c >> 2] < 0xb) {
+          if (v < 0xa1) {
+            s[LY(7) + lf(0x850)] = v + 4;
+            v = s[LY(9) + lf(0x850)];
+            ls(s, 7, [0x910, 0]);
+            s[LY(9) + lf(0x850)] = v + 4;
+            ls(s, 9, [0x910, 0]);
+            ls(s, 7, [0x77c, 3]);
+            ls(s, 9, [0x77c, 3]);
+          } else {
+            ls(s, 7, [0x910, -1]);
+            ls(s, 9, [0x910, -1]);
+            ls(s, 10, [0x910, -1]);
+            ls(s, 0xb, [0x790, 9, 0x910, 0]);
+          }
+        } else if (v === 9) {
+          ls(s, 10, [0x910, 0]);
+        } else {
+          s[LY(7) + lf(0x850)] = v + -1;
+          s[LY(9) + lf(0x850)] = s[LY(9) + lf(0x850)] + -1;
+          if (v + -1 < 9) {
+            ls(s, 7, [0x850, 9]);
+            ls(s, 9, [0x850, 9]);
+          }
+        }
+        v = s[LY(7) + lf(0x7cc)];
+        if (v === 0) {
+          ls(s, 7, [0x910, 0]);
+          ls(s, 9, [0x910, 0]);
+        } else {
+          s[LY(7) + lf(0x7cc)] = v + -1;
+        }
+        ls(s, 7, [0x77c, 3]);
+        ls(s, 9, [0x77c, 3]);
+        v = (s[0x17e0 >> 2] + (s[0x17e0 >> 2] >> 0x1f & 3)) >> 2;
+        s[LY(7) + lf(0x874)] = v;
+        if (0xf < v) {
+          ls(s, 7, [0x874, 0xf]);
+        }
+        v = (s[0x17b8 >> 2] / 3) | 0;
+        s[LY(9) + lf(0x878)] = v;
+        if (0xf < v) {
+          ls(s, 9, [0x878, 0xf]);
+        }
+        v = ((s[0x440c >> 2] + (s[0x440c >> 2] >> 0x1f & 0xf)) >> 4) * 0x20;
+        s[0x4e78 >> 2] = v;
+        if (0xff < v) {
+          gs(s, [0x4e78, 0xff]);
+        }
+        fv[XF(10) + xf(0x124)] = (0xff - s[0x4e78 >> 2]);
+        ls(s, 10, [0x77c, 3]);
+        var sel = true;
+        v = s[LY(0xb) + lf(0x7cc)];
+        if (v !== 0) {
+          s[LY(0xb) + lf(0x7cc)] = v + -1;
+          ls(s, 0xb, [0x910, 0]);
+          ls(s, 10, [0x910, 0]);
+        } else if (s[DG_23C >> 2] === 0) {
+          s[DG_23C >> 2] = (rand() & 0x3f) + 0x18;
+          ls(s, 0xb, [0x910, 0]);
+        } else {
+          s[DG_23C >> 2] = s[DG_23C >> 2] + -1;
+          ls(s, 0xb, [0x910, -1]);
+          if (s[0x440c >> 2] < 6) {
+            s[DG_23C >> 2] = (rand() & 0x3f) + 0x18;
+            ls(s, 0xb, [0x910, 0]);
+          } else sel = false;
+        }
+        if (sel) {
+          if (s[LY(10) + lf(0x910)] !== -1 && fv[XF(10) + xf(0x124)] <= 180.0) ls(s, 0xb, [0x790, 10]);
+          else ls(s, 0xb, [0x790, 9]);
+        }
+        if (fv[XF(4) + xf(0x124)] !== 0.0) {
+          ls(s, 7, [0x910, -1]);
+          ls(s, 9, [0x910, -1]);
+          ls(s, 10, [0x910, -1]);
+          ls(s, 0xb, [0x790, 9, 0x910, -1]);
+          ls(s, 7, [0x7cc, 0x11]);
+          ls(s, 0x12, [0x910, -1]);
+        }
+        if (fv[XF(4) + xf(0x124)] === 0.0) {
+          now = c.clock();
+          s[DG_254 >> 2] = now;
+          v = ((((now - s[DG_250 >> 2]) | 0) / 1000) | 0);
+          s[DG_24C >> 2] = v;
+          if (s[DG_248 >> 2] <= v) {
+            s[DG_244 >> 2] = 7;
+            r = rand();
+            s[DG_248 >> 2] = (r & 7) + 0x14;
+            now = c.clock();
+            s[DG_250 >> 2] = now;
+            fv[XF(5) + xf(0x128)] = (fv[DG_CBC4 >> 2] * 6.0);
+            fv[XF(4) + xf(0x128)] = (fv[DG_CBC4 >> 2] * 6.0);
+            ls(s, 7, [0x910, -1]);
+            ls(s, 9, [0x910, -1]);
+            ls(s, 10, [0x910, -1]);
+            ls(s, 0xb, [0x790, 9, 0x910, -1]);
+            ls(s, 7, [0x7cc, 0x11]);
+            ls(s, 0x12, [0x910, -1]);
+          }
+        }
+      }
+      if ((s[DG_244 >> 2] === 7) && (230.0 <= fv[XF(5) + xf(0x124)])) {
+        ls(s, 0x10, [0x7cc, 3]);
+        s[DG_244 >> 2] = 0;
+        ls(s, 4, [0x910, -1]);
+        ls(s, 5, [0x910, -1]);
+        r = rand();
+        s[DG_248 >> 2] = (r & 3) + 0x14;
+        now = c.clock();
+        s[DG_250 >> 2] = now;
+      }
+      if (s[DG_244 >> 2] === 8) {
+        gs(s, [0x44a8, 0]);
+        c.markLayer(); s = c.m.I; fv = c.m.F;
+        s[DG_244 >> 2] = 9;
+        r = rand();
+        s[DG_248 >> 2] = (r & 7) + 0x32;
+        now = c.clock();
+        s[DG_250 >> 2] = now;
+      }
+      if (s[DG_244 >> 2] !== 9) {
+        return;
+      }
+      gs(s, [0x44a8, 0]);
+      c.markLayer(); s = c.m.I; fv = c.m.F;
+      ls(s, 0, [0x94c, 0]);
+      ls(s, 0x11, [0x910, 0, 0x77c, 3]);
+      if (fv[XF(0x11) + xf(0x124)] < 230.0) {
+        q = ftol(fv[DG_CBC4 >> 2] * 13);
+        v = s[LY(0x11) + lf(0x808)] + q;
+        s[LY(0x11) + lf(0x808)] = v;
+        if (-0x82 < v - s[LY(0x11) + lf(0x7f8)]) {
+          fv[XF(0x11) + xf(0x128)] = (fv[DG_CBC4 >> 2] * 23.0);
+        }
+      } else {
+        ls(s, 0x11, [0x124, 0, 0x128, 0, 0x808, -0xa0]);
+        r = rand();
+        s[LY(0x11) + lf(0x7e8)] = r & 0xff;
+        r = rand();
+        v = s[LY(0x11) + lf(0x790)] + (r & 3) + 1;
+        s[LY(0x11) + lf(0x790)] = v;
+        if (0x1f < v) {
+          r = rand();
+          s[LY(0x11) + lf(0x790)] = (r & 1) + 0x16;
+        }
+      }
+      now = c.clock();
+      s[DG_254 >> 2] = now;
+      v = ((((now - s[DG_250 >> 2]) | 0) / 1000) | 0);
+      s[DG_24C >> 2] = v;
+      if (s[DG_248 >> 2] <= v) {
+        if (s[LY(0x11) + lf(0x808)] !== -0xa0) {
+          return;
+        }
+        ls(s, 0x11, [0x910, -1]);
+        s[DG_244 >> 2] = 0;
+        ls(s, 0x10, [0x7cc, 0]);
+        return;
+      }
+      return;
+    }
+  },
+};
+
 const EclecticColors: PlusClass = family('EclecticColors', ECLECT, ['Rolling Colors', 'Ribbon Rhythm', 'Night Fire']);
 const StarTime: PlusClass = family('StarTime', STARTIME, ['Starlight', 'Star Clouds', 'Star Glow']);
 const SnowTime: PlusClass = family('SnowTime', SNOWTIME, ['Softie the Snowman']);
+const DungeonSiege: PlusClass = family('DungeonSiege', DUNGEON, ['Poster', 'Lurking in the dark lies an enemy...']);
 
 declare module '../ns' {
   interface AlchemyNS {
     EclecticColors: PlusClass;
     StarTime: PlusClass;
     SnowTime: PlusClass;
+    DungeonSiege: PlusClass;
   }
 }
 
 A.EclecticColors = EclecticColors;
 A.StarTime = StarTime;
 A.SnowTime = SnowTime;
-export { EclecticColors, StarTime, SnowTime };
+A.DungeonSiege = DungeonSiege;
+export { EclecticColors, StarTime, SnowTime, DungeonSiege };

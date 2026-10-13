@@ -32,7 +32,7 @@ export type { Surface, TimedLevel, Picture };
 export { pictureFromRGBA, loadPicture } from './pictureviz/picture';
 
 export type VisKind = 'alchemy' | 'bars' | 'battery' | 'spikes' | 'particle' | 'plenoptic' | 'ambience' | 'musical'
-  | 'blazing' | 'colorcubes' | 'pulsing' | 'trilogy1' | 'trilogy2' | 'trilogy3' | 'startime' | 'eclectic' | 'alchemy3d' | 'pictureviz' | 'pictureviz2' | 'yule'
+  | 'blazing' | 'colorcubes' | 'pulsing' | 'trilogy1' | 'trilogy2' | 'trilogy3' | 'dungeon' | 'snowtime' | 'startime' | 'eclectic' | 'alchemy3d' | 'pictureviz' | 'pictureviz2' | 'yule'
   | 'goom';
 /** 'original' = each DLL's own surface size; 'auto' = the view, capped near 720p worth of pixels; n = view * n. */
 export type Scale = 'original' | 'auto' | number;
@@ -68,7 +68,7 @@ export interface PresetEntry {
   vis: VisKind;
   preset: number;
   group: 'Alchemy' | 'Bars and Waves' | 'Battery' | 'Spikes' | 'Particle' | 'Plenoptic' | 'Ambience' | 'Musical Colors'
-    | 'Blazing Colors' | 'Color Cubes' | 'Pulsing Colors' | 'Trilogy I' | 'Trilogy II' | 'Trilogy III' | 'StarTime' | 'Eclectic Colors' | '3D Alchemy' | 'Picture Viz' | 'Picture Viz II' | 'Yule Log'
+    | 'Blazing Colors' | 'Color Cubes' | 'Pulsing Colors' | 'Trilogy I' | 'Trilogy II' | 'Trilogy III' | 'Dungeon Siege' | 'SnowTime' | 'StarTime' | 'Eclectic Colors' | '3D Alchemy' | 'Picture Viz' | 'Picture Viz II' | 'Yule Log'
     | 'Goom';
   name: string;
   /** the family's registry key, HKLM\SOFTWARE\Microsoft\MediaPlayer\Objects\Effects\<key> (its place in the list) */
@@ -135,6 +135,7 @@ const FAMILIES: readonly { key: string; vis: VisKind; group: PresetEntry['group'
   { key: 'TrilogyI', vis: 'trilogy1', group: 'Trilogy I', names: A.TrilogyI.PRESET_NAMES },
   { key: 'TrilogyII', vis: 'trilogy2', group: 'Trilogy II', names: A.TrilogyII.PRESET_NAMES },
   { key: 'TrilogyIII', vis: 'trilogy3', group: 'Trilogy III', names: A.TrilogyIII.PRESET_NAMES },
+  { key: 'DungeonSiege', vis: 'dungeon', group: 'Dungeon Siege', names: A.DungeonSiege.PRESET_NAMES },
   { key: 'SoftietheSnowman', vis: 'snowtime', group: 'SnowTime', names: A.SnowTime.PRESET_NAMES },
   { key: 'StarTime', vis: 'startime', group: 'StarTime', names: A.StarTime.PRESET_NAMES },
   { key: 'EclecticColors', vis: 'eclectic', group: 'Eclectic Colors', names: A.EclecticColors.PRESET_NAMES },
@@ -268,6 +269,7 @@ type RawCtor = new (cfg: { width: number; height: number; options: EngineOptions
 const PLUS: Partial<Record<VisKind, RawCtor>> = {
   blazing: A.BlazingColors, colorcubes: A.ColorCubes, pulsing: A.PulsingColors,
   trilogy1: A.TrilogyI, trilogy2: A.TrilogyII, trilogy3: A.TrilogyIII,
+  dungeon: A.DungeonSiege,
   snowtime: A.SnowTime,
   startime: A.StarTime,
   eclectic: A.EclecticColors,

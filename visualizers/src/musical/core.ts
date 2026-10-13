@@ -37,6 +37,8 @@ const HEAP0 = 0x5000;            // first malloc'd byte; everything below is the
  *  from 0x5000, layers from 0x7d80, the order list from 0xe170 (plus slack for clipLayers' one-past-the-end
  *  "layer 52", which reads and writes the list and what follows it as a layer), the heap from 0xe400. */
 const PLUS_XF = 0x5000, PLUS_LY = PLUS_XF + 52 * 0xe0, PLUS_ORDER = PLUS_LY + 52 * 0x1ec, PLUS_HEAP0 = 0xe400;
+/** a build with more records than that (Dungeon Siege keeps 55) has its list and heap moved out by the same layout */
+function plusHeap(n: number): number { return n > 0x34 ? (PLUS_XF + n * (0xe0 + 0x1ec) + 0x550 + 15) & ~15 : PLUS_HEAP0; }
 /** Trilogy's own fields (no wmpvis.dll counterpart), kept past wmpvis.dll's object (0x4f40.. is Color Cubes'):
  *  the silence detector's counter and last ten bins, the frames-per-second counter, Random Selection's flag and
  *  frame counter, the presets' frame counter */
@@ -131,6 +133,12 @@ export interface PlusDll {
   star?: boolean;
   /** SnowTime (2000-10) also has Trilogy's warp that stops one pixel short and specSmooth that takes the last bin */
   short?: boolean;
+  /** Dungeon Siege's presetStep (0x10016e70) has no spectrumToLayer2 call in the branch that would make the trail from layer 2 */
+  noSpec?: boolean;
+  /** Dungeon Siege's init leaves the fps counter's last-time at zero (the first blit then measures 0 frames over the whole clock) */
+  zeroClock?: boolean;
+  /** the constructor's stores beyond zeros (Dungeon Siege's blink countdown) */
+  ctor?(c: Core): void;
   /** SetCurrentPreset when it is not wmpvis.dll's (Trilogy: the last preset is Random Selection) */
   setPreset?(c: Core, n: number): void;
   /** the preset program (the DLL's vt+0x18c-ish dispatcher on obj+0x47bc): first call builds, later ones animate */
@@ -164,10 +172,11 @@ export class Core {
   constructor(res?: Uint8Array | null, plus?: PlusDll | null) {
     this.plus = plus || null;
     this.ver = plus ? plus.ver : 0;
-    this.m = new Mem(24 << 20, this.ver ? PLUS_HEAP0 : HEAP0);
+    this.m = new Mem(24 << 20, this.ver ? plusHeap(plus!.layers || 0x34) : HEAP0);
     this.clock = (): number => Math.floor(typeof performance !== 'undefined' ? performance.now() : Date.now()) >>> 0;
     this.timeSeed = (): number => Math.floor(Date.now() / 1000) >>> 0;
     this.layout();
+    if (plus && plus.ctor) plus.ctor(this);
     this.freq = new Uint8Array(1024);
     this.dcW = this.dcH = 0;
     this.dc = new Uint32Array(0);
@@ -189,7 +198,10 @@ export class Core {
 
   /** point LY / XF / the order list at this engine's records (every public entry calls it) */
   layout(): void {
-    if (this.ver) { LB = PLUS_LY >> 2; XB = PLUS_XF >> 2; ORD = PLUS_ORDER >> 2; }
+    if (this.ver) {
+      var n = this.plus!.layers || 0x34, ly = n > 0x34 ? PLUS_XF + n * 0xe0 : PLUS_LY;
+      LB = ly >> 2; XB = PLUS_XF >> 2; ORD = (n > 0x34 ? ly + n * 0x1ec : PLUS_ORDER) >> 2;
+    }
     else { LB = 0x76c >> 2; XB = 0x6c >> 2; ORD = 0x16cc >> 2; }
   }
 
@@ -740,7 +752,7 @@ export class Core {
     var bm = s[0x457c >> 2];
     if (bm === 0 || s[LY(2) + lf(0x910)] === -1) {
       if (bm !== 0 && s[LY(0) + lf(0x910)] !== -1) { s[0x44a8 >> 2] = 0; this.fillLayerBg(); }
-    } else { s[0x44a8 >> 2] = 0; this.spectrumToLayer2(); }
+    } else { s[0x44a8 >> 2] = 0; if (!p.noSpec) this.spectrumToLayer2(); }
     if (s[0x457c >> 2] === 1) this.barsPlus();
     p.program(this);
   }
@@ -1938,7 +1950,7 @@ export class Core {
         if (s[b + lf(0x834)] !== 0 || s[b + lf(0x838)] !== 0 || s[b + lf(0x83c)] !== 0 || s[b + lf(0x85c)] !== 0 ||
             s[b + lf(0x868)] !== 0) { if (!fx(() => this.ripple())) break doit; }   // vt+0x9c 0x55c0601a
         s = m.I;
-        if (s[b + lf(0x830)] >= 2) { if (!fx(unported(0x55c0b7f0))) break doit; }
+        if (s[b + lf(0x830)] >= 2) { if (!fx(() => this.maskCopy())) break doit; }   // 0x55c0b7f0 (Dungeon Siege 0x1000c910)
         s = m.I; F = m.F;
         if (F[x + xf(0x11c)] !== 0 || F[x + xf(0x120)] !== 0) { if (!fx(unported(0x55c0b9bc))) break doit; }
         s = m.I;
@@ -2198,7 +2210,7 @@ export class Core {
         return;
       }
     }
-    if (m.F[XF(k) + xf(0x124)] !== 0) { unported(0x55c05b99)(); return; }
+    if (m.F[XF(k) + xf(0x124)] !== 0) { this.alphaDraw(); return; }
     var d = (Math.imul((s[0x4c7c >> 2] + s[0x453c >> 2] - s[0x4f24 >> 2] - 1) | 0, s[0x4444 >> 2] << 2) +
              ((s[0x4c74 >> 2] - s[0x4f10 >> 2]) << 2) + s[0x4378 >> 2]) | 0;
     var a = s[0x439c >> 2] >> 2, w = s[0x4540 >> 2] >>> 0, rows = s[0x453c >> 2], key = s[0x4df4 >> 2] >>> 0;
@@ -2264,6 +2276,11 @@ export class Core {
           if (r < 0) r = 0;
           if (bb < 0) bb = 0;
           if (g < 0) g = 0;
+          if (this.ver === 2) {                    // Trilogy's tail: every channel also capped at 255 (Dungeon Siege's glow overshoots)
+            if (r > 0xff) r = 0xff;
+            if (bb > 0xff) bb = 0xff;
+            if (g > 0xff) g = 0xff;
+          }
           // wmpvis.dll leaves red in the top byte (BSWAP of r, r); the Plus builds keep the source's alpha there
           out = plus ? (((src & 0xff000000) | (r << 16) | (g << 8) | bb) >>> 0) : ((r << 24) | (r << 16) | (g << 8) | bb) >>> 0;
         }
@@ -2277,6 +2294,48 @@ export class Core {
       si = (si + s[0x4f08 >> 2]) | 0;
       if (--s[0x4ce8 >> 2] === 0) break;
     }
+  }
+
+  /** 0x55c05b99 (Dungeon Siege 0x10005a90): the layer drawn with a global transparency, the transform's float 0x124 (0..255:
+   *  255 = nothing is drawn, clamped to 255.0; below 0 -> 0). Each pixel that is not the colour key becomes src * (1 - t) + dst * t
+   *  per channel (t = alpha / 255, plus the layer's two biases 0x874 / 0x878 over 255), red in the top two bytes as wmpvis.dll's
+   *  blend leaves it; a channel over 255 (or negative: an unsigned compare) is 255. */
+  alphaDraw(): void {
+    var m = this.m, s = m.I, F = m.F, U = m.U, k = s[0x44a8 >> 2], b = LY(k), x = XF(k) + xf(0x124);
+    if (F[x] < 0) F[x] = 0;
+    if (!(F[x] < 255)) { F[x] = 255; return; }
+    s[0x4448 >> 2] = s[0x4444 >> 2] << 2;
+    var a = ftol(F[x]), c255 = 255;
+    s[0x4e64 >> 2] = a;
+    s[0x4cf4 >> 2] = s[0x4540 >> 2];
+    s[0x4ce8 >> 2] = s[0x453c >> 2];
+    var t10 = fr(a / c255), t14 = fr(1 - t10);
+    t10 = fr(t10 + fr(s[b + lf(0x874)] / c255));
+    t14 = fr(t14 + fr(s[b + lf(0x878)] / c255));
+    var di = (Math.imul((s[0x4c7c >> 2] + s[0x453c >> 2] - s[0x4f24 >> 2] - 1) | 0, s[0x4444 >> 2] << 2) +
+              ((s[0x4c74 >> 2] - s[0x4f10 >> 2]) << 2) + s[0x4378 >> 2]) >> 2;
+    var si = s[0x439c >> 2] >> 2, key = s[0x4df4 >> 2] >>> 0, w = s[0x4540 >> 2], rowSkip = s[0x4448 >> 2] >> 2;
+    var n = s[0x4cf4 >> 2], rows = s[0x4ce8 >> 2];
+    for (;;) {
+      var src = U[si];
+      if (src !== key) {
+        var dd = U[di];
+        var r = ftol(((src >>> 16) & 0xff) * t14 + ((dd >>> 16) & 0xff) * t10);
+        var bb = ftol((src & 0xff) * t14 + (dd & 0xff) * t10);
+        var g = ftol(((src >>> 8) & 0xff) * t14 + ((dd >>> 8) & 0xff) * t10);
+        if (r >>> 0 > 0xff) r = 0xff;
+        if (bb >>> 0 > 0xff) bb = 0xff;
+        if (g >>> 0 > 0xff) g = 0xff;
+        U[di] = ((r << 24) | (r << 16) | (g << 8) | bb) >>> 0;
+      }
+      si++; di++;
+      if (--n !== 0) continue;
+      n = w;
+      di -= w + rowSkip;
+      if (--rows === 0) break;
+    }
+    s[0x4cf4 >> 2] = n;
+    s[0x4ce8 >> 2] = 0;
   }
 
   /** vt+0x250 0x55c05ab7: subtract the alpha byte from each channel (saturating); 255 = skip. */
@@ -3197,6 +3256,45 @@ export class Core {
     }
   }
 
+  /** 0x55c0b7f0 (Dungeon Siege 0x1000c910): the layer's picture seen through the picture of the layer it links to (0x830),
+   *  which must be the same size: the target is filled with the colour key, then each pixel that is neither the link's key
+   *  (its 0x7e4) nor this layer's colour key takes its colour with the link's alpha byte added (overflow = opaque). */
+  maskCopy(): void {
+    var m = this.m, s = m.I, U = m.U, k = s[0x44a8 >> 2], b = LY(k), mk = s[b + lf(0x830)], bm = LY(mk);
+    s[0x4d64 >> 2] = mk;
+    var w = s[b + lf(0x7f4)], h = s[b + lf(0x7f8)];
+    if (s[bm + lf(0x7f4)] !== w || s[bm + lf(0x7f8)] !== h || mk === k) return;
+    var n = Math.imul(w, h), src = s[0x439c >> 2] >> 2, dst = s[0x4374 >> 2] >> 2, key = s[0x4df4 >> 2] >>> 0;
+    s[0x4390 >> 2] = s[0x4374 >> 2];
+    s[0x4394 >> 2] = s[0x4374 >> 2] + n * 4;
+    s[0x43ec >> 2] = s[0x439c >> 2];
+    s[0x4400 >> 2] = s[0x439c >> 2];
+    s[0x43fc >> 2] = s[0x439c >> 2] + n * 4;
+    s[0x4ec4 >> 2] = n;
+    var mkey = s[bm + lf(0x7e4)] >>> 0;
+    s[0x4d60 >> 2] = mkey;
+    var msk = s[bm + lf(0x794)], sel = s[bm + lf(0x824)];
+    if (sel === 1 && s[bm + lf(0x828)] !== 0) msk = s[bm + lf(0x828)];
+    else if (sel === 2 && s[bm + lf(0x90c)] !== 0) msk = s[bm + lf(0x90c)];
+    s[0x43f8 >> 2] = msk;
+    var mi = msk >> 2, i: number;
+    for (i = 0; i < n; i++) U[dst + i] = key;
+    for (i = 0; i < n; i++) {
+      var mp = U[mi + i], sp = U[src + i];
+      if (mp !== mkey && sp !== key) {
+        s[0x4c50 >> 2] = sp;
+        s[0x4d5c >> 2] = mp;
+        var v = sp + ((mp & 0xff000000) >>> 0);
+        U[dst + i] = (v > 0xffffffff ? (v >>> 0) | 0xff000000 : v) >>> 0;
+        s[0x4c50 >> 2] = U[dst + i];
+      }
+    }
+    s[0x43f8 >> 2] = msk + n * 4;
+    s[0x4390 >> 2] = s[0x4374 >> 2] + n * 4;
+    s[0x43ec >> 2] = s[0x439c >> 2] + n * 4;
+    s[0x45cc >> 2] = n;
+  }
+
   /** vt+0x9c 0x55c0601a: per-pixel colour work: a hue turn (0x834: channel swap by quadrant, then a
    *  cos blend of the channels), a brightness bias (0x838), a pull toward the tint 0x840/0x844/0x848 by
    *  0x83c %, a ring-shaped tint by edge distance (0x85c, 0x850) and a thresholded tint (0x860, 0x868).
@@ -3391,7 +3489,7 @@ export class Core {
     s[0x4734 >> 2] = (s[0x464c >> 2] / 2) | 0;
     s[0x4738 >> 2] = s[0x4650 >> 2];
     store(s, this.ver ? PLUS_INIT2 : INIT_FIELDS2);
-    if (this.ver === 2) { s[TR_FRAMES >> 2] = 0; s[TR_LAST >> 2] = this.clock(); s[TR_FPS >> 2] = 0; }
+    if (this.ver === 2) { s[TR_FRAMES >> 2] = 0; s[TR_LAST >> 2] = this.plus!.zeroClock ? 0 : this.clock(); s[TR_FPS >> 2] = 0; }
   }
 
   /** vt+0x168 0x55c15597: the bitmap table, decoded once (cached per table index at obj+0x43c0). */

@@ -8,13 +8,13 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { A } from '../src/ns';
 import '../src/rand';
-import { EclecticColors, SnowTime, StarTime } from '../src/musical/bonus';
+import { DungeonSiege, EclecticColors, SnowTime, StarTime } from '../src/musical/bonus';
 import type { PlusClass } from '../src/musical/plus';
 import { PRESETS, nativeSize } from '../src';
 import { InputGen } from './golden/harness';
 
-const FAMS: Record<string, PlusClass> = { eclectic: EclecticColors, startime: StarTime, snowtime: SnowTime };
-const KEYS: Record<string, string> = { eclectic: 'EclecticColors', startime: 'StarTime', snowtime: 'SoftietheSnowman' };
+const FAMS: Record<string, PlusClass> = { eclectic: EclecticColors, startime: StarTime, snowtime: SnowTime, dungeon: DungeonSiege };
+const KEYS: Record<string, string> = { eclectic: 'EclecticColors', startime: 'StarTime', snowtime: 'SoftietheSnowman', dungeon: 'DungeonSiege' };
 
 describe('the Bonus Pack families: presets and wiring', () => {
   it("each family's presets, in WMP's list by its registry key", () => {
@@ -23,8 +23,10 @@ describe('the Bonus Pack families: presets and wiring', () => {
     expect(EclecticColors.PRESET_NAMES).toEqual(['Rolling Colors', 'Ribbon Rhythm', 'Night Fire']);
     expect(StarTime.PRESET_NAMES).toEqual(['Starlight', 'Star Clouds', 'Star Glow']);
     expect(SnowTime.PRESET_NAMES).toEqual(['Softie the Snowman']);
+    expect(DungeonSiege.PRESET_NAMES).toEqual(['Poster', 'Lurking in the dark lies an enemy...']);
     expect(keys.indexOf('SoftietheSnowman')).toBe(keys.indexOf('PulsingColors') + 1);
-    expect(keys.indexOf('EclecticColors')).toBe(keys.indexOf('Dotplane') + 1);
+    expect(keys.indexOf('DungeonSiege')).toBe(keys.indexOf('Dotplane') + 1);
+    expect(keys.indexOf('EclecticColors')).toBe(keys.indexOf('DungeonSiege') + 1);
     expect(keys.indexOf('StarTime')).toBe(keys.indexOf('Spikes') + 1);
     for (const [vis, C] of Object.entries(FAMS)) {
       expect(PRESETS.filter((p) => p.vis === vis).map((p) => p.name)).toEqual(C.PRESET_NAMES);
@@ -42,6 +44,8 @@ const RUNS: GRun[] = [
   { id: 'startime-p0-640x480-s12345', vis: 'startime', preset: 0, w: 640, h: 480, seed: 12345 },
   { id: 'snowtime-p0-640x480-s12345', vis: 'snowtime', preset: 0, w: 640, h: 480, seed: 12345 },
   { id: 'startime-p1-1280x1024', vis: 'startime', preset: 1, w: 1280, h: 1024, seed: 1 },
+  { id: 'dungeon-p0-640x480-s12345', vis: 'dungeon', preset: 0, w: 640, h: 480, seed: 12345 },
+  { id: 'dungeon-p1-640x480-s12345', vis: 'dungeon', preset: 1, w: 640, h: 480, seed: 12345 },
 ];
 const FRAMES = 300;
 
