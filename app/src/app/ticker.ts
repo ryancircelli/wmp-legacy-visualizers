@@ -36,6 +36,13 @@ const PERF_MS = 60_000;
  * clamp(max(avg / 0.6, 33.333) - avg, 10, 500) ms truncated to whole ms, avg the mean of the last 8. So at
  * most ~30 frames a second, and a slow visualizer gets 60% of the time. `ms` is this Render's own time.
  */
+/** The shortest frame period a warm phone allows (the iOS app's thermal state): 20 fps when fair, 15 when
+ *  serious, 10 when critical; none otherwise. */
+export function thermalFloor(): number {
+  const t = window.__wmpThermal;
+  return t === 'critical' ? 100 : t === 'serious' ? 1000 / 15 : t === 'fair' ? 50 : 0;
+}
+
 export function wmpDelay(hist: number[], ms: number): number {
   const had = hist.length;
   hist.push(ms);
@@ -111,6 +118,8 @@ export function createTicker(store: AppStore, onFirstFrame: () => void): Ticker 
         // refresh rate down to 30 Hz; a frame later than that (a stall, a hidden tab, a preset change)
         // starts afresh instead of catching up.
         due = (now - due < 1000 / 30 ? due : now) + ms + wmpDelay(hist, ms);
+        // a warm phone draws less often (the owner, 2026-10-13: "my phone is hot"): WMP's period, or longer
+        due = Math.max(due, now + thermalFloor());
       }
     } else {
       let dt = now - prev;
