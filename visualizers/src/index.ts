@@ -18,6 +18,7 @@ import './plenoptic/index';
 import './ambience/index';
 import './musical/index';
 import './musical/plus';
+import './musical/bonus';
 import './alchemy3d/index';
 import './pictureviz/index';
 import './pictureviz/pv2/index';
@@ -31,7 +32,7 @@ export type { Surface, TimedLevel, Picture };
 export { pictureFromRGBA, loadPicture } from './pictureviz/picture';
 
 export type VisKind = 'alchemy' | 'bars' | 'battery' | 'spikes' | 'particle' | 'plenoptic' | 'ambience' | 'musical'
-  | 'blazing' | 'colorcubes' | 'pulsing' | 'trilogy1' | 'trilogy2' | 'trilogy3' | 'alchemy3d' | 'pictureviz' | 'pictureviz2' | 'yule'
+  | 'blazing' | 'colorcubes' | 'pulsing' | 'trilogy1' | 'trilogy2' | 'trilogy3' | 'eclectic' | 'alchemy3d' | 'pictureviz' | 'pictureviz2' | 'yule'
   | 'goom';
 /** 'original' = each DLL's own surface size; 'auto' = the view, capped near 720p worth of pixels; n = view * n. */
 export type Scale = 'original' | 'auto' | number;
@@ -67,7 +68,7 @@ export interface PresetEntry {
   vis: VisKind;
   preset: number;
   group: 'Alchemy' | 'Bars and Waves' | 'Battery' | 'Spikes' | 'Particle' | 'Plenoptic' | 'Ambience' | 'Musical Colors'
-    | 'Blazing Colors' | 'Color Cubes' | 'Pulsing Colors' | 'Trilogy I' | 'Trilogy II' | 'Trilogy III' | '3D Alchemy' | 'Picture Viz' | 'Picture Viz II' | 'Yule Log'
+    | 'Blazing Colors' | 'Color Cubes' | 'Pulsing Colors' | 'Trilogy I' | 'Trilogy II' | 'Trilogy III' | 'Eclectic Colors' | '3D Alchemy' | 'Picture Viz' | 'Picture Viz II' | 'Yule Log'
     | 'Goom';
   name: string;
   /** the family's registry key, HKLM\SOFTWARE\Microsoft\MediaPlayer\Objects\Effects\<key> (its place in the list) */
@@ -134,6 +135,7 @@ const FAMILIES: readonly { key: string; vis: VisKind; group: PresetEntry['group'
   { key: 'TrilogyI', vis: 'trilogy1', group: 'Trilogy I', names: A.TrilogyI.PRESET_NAMES },
   { key: 'TrilogyII', vis: 'trilogy2', group: 'Trilogy II', names: A.TrilogyII.PRESET_NAMES },
   { key: 'TrilogyIII', vis: 'trilogy3', group: 'Trilogy III', names: A.TrilogyIII.PRESET_NAMES },
+  { key: 'EclecticColors', vis: 'eclectic', group: 'Eclectic Colors', names: A.EclecticColors.PRESET_NAMES },
   // the Creativity Fun Pack's mpvis3d.dll (2003) registers its own Effects key, "3D-Alchemy" (named "3D Alchemy"):
   // WMP 9 lists it as a visualization of its own, first ("3" sorts before "A"). Its sixth preset, Draco's room,
   // is one WMP never offered (GetPresetCount says 5)
@@ -264,6 +266,7 @@ type RawCtor = new (cfg: { width: number; height: number; options: EngineOptions
 const PLUS: Partial<Record<VisKind, RawCtor>> = {
   blazing: A.BlazingColors, colorcubes: A.ColorCubes, pulsing: A.PulsingColors,
   trilogy1: A.TrilogyI, trilogy2: A.TrilogyII, trilogy3: A.TrilogyIII,
+  eclectic: A.EclecticColors,
 } as unknown as Partial<Record<VisKind, RawCtor>>;
 
 function makeRaw(kind: VisKind, preset: number, options: EngineOptions): RawEngine {

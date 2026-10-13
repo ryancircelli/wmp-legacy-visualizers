@@ -12,8 +12,8 @@
 // Index 1..n as the engine's table numbers them (index 0 unused).
 import type { MusicalImage } from './images';
 
-type Col = number | number[];          // another column's index, or keys [row, 0xRRGGBB, row, 0xRRGGBB, ...]
-interface Ramp { w: number; h: number; c: Col[] }
+export type Col = number | number[];          // another column's index, or keys [row, 0xRRGGBB, row, 0xRRGGBB, ...]
+export interface Ramp { w: number; h: number; c: Col[] }
 
 const RAMPS: { [name: string]: Ramp } = {
   blaze2: { w: 3, h: 1024, c: [
@@ -41,7 +41,7 @@ const PAL_H = [0.673, 0.6701, 0.8603, 0.5383, 0.2771, 0.5406, 0.8491, 0.1011, 0.
 const PAL_S = [0.9811, 0.9758, 0.769, 0.8025, 0.6842, 0.6888, 0.6089, 0.6163, 0.4813, 0.9009, 0.9544, 0.8741, 0.7871, 0.5239, 0.6754, 0.4243, 0.6283, 0.6297, 0.5046, 0.8916, 0.706, 0.8172, 0.9861, 0.9848, 0.9098, 0.8217, 0.9269, 0.9897, 0.9899, 0.9897, 0.9881, 0.9859, 0.9849, 0.9876, 0.9889, 0.9893, 0.9863, 0.9848, 0.9738, 0.9745, 0.9198, 0.8473, 0.9101, 0.8587, 0.8511, 0.9127, 0.893, 0.9599, 0.9268, 0.8526, 0.9186, 0.9567, 0.9592, 0.9513, 0.8581, 0.902, 0.877, 0.9376, 0.7706, 0.7506, 0.841, 0.9581, 0.99, 0.9903]
 const PAL_V = [0.4837, 0.631, 0.7418, 0.796, 0.7731, 0.7621, 0.7905, 0.7726, 0.5998, 0.7962, 0.9787, 0.9992, 0.8956, 0.8242, 0.9934, 0.8883, 0.7274, 0.8404, 0.764, 0.9412, 0.9719, 0.7642, 0.5933, 0.5453, 0.3531, 0.7386, 0.7234, 0.7583, 0.7748, 0.7615, 0.706, 0.5839, 0.5393, 0.666, 0.7106, 0.75, 0.5934, 0.5453, 0.3233, 0.4207, 0.8688, 0.9319, 0.9989, 0.9774, 0.9658, 0.9695, 0.8476, 0.959, 0.9896, 0.5405, 0.2789, 0.8281, 1.0, 0.9811, 0.7437, 0.8299, 0.8991, 0.8197, 0.6915, 0.6882, 0.6127, 0.8156, 0.8027, 0.8095]
 
-function fill(w: number, h: number, colour: number): Uint32Array { return new Uint32Array(w * h).fill(colour); }
+export function fill(w: number, h: number, colour: number): Uint32Array { return new Uint32Array(w * h).fill(colour); }
 
 /** keys [row, 0xRRGGBB, row, 0xRRGGBB, ...] -> one column, each channel linear between keys (rounded) */
 function keyed(k: number[], h: number): Uint32Array {
@@ -60,8 +60,10 @@ function keyed(k: number[], h: number): Uint32Array {
   return out;
 }
 
-function ramp(name: string): Uint32Array {
-  var r = RAMPS[name], cols: Uint32Array[] = [], c: number;
+function ramp(name: string): Uint32Array { return rampOf(RAMPS[name]); }
+/** a ramp image from its key colours (our own parametrisation: bonus-images.ts uses it too) */
+export function rampOf(r: Ramp): Uint32Array {
+  var cols: Uint32Array[] = [], c: number;
   for (c = 0; c < r.w; c++) { var spec = r.c[c]; if (typeof spec !== 'number') cols[c] = keyed(spec, r.h); }
   for (c = 0; c < r.w; c++) { var sp2 = r.c[c]; if (typeof sp2 === 'number') cols[c] = cols[sp2].slice(); }
   var px = new Uint32Array(r.w * r.h);

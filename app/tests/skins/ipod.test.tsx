@@ -626,7 +626,7 @@ it('the ⋯ over the cover opens this page\'s options: Lyrics and Karaoke toggle
   expect([m.S().settings.karaoke, rows()]).toEqual([false, ['Play On…', 'Visualizer…', 'LyricsOff', 'KaraokeOff']]);
   pick('Visualizer…');                               // its pages: the switch, Opacity, the families
   const title = () => np.querySelector('[class*=pagetitle]')?.textContent;
-  expect([title(), rows()]).toEqual(['Visualizer', ['VisualizerOn', 'Opacity50%', '3D Alchemy', 'Alchemy', 'Ambience', 'Bars and WavesBars', 'Battery', 'Blazing Colors', 'Color Cubes', 'Particle', 'Picture Viz', 'Picture Viz II', 'Plenoptic',
+  expect([title(), rows()]).toEqual(['Visualizer', ['VisualizerOn', 'Opacity50%', '3D Alchemy', 'Alchemy', 'Ambience', 'Bars and WavesBars', 'Battery', 'Blazing Colors', 'Color Cubes', 'Particle', 'Eclectic Colors', 'Picture Viz', 'Picture Viz II', 'Plenoptic',
       'Pulsing Colors', 'Spikes', 'Trilogy I', 'Trilogy II', 'Trilogy III', 'Goom', 'Musical Colors', 'Yule Log']]);
   pick('VisualizerOn');                              // off, the page kept open
   expect([rows().slice(0, 2), !!np.querySelector('canvas')]).toEqual([['VisualizerOff', 'Opacity50%'], false]);

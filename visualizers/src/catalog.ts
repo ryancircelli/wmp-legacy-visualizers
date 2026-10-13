@@ -27,7 +27,7 @@ const CURRENT: Record<VisKind, Versions> = {
   alchemy: [12, 12], bars: [12, 12], battery: [12, 12],
   spikes: [10, 10], particle: [10, 10], plenoptic: [10, 10], ambience: [10, 10],
   musical: [7, 8],
-  blazing: [7, 8], colorcubes: [7, 8], pulsing: [7, 8], trilogy1: [7, 8], trilogy2: [7, 8], trilogy3: [7, 8],
+  blazing: [7, 8], colorcubes: [7, 8], pulsing: [7, 8], trilogy1: [7, 8], trilogy2: [7, 8], trilogy3: [7, 8], eclectic: [7, 8],
   alchemy3d: [9, 9],
   pictureviz: [8, 8], pictureviz2: [9, 9],
   // Yule Log: the Windows Media Bonus Pack for Windows XP (WMP 8) and the Winter Fun Packs for WMP 9 and 10

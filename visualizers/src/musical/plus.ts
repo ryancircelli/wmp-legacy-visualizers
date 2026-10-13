@@ -11,7 +11,7 @@ import type { MusicalImage } from './images';
 import { blazeImages, colorCubesImages, trilogyImages } from './plus-images';
 
 /** layer k's fields (offsets as layer 0 has them, >= 0x76c) or its transform record's (as record 0 has them) */
-function ls(s: Int32Array, k: number, t: number[]): void {
+export function ls(s: Int32Array, k: number, t: number[]): void {
   for (var i = 0; i < t.length; i += 2) {
     var f = t[i];
     if (f >= 0x76c) s[LY(k) + lf(f)] = t[i + 1];
@@ -19,14 +19,14 @@ function ls(s: Int32Array, k: number, t: number[]): void {
   }
 }
 /** globals: [offset, value, ...] */
-function gs(s: Int32Array, t: number[]): void {
+export function gs(s: Int32Array, t: number[]): void {
   for (var i = 0; i < t.length; i += 2) s[t[i] >> 2] = t[i + 1];
 }
-const F = (v: number): number => new Int32Array(new Float32Array([v]).buffer)[0];
+export const F = (v: number): number => new Int32Array(new Float32Array([v]).buffer)[0];
 
 /** the program's head, every Plus build (Blazing Colors 0x10016340): a preset not yet set up first clears the trails
  *  (when the last one was in bar mode), rebuilds the default scene and turns bar mode on */
-function head(c: Core): Int32Array {
+export function head(c: Core): Int32Array {
   var s = c.m.I;
   if (s[0x4574 >> 2] === 0) {
     s[0x4458 >> 2] = 0;
@@ -43,7 +43,7 @@ function head(c: Core): Int32Array {
   return s;
 }
 /** a preset's first frame: set up, 352 x 320 canvas, five layers, the camera at the origin */
-function setup(c: Core, step: number): Int32Array {
+export function setup(c: Core, step: number): Int32Array {
   var s = c.m.I;
   s[0x4574 >> 2] = 1;
   c.canvasPlus();
@@ -53,7 +53,7 @@ function setup(c: Core, step: number): Int32Array {
   return s;
 }
 /** the per-frame tail: layer 0 redrawn, layers 1 and 3 (the ramp and the strip) hidden again */
-function redraw(c: Core, s: Int32Array, hide3: boolean): void {
+export function redraw(c: Core, s: Int32Array, hide3: boolean): void {
   s[0x44a8 >> 2] = 0;
   s[LY(1) + lf(0x910)] = -1;
   if (hide3) s[LY(3) + lf(0x910)] = -1;
@@ -710,7 +710,7 @@ export interface PlusConfig {
 
 /** One family: the AlchemyNS-facing wrapper (MusicalColors' shape). options.datatable = the DLL's own image table
  *  (RCDATA DATATABLE_n) for the original artwork; else our generated images. */
-function family(name: string, dll: PlusDll, presetNames: string[]): PlusClass {
+export function family(name: string, dll: PlusDll, presetNames: string[]): PlusClass {
   return class extends PlusFamily {
     static PRESET_NAMES: string[] = presetNames;
     constructor(cfg?: PlusConfig) { super(name, dll, presetNames, cfg); }

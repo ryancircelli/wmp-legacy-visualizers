@@ -121,6 +121,10 @@ export interface PlusDll {
   table: number;
   /** the default scene's six layers (core.ts PLUS_SCENE when not given) */
   scene?: number[][];
+  /** the number of layer and transform records (52 when not given; Eclectic Colors' build has 7) */
+  layers?: number;
+  /** the 2001 bars' extras without Trilogy's clock (Eclectic Colors): y law 9, layer 3 hidden again at the end */
+  tri?: boolean;
   /** SetCurrentPreset when it is not wmpvis.dll's (Trilogy: the last preset is Random Selection) */
   setPreset?(c: Core, n: number): void;
   /** the preset program (the DLL's vt+0x18c-ish dispatcher on obj+0x47bc): first call builds, later ones animate */
@@ -439,7 +443,7 @@ export class Core {
   /** 0x55c12ea9: modes 1, 3, 4, 5 mirror the 255 bins into a 512-wide buffer at 0x1f60. */
   specMirror(): void {
     var s = this.m.I, md = s[0x44c8 >> 2];
-    if (md === 5 || md === 4 || md === 3 || md === 1 || (this.ver && md >= 6 && md <= (this.ver === 2 ? 9 : 8))) {   // the Plus builds: and 6..8 (Trilogy 9)
+    if (md === 5 || md === 4 || md === 3 || md === 1 || (this.ver && md >= 6 && md <= (this.ver === 2 || this.plus!.tri ? 9 : 8))) {   // the Plus builds: and 6..8 (Trilogy 9)
       for (var i = 0; i < s[0x4494 >> 2]; i++) {
         s[0x45cc >> 2] = i;
         s[(0x235c >> 2) + i] = s[(0x1740 >> 2) + i];
@@ -1002,7 +1006,7 @@ export class Core {
    *  scroll offset instead), layer 3 left visible. Trilogy (0x10016e80): y laws 9 and 10, law 10's bins squeezed
    *  first, layer 3 hidden again at the end. */
   barsPlus(): void {
-    var m = this.m, s = m.I, b0 = LY(0), b3 = LY(3), tri = this.ver === 2;
+    var m = this.m, s = m.I, b0 = LY(0), b3 = LY(3), tri = this.ver === 2 || !!(this.plus && this.plus.tri);
     var step = s[0x47f8 >> 2];
     s[b3 + lf(0x910)] = 0;
     if (step === 1) this.rampScroll();
@@ -3150,7 +3154,7 @@ export class Core {
   // ---------------------------------------------------------------- one-time setup
   /** vt+0x1cc 0x55c1510e: clear the layer and transform records and the spectrum buffers, defaults. */
   init(): void {
-    var s = this.m.I, i: number, nl = this.ver ? 0x34 : 8;
+    var s = this.m.I, i: number, nl = this.ver ? (this.plus!.layers || 0x34) : 8;
     s[0x4ebc >> 2] = nl - 1;                       // last layer index
     s[0x463c >> 2] = nl;                           // layer count
     for (var k = 0; k < nl; k++) {
