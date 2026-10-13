@@ -32,6 +32,7 @@ describe('the catalog', () => {
       'Picture Viz, WMP 8 7',
       'Picture Viz II, WMP 9 62',
       'Plenoptic, WMP 10 7, WMP 8 2, WMP 7 7',
+      'Plus! 3-D Visualizations, WMP 8 3',
       'Pulsing Colors, WMP 7–8 3',
       'SnowTime, WMP 7–8 1',
       'Spikes, WMP 10 2',

@@ -306,4 +306,28 @@ describe('RefDevice', () => {
     d.setRenderState(Rs.CULLMODE, 2); d.captureStateBlock(b); d.setRenderState(Rs.CULLMODE, 3); d.applyStateBlock(b);
     expect(d.st.rs[Rs.CULLMODE]).toBe(2);
   });
+  it('BORDER addressing samples the border colour outside the texture (in JS: the kernel declines it)', () => {
+    const d = new RefDevice(W, H), tex = checkerTexture(d, 32, false);
+    const px = (x: number, y: number): number => {
+      const bb = d.getBackBuffer(), l = bb.lockRect(null, 0x10), v = new DataView(l.data.buffer, l.data.byteOffset).getUint32(y * l.pitch + x * 4, true);
+      bb.unlockRect();
+      return v & 0xffffff;
+    };
+    d.beginScene();
+    d.clear(null, ClearFlag.TARGET, 0xff000000, 1, 0);
+    d.setRenderState(Rs.LIGHTING, 0); d.setRenderState(Rs.CULLMODE, 1); d.setRenderState(Rs.ZENABLE, 0);
+    d.setTransform(256, ident()); d.setTransform(2, ident()); d.setTransform(3, ident());
+    d.setVertexShader(Fvf.XYZ | 0x100);
+    d.setTexture(0, tex);
+    d.setTextureStageState(0, Tss.COLOROP, 2); d.setTextureStageState(0, Tss.COLORARG1, 2);
+    d.setTextureStageState(0, Tss.MAGFILTER, 2); d.setTextureStageState(0, Tss.MINFILTER, 2);
+    d.setTextureStageState(0, Tss.ADDRESSU, 4); d.setTextureStageState(0, Tss.ADDRESSV, 4);
+    d.setTextureStageState(0, Tss.BORDERCOLOR, 0xff20c040);
+    // u, v from -1 to 2 across the screen: the middle third is the texture, the rest the border
+    const q = verts('fffff', [[-1, 1, 0.5, -1, -1], [1, 1, 0.5, 2, -1], [-1, -1, 0.5, -1, 2], [1, -1, 0.5, 2, 2]]);
+    d.drawPrimitiveUP(Prim.TRIANGLESTRIP, 2, q, 20);
+    d.endScene();
+    expect([px(5, 5), px(W - 5, H / 2), px(W / 2, H - 5)]).toEqual([0x20c040, 0x20c040, 0x20c040]);
+    expect(px(W / 2, H / 2)).not.toBe(0x20c040);
+  });
 });

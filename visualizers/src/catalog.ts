@@ -34,6 +34,8 @@ const CURRENT: Record<VisKind, Versions> = {
   yule: [8, 10],
   // Goom: the WMP 9 Series plug-in (WMP 9 and later loaded it; it was built for 9)
   goom: [9, 9],
+  // Plus! 3-D Visualizations: Microsoft Plus! for Windows XP (2001), for Windows XP's player (WMP 8)
+  plus3d: [8, 8],
 };
 
 /** A preset's name as its name and the versions its suffix gives ("Swirl (WMP 7-9)": Swirl, [7, 9]); none: null. */

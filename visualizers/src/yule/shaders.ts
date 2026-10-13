@@ -8,8 +8,8 @@
 // An assembled file can also carry debug comment tokens (D3DSIO_COMMENT: source file and line records); a caller
 // that has them passes them per instruction to make the token stream equal to such a file.
 
-const enum Reg { R = 0, V = 1, C = 2, A = 3, RASTOUT = 4, ATTROUT = 5, TEXOUT = 6 }
-const enum Op { MOV = 1, ADD = 2, MAD = 4, MUL = 5, RSQ = 7, DP3 = 8, DP4 = 9, MAX = 11 }
+export const enum Reg { R = 0, V = 1, C = 2, A = 3, RASTOUT = 4, ATTROUT = 5, TEXOUT = 6 }
+export const enum Op { MOV = 1, ADD = 2, MAD = 4, MUL = 5, RSQ = 7, DP3 = 8, DP4 = 9, MAX = 11, LIT = 16 }
 
 /** a destination operand: register type, number, write mask (xyzw bits) */
 interface Dst { t: Reg; n: number; mask: number }
@@ -21,8 +21,8 @@ const SW = (s: string): number[] => {
   while (c.length < 4) c.push(c[c.length - 1]);
   return c;
 };
-const dst = (t: Reg, n: number, m = 'xyzw'): Dst => ({ t, n, mask: Array.from(m).reduce((a, ch) => a | (1 << 'xyzw'.indexOf(ch)), 0) });
-const src = (t: Reg, n: number, s = 'xyzw', neg = false, rel = false): Src => ({ t, n, sw: SW(s), neg, rel });
+export const dst = (t: Reg, n: number, m = 'xyzw'): Dst => ({ t, n, mask: Array.from(m).reduce((a, ch) => a | (1 << 'xyzw'.indexOf(ch)), 0) });
+export const src = (t: Reg, n: number, s = 'xyzw', neg = false, rel = false): Src => ({ t, n, sw: SW(s), neg, rel });
 
 function dstTok(d: Dst): number { return (0x80000000 | (d.t << 28) | (d.mask << 16) | d.n) >>> 0; }
 function srcTok(s: Src): number {
@@ -30,7 +30,7 @@ function srcTok(s: Src): number {
   return (0x80000000 | (s.t << 28) | ((s.neg ? 1 : 0) << 24) | (sw << 16) | ((s.rel ? 1 : 0) << 13) | s.n) >>> 0;
 }
 
-type Ins = [Op, Dst, ...Src[]];
+export type Ins = [Op, Dst, ...Src[]];
 
 /** assemble: version 1.1, the instructions, end; comments[i] (raw dwords) go before instruction i, comments[n]
  *  before the end token */

@@ -55,7 +55,7 @@ export class Clipper {
     let union = (ca | cb | cc) >>> 0;
     const vp = this.vp;
     if (union & 0x10) {
-      n = this.plane(src, n, dst, 0x10000, (o) => P[o + CZ]);
+      n = this.plane(src, n, dst, 0x10000, (o) => E.ld(P[o + CZ]));
       if (n < 3) return;
       [src, dst] = [dst, src];
       union = 0;
@@ -66,12 +66,14 @@ export class Clipper {
         union = (union | code) >>> 0;
       }
     }
-    const planes: [number, number, (o: number) => number][] = [
-      [0x20, 0x20000, (o) => { E.ld(P[o + CW]); E.fsub(P[o + CZ]); return E.st32(); }],
-      [0x1000, 0x1000, (o) => { E.ld(P[o + CW] * vp.K88); E.fsub(P[o + CX]); return -E.st32(); }],
-      [0x2000, 0x2000, (o) => { E.ld(P[o + CW] * vp.K90); E.fsub(P[o + CX]); return E.st32(); }],
-      [0x8000, 0x8000, (o) => { E.ld(P[o + CW] * vp.K8c); E.fsub(P[o + CY]); return -E.st32(); }],
-      [0x4000, 0x4000, (o) => { E.ld(P[o + CW] * vp.K94); E.fsub(P[o + CY]); return E.st32(); }],
+    // each distance is left on the FPU (E.A, extended; FCHS where negated)
+    const neg = (): void => { E.A[0] = -E.A[0]; E.A[1] = -E.A[1]; };
+    const planes: [number, number, (o: number) => void][] = [
+      [0x20, 0x20000, (o) => { E.ld(P[o + CW]); E.fsub(P[o + CZ]); }],
+      [0x1000, 0x1000, (o) => { E.ld(P[o + CW] * vp.K88); E.fsub(P[o + CX]); neg(); }],
+      [0x2000, 0x2000, (o) => { E.ld(P[o + CW] * vp.K90); E.fsub(P[o + CX]); }],
+      [0x8000, 0x8000, (o) => { E.ld(P[o + CW] * vp.K8c); E.fsub(P[o + CY]); neg(); }],
+      [0x4000, 0x4000, (o) => { E.ld(P[o + CW] * vp.K94); E.fsub(P[o + CY]); }],
     ];
     for (const [bit, flag, dist] of planes) {
       if (!(union & bit)) continue;
@@ -91,26 +93,34 @@ export class Clipper {
     return o;
   }
 
-  /** one clip plane (Sutherland-Hodgman, 0x41c8c0 and kin): edges prev -> cur starting from the last vertex */
-  private plane(src: Int32Array, n: number, dst: Int32Array, flag: number, dist: (o: number) => number): number {
+  /** one clip plane (Sutherland-Hodgman, 0x41c8c0 and kin): edges prev -> cur starting from the last vertex. Each
+   *  current distance is stored as a float, and the next edge starts from that float; but the first edge's previous
+   *  distance stays on the FPU unrounded, so its differences (and only its) subtract the extended value. */
+  private plane(src: Int32Array, n: number, dst: Int32Array, flag: number, dist: (o: number) => void): number {
     const P = this.pool;
     let m = 0;
-    let prev = src[n - 1], dPrev = dist(prev);
+    let prev = src[n - 1];
+    dist(prev);
+    let pH = E.A[0], pL = E.A[1], dPrev = E.st32();
     for (let i = 0; i < n; i++) {
-      const cur = src[i], dCur = dist(cur);
+      const cur = src[i];
+      dist(cur);
+      const dCur = E.st32();
       if (inside(dPrev)) {
         dst[m++] = prev;
         if (!inside(dCur)) {
           const o = this.next++ * ST;
-          this.interpolate(o, prev, cur, flag, dPrev, f32sub(dPrev, dCur));
+          E.ldE(pH, pL); E.fsub(dCur);
+          this.interpolate(o, prev, cur, flag, dPrev, E.st32());
           dst[m++] = o;
         }
       } else if (inside(dCur)) {
         const o = this.next++ * ST;
-        this.interpolate(o, cur, prev, (P[prev + CODE] & 0x40000) | flag, dCur, f32sub(dCur, dPrev));
+        E.ld(dCur); E.fsubE(pH, pL);
+        this.interpolate(o, cur, prev, (P[prev + CODE] & 0x40000) | flag, dCur, E.st32());
         dst[m++] = o;
       }
-      prev = cur; dPrev = dCur;
+      prev = cur; dPrev = dCur; pH = dCur; pL = 0;
     }
     return m;
   }
@@ -174,4 +184,3 @@ export class Clipper {
   }
 }
 
-function f32sub(a: number, b: number): number { E.ld(a); E.fsub(b); return E.st32(); }

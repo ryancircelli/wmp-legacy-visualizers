@@ -37,6 +37,8 @@ interface Stage {
   tex: RefTexture | null; set: number; dims: number;
   minF: number; magF: number; mipF: number; needLod: number; bias: number; maxMip: number;
   addrU: number; addrV: number;
+  /** BORDERCOLOR, what an out-of-range texel is under BORDER addressing */
+  border: number;
 }
 
 /** an attribute plane (A d/dx, B d/dy, C) per component */
@@ -106,7 +108,7 @@ export class Rasterizer {
       this.stages.push({
         tex, set: out.texSet[i], dims: out.texDims[i], minF: mn, magF: mg, mipF: mp,
         needLod: mg === mn && mp === 0 ? 0 : mg === 3 ? 3 : 2, bias: fromBits(t[b + 19]), maxMip: t[b + 20],
-        addrU: t[b + 13], addrV: t[b + 14],
+        addrU: t[b + 13], addrV: t[b + 14], border: t[b + 15],
       });
     }
   }
@@ -126,6 +128,7 @@ export class Rasterizer {
       const op = P[c * 8], aop = P[c * 8 + 4];
       if (!KOPS.has(op) || !(KOPS.has(aop) || aop === 1)) return false;
       const s = this.stages[c], tex = s.tex;
+      if (tex && (s.addrU === 4 || s.addrV === 4)) return false;      // the kernel has no BORDER addressing
       if (tex && (tex.mips.some((m) => m.heapOff < 0) || (tex.format !== Fmt.A8R8G8B8 && tex.format !== Fmt.X8R8G8B8 && tex.format !== Fmt.A4R4G4B4))) return false;
     }
     const c = this.clip;
@@ -485,7 +488,7 @@ export class Rasterizer {
       out[o] = 0; out[o + 1] = 0; out[o + 2] = 0; out[o + 3] = 0;
       for (let l = 0; l < levels; l++) {
         const m = tex.mips[l === 0 ? l0 : l1], lw = l === 0 ? w0 : w1;
-        if (filt === 2 && m.format !== Fmt.A4R4G4B4) {
+        if (filt === 2 && m.format !== Fmt.A4R4G4B4 && s.addrU !== 4 && s.addrV !== 4) {
           // bilinear on a 32-bit format, the four samples of 0x412909 in order (s0 (u0,v0), s1 (u1,v0), s2 (u1,v1),
           // s3 (u0,v1)); a zero weight adds nothing, so every sample is accumulated (see acc for the exactness).
           // linCoord inline: rint(32 * (c*size - 0.5)) through f32(... + 393216)
@@ -534,7 +537,10 @@ export class Rasterizer {
     if (iv < 0 || iv >= M) iv = address(iv, M, s.addrV);
     const d = m.data, p = iv * m.pitch;
     let r: number, g: number, b: number, a: number;
-    if (m.format === Fmt.A4R4G4B4) {
+    if (iu < 0 || iv < 0) {                       // BORDER: the border colour, whatever the format
+      const c = s.border;
+      r = B255[(c >>> 16) & 255]; g = B255[(c >>> 8) & 255]; b = B255[c & 255]; a = B255[c >>> 24];
+    } else if (m.format === Fmt.A4R4G4B4) {
       const q = p + iu * 2, wd = d[q] | (d[q + 1] << 8);
       r = B15[(wd >> 8) & 15]; g = B15[(wd >> 4) & 15]; b = B15[wd & 15]; a = B15[wd >> 12];
     } else {
@@ -834,6 +840,7 @@ function address(i: number, n: number, mode: number): number {
     case 3: return i < 0 ? 0 : n - 1;
     case 2: { if (i < 0) i = -1 - i; const r = i % n; return (Math.trunc(i / n) & 1) ? n - 1 - r : r; }
     case 5: if (i < 0) i = -1 - i; return i > n - 1 ? n - 1 : i;
+    case 4: return -1;                            // BORDER: no texel
     default: { i = i % n; return i < 0 ? i + n : i; }
   }
 }
