@@ -4,12 +4,10 @@
 
 /** per-byte unsigned saturating add */
 export function addSat(p: number, c: number): number {
-  let r = 0;
-  for (let k = 0; k < 32; k += 8) {
-    const s = ((p >>> k) & 255) + ((c >>> k) & 255);
-    r |= (s > 255 ? 255 : s) << k;
-  }
-  return r >>> 0;
+  // two bytes per 16-bit lane: a carry lands in the lane's ninth bit and turns that byte to 255
+  const lo = (p & 0xff00ff) + (c & 0xff00ff), hi = ((p >>> 8) & 0xff00ff) + ((c >>> 8) & 0xff00ff);
+  const ol = lo & 0x1000100, oh = hi & 0x1000100;
+  return ((((lo | (ol - (ol >>> 8))) & 0xff00ff) | (((hi | (oh - (oh >>> 8))) & 0xff00ff) << 8)) >>> 0);
 }
 
 export function drawLine(data: Uint32Array, x1: number, y1: number, x2: number, y2: number, col: number,

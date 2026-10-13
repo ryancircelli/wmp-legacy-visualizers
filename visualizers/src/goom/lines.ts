@@ -73,6 +73,10 @@ export class GMLine {
   screenX: number; screenY: number;     // +0x24 +0x28
   power = 0;                            // +0x2c
   powinc = f32(0.01);                   // +0x30
+  // draw()'s cos(angle) * 0.001 and sin(angle) * 0.001 per point, kept while the angle is unchanged
+  private cacheA = new Float32Array(512).fill(NaN);
+  private cacheC = new Float64Array(512);
+  private cacheS = new Float64Array(512);
 
   /** 0x10012820 goom_lines_init */
   constructor(private rnd: GoomRandom, rx: number, ry: number, IDsrc: number, paramS: number, coulS: number,
@@ -134,12 +138,16 @@ export class GMLine {
     const d0 = data[off] * this.amplitude;
     let x1 = ftol(cosa * d0 + pts[0]);
     let y1 = ftol(d0 * sina + pts[1]);
+    const CA = this.cacheA, CC = this.cacheC, CS = this.cacheS;
     for (let i = 1; i < 512; i++) {
       const d = data[off + i];
       const a = pts[i * 3 + 2];
-      sincos87Pair(a, SC);
-      const x2 = ftol(mulExt64(0.001, SC[2], SC[3]) * this.amplitude * d + pts[i * 3]);
-      const y2 = ftol(mulExt64(0.001, SC[0], SC[1]) * this.amplitude * d + pts[i * 3 + 1]);
+      if (CA[i] !== a) {
+        sincos87Pair(a, SC);
+        CA[i] = a; CC[i] = mulExt64(0.001, SC[2], SC[3]); CS[i] = mulExt64(0.001, SC[0], SC[1]);
+      }
+      const x2 = ftol(CC[i] * this.amplitude * d + pts[i * 3]);
+      const y2 = ftol(CS[i] * this.amplitude * d + pts[i * 3 + 1]);
       drawLineFn(p, x1, y1, x2, y2, color, this.screenX, this.screenY);
       x1 = x2; y1 = y2;
     }

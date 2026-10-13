@@ -13,7 +13,8 @@ export interface GoomFont { big: GoomGlyphs; small: GoomGlyphs }
 
 /** What the user's own wmp9_goom.dll (249,856 bytes, SHA1 f7fafa66...) holds for the text: its font image
  *  (run-length coded at file offset 0x208c8, decoded the way the DLL's 0x1000bcf0 does) and its three idle
- *  credits (0x10002740's table: 0x2f0d0, the empty main-script text, 0x2f0b0). null for any other file. */
+ *  credits (0x10002740's table at 0x1002f494: 0x2f0d0, then what the object's constructor 0x10002370 puts in
+ *  the second slot, 0x2f280, then 0x2f0b0). null for any other file. */
 export function goomTextFromDll(dll: Uint8Array): { font: GoomFont; messages: string[] } | null {
   const cstr = (off: number): string => { let s = ''; for (let i = off; dll[i]; i++) s += String.fromCharCode(dll[i]); return s; };
   if (dll.length !== 249856 || !cstr(0x2f0d0).startsWith('What a GOOM! version 2k4')) return null;
@@ -68,7 +69,7 @@ export function goomTextFromDll(dll: Uint8Array): { font: GoomFont; messages: st
     small.widths[c] = small.widths[42]; small.heights[c] = small.heights[42];
   }
   big.widths[32] = 9; small.widths[32] = 4; big.chars[32] = null; small.chars[32] = null;
-  return { font: { big, small }, messages: [cstr(0x2f0d0), '', cstr(0x2f0b0)] };
+  return { font: { big, small }, messages: [cstr(0x2f0d0), cstr(0x2f280), cstr(0x2f0b0)] };
 }
 
 export function drawText(font: GoomFont | null, buf: Uint32Array, resx: number, resy: number, x: number, y: number,

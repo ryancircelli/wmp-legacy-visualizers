@@ -17,12 +17,14 @@ class Grid3d {
   defz: number;           // +0x20
   sizez: number;          // +0x24
   mode = 0;               // +0x28
+  proj: Int32Array;       // draw()'s projected points (the DLL mallocs them every frame)
 
   /** 0x100135f0 grid3d_new */
   constructor(sizex: number, defx: number, sizez: number, defz: number, cx: number, cy: number, cz: number) {
     this.nbvertex = defx * defz;
     this.vertex = new Float32Array(this.nbvertex * 3);
     this.svertex = new Float32Array(this.nbvertex * 3);
+    this.proj = new Int32Array(this.nbvertex * 2);
     this.defx = defx; this.sizex = sizex; this.defz = defz; this.sizez = sizez;
     this.cx = cx; this.cy = cy; this.cz = cz;
     for (let z = defz - 1; z >= 0; z--) {
@@ -62,7 +64,7 @@ class Grid3d {
 
   /** 0x10013720 draw: columns into a with colour ca and into b with colour cb */
   draw(a: Uint32Array, ca: number, b: Uint32Array, cb: number, dist: number, W: number, H: number): void {
-    const S = this.svertex, n = this.nbvertex, P = new Int32Array(n * 2), fd = dist;
+    const S = this.svertex, n = this.nbvertex, P = this.proj, fd = dist;
     for (let i = 0; i < n; i++) {
       const z = S[i * 3 + 2];
       if (!(z > 2.0)) { P[i * 2] = -666; P[i * 2 + 1] = -666; continue; }

@@ -211,9 +211,10 @@ export function zoomMMX(prevX: number, prevY: number, src: Uint32Array, dst: Uin
     }
     const c0 = c & 255, c1 = (c >>> 8) & 255, c2 = (c >>> 16) & 255, c3 = c >>> 24;
     const a = src[pos], b = src[pos + 1], e = src[pos + prevX], f = src[pos + prevX + 1];
-    dst[i] = (((a & 255) * c0 + (b & 255) * c1 + (e & 255) * c2 + (f & 255) * c3) >>> 8)
-      | ((((a >>> 8) & 255) * c0 + ((b >>> 8) & 255) * c1 + ((e >>> 8) & 255) * c2 + ((f >>> 8) & 255) * c3) >>> 8) << 8
-      | ((((a >>> 16) & 255) * c0 + ((b >>> 16) & 255) * c1 + ((e >>> 16) & 255) * c2 + ((f >>> 16) & 255) * c3) >>> 8) << 16
-      | ((((a >>> 24) * c0 + (b >>> 24) * c1 + (e >>> 24) * c2 + (f >>> 24) * c3) >>> 8) << 24);
+    // two channels per 16-bit lane, as PMULLW/PADDW do them: the weights sum to at most 255, so a lane
+    // never exceeds 255 * 255 and never carries into the next
+    const lo = (a & 0xff00ff) * c0 + (b & 0xff00ff) * c1 + (e & 0xff00ff) * c2 + (f & 0xff00ff) * c3;
+    const hi = ((a >>> 8) & 0xff00ff) * c0 + ((b >>> 8) & 0xff00ff) * c1 + ((e >>> 8) & 0xff00ff) * c2 + ((f >>> 8) & 0xff00ff) * c3;
+    dst[i] = ((lo >>> 8) & 0xff00ff) | (hi & 0xff00ff00);
   }
 }
