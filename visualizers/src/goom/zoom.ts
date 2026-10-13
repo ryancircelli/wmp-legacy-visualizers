@@ -200,10 +200,10 @@ let VX = 0, VY = 0;
 /** 0x1001f430: the MMX zoom. Positions outside [0, (w-1)*16) x [0, (h-1)*16) read pixel 0 with weight 0. */
 export function zoomMMX(prevX: number, prevY: number, src: Uint32Array, dst: Uint32Array, S: Int32Array, D: Int32Array, ratio: number): void {
   const ax = (prevX - 1) << 4, ay = (prevY - 1) << 4, n = prevX * prevY;
-  for (let i = 0; i < n; i++) {
-    const s0 = S[2 * i], s1 = S[2 * i + 1];
-    const px = (Math.imul(D[2 * i] - s0, ratio) >> 16) + s0;
-    const py = (Math.imul(D[2 * i + 1] - s1, ratio) >> 16) + s1;
+  for (let i = 0, j = 0; i < n; i++, j += 2) {
+    const s0 = S[j], s1 = S[j + 1];
+    const px = (Math.imul(D[j] - s0, ratio) >> 16) + s0;
+    const py = (Math.imul(D[j + 1] - s1, ratio) >> 16) + s1;
     let pos = 0, c = 0;
     if ((py >>> 0) < ay && (px >>> 0) < ax) {
       pos = (px >> 4) + Math.imul(py >> 4, prevX);
@@ -212,9 +212,12 @@ export function zoomMMX(prevX: number, prevY: number, src: Uint32Array, dst: Uin
     const c0 = c & 255, c1 = (c >>> 8) & 255, c2 = (c >>> 16) & 255, c3 = c >>> 24;
     const a = src[pos], b = src[pos + 1], e = src[pos + prevX], f = src[pos + prevX + 1];
     // two channels per 16-bit lane, as PMULLW/PADDW do them: the weights sum to at most 255, so a lane
-    // never exceeds 255 * 255 and never carries into the next
-    const lo = (a & 0xff00ff) * c0 + (b & 0xff00ff) * c1 + (e & 0xff00ff) * c2 + (f & 0xff00ff) * c3;
-    const hi = ((a >>> 8) & 0xff00ff) * c0 + ((b >>> 8) & 0xff00ff) * c1 + ((e >>> 8) & 0xff00ff) * c2 + ((f >>> 8) & 0xff00ff) * c3;
+    // never exceeds 255 * 255 and never carries into the next (int32 wrap-around is harmless: the result
+    // is taken mod 2^32)
+    let lo = (Math.imul(a & 0xff00ff, c0) + Math.imul(b & 0xff00ff, c1)) | 0;
+    lo = (lo + Math.imul(e & 0xff00ff, c2) + Math.imul(f & 0xff00ff, c3)) | 0;
+    let hi = (Math.imul((a >>> 8) & 0xff00ff, c0) + Math.imul((b >>> 8) & 0xff00ff, c1)) | 0;
+    hi = (hi + Math.imul((e >>> 8) & 0xff00ff, c2) + Math.imul((f >>> 8) & 0xff00ff, c3)) | 0;
     dst[i] = ((lo >>> 8) & 0xff00ff) | (hi & 0xff00ff00);
   }
 }

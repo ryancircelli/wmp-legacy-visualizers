@@ -28,13 +28,11 @@ export class Convolve {
  *  last pixel keeps what it had) */
 export function createOutputWithBrightness(src: Uint32Array, dst: Uint32Array, n: number, iff: number): void {
   if (iff === 256) { dst.set(src.subarray(0, n)); return; }
+  const L = LUT;
+  for (let v = 0; v < 256; v++) { const x = (v * iff) >> 8; L[v] = (x & ~255) ? 255 : x; }
   for (let i = n - 2; i >= 0; i--) {
     const s = src[i];
-    let r = 0;
-    for (let k = 0; k < 32; k += 8) {
-      const v = (((s >>> k) & 255) * iff) >> 8;
-      r |= ((v & ~255) ? 255 : v) << k;
-    }
-    dst[i] = r >>> 0;
+    dst[i] = (L[s & 255] | (L[(s >>> 8) & 255] << 8) | (L[(s >>> 16) & 255] << 16) | (L[s >>> 24] << 24)) >>> 0;
   }
 }
+const LUT = new Int32Array(256);
