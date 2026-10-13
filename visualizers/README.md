@@ -165,7 +165,8 @@ Not found yet: "Thanks" and "Chinese New Year 2005" from Microsoft's gallery.
 
 **Missing one?** If you know of a visualization Microsoft shipped for Windows Media Player that is neither
 ported above nor on this list, please [open an issue](https://github.com/ryancircelli/wmp-legacy-visualizers/issues/new)
-with its name and where it came from (a pack, a download page, a CD).
+with its name and where it came from (a pack, a download page, a CD). Please don't attach or link any files:
+the name and source are all that's needed.
 
 ## A note on the source material
 
