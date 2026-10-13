@@ -9,6 +9,7 @@
 import { createEngine, loadPicture, makeLevel, nativeSize, type Picture, type TimedLevel, type VisEngine } from 'wmp-legacy-visualizers';
 import type { AppStore } from '../model';
 import { occluded, onSeen } from '../ui/shell';
+import { perf, PERF_MS } from './perf';
 
 export interface Ticker {
   attach(canvas: HTMLCanvasElement): () => void;
@@ -26,8 +27,6 @@ export interface Ticker {
 
 /** ms: rAF timestamps jitter by about half a millisecond; any display under 500 Hz has vsyncs further apart than this. */
 const SLACK = 2;
-/** ms between the host log's perf lines */
-const PERF_MS = 60_000;
 
 /**
  * WMP's frame pacing, the same in every version from 7.0 to 12 (re/player/PLAYER.md §4: WMP 9 0x0770b3f0,
@@ -67,6 +66,7 @@ export function createTicker(store: AppStore, onFirstFrame: () => void): Ticker 
   // the host's log, once a minute while frames are drawn: the fps reached, the draw's cost (render +
   // present, main thread only), the sizes and the phone's thermal state (the owner: "my phone does overheat")
   let perfAt = 0, drawMs = 0, drawn = 0;
+  const P = perf();   // the "perf2:" line's sums (perf.ts)
   const S = () => store.getState().settings;
   const full = (s = store.getState()) => !!document.fullscreenElement || s.ui.bare || s.auth.mode === 'screensaver';
   /** Nothing to draw: held (a library view covers the visualizer; full screen always shows it; WMP
@@ -110,8 +110,10 @@ export function createTicker(store: AppStore, onFirstFrame: () => void): Ticker 
       if (eng && !t.paused && now >= due - SLACK) {
         const l = fillLevel(), t0 = performance.now();
         eng.render(l);
+        const t1 = performance.now();
         eng.present();                                // the DLL's own blit is inside its Render
         const ms = performance.now() - t0;
+        P.rd += t1 - t0; P.pr += ms - (t1 - t0);
         drawMs += ms; drew = true;
         // Next due = this frame's start + its render time + the delay. The start is when it was due, so
         // waiting for the vsync after a due time costs nothing and frames average WMP's period at any
@@ -132,10 +134,10 @@ export function createTicker(store: AppStore, onFirstFrame: () => void): Ticker 
       // 8 and 25 ms apart instead of every 16.7 (measured 2026-09-29: 5-59% of presents per run; 0-1% with it).
       while (acc >= step - SLACK && runs < 3) {     // hard cap: no spiral of death
         acc -= step; runs++;
-        if (eng && !t.paused) { const t0 = performance.now(); eng.render(fillLevel()); drawMs += performance.now() - t0; drew = true; }
+        if (eng && !t.paused) { const t0 = performance.now(); eng.render(fillLevel()); const d = performance.now() - t0; drawMs += d; P.rd += d; drew = true; }
       }
       if (acc > step * 3) acc = 0;
-      if (drew && eng) { const t0 = performance.now(); eng.present(); drawMs += performance.now() - t0; }
+      if (drew && eng) { const t0 = performance.now(); eng.present(); const d = performance.now() - t0; drawMs += d; P.pr += d; }
     }
     if (drew) {
       frames++; drawn++;

@@ -16,6 +16,9 @@ export default defineConfig({
   // __PAGE_BUILD__ keys what ui/persist.ts keeps between launches: a CI build is its commit; a local
   // one is unique, so a working tree's changed data shapes never meet an older build's results.
   define: { 'process.env.NODE_ENV': '"production"', __PAGE_BUILD__: JSON.stringify(pageBuild()) },
+  // React's profiling build: a production one never calls <Profiler onRender>, which the "perf2:" log line's
+  // UI commits come from (app/src/app/perf.ts); the same API, a little more timing work per commit.
+  resolve: { alias: { 'react-dom/client': 'react-dom/profiling' } },
   build: {
     outDir: 'dist/inject',
     emptyOutDir: true,

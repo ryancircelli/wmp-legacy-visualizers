@@ -28,6 +28,9 @@ export interface PcmLevelSource {
   fill(level: TimedLevel): void;
 }
 
+/** The page's timing sums (app/src/app/perf.ts), when it keeps them: `an` gets the ms spent turning PCM into snapshots. */
+const timing = () => (globalThis as { __wmpPerf?: { an: number } }).__wmpPerf;
+
 export function createPcmSource(rate = 48000, opts: { smoothing?: number } = {}): PcmLevelSource {
   let an = new WmpAnalyzer(rate, 2), s16 = new Int16Array(0), fresh = 0, fedAt = 0, zeros = new Int16Array(0), fixed = false;
   const avg = [new Float32Array(1024), new Float32Array(1024)];
@@ -36,6 +39,7 @@ export function createPcmSource(rate = 48000, opts: { smoothing?: number } = {})
     setRate(r) { if (r > 0 && r !== an.rate) an = new WmpAnalyzer(r, 2, an.build); },
     setBuild(b, fx = false) { fixed = fx; if (b !== an.build) an = new WmpAnalyzer(an.rate, 2, b); },
     push(pcm, gain = 1) {
+      const t0 = performance.now();
       if (s16.length < pcm.length) s16 = new Int16Array(pcm.length);
       for (let i = 0; i < pcm.length; i++) {
         const v = Math.round(pcm[i] * gain * 32768);
@@ -43,6 +47,8 @@ export function createPcmSource(rate = 48000, opts: { smoothing?: number } = {})
       }
       an.push(s16, pcm.length >> 1);
       fresh = fedAt = performance.now();
+      const T = timing();
+      if (T) T.an += fresh - t0;
     },
     fill(level) {
       // Nothing for a quarter second: the stream stalled, nothing plays (the desktop host then sends nothing), or
@@ -55,6 +61,8 @@ export function createPcmSource(rate = 48000, opts: { smoothing?: number } = {})
           if (zeros.length < n * 2) zeros = new Int16Array(n * 2);
           an.push(zeros, n);
           fedAt = now;
+          const T = timing();
+          if (T) T.an += performance.now() - now;
         }
       }
       const sm = src.smoothing;

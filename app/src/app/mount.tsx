@@ -14,6 +14,7 @@ import { createQueryClient } from './query';
 import type { QueryClient } from '@tanstack/react-query';
 import { getQueries } from '../adapters';
 import { createTicker, type Ticker } from './ticker';
+import { startPerfLog } from './perf';
 
 declare global {
   interface Window {
@@ -65,7 +66,8 @@ export async function mount(): Promise<void> {
   reactRoot.render(<App store={store} ticker={ticker} root={root} client={client} />);
   window.Alchemy = shim(store, ticker, client);
   // A refresh in place (the iOS observer's alchemyRestart): this page gone, the host's page kept.
-  window.Alchemy.unmount = () => { reactRoot.unmount(); adapter.stop(); el?.remove(); delete window.Alchemy; };
+  const stopPerf = startPerfLog();
+  window.Alchemy.unmount = () => { stopPerf(); reactRoot.unmount(); adapter.stop(); el?.remove(); delete window.Alchemy; };
   // A skin with no visualizer (the iPod) never has the ticker draw a frame, so the ticker never
   // reports one: the adapter starts after this skin's first painted frame instead, whichever comes
   // first (measured on the phone, 2026-10-01: the iPod skin alone saw no login and no state).

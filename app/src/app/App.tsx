@@ -3,7 +3,7 @@
 // view, the maximized-corner guess in a plain browser, and under Spotify keeping keys from the
 // web player underneath.
 import { QueryClientProvider, type QueryClient } from '@tanstack/react-query';
-import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
+import { lazy, Profiler, Suspense, useEffect, useMemo, useState } from 'react';
 import { useStore } from 'zustand';
 import { getQueries, type Queries } from '../adapters';
 import { PRESETS } from 'wmp-legacy-visualizers';
@@ -17,6 +17,7 @@ import '../ui/theme.css';
 import { TickerContext } from './Visualizer';
 import type { Ticker } from './ticker';
 import { createQueryClient } from './query';
+import { onCommit } from './perf';
 
 // the query devtools in dev builds only (the import is dropped from production bundles)
 const Devtools = import.meta.env.DEV
@@ -38,7 +39,7 @@ export function App({ store, ticker, root, client: given }: {
     <QueryClientProvider client={client}>
       <ShellContext.Provider value={shell}>
         <TickerContext.Provider value={ticker}>
-          <Skin />
+          <Profiler id="skin" onRender={onCommit}><Skin /></Profiler>
         </TickerContext.Provider>
         {engine === 'spotify' && <SpotifyLyrics />}
         {engine === 'spotify' && <SpotifyAhead />}

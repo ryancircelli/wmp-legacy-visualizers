@@ -86,6 +86,9 @@ window.alchemyElectron = { loopback: false, mode: 'app' };
 var AUDIO_URL = 'ws://127.0.0.1:47831/audio';
 window.alchemyScreensaver = { audio: true, url: AUDIO_URL };
 var audioSock = null;
+// The page's timing sums (app/src/app/perf.ts "perf2:"): br the ms decoding the forwarded PCM here, kb the
+// base64 characters (KB) received.
+var perf = window.__wmpPerf = window.__wmpPerf || { rd: 0, pr: 0, an: 0, br: 0, kb: 0, ui: 0 };
 window.__wmpAudio = {
   rate: function (n) {
     if (!audioSock || !audioSock.onmessage || audioSock.rated === n) return;
@@ -95,11 +98,12 @@ window.__wmpAudio = {
   pcm: function (b64, n) {
     if (n) window.__wmpAudio.rate(n);
     if (!audioSock || !audioSock.onmessage || !audioSock.rated) return;
-    var bin = atob(b64), cnt = bin.length >> 1, f = new Float32Array(cnt);
+    var t0 = performance.now(), bin = atob(b64), cnt = bin.length >> 1, f = new Float32Array(cnt);
     for (var i = 0; i < cnt; i++) {
       var v = bin.charCodeAt(2 * i) | (bin.charCodeAt(2 * i + 1) << 8);
       f[i] = (v >= 32768 ? v - 65536 : v) / 32768;
     }
+    perf.br += performance.now() - t0; perf.kb += b64.length / 1024;
     audioSock.onmessage({ data: f.buffer });
   },
   close: function () { var s = audioSock; audioSock = null; if (s && s.onclose) s.onclose({}); },
