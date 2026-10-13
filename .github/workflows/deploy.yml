@@ -1,26 +1,31 @@
-# Builds the page (npm run build -> dist/) and publishes it to Cloudflare (wmp.ryancircelli.com) on every push to master.
+# Builds the page (npm run build -> app/dist/) and publishes it to Cloudflare (wmp.ryancircelli.com) on every push to master.
 # workflow_dispatch from any other branch checks and builds only: the deploy step is master-only.
 # A push that changes the desktop host is published by release.yml instead, which runs this workflow once the
 # new exes are downloadable: update.json's `host` is what tells installed apps a new download is out.
 # Secrets: CLOUDFLARE_API_TOKEN (scoped: account Workers Scripts Write; zone ryancircelli.com Zone Read +
-# Workers Routes Write), CLOUDFLARE_ACCOUNT_ID, UPDATE_SIGNING_KEY (signs dist/update.json; tools/sign-update.js).
+# Workers Routes Write), CLOUDFLARE_ACCOUNT_ID, UPDATE_SIGNING_KEY (signs app/dist/update.json; app/tools/sign-update.js).
 name: deploy
 on:
   push:
     branches: [master]
     paths:
-      - 'src/**'
-      - 'index.html'
+      - 'app/src/**'
+      - 'app/index.html'
       - 'package.json'
       - 'package-lock.json'
-      - 'vite.*'
-      - 'tools/postbuild.js'
-      - 'ios/WmpSpotify/observer.js'
-      - 'tsconfig*.json'
+      - 'app/package.json'
+      - 'app/vite.*'
+      - 'app/tools/postbuild.js'
+      - 'app/ios/WmpSpotify/observer.js'
+      - 'app/tsconfig*.json'
       - 'eslint.config.*'
-      - 'public/**'
-      - 'wrangler.jsonc'
-      - 'tools/sign-update.js'
+      - 'app/public/**'
+      - 'app/wrangler.jsonc'
+      - 'app/tools/sign-update.js'
+      - 'visualizers/src/**'
+      - 'visualizers/package.json'
+      - 'visualizers/vite.*'
+      - 'visualizers/tsconfig*.json'
       - '.github/workflows/deploy.yml'
   workflow_dispatch:
 concurrency: { group: pages-deploy, cancel-in-progress: true }
@@ -31,14 +36,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with: { fetch-depth: 0 } # the push's whole range, for the host check below
-      # update.json's `host` hashes these (tools/postbuild.js). Published now, it would have every installed app
+      # update.json's `host` hashes these (app/tools/postbuild.js). Published now, it would have every installed app
       # offer a download that is still the previous build for the quarter hour release.yml takes; release.yml
       # runs this workflow when the new one is up. A range git cannot read deploys, as it always did.
       - name: Leave a host change to release.yml
         id: host
         if: github.event_name == 'push'
         run: |
-          git diff --quiet '${{ github.event.before }}' '${{ github.sha }}' -- tauri && rc=0 || rc=$?
+          git diff --quiet '${{ github.event.before }}' '${{ github.sha }}' -- app/tauri && rc=0 || rc=$?
           if [ "$rc" = 1 ]; then echo later=true >> "$GITHUB_OUTPUT"; echo "the host changed: release.yml deploys"; fi
       - uses: actions/setup-node@v4
         with: { node-version: '24', cache: npm }
@@ -48,17 +53,18 @@ jobs:
       - run: npm test
       - name: Build site
         env: { GITHUB_SHA: '${{ github.sha }}' }
-        run: npm run build && ls -l dist
-      # The exes take a page update only when this signature verifies (tauri/src/update.rs);
+        run: npm run build && ls -l app/dist
+      # The exes take a page update only when this signature verifies (app/tauri/src/update.rs);
       # the key is a secret, so an unsigned or foreign manifest on the site is ignored by them.
       - name: Sign the page update manifest
         if: github.ref == 'refs/heads/master' && steps.host.outputs.later != 'true'
         env:
           UPDATE_SIGNING_KEY: ${{ secrets.UPDATE_SIGNING_KEY }}
-        run: node tools/sign-update.js
+        run: node app/tools/sign-update.js
       - name: Deploy to Cloudflare (Worker with static assets, custom domain wmp.ryancircelli.com)
         if: github.ref == 'refs/heads/master' && steps.host.outputs.later != 'true'
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        working-directory: app # wrangler.jsonc serves ./dist
         run: npx --yes wrangler@4 deploy

@@ -4,9 +4,9 @@ import reactHooks from 'eslint-plugin-react-hooks';
 import tseslint from 'typescript-eslint';
 
 export default tseslint.config(
-  // Old concatenated sources and Playwright smokes are plain CommonJS/scripts, not linted.
-  // assembly/ is AssemblyScript (its own types and decorators), checked by its compiler (npm run build:wasm).
-  { ignores: ['dist', 'alchemy.html', 'src/*.js', 'tools', 'tests/*.js', 're', 'spec', 'site', 'assembly', 'tauri/target', 'tauri/gen', 'ios'] }, // ios/: observer.js is a function body Swift wraps
+  // Playwright smokes and tools are plain CommonJS/scripts, not linted.
+  // visualizers/assembly is AssemblyScript (its own types and decorators), checked by its compiler (npm run build:wasm).
+  { ignores: ['**/dist', 'app/alchemy.html', 'app/tools', 'visualizers/tools', 'app/tests/*.js', 'visualizers/assembly', 'app/tauri/target', 'app/tauri/gen', 'app/ios'] }, // app/ios: observer.js is a function body Swift wraps
   {
     files: ['**/*.{ts,tsx}'],
     extends: [js.configs.recommended, ...tseslint.configs.recommendedTypeChecked],
@@ -19,9 +19,9 @@ export default tseslint.config(
     rules: { ...reactHooks.configs.recommended.rules },
   },
   {
-    // The engine is the old src/*.js wrapped verbatim (ARCHITECTURE.md "Engine"): its `var` hoisting,
+    // The engine is the old src/*.js wrapped verbatim (app/ARCHITECTURE.md "Engine"): its `var` hoisting,
     // `arguments` and let-never-reassigned are part of "same code", so the style rules that would rewrite them are off.
-    files: ['src/engine/**/*.ts'],
+    files: ['visualizers/src/**/*.ts'],
     rules: {
       'no-var': 'off',
       'prefer-const': 'off',
@@ -34,7 +34,7 @@ export default tseslint.config(
   },
   {
     // Engine unit tests poke engine internals, swap in fakes and spy on primitives; `any` there is the point.
-    files: ['tests/engine/**/*.ts'],
+    files: ['visualizers/tests/**/*.ts'],
     rules: {
       '@typescript-eslint/no-explicit-any': 'off',
       '@typescript-eslint/no-unsafe-assignment': 'off',
@@ -47,5 +47,18 @@ export default tseslint.config(
       '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_' }],
     },
   },
-  { files: ['*.config.{js,ts}'], languageOptions: { globals: globals.node } },
+  {
+    // The import boundary: the engine package is usable on its own, so nothing under visualizers/ may reach
+    // into the app, by relative path or by package name.
+    files: ['visualizers/**/*.{ts,tsx}'],
+    rules: {
+      'no-restricted-imports': ['error', {
+        patterns: [{
+          regex: '(^|/)app(/|$)|^wmp-legacy-player(/|$)',
+          message: 'visualizers/ is a standalone package and must never import from app/ (the player depends on it, not the reverse).',
+        }],
+      }],
+    },
+  },
+  { files: ['**/*.config.{js,ts}'], languageOptions: { globals: globals.node } },
 );

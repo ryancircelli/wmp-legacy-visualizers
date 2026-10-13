@@ -1,12 +1,12 @@
-# The two Windows downloads, built from the Tauri host (tauri/), each kept at one rolling link that
-# src/ui/links.ts and README.md point at:
+# The two Windows downloads, built from the Tauri host (app/tauri/), each kept at one rolling link that
+# app/src/ui/links.ts and README.md point at:
 #   https://github.com/ryancircelli/wmp-legacy-visualizers/releases/download/screensaver-latest/AlchemyScreensaver-win64.zip
 #   https://github.com/ryancircelli/wmp-legacy-visualizers/releases/download/spotify-latest/WmpSpotify-win64.zip
 #
 # One program, built twice on windows-latest with MSVC, Tauri's supported Windows toolchain:
 #   Alchemy.scr      the screensaver and its player window
 #   WmpSpotify.exe   the same with the `wmp-spotify` feature: a launch that names no mode opens Spotify
-#                    (tauri/src/main.rs), and the Spotify icon
+#                    (app/tauri/src/main.rs), and the Spotify icon
 # The WebView2 loader and the VC runtime are linked statically, so each runs on a fresh Windows 11.
 #
 # Publishes only on a push to master. A push to `tauri`, or workflow_dispatch from any branch, checks,
@@ -20,17 +20,22 @@ on:
   push:
     branches: [master, tauri]
     paths:
-      - 'tauri/**'
-      - '!tauri/README.md'
-      - 'src/**'
-      - 'index.html'
+      - 'app/tauri/**'
+      - '!app/tauri/README.md'
+      - 'app/src/**'
+      - 'app/index.html'
       - 'package.json'
       - 'package-lock.json'
-      - 'vite.*'
-      - 'tools/postbuild.js'
-      - 'tsconfig*.json'
+      - 'app/package.json'
+      - 'app/vite.*'
+      - 'app/tools/postbuild.js'
+      - 'app/tsconfig*.json'
       - 'eslint.config.*'
-      - 'public/**'
+      - 'app/public/**'
+      - 'visualizers/src/**'
+      - 'visualizers/package.json'
+      - 'visualizers/vite.*'
+      - 'visualizers/tsconfig*.json'
       - '.github/workflows/release.yml'
   workflow_dispatch:
 concurrency:
@@ -53,7 +58,7 @@ jobs:
         env: { GITHUB_SHA: '${{ github.sha }}' }
         run: npm run build
       - uses: actions/upload-artifact@v4
-        with: { name: update-linux, path: dist/update.json, retention-days: 7 }
+        with: { name: update-linux, path: app/dist/update.json, retention-days: 7 }
 
   windows:
     runs-on: windows-latest
@@ -67,19 +72,19 @@ jobs:
           cache: npm
           cache-dependency-path: |
             package-lock.json
-            tauri/package-lock.json
+            app/tauri/package-lock.json
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: tauri
+          workspaces: app/tauri
 
       - name: Install
         run: |
           npm ci
-          npm ci --prefix tauri
+          npm ci --prefix app/tauri
 
-      # beforeBuildCommand (tauri.conf.json) builds the page into ../dist first, for each build.
+      # beforeBuildCommand (app/tauri/tauri.conf.json) builds the page into app/dist first, for each build.
       - name: Build Alchemy.scr
-        working-directory: tauri
+        working-directory: app/tauri
         env: { GITHUB_SHA: '${{ github.sha }}' }
         run: |
           npx tauri build --no-bundle
@@ -90,11 +95,11 @@ jobs:
       # The argument parser, page updates (update.rs, with the manifest just built into dist/), lyrics,
       # Spotify's observers, the title bar.
       - name: Test
-        working-directory: tauri
+        working-directory: app/tauri
         run: cargo test
 
       - name: Build WmpSpotify.exe
-        working-directory: tauri
+        working-directory: app/tauri
         env: { GITHUB_SHA: '${{ github.sha }}' }
         run: |
           npx tauri build --no-bundle --features wmp-spotify --config tauri.spotify.conf.json
@@ -106,7 +111,7 @@ jobs:
       - name: Check the exes import only system DLLs
         shell: pwsh
         run: |
-          foreach ($exe in 'out/AlchemyScreensaver/Alchemy.scr', 'out/WmpSpotify-app/WmpSpotify.exe') {
+          foreach ($exe in 'app/out/AlchemyScreensaver/Alchemy.scr', 'app/out/WmpSpotify-app/WmpSpotify.exe') {
             $dlls = & "$env:ProgramFiles\LLVM\bin\llvm-objdump.exe" -p $exe |
               Select-String 'DLL Name: (.+)' | ForEach-Object { $_.Matches[0].Groups[1].Value }
             "$exe ($((Get-Item $exe).Length) bytes): $($dlls -join ', ')"
@@ -117,7 +122,7 @@ jobs:
       # Windows only runs a screensaver called .scr. The rest of each zip is the README and the two
       # install scripts; the executables are self-contained.
       - name: Assemble the zips
-        working-directory: out
+        working-directory: app/out
         run: |
           Copy-Item ../tauri/package/install.ps1, ../tauri/package/uninstall.ps1, ../tauri/package/README.md AlchemyScreensaver/
           Copy-Item ../tauri/package/README.md WmpSpotify-app/
@@ -126,11 +131,11 @@ jobs:
           Get-ChildItem *.zip | Format-Table Name, Length
 
       - uses: actions/upload-artifact@v4
-        with: { name: AlchemyScreensaver-win64, path: out/AlchemyScreensaver-win64.zip, retention-days: 30 }
+        with: { name: AlchemyScreensaver-win64, path: app/out/AlchemyScreensaver-win64.zip, retention-days: 30 }
       - uses: actions/upload-artifact@v4
-        with: { name: WmpSpotify-win64, path: out/WmpSpotify-win64.zip, retention-days: 30 }
+        with: { name: WmpSpotify-win64, path: app/out/WmpSpotify-win64.zip, retention-days: 30 }
       - uses: actions/upload-artifact@v4
-        with: { name: update-windows, path: out/update-windows.json, retention-days: 7 }
+        with: { name: update-windows, path: app/out/update-windows.json, retention-days: 7 }
 
   publish:
     needs: [check, windows]

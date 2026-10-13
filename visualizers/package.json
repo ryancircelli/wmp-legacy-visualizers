@@ -1,0 +1,30 @@
+{
+  "name": "wmp-legacy-visualizers",
+  "version": "0.1.0",
+  "description": "Every Windows Media Player visualizer, WMP 7 to 12, ported instruction for instruction to TypeScript and WebAssembly",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./catalog": "./src/catalog.ts",
+    "./audio/*": "./src/audio/*.ts",
+    "./engine.js": "./dist/engine.js"
+  },
+  "scripts": {
+    "build": "vite build --config vite.engine.config.ts",
+    "build:wasm": "node tools/build-wasm.mjs",
+    "test": "vitest run",
+    "test:golden": "GOLDEN=full vitest run tests/golden",
+    "typecheck": "tsc -b"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.2",
+    "assemblyscript": "^0.28.20",
+    "jsdom": "^29.1.1",
+    "typescript": "^5.9.3",
+    "vite": "^6.4.3",
+    "vitest": "^5.0.1"
+  }
+}

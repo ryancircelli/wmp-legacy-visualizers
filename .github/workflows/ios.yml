@@ -1,6 +1,6 @@
-# Builds the iPhone app (ios/, ios/README.md) and uploads it to TestFlight on every push to master that touches it;
-# ios/librespot (the Connect speaker, ios/README.md "Librespot") is built first.
-# The Xcode project is generated from ios/project.yml by xcodegen; none is checked in.
+# Builds the iPhone app (app/ios/, app/ios/README.md) and uploads it to TestFlight on every push to master that touches it;
+# app/ios/librespot (the Connect speaker, app/ios/README.md "Librespot") is built first.
+# The Xcode project is generated from app/ios/project.yml by xcodegen; none is checked in.
 # Signing is Xcode's cloud-managed signing: no certificate or profile is stored anywhere. xcodebuild signs in to
 # App Store Connect with the API key (-allowProvisioningUpdates) and creates or fetches what it needs, so:
 #   - the key must have the Admin role, which cloud signing needs to create the distribution certificate;
@@ -16,7 +16,7 @@ name: ios
 on:
   push:
     branches: [master]
-    paths: ['ios/**', '!ios/WmpSpotify/observer.js', '!ios/README.md', '.github/workflows/ios.yml'] # the observer reaches the phone from the site (deploy.yml)
+    paths: ['app/ios/**', '!app/ios/WmpSpotify/observer.js', '!app/ios/README.md', '.github/workflows/ios.yml'] # the observer reaches the phone from the site (deploy.yml)
   workflow_dispatch:
 concurrency: { group: 'ios-${{ github.ref }}', cancel-in-progress: true }
 jobs:
@@ -25,35 +25,35 @@ jobs:
     permissions: { contents: read }
     steps:
       - uses: actions/checkout@v4
-      # The librespot branch's Rust receiver (ios/librespot), linked into the app: skipped where it is absent.
+      # The librespot branch's Rust receiver (app/ios/librespot), linked into the app: skipped where it is absent.
       # Cargo's downloads and build are cached by Cargo.lock, saved as soon as librespot builds.
       - uses: actions/cache/restore@v4
         id: cargo-cache
-        if: hashFiles('ios/librespot/build.sh') != ''
+        if: hashFiles('app/ios/librespot/build.sh') != ''
         with:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            ios/librespot/target
-          key: librespot-${{ hashFiles('ios/librespot/Cargo.lock') }}
+            app/ios/librespot/target
+          key: librespot-${{ hashFiles('app/ios/librespot/Cargo.lock') }}
           restore-keys: librespot-
       - name: Build librespot
-        if: hashFiles('ios/librespot/build.sh') != ''
+        if: hashFiles('app/ios/librespot/build.sh') != ''
         run: |
           rustup target add aarch64-apple-ios
-          ios/librespot/build.sh
+          app/ios/librespot/build.sh
       - uses: actions/cache/save@v4
-        if: hashFiles('ios/librespot/build.sh') != '' && steps.cargo-cache.outputs.cache-hit != 'true'
+        if: hashFiles('app/ios/librespot/build.sh') != '' && steps.cargo-cache.outputs.cache-hit != 'true'
         with:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            ios/librespot/target
-          key: librespot-${{ hashFiles('ios/librespot/Cargo.lock') }}
+            app/ios/librespot/target
+          key: librespot-${{ hashFiles('app/ios/librespot/Cargo.lock') }}
       - run: brew install xcodegen
-      # the alternate icons, one per body colour, drawn from the one green icon (ios/icons.py)
-      - run: python3 -m pip install --user --break-system-packages pillow && python3 ios/icons.py
-      - run: xcodegen generate --spec ios/project.yml
+      # the alternate icons, one per body colour, drawn from the one green icon (app/ios/icons.py)
+      - run: python3 -m pip install --user --break-system-packages pillow && python3 app/ios/icons.py
+      - run: xcodegen generate --spec app/ios/project.yml
       # The key stays out of every command line (printf is a shell builtin). SIGN holds the four flags both
       # xcodebuild steps need, written once; it is expanded unquoted below on purpose, as four words.
       - name: Install the API key
@@ -86,7 +86,7 @@ jobs:
       # TestFlight takes a build number only once per version: the run number rises with every run.
       - name: Archive
         run: >-
-          xcodebuild archive -project ios/WmpSpotify.xcodeproj -scheme WmpSpotify -configuration Release
+          xcodebuild archive -project app/ios/WmpSpotify.xcodeproj -scheme WmpSpotify -configuration Release
           -destination 'generic/platform=iOS' -archivePath build/WmpSpotify.xcarchive
           CURRENT_PROJECT_VERSION=${{ github.run_number }} $SIGN -quiet
       # What the app weighs, by part (the owner, 2026-10-03: "break down why the app is 23mb"): the bundle's
@@ -105,4 +105,4 @@ jobs:
       - name: Upload to TestFlight
         run: >-
           xcodebuild -exportArchive -archivePath build/WmpSpotify.xcarchive
-          -exportOptionsPlist ios/ExportOptions.plist -exportPath build/out $SIGN
+          -exportOptionsPlist app/ios/ExportOptions.plist -exportPath build/out $SIGN
