@@ -29,7 +29,7 @@ function stream(): (f: number, state?: number) => TimedLevel {
         const t = f * 512 + i;
         const v = 40 * Math.sin(t * (0.031 + 0.004 * c)) + 25 * Math.sin(t * 0.0071 + f * 0.01) + 90 * kick * Math.sin(t * 0.002)
           + ((s >>> 24) - 128) * 0.15;
-        L.wave[c][i] = Math.max(0, Math.min(255, 128 + Math.round(v)));
+        L.wave[c]![i] = Math.max(0, Math.min(255, 128 + Math.round(v)));
       }
     }
     L.state = state;
@@ -57,7 +57,7 @@ describe('Goom', () => {
       let h = 0;
       for (let f = 0; f < 150; f++) {
         const px = g.render(silent ? sil : st(f))!.px;
-        for (let i = 0; i < px.length; i += 7) h = Math.imul(h ^ px[i], 16777619);
+        for (let i = 0; i < px.length; i += 7) h = Math.imul(h ^ px[i]!, 16777619);
       }
       return h >>> 0;
     };
@@ -69,7 +69,7 @@ describe('Goom', () => {
   it('output is 0x00RRGGBB', () => {
     const g = new G({ seed: 3 }), st = stream();
     let or = 0;
-    for (let f = 0; f < 120; f++) { const px = g.render(st(f))!.px; for (let i = 0; i < px.length; i++) or |= px[i]; }
+    for (let f = 0; f < 120; f++) { const px = g.render(st(f))!.px; for (let i = 0; i < px.length; i++) or |= px[i]!; }
     expect(or >>> 24).toBe(0);
     expect(or & 0xffffff).not.toBe(0);
   }, 60_000);
@@ -113,7 +113,7 @@ function runGolden(r: GRun): string[] {
   let bh = 0x811c9dc5;
   for (let f = 0; f < r.frames; f++) {
     const px = g.render(st(f, f >= 400 && f < 520 ? 1 : 2))!.px;
-    for (let i = 0; i < px.length; i++) { bh = Math.imul(bh ^ px[i], 16777619); bh ^= bh >>> 13; }
+    for (let i = 0; i < px.length; i++) { bh = Math.imul(bh ^ px[i]!, 16777619); bh ^= bh >>> 13; }
     if ((f + 1) % 100 === 0) { out.push((bh >>> 0).toString(16).padStart(8, '0')); bh = 0x811c9dc5; }
   }
   return out;

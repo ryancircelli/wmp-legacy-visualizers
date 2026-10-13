@@ -24,13 +24,13 @@ export interface GoomOptions {
   /** the user's own wmp9_goom.dll: its font and credits for the title and idle text (text.ts); without
    *  it no text is drawn */
   dll?: Uint8Array | null;
-  [k: string]: unknown;
 }
 
 export interface GoomConfig {
   width?: number;
   height?: number;
-  options?: GoomOptions;
+  /** the shell's engine options object (kept as this.options), read for GoomOptions' fields */
+  options?: object;
   preset?: number;
   seed?: number;
 }
