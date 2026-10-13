@@ -1495,6 +1495,17 @@ final class Librespot {
     func start() {
         engine.attach(node)
         engine.connect(node, to: engine.mainMixerNode, format: format)
+        // iOS stops the engine when the output's sample rate or channels change (a route, the web view's
+        // media taking the session): started again at once, said in the log, what was queued let go. Left to
+        // the next packet's lazy start, it came back playing at under half speed with its queue full
+        // ("choppy, minimizing app fixes, coming back breaks", 2026-10-13: 144 packets in 15 s, not 323).
+        NotificationCenter.default.addObserver(forName: .AVAudioEngineConfigurationChange, object: engine, queue: .main) { _ in
+            HostLog.shared.log("audio: the output changed (\(Self.hardware())): starting the engine again")
+            self.node.stop()
+            self.engine.stop()
+            self.room.lock(); self.queued = 0; self.room.signal(); self.room.unlock()
+            self.output()
+        }
         output()
         Forwarder.shared.rate(44100)
         try? FileManager.default.createDirectory(at: Self.cache, withIntermediateDirectories: true)
@@ -1639,6 +1650,13 @@ final class Librespot {
     private var outputFailed = false  // on librespot's player thread, but for the first start
     private var stalls = 0            // under `room`: seconds running the queue has not moved
     private var health: (low: Int, high: Int, packets: Int, since: Date) = (Int.max, 0, 0, Date())  // under `room`
+    private var playedAt: AVAudioFramePosition?  // the node's sample time at the last queue report
+    /// The output as iOS has it: its sample rate, its I/O buffer, the route.
+    static func hardware() -> String {
+        let s = AVAudioSession.sharedInstance()
+        return String(format: "%.0f Hz, buffer %.1f ms, %@", s.sampleRate, s.ioBufferDuration * 1000,
+                      s.currentRoute.outputs.first?.portType.rawValue ?? "no route")
+    }
     private var stalledAt: AVAudioFramePosition?  // under `room`: the node's sample time at the last full wait
 
     /// The app in front (the scene's phase): the queue's depth follows it.
@@ -1736,9 +1754,15 @@ final class Librespot {
         queued += frames
         room.unlock()
         if let report {
-            HostLog.shared.log(String(format: "audio: queue low %.2f s, high %.2f s, %d packets in %.0f s (%@)",
+            // what the node itself played meanwhile, by its own clock: under the seconds that passed is audio
+            // coming out slower than it plays (the queue full, the sound choppy)
+            let t = node.lastRenderTime.flatMap { node.playerTime(forNodeTime: $0) }
+            let played = t.map { now in playedAt.map { Double(now.sampleTime - $0) / now.sampleRate } } ?? nil
+            playedAt = t?.sampleTime
+            HostLog.shared.log(String(format: "audio: queue low %.2f s, high %.2f s, %d packets in %.0f s, played %@ (%@; %@)",
                                       Double(report.low) / 44100, Double(report.high) / 44100, report.packets,
-                                      Date().timeIntervalSince(report.since), front ? "in front" : "in the background"))
+                                      Date().timeIntervalSince(report.since), played.map { String(format: "%.1f s", $0) } ?? "?",
+                                      front ? "in front" : "in the background", Self.hardware()))
         }
         if kick {
             let s = AVAudioSession.sharedInstance()
