@@ -150,3 +150,55 @@ describe('output: blitLuma', () => {
   });
 });
 
+// gl.ts's fragment shader as a JS reference, in float32 (Math.fround) with the framebuffer's 8-bit
+// unorm store, against the CPU conversions at native size. The shader writes premultiplied (c, a);
+// the compositor divides by a, which is what blitLuma writes unpremultiplied.
+describe('output: the shader maths against the CPU conversion', () => {
+  const f = Math.fround, store = (x: number) => Math.floor(f(f(x) * 255) + 0.5);   // unorm8; a tie's rule is the GPU's own
+  function shader(p: number, tint: readonly number[] | null) {
+    const c = [(p >>> 16) & 255, (p >>> 8) & 255, p & 255].map((v) => f(v / 255));   // the sampler's unorm -> float
+    const a = Math.min(1, f(Math.max(...c) * f(1.25)));
+    return { pre: (tint ? tint.map((t) => f(f(t / 255) * a)) : c).map(store), a: store(a) };
+  }
+  const px = new Uint32Array(100_000);
+  let seed = 1;
+  for (let i = 0; i < px.length; i++) { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; px[i] = seed & 0xffffff; }
+  for (let m = 0; m < 256; m++) px[m] = (m << 16) | ((m >> 1) << 8) | (m >> 2);       // every brightest-channel value
+  const cpu = new Uint8ClampedArray(px.length * 4), tinted = new Uint8ClampedArray(px.length * 4);
+  blitLuma(px, cpu);
+  blitLuma(px, tinted, [230, 40, 40]);
+  const opaque = new Uint32Array(px.length);
+  blit(px, opaque);
+
+  it('opaque: the channels as they are, in every pixel', () => {
+    let bad = 0;
+    for (let i = 0; i < px.length; i++) {
+      const o = opaque[i]!, s = shader(px[i]!, null).pre;
+      if (s[0] !== (o & 255) || s[1] !== ((o >>> 8) & 255) || s[2] !== ((o >>> 16) & 255)) bad++;
+    }
+    expect(bad).toBe(0);
+  });
+
+  it('luma: alpha equal in every pixel (all 256 brightest-channel values among them); the colour (c / a) the same value, which the CPU rounds to a byte (0.5 at most)', () => {
+    let worst = 0, badA = 0;
+    for (let i = 0; i < px.length; i++) {
+      const s = shader(px[i]!, null), a = cpu[i * 4 + 3]!;
+      if (s.a !== a) badA++;
+      if (a) s.pre.forEach((v, k) => { worst = Math.max(worst, Math.abs((v * 255) / s.a - cpu[i * 4 + k]!)); });
+    }
+    expect(badA).toBe(0);
+    expect(worst).toBeLessThanOrEqual(0.5);      // the compositor's exact c / a against the CPU's c / a rounded to a byte
+  });
+
+  it('luma with a tint: alpha equal; the premultiplied tint within 1 of the CPU tint times alpha (the 8-bit store, not the maths)', () => {
+    let worst = 0, badA = 0;
+    for (let i = 0; i < px.length; i++) {
+      const s = shader(px[i]!, [230, 40, 40]), a = tinted[i * 4 + 3]!;
+      if (s.a !== a) badA++;
+      s.pre.forEach((v, k) => { worst = Math.max(worst, Math.abs(v - (tinted[i * 4 + k]! * a) / 255)); });
+    }
+    expect(badA).toBe(0);
+    expect(worst).toBeLessThanOrEqual(1);
+  });
+});
+
