@@ -7,6 +7,7 @@ import { ftol } from './num';
 import { Rasterizer, type V } from './rast';
 import { CODE, ST, TLBuf, VertexProcessor } from './vp';
 import { VertexShaderVM } from './vs';
+import { kernel, refKernel } from './kernel';
 
 export interface UserVerts { data: Uint8Array; stride: number }
 
@@ -16,6 +17,7 @@ export class Pipeline {
   private rast = new Rasterizer();
   private clipper = new Clipper(this.vp, this.rast);
   readonly vm = new VertexShaderVM();
+  private va: V = { f: new Float64Array(0), o: 0 }; private vb: V = { f: new Float64Array(0), o: 0 }; private vc: V = { f: new Float64Array(0), o: 0 };
   constructor(private dev: RefDevice) {}
 
   /** Clear 0x40c31d: the rects (or the viewport) clipped to the viewport */
@@ -61,28 +63,46 @@ export class Pipeline {
       ns++;
     }
     const vp = this.vp, tl = this.tl;
+    this.clipper.ensurePool();   // before the TL buffer: an allocation may grow the kernel's memory (detaching views)
     const out = sh ? this.vm.process(st, sh, vp, base, n, tl) : vp.process(st, d.lightList, fvf, type, data, stride, up ? 0 : base, n, tl, ns);
     if (type !== Prim.POINTLIST && vp.isect !== 0) return;
     const rs = st.rs;
     this.rast.begin(st, d.rt, d.ds, out, ns);
+    // the WebAssembly rasterizer when it has everything this draw touches in its memory
+    const K = kernel(), useK = K !== null && tl.off >= 0 && this.rast.toKernel();
+    if (!useK && refKernel.mode === 'wasm' && K) throw new Error('RefDevice: this draw cannot take the WebAssembly rasterizer');
     this.clipper.begin(out, rs[Rs.SHADEMODE] === 2, out.setDims.length, out.setDims);
     const needClip = vp.union !== 0, flat = rs[Rs.SHADEMODE] === 1;
-    const f = tl.f;
-    const idx = indices ? new DataView(indices.buffer, indices.byteOffset, indices.byteLength) : null;
-    const at = (j: number): V => ({ f, o: (idx ? (isz === 4 ? idx.getUint32(j * 4, true) : idx.getUint16(j * 2, true)) : j) * ST });
-    const tri = (a: V, b: V, c: V): void => { if (needClip) this.clipper.triangle(a, b, c, flat); else this.rast.triangle(a, b, c); };
+    const f = tl.f, fo = f.byteOffset;
+    const idx = indices ? (isz === 4 ? new Uint32Array(indices.buffer.slice(indices.byteOffset, indices.byteOffset + nIdx * 4))
+      : new Uint16Array(indices.buffer.slice(indices.byteOffset, indices.byteOffset + nIdx * 2))) : null;
+    const va = this.va, vb = this.vb, vc = this.vc;
+    va.f = f; vb.f = f; vc.f = f;
+    const draw = useK ? (a: V, b: V, c: V): void => { K.triangle(a.f.byteOffset + a.o * 8, b.f.byteOffset + b.o * 8, c.f.byteOffset + c.o * 8); }
+      : (a: V, b: V, c: V): void => this.rast.triangle(a, b, c);
+    this.clipper.draw = draw;
+    const tri = (a: number, b: number, c: number): void => {
+      va.o = (idx ? idx[a] : a) * ST; vb.o = (idx ? idx[b] : b) * ST; vc.o = (idx ? idx[c] : c) * ST;
+      if (needClip) this.clipper.triangle(va, vb, vc, flat);
+      else if (useK) K.triangle(fo + va.o * 8, fo + vb.o * 8, fo + vc.o * 8);
+      else this.rast.triangle(va, vb, vc);
+    };
     switch (type) {
       case Prim.POINTLIST:
-        for (let j = 0; j < nIdx; j++) { const v = at(j); if (!needClip || (f[v.o + CODE] & 0xfff0) === 0) this.rast.point(v); }
+        for (let j = 0; j < nIdx; j++) {
+          va.o = (idx ? idx[j] : j) * ST;
+          if (needClip && (f[va.o + CODE] & 0xfff0) !== 0) continue;
+          if (useK) K.point(fo + va.o * 8); else this.rast.point(va);
+        }
         break;
       case Prim.TRIANGLELIST:
-        for (let j = 0; j + 2 < nIdx; j += 3) tri(at(j), at(j + 1), at(j + 2));
+        for (let j = 0; j + 2 < nIdx; j += 3) tri(j, j + 1, j + 2);
         break;
       case Prim.TRIANGLESTRIP:
-        for (let j = 0; j + 2 < nIdx; j++) { if (j & 1) tri(at(j), at(j + 2), at(j + 1)); else tri(at(j), at(j + 1), at(j + 2)); }
+        for (let j = 0; j + 2 < nIdx; j++) { if (j & 1) tri(j, j + 2, j + 1); else tri(j, j + 1, j + 2); }
         break;
       case Prim.TRIANGLEFAN:
-        for (let j = 1; j + 1 < nIdx; j++) tri(at(j), at(j + 1), at(0));
+        for (let j = 1; j + 1 < nIdx; j++) tri(j, j + 1, 0);
         break;
       default: throw new Error('RefDevice: lines are not implemented');
     }

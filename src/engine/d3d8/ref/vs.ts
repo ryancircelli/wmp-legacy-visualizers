@@ -74,11 +74,17 @@ export class VertexShaderVM {
     tl.grow(n);
     const f = tl.f;
     let isect = -1, union = 0;
+    // one DataView per stream per draw (not per element and vertex)
+    const dvs: DataView[] = [];
+    for (const e of P.elems) {
+      const d = st.streams[e.stream].vb!.data;
+      dvs[e.stream] ??= new DataView(d.buffer, d.byteOffset, d.byteLength);
+    }
     for (let v = 0; v < n; v++) {
       for (const e of P.elems) {
         const s = st.streams[e.stream];
         const data = s.vb!.data, b = (start + v) * s.stride + e.offset, o = e.reg * 4;
-        const dv = new DataView(data.buffer, data.byteOffset, data.byteLength);
+        const dv = dvs[e.stream];
         switch (e.type) {
           case 0: R[o] = dv.getFloat32(b, true); R[o + 1] = 0; R[o + 2] = 0; R[o + 3] = 1; break;
           case 1: R[o] = dv.getFloat32(b, true); R[o + 1] = dv.getFloat32(b + 4, true); R[o + 2] = 0; R[o + 3] = 1; break;
@@ -94,8 +100,8 @@ export class VertexShaderVM {
       // outputs -> TL vertex (0x425862)
       const o = v * ST, op = OPOS * 4;
       const x = R[op], y = R[op + 1], z = R[op + 2], w = R[op + 3];
-      E.ld(w); E.fadd(x); E.fmul(0.5); const cx = E.st32();
-      E.ld(w); E.fadd(y); E.fmul(0.5); const cy = E.st32();
+      // f32(E(w + x) * 0.5) = f32(E(w + x)) * 0.5 (the halving is exact)
+      const cx = E.add32(w, x) * 0.5, cy = E.add32(w, y) * 0.5;
       f[o + CX] = cx; f[o + CY] = cy; f[o + CZ] = z; f[o + CW] = w;
       let code = 0, screen = true;
       if (clipping) {
@@ -106,12 +112,23 @@ export class VertexShaderVM {
       } else f[o + CODE] = 0;
       if (screen) {
         F1[0] = w;
+        const zw = !clipping && (U1[0] & 0x7fffffff) === 0, iw = zw ? 2097152 : 1 / w;
+        // fast path: f32(((c * rhw) * scale) + off) in doubles with a bound (rhw = 1/w at 64 bits in REF)
+        const ax = cx * iw * vp.scaleX, ay = cy * iw * vp.scaleY, az = z * iw * vp.scaleZ;
+        const rx = ax + vp.offX, ry = ay + vp.offY, rz = az + vp.offZ;
+        const ex = (Math.abs(ax) + Math.abs(vp.offX)) * E.EPS, ey = (Math.abs(ay) + Math.abs(vp.offY)) * E.EPS;
+        const ez = (Math.abs(az) + Math.abs(vp.offZ)) * E.EPS, ew = Math.abs(iw) * E.EPS;
+        const sx = Math.fround(rx - ex), sy = Math.fround(ry - ey), sz = Math.fround(rz - ez), sw = Math.fround(iw - ew);
+        if (sx === Math.fround(rx + ex) && sy === Math.fround(ry + ey) && sz === Math.fround(rz + ez) && sw === Math.fround(iw + ew)) {
+          f[o + SX] = sx; f[o + SY] = sy; f[o + SZ] = sz; f[o + RHW] = sw;
+        } else {
         let ih: number, il: number;
-        if (!clipping && (U1[0] & 0x7fffffff) === 0) { ih = 2097152; il = 0; } else { E.ld(1); E.fdiv(w); ih = E.H; il = E.L; }
+        if (zw) { ih = 2097152; il = 0; } else { E.ld(1); E.fdiv(w); ih = E.A[0]; il = E.A[1]; }
         E.ld(cx); E.fmulE(ih, il); E.fmul(vp.scaleX); E.fadd(vp.offX); f[o + SX] = E.st32();
         E.ld(cy); E.fmulE(ih, il); E.fmul(vp.scaleY); E.fadd(vp.offY); f[o + SY] = E.st32();
         E.ld(z); E.fmulE(ih, il); E.fmul(vp.scaleZ); E.fadd(vp.offZ); f[o + SZ] = E.st32();
         f[o + RHW] = E.toF32(ih, il);
+        }
       }
       if (P.flags & 0x40) for (let k = 0; k < 4; k++) f[o + DIF + k] = clampOut(R, OD0 * 4 + k);
       if (P.flags & 0x80) for (let k = 0; k < 4; k++) f[o + SPE + k] = clampOut(R, OD0 * 4 + 4 + k);
@@ -146,10 +163,10 @@ export class VertexShaderVM {
           T.set(a); break;
         }
         case 2: for (let k = 0; k < 4; k++) T[k] = add32(b[k], a[k]); break;
-        case 4: for (let k = 0; k < 4; k++) { E.ld(b[k] * a[k]); E.fadd(c[k]); T[k] = E.st32(); } break;
+        case 4: for (let k = 0; k < 4; k++) T[k] = E.add32(b[k] * a[k], c[k]); break;
         case 5: for (let k = 0; k < 4; k++) T[k] = b[k] * a[k]; break;
         case 6: { const w = a[3]; const r = w === 1 ? 1 : w === 0 ? FLT_MAX : (E.ld(1), E.fdiv(w), E.st32()); T.fill(r); break; }
-        case 7: { const w = Math.abs(a[3]); const r = w === 1 ? 1 : w === 0 ? FLT_MAX : (E.ld(w), E.fsqrt(), E.fdivr(1), E.st32()); T.fill(r); break; }
+        case 7: { const w = Math.abs(a[3]); const r = w === 1 ? 1 : w === 0 ? FLT_MAX : rsq32(w); T.fill(r); break; }
         case 8: T.fill(dot(b, a, 3)); break;
         case 9: T.fill(dot(b, a, 4)); break;
         case 10: for (let k = 0; k < 4; k++) T[k] = a[k] < b[k] ? a[k] : b[k]; break;
@@ -220,15 +237,22 @@ export class VertexShaderVM {
 
 const A0 = 16 + 12 + 96, OPOS = A0 + 1, OD0 = OPOS + 3, OT0 = OD0 + 2;
 const FLT_MAX = 3.4028234663852886e38;
-function add32(a: number, b: number): number { E.ld(a); E.fadd(b); return E.st32(); }
+const add32 = E.add32;
+/** f32(E(1 / E(sqrt(w)))) */
+function rsq32(w: number): number {
+  const r = 1 / Math.sqrt(w), e = r * E.EPS, lo = Math.fround(r - e);
+  if (lo === Math.fround(r + e)) return lo;
+  E.ld(w); E.fsqrt(); E.fdivr(1); return E.st32();
+}
 /** dp3 (z, y, x) / dp4 (w, z, y, x) at 64 bits, one rounding */
 function dot(a: Float32Array, b: Float32Array, n: number): number {
-  E.ld(a[n - 1] * b[n - 1]);
-  for (let k = n - 2; k >= 0; k--) E.fadd(a[k] * b[k]);
-  return E.st32();
+  return n === 4 ? E.sum32(a[3] * b[3], a[2] * b[2], a[1] * b[1], a[0] * b[0]) : E.sum32x3(a[2] * b[2], a[1] * b[1], a[0] * b[0]);
 }
 /** FISTP of an integral float: the low dword of the 64-bit integer */
-function toInt(x: number): number { return Number.isNaN(x) ? 0 : Number(BigInt.asIntN(32, BigInt(Math.trunc(x)))); }
+function toInt(x: number): number {
+  if (x > -2147483649 && x < 2147483648) return x | 0;
+  return Number.isNaN(x) ? 0 : Number(BigInt.asIntN(32, BigInt(Math.trunc(x))));
+}
 /** output colour clamp 0x42596a: by the bits (negatives except -0 -> 0, above 1.0 -> 1, -0 kept) */
 function clampOut(R: Float32Array, i: number): number {
   F1[0] = R[i];

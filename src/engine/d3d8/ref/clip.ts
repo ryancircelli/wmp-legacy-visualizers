@@ -5,6 +5,7 @@
 // vertices outside only the viewport's sides are drawn unclipped.
 import type { Rasterizer, V } from './rast';
 import * as E from './ext';
+import { heap, kernel } from './kernel';
 import { CODE, CW, CX, CY, CZ, DIF, FOG, type OutFvf, PSZ, RHW, SPE, ST, SX, SY, SZ, TEX, type VertexProcessor } from './vp';
 
 const F1 = new Float32Array(1), U1 = new Uint32Array(F1.buffer);
@@ -13,8 +14,16 @@ const inside = (d: number): boolean => { F1[0] = d; return U1[0] <= 0x80000000; 
 
 const MAXV = 64;
 export class Clipper {
-  /** vertex pool for copies and new vertices */
-  private pool = new Float64Array(MAXV * ST);
+  /** vertex pool for copies and new vertices (in the kernel's memory when it is loaded) */
+  private pool: Float64Array = new Float64Array(0);
+  private poolOff = -1;
+  /** draws one triangle of a clipped polygon (the pipeline's choice of rasterizer) */
+  draw: (a: V, b: V, c: V) => void = (a, b, c) => this.rast.triangle(a, b, c);
+  ensurePool(): void {
+    if (this.poolOff < 0 && kernel()) { this.poolOff = heap.alloc(MAXV * ST * 8); this.pool = heap.f64(this.poolOff, MAXV * ST); }
+    else if (this.poolOff >= 0 && this.pool.byteLength === 0) this.pool = heap.f64(this.poolOff, MAXV * ST);   // memory grew
+    else if (this.pool.length === 0) this.pool = new Float64Array(MAXV * ST);
+  }
   private next = 0;
   private bufA = new Int32Array(MAXV); private bufB = new Int32Array(MAXV);
   private savedD = new Float64Array(4); private savedS = new Float64Array(4);
@@ -32,7 +41,8 @@ export class Clipper {
   triangle(a: V, b: V, c: V, flat: boolean): void {
     const ca = a.f[a.o + CODE], cb = b.f[b.o + CODE], cc = c.f[c.o + CODE];
     if ((ca & cb & cc) !== 0) return;
-    if (((ca | cb | cc) & 0xfff0) === 0) { this.rast.triangle(a, b, c); return; }
+    if (((ca | cb | cc) & 0xfff0) === 0) { this.draw(a, b, c); return; }
+    this.ensurePool();
     const P = this.pool;
     this.next = 0;
     const ia = this.copy(a), ib = this.copy(b), ic = this.copy(c);
@@ -72,7 +82,7 @@ export class Clipper {
     this.screen(src, n);
     // draw as a fan: (v[i], v[i+1], v[0])
     const v0: V = { f: P, o: src[0] };
-    for (let i = 1; i + 1 < n; i++) this.rast.triangle({ f: P, o: src[i] }, { f: P, o: src[i + 1] }, v0);
+    for (let i = 1; i + 1 < n; i++) this.draw({ f: P, o: src[i] }, { f: P, o: src[i + 1] }, v0);
   }
 
   private copy(v: V): number {
@@ -141,7 +151,7 @@ export class Clipper {
     for (let i = 0; i < n; i++) {
       const o = list[i], code = P[o + CODE];
       if ((code & 0xfffbffff) === 0) continue;
-      E.ld(1); E.fdiv(P[o + CW]); const ih = E.H, il = E.L;
+      E.ld(1); E.fdiv(P[o + CW]); const ih = E.A[0], il = E.A[1];
       if ((code & 0x3000) === 0x1000) P[o + SX] = -32768;
       else if ((code & 0x3000) === 0x2000) P[o + SX] = 32767;
       else {

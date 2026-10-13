@@ -6,6 +6,7 @@ import { Fvf, Prim, Rs } from '../api';
 import type { State } from '../ref';
 import * as E from './ext';
 import { f32, ftol } from './num';
+import { heap, kernel } from './kernel';
 
 /** TL vertex layout (RDVertex 0xd8, as doubles): clip x', y', z, w; screen x, y, z, rhw; diffuse RGBA; specular
  *  RGBA; fog; point size; 8 texcoord sets of 4; clip code */
@@ -15,9 +16,20 @@ export const K255 = f32(1 / 255);   // 0x3b808081
 
 /** TL vertices of one draw */
 export class TLBuf {
-  f = new Float64Array(0);
+  f: Float64Array = new Float64Array(0);
   n = 0;
-  grow(n: number): void { if (this.f.length < n * ST) this.f = new Float64Array(Math.max(n, 64) * ST * 2); this.n = n; }
+  /** byte offset in the kernel's memory (./kernel) or -1 */
+  off = -1;
+  grow(n: number): void {
+    if (this.off >= 0 && this.f.byteLength === 0) this.f = heap.f64(this.off, this.f.length);   // memory grew
+    if (this.f.length < n * ST || (this.off < 0 && kernel())) {
+      const len = Math.max(n, 64) * ST * 2;
+      if (this.off >= 0) heap.release(this.off, this.f.length * 8);
+      this.off = kernel() ? heap.alloc(len * 8) : -1;
+      this.f = this.off >= 0 ? heap.f64(this.off, len) : new Float64Array(len);
+    }
+    this.n = n;
+  }
 }
 
 /** what the rasterizer needs to know about the TL vertices (the output FVF) */
@@ -52,8 +64,8 @@ export function inv4(m: Float32Array, o: Float32Array): boolean {
   const s4 = d2(a(3, 1), a(1, 0), a(3, 0), a(1, 1)), s5 = d2(a(3, 1), a(2, 0), a(3, 0), a(2, 1));
   // (x*p - y*q) +/- z*r with double operands p, q, r: each product rounded to 64 bits
   const t3 = (x: number, p: number, y: number, q: number, sg: number, z: number, r: number): void => {
-    E.ldMul(x, p); const h = E.H, l = E.L; E.ldMul(y, q); E.ldE(...negE(E.H, E.L)); E.faddE(h, l);
-    const h2 = E.H, l2 = E.L; E.ldMul(z, r); if (sg < 0) { E.ldE(...negE(E.H, E.L)); } E.faddE(h2, l2);
+    E.ldMul(x, p); const h = E.A[0], l = E.A[1]; E.ldMul(y, q); E.ldE(...negE(E.A[0], E.A[1])); E.faddE(h, l);
+    const h2 = E.A[0], l2 = E.A[1]; E.ldMul(z, r); if (sg < 0) { E.ldE(...negE(E.A[0], E.A[1])); } E.faddE(h2, l2);
   };
   t3(a(0, 2), s3, a(1, 2), s1, 1, a(2, 2), s0); const q0 = E.st64();
   t3(a(1, 2), s2, a(3, 2), s0, -1, a(0, 2), s4); const q1 = E.st64();
@@ -64,26 +76,26 @@ export function inv4(m: Float32Array, o: Float32Array): boolean {
   t3(s2, a(2, 3), s1, a(3, 3), -1, s5, a(0, 3)); const q6 = E.st64();
   t3(s5, a(1, 3), s4, a(2, 3), 1, s3, a(3, 3)); const q7 = E.st64();
   const t0 = d2(a(0, 2), a(1, 3), a(1, 2), a(0, 3)), t1 = d2(a(0, 2), a(2, 3), a(2, 2), a(0, 3));
-  E.ld(a(0, 2) * a(3, 3)); E.fsub(a(3, 2) * a(0, 3)); const t2h = E.H, t2l = E.L;
-  E.ld(a(1, 2) * a(2, 3)); E.fsub(a(2, 2) * a(1, 3)); const t3h = E.H, t3l = E.L, t3d = E.st64();
+  E.ld(a(0, 2) * a(3, 3)); E.fsub(a(3, 2) * a(0, 3)); const t2h = E.A[0], t2l = E.A[1];
+  E.ld(a(1, 2) * a(2, 3)); E.fsub(a(2, 2) * a(1, 3)); const t3h = E.A[0], t3l = E.A[1], t3d = E.st64();
   const t4 = d2(a(1, 2), a(3, 3), a(3, 2), a(1, 3)), t5 = d2(a(2, 2), a(3, 3), a(3, 2), a(2, 3));
   // c = (p*x - q*y) +/- r*z where p, q, r may be 64-bit values
   const c3 = (ph: number, pl: number, x: number, qh: number, ql: number, y: number, sg: number, rh: number, rl: number, z: number): number => {
-    E.ldE(ph, pl); E.fmul(x); const h = E.H, l = E.L;
-    E.ldE(qh, ql); E.fmul(y); E.ldE(...negE(E.H, E.L)); E.faddE(h, l); const h2 = E.H, l2 = E.L;
-    E.ldE(rh, rl); E.fmul(z); if (sg < 0) E.ldE(...negE(E.H, E.L)); E.faddE(h2, l2);
+    E.ldE(ph, pl); E.fmul(x); const h = E.A[0], l = E.A[1];
+    E.ldE(qh, ql); E.fmul(y); E.ldE(...negE(E.A[0], E.A[1])); E.faddE(h, l); const h2 = E.A[0], l2 = E.A[1];
+    E.ldE(rh, rl); E.fmul(z); if (sg < 0) E.ldE(...negE(E.A[0], E.A[1])); E.faddE(h2, l2);
     return E.st64();
   };
   const c30 = c3(t1, 0, a(1, 1), t0, 0, a(2, 1), -1, t3h, t3l, a(0, 1));
   const c20 = c3(t4, 0, a(0, 1), t2h, t2l, a(1, 1), 1, t0, 0, a(3, 1));
   const c10 = c3(t2h, t2l, a(2, 1), t1, 0, a(3, 1), -1, t5, 0, a(0, 1));
   const c00 = c3(t5, 0, a(1, 1), t4, 0, a(2, 1), 1, t3h, t3l, a(3, 1));
-  E.ldMul(c30, a(3, 0)); let h = E.H, l = E.L;
-  E.ldMul(c20, a(2, 0)); E.faddE(h, l); h = E.H; l = E.L;
-  E.ldMul(c10, a(1, 0)); E.faddE(h, l); h = E.H; l = E.L;
+  E.ldMul(c30, a(3, 0)); let h = E.A[0], l = E.A[1];
+  E.ldMul(c20, a(2, 0)); E.faddE(h, l); h = E.A[0]; l = E.A[1];
+  E.ldMul(c10, a(1, 0)); E.faddE(h, l); h = E.A[0]; l = E.A[1];
   E.ldMul(c00, a(0, 0)); E.faddE(h, l);
-  if (E.H === 0 && E.L === 0) return false;
-  E.fdivr(1); const ih = E.H, il = E.L;
+  if (E.A[0] === 0 && E.A[1] === 0) return false;
+  E.fdivr(1); const ih = E.A[0], il = E.A[1];
   const by = (x: number): number => { E.ldE(ih, il); E.fmul(x); return E.st32(); };
   o[0] = by(c00); o[1] = by(c10); o[2] = by(c20); o[3] = by(c30);
   const row = (p: number, x: number, q: number, y: number, sg: number, r: number, z: number): number => {
@@ -101,9 +113,9 @@ export function inv4(m: Float32Array, o: Float32Array): boolean {
 function negE(h: number, l: number): [number, number] { return [-h, -l]; }
 /** ((p*x - (qh,ql)*y) +/- r*z) * inv where p or q may be the 64-bit t2 (pl = low part of p) */
 function rowE(p: number, x: number, qh: number, ql: number, y: number, sg: number, r: number, z: number, ih: number, il: number, pl = 0): number {
-  E.ldE(p, pl); E.fmul(x); const h = E.H, l = E.L;
-  E.ldE(qh, ql); E.fmul(y); E.ldE(-E.H, -E.L); E.faddE(h, l); const h2 = E.H, l2 = E.L;
-  E.ldMul(r, z); if (sg < 0) E.ldE(-E.H, -E.L); E.faddE(h2, l2);
+  E.ldE(p, pl); E.fmul(x); const h = E.A[0], l = E.A[1];
+  E.ldE(qh, ql); E.fmul(y); E.ldE(-E.A[0], -E.A[1]); E.faddE(h, l); const h2 = E.A[0], l2 = E.A[1];
+  E.ldMul(r, z); if (sg < 0) E.ldE(-E.A[0], -E.A[1]); E.faddE(h2, l2);
   E.fmulE(ih, il);
   return E.st32();
 }
@@ -112,7 +124,7 @@ function rowE(p: number, x: number, qh: number, ql: number, y: number, sg: numbe
 export function normalize3(v: Float64Array | number[], o = 0): void {
   E.ld(v[o] * v[o]); E.fadd(v[o + 1] * v[o + 1]); E.fadd(v[o + 2] * v[o + 2]); E.fsqrt();
   if (E.st32() === 0) { v[o] = 0; v[o + 1] = 0; v[o + 2] = 0; return; }
-  E.fdivr(1); const ih = E.H, il = E.L;
+  E.fdivr(1); const ih = E.A[0], il = E.A[1];
   for (let i = 0; i < 3; i++) { E.ldE(ih, il); E.fmul(v[o + i]); v[o + i] = E.st32(); }
 }
 
@@ -145,10 +157,10 @@ export class VertexProcessor {
     E.ld(GBl - X); E.fmul(tw); E.fsubr(1); const a = E.st32();
     E.ld(GBr - X); E.fmul(tw); E.fsub(1); const b = E.st32();
     E.ld(GBb - Y); E.fmul(th); E.fsub(1); const c = E.st32();
-    E.ld(GBt - Y); E.fmul(th); E.fsubr(1); const dh = E.H, dl = E.L;
+    E.ld(GBt - Y); E.fmul(th); E.fsubr(1); const dh = E.A[0], dl = E.A[1];
     E.ld(b); E.fadd(a); E.fdivr(2); const kx = E.st32(); this.K78 = kx;
     E.ld(a); E.fsub(1); E.fmul(kx); E.fmul(0.5); this.K80 = E.st32();
-    E.ldE(dh, dl); E.fadd(c); E.fdivr(2); const kyh = E.H, kyl = E.L; this.K7c = E.st32();
+    E.ldE(dh, dl); E.fadd(c); E.fdivr(2); const kyh = E.A[0], kyl = E.A[1]; this.K7c = E.st32();
     E.ld(c); E.fsub(1); E.fmulE(kyh, kyl); E.fmul(0.5); this.K84 = E.st32();
     E.ld(a); E.fsubr(1); E.fmul(0.5); this.K88 = E.st32();
     E.ld(b); E.fadd(1); E.fmul(0.5); this.K90 = E.st32();
@@ -239,12 +251,12 @@ export class VertexProcessor {
         const d = E.st32();
         E.ld(pOff >= 0 ? dv.getFloat32(b + pOff, true) : pointSize);
         if (pointScale) {
-          const sh = E.H, sl = E.L;
+          const sh = E.A[0], sl = E.A[1];
           E.ld(d * pC); E.fadd(pB); E.fmul(d); E.fadd(pA); E.fdivr(1); E.fsqrt(); E.fmul(st.vp.h >>> 0);
           E.fmulE(sh, sl);
         }
-        if (cmpE(E.H, E.L, pMin) < 0) E.ld(pMin);
-        if (cmpE(E.H, E.L, pMax) > 0) E.ld(pMax);
+        if (cmpE(E.A[0], E.A[1], pMin) < 0) E.ld(pMin);
+        if (cmpE(E.A[0], E.A[1], pMax) > 0) E.ld(pMax);
         f[o + PSZ] = E.st32();
       }
       // clip codes (0x41bf25) and screen mapping (0x420001)
@@ -257,13 +269,12 @@ export class VertexProcessor {
         if (code !== 0 && (code & 0xfffffff0) !== 0) screen = false;
       }
       if (screen) {
-        if (!clipping && (bits(cw) & 0x7fffffff) === 0) this.screen(f, o, 2097152, cx, cy, cz);
-        else this.screen(f, o, 1 / cw, cx, cy, cz);
+        this.screen(f, o, !clipping && (bits(cw) & 0x7fffffff) === 0);
       }
       // colours
       let dw = dOff >= 0 ? dv.getUint32(b + dOff, true) : 0xffffffff;
       let sw = sOff >= 0 ? dv.getUint32(b + sOff, true) : 0;
-      if (L) { const r = this.light(L, st, lights, fvf, dw, sw, eye, nrm, nOff >= 0, specEnable, sOff >= 0); dw = r[0]; sw = r[1]; }
+      if (L) { this.light(L, st, dw, sw, eye, nrm, nOff >= 0, specEnable, sOff >= 0); dw = this.lOut[0]; sw = this.lOut[1]; }
       unpack(dw, f, o + DIF); unpack(sw, f, o + SPE);
       // texture coordinates (0x4201d7)
       if (!anyTT) {
@@ -292,7 +303,9 @@ export class VertexProcessor {
 
   /** screen mapping 0x420001 with 1/w kept at 64 bits: f32((invW * scale) * c + off), rhw = f32(invW). iw is
    *  1/w in double; the 64-bit path recomputes it */
-  private screen(f: Float64Array, o: number, iw: number, cx: number, cy: number, cz: number): void {
+  private screen(f: Float64Array, o: number, zeroW: boolean): void {
+    // the clip coordinates from f (double arguments to a call are boxed)
+    const cx = f[o + CX], cy = f[o + CY], cz = f[o + CZ], iw = zeroW ? 2097152 : 1 / f[o + CW];
     const ax = iw * this.scaleX * cx, ay = iw * this.scaleY * cy, az = iw * this.scaleZ * cz;
     const rx = ax + this.offX, ry = ay + this.offY, rz = az + this.offZ;
     const ex = (Math.abs(ax) + Math.abs(this.offX)) * E.EPS, ey = (Math.abs(ay) + Math.abs(this.offY)) * E.EPS;
@@ -302,7 +315,7 @@ export class VertexProcessor {
       f[o + SX] = sx; f[o + SY] = sy; f[o + SZ] = sz; f[o + RHW] = w; return;
     }
     let ih: number, il: number;
-    if (iw === 2097152) { ih = iw; il = 0; } else { E.ld(1); E.fdiv(f[o + CW]); ih = E.H; il = E.L; }
+    if (iw === 2097152) { ih = iw; il = 0; } else { E.ld(1); E.fdiv(f[o + CW]); ih = E.A[0]; il = E.A[1]; }
     E.ldE(ih, il); E.fmul(this.scaleX); E.fmul(cx); E.fadd(this.offX); f[o + SX] = E.st32();
     E.ldE(ih, il); E.fmul(this.scaleY); E.fmul(cy); E.fadd(this.offY); f[o + SY] = E.st32();
     E.ldE(ih, il); E.fmul(this.scaleZ); E.fmul(cz); E.fadd(this.offZ); f[o + SZ] = E.st32();
@@ -319,8 +332,8 @@ export class VertexProcessor {
     if (signbit(cz)) c |= 0x10;
     if (signbit(f32d(cw, cz))) c |= 0x20;
     if (c === 0) return 0;
-    E.ld(cx * this.K78); E.fadd(cw * this.K80); const gxh = E.H, gxl = E.L; const gx = E.st32();
-    E.ld(cy * this.K7c); E.fadd(cw * this.K84); const gyh = E.H, gyl = E.L; const gy = E.st32();
+    E.ld(cx * this.K78); E.fadd(cw * this.K80); const gxh = E.A[0], gxl = E.A[1]; const gx = E.st32();
+    E.ld(cy * this.K7c); E.fadd(cw * this.K84); const gyh = E.A[0], gyl = E.A[1]; const gy = E.st32();
     if (signbit(gx)) c |= 0x1000;
     E.ld(cw); E.fsubE(gxh, gxl); if (signbit(E.st32())) c |= 0x2000;
     E.ld(cw); E.fsubE(gyh, gyl); if (signbit(E.st32())) c |= 0x4000;
@@ -339,7 +352,7 @@ export class VertexProcessor {
     const rsAmb = [f32(((amb >> 16) & 0xff) * K255), f32(((amb >> 8) & 0xff) * K255), f32((amb & 0xff) * K255)];
     const ambPre = [0, 1, 2].map((c) => fma32(rsAmb[c], matAmb[c], matEmi[c]));
     const power = m[16];
-    if (power > f32(0.001)) { E.ld(1); E.fdiv(power); this.specThreshold = f32(Math.pow(0.001, E.H + E.L)); }
+    if (power > f32(0.001)) { E.ld(1); E.fdiv(power); this.specThreshold = f32(Math.pow(0.001, E.A[0] + E.A[1])); }
     // material sources (only with COLORVERTEX): 1 = vertex diffuse, 2 = vertex specular, 0 = material
     const cv = rs[Rs.COLORVERTEX] !== 0;
     const srcOf = (s: number): number => (!cv ? 0 : s === 1 && (fvf & Fvf.DIFFUSE) ? 1 : s === 2 && (fvf & Fvf.SPECULAR) ? 2 : 0);
@@ -365,33 +378,45 @@ export class VertexProcessor {
       matAmb, matDif, matSpe, matEmi, ambPre, rsAmb, difAlpha: alphaDW(m[3]), speAlpha: alphaDW(m[11]) };
   }
 
-  /** per-vertex lighting 0x42188a + directional light 0x420e02; returns packed diffuse and specular */
-  private light(S: ReturnType<VertexProcessor['lightSetup']>, st: State, _l: number[], _fvf: number, dw: number, sw: number,
-    eye: number[], n: number[], hasNormal: boolean, specEnable: boolean, hasSpec: boolean): [number, number] {
-    const vtx = (c: number): number[] => [(c >> 16) & 0xff, (c >> 8) & 0xff, c & 0xff];
-    const src = (s: number, mat: number[]): number[] => (s === 1 ? vtx(dw) : s === 2 ? vtx(sw) : mat);
+  private lAcc = new Float64Array(3); private lSpec = new Float64Array(3); private lV = new Float64Array(3); private lH = new Float64Array(3);
+  private lVd = new Float64Array(3); private lVs = new Float64Array(3); private lOut = new Uint32Array(2);
+  /** per-vertex lighting 0x42188a + directional light 0x420e02; packed diffuse and specular in lOut */
+  private light(S: ReturnType<VertexProcessor['lightSetup']>, st: State, dw: number, sw: number,
+    eye: number[], n: number[], hasNormal: boolean, specEnable: boolean, hasSpec: boolean): void {
+    const vd = this.lVd, vs = this.lVs;
+    vd[0] = (dw >> 16) & 0xff; vd[1] = (dw >> 8) & 0xff; vd[2] = dw & 0xff;
+    vs[0] = (sw >> 16) & 0xff; vs[1] = (sw >> 8) & 0xff; vs[2] = sw & 0xff;
+    const src = (s: number, mat: number[]): ArrayLike<number> => (s === 1 ? vd : s === 2 ? vs : mat);
     const ambS = src(S.ambSrc, S.matAmb), difS = src(S.difSrc, S.matDif), speS = src(S.speSrc, S.matSpe), emiS = src(S.emiSrc, S.matEmi);
-    const acc = S.ambSrc || S.emiSrc ? [0, 1, 2].map((c) => fma32(S.rsAmb[c], ambS[c], emiS[c])) : S.ambPre.slice();
-    const spec = [0, 0, 0];
+    const acc = this.lAcc, spec = this.lSpec;
+    for (let c = 0; c < 3; c++) acc[c] = S.ambSrc || S.emiSrc ? E.add32(S.rsAmb[c] * ambS[c], emiS[c]) : S.ambPre[c];
+    spec[0] = 0; spec[1] = 0; spec[2] = 0;
     const power = st.mat[16];
     for (const Lt of S.lights) {
-      for (let c = 0; c < 3; c++) acc[c] = S.ambSrc ? fma32(Lt.amb[c], ambS[c], acc[c]) : f32(Lt.ambMat[c] + acc[c]);
+      for (let c = 0; c < 3; c++) acc[c] = S.ambSrc ? E.add32(Lt.amb[c] * ambS[c], acc[c]) : f32(Lt.ambMat[c] + acc[c]);
       if (!hasNormal) continue;
       const L = Lt.L;
-      E.ld(L[2] * n[2]); E.fadd(L[1] * n[1]); E.fadd(L[0] * n[0]);
-      const dh = E.H, dl = E.L;
-      if (bits(E.st32()) <= 0) continue;
+      // N.L at 64 bits (kept): its f32 decides the sign test; the double value with a bound serves the products
+      const t2 = L[2] * n[2], t1 = L[1] * n[1], t0 = L[0] * n[0];
+      if (bits(E.sum32x3(t2, t1, t0)) <= 0) continue;
+      const dd = (t2 + t1) + t0, de = Math.abs(t2) + Math.abs(t1) + Math.abs(t0);
       for (let c = 0; c < 3; c++) {
-        if (!S.difSrc) { E.ldE(dh, dl); E.fmul(Lt.difMat[c]); E.fadd(acc[c]); } else { E.ld(Lt.dif[c] * difS[c]); E.fmulE(dh, dl); E.fadd(acc[c]); }
+        // !difSrc: f32(E(dot * difMat) + acc); else f32(E(E(L.dif * difSrc) * dot) + acc) (L.dif * difSrc exact)
+        const m = S.difSrc ? Lt.dif[c] * difS[c] : Lt.difMat[c];
+        const r = dd * m + acc[c], e = (de * Math.abs(m) + Math.abs(acc[c]) + Math.abs(r)) * E.EPS, lo = f32(r - e);
+        if (lo === f32(r + e)) { acc[c] = lo; continue; }
+        E.ld(t2); E.fadd(t1); E.fadd(t0); const dh = E.A[0], dl = E.A[1];
+        if (!S.difSrc) { E.ldE(dh, dl); E.fmul(m); E.fadd(acc[c]); } else { E.ld(m); E.fmulE(dh, dl); E.fadd(acc[c]); }
         acc[c] = E.st32();
       }
       if (specEnable) {
-        const V = [0, 0, -1];
+        const V = this.lV;
+        V[0] = 0; V[1] = 0; V[2] = -1;
         if (st.rs[Rs.LOCALVIEWER]) { V[0] = f32(0 - eye[0]); V[1] = f32(0 - eye[1]); V[2] = f32(0 - eye[2]); normalize3(V); }
-        const Hv = [f32(V[0] + L[0]), f32(V[1] + L[1]), f32(V[2] + L[2])];
+        const Hv = this.lH;
+        Hv[0] = f32(V[0] + L[0]); Hv[1] = f32(V[1] + L[1]); Hv[2] = f32(V[2] + L[2]);
         normalize3(Hv);
-        E.ld(Hv[2] * n[2]); E.fadd(Hv[1] * n[1]); E.fadd(Hv[0] * n[0]);
-        const d = E.st32();
+        const d = E.sum32x3(Hv[2] * n[2], Hv[1] * n[1], Hv[0] * n[0]);
         if (bits(d) <= 0 || bits(d) < bits(this.specThreshold)) continue;
         const p = Math.pow(d, power);   // msvcrt _CIpow (ext result)
         for (let c = 0; c < 3; c++) {
@@ -400,17 +425,18 @@ export class VertexProcessor {
         }
       }
     }
-    const pack = (a: number[]): number => {
-      let r = 0;
-      for (let c = 0; c < 3; c++) { let v = rint(a[c]); v = v < 0 ? 0 : v > 255 ? 255 : v; r = r * 256 + v; }
-      return r;
-    };
     const difA = S.difSrc === 1 ? dw & 0xff000000 : S.difSrc === 2 ? sw & 0xff000000 : S.difAlpha;
     const speA = S.speSrc === 1 ? dw & 0xff000000 : S.speSrc === 2 ? sw & 0xff000000 : S.speAlpha;
-    const outD = (pack(acc) + difA) >>> 0;
-    const outS = specEnable ? (pack(spec) + speA) >>> 0 : hasSpec ? sw >>> 0 : speA >>> 0;
-    return [outD, outS];
+    this.lOut[0] = (pack3(acc) + difA) >>> 0;
+    this.lOut[1] = specEnable ? (pack3(spec) + speA) >>> 0 : hasSpec ? sw >>> 0 : speA >>> 0;
   }
+}
+
+/** the lighting pack (0x421927): FISTP (nearest even) of each f32 accumulator, clamped to 0..255 */
+function pack3(a: Float64Array): number {
+  let r = 0;
+  for (let c = 0; c < 3; c++) { let v = rint(a[c]); v = v < 0 ? 0 : v > 255 ? 255 : v; r = r * 256 + v; }
+  return r;
 }
 
 const IDENT = new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]);

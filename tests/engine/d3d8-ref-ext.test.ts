@@ -54,17 +54,17 @@ describe('ref/ext 64-bit arithmetic', () => {
     for (let i = 0; i < 4000; i++) {
       const a = rnd(r) * (1 + r() * 1e-7), b = rnd(r) / 3, c = rnd(r);
       // a + b
-      let h = E.add(a, 0, b, 0), l = E.lo;
+      let h = E.add(a, 0, b, 0), l = E.lo();
       expect([h, l]).toEqual(toNum(roundX(addX(exact(a), exact(b)), 64)));
       // (a * b) then + c, every step at 64 bits
       const p = roundX(mulX(exact(a), exact(b)), 64);
-      h = E.mul(a, 0, b, 0); l = E.lo;
+      h = E.mul(a, 0, b, 0); l = E.lo();
       expect([h, l]).toEqual(toNum(p));
       const [ph, pl] = toNum(p);
-      h = E.add(ph, pl, c, 0); l = E.lo;
+      h = E.add(ph, pl, c, 0); l = E.lo();
       expect([h, l]).toEqual(toNum(roundX(addX(p, exact(c)), 64)));
       // 1 / a
-      h = E.div(1, 0, a, 0); l = E.lo;
+      h = E.div(1, 0, a, 0); l = E.lo();
       expect([h, l]).toEqual(toNum(divX(exact(1), exact(a), 64)));
       // f32 of a 64-bit value
       expect(E.toF32(ph, pl)).toBe(Math.fround(Number(roundX(p, 24).m) * Math.pow(2, roundX(p, 24).e)));

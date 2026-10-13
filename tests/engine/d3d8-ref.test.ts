@@ -5,7 +5,7 @@
 // render-to-texture and a vertex shader.
 import { describe, expect, it } from 'vitest';
 import { type Device, Fmt, Fvf, Pool, Prim, Rs, Tss, Usage, ClearFlag } from '../../src/engine/d3d8/api';
-import { RefDevice } from '../../src/engine/d3d8/ref';
+import { RefDevice, refKernel } from '../../src/engine/d3d8/ref';
 
 const W = 160, H = 120;
 
@@ -271,15 +271,30 @@ const GOLDEN: Record<string, string[]> = {
   vshader: ['e3ef05bd', 'a8a26115'],
 };
 
+/** a scene's frame hashes; path: 'js' (rast.ts), 'wasm' (the kernel, which must take every draw), or 'alternate'
+ *  (resources in the kernel's memory, frames drawn by the kernel and by rast.ts in turn) */
+function run(sc: Scene, path: 'js' | 'wasm' | 'alternate'): string[] {
+  refKernel.mode = path === 'js' ? 'js' : 'wasm';
+  try {
+    const d = new RefDevice(W, H);
+    const ctx = sc.setup?.(d);
+    const got: string[] = [];
+    for (let f = 0; f < sc.frames; f++) {
+      if (path === 'alternate') refKernel.mode = f & 1 ? 'js' : 'wasm';
+      sc.draw(d, f, ctx); got.push(hashBackBuffer(d));
+    }
+    return got;
+  } finally { refKernel.mode = 'auto'; }
+}
+
 describe('RefDevice', () => {
   for (const sc of SCENES) {
-    it(`draws the ${sc.name} scene as recorded`, () => {
-      const d = new RefDevice(W, H);
-      const ctx = sc.setup?.(d);
-      const got: string[] = [];
-      for (let f = 0; f < sc.frames; f++) { sc.draw(d, f, ctx); got.push(hashBackBuffer(d)); }
-      if (process.env.D3D_REF_PRINT) console.log(JSON.stringify(sc.name), JSON.stringify(got));
-      expect(got).toEqual(GOLDEN[sc.name]);
+    it(`draws the ${sc.name} scene as recorded, in JS, in WebAssembly and alternating`, () => {
+      const js = run(sc, 'js');
+      if (process.env.D3D_REF_PRINT) console.log(JSON.stringify(sc.name), JSON.stringify(js));
+      expect(js).toEqual(GOLDEN[sc.name]);
+      expect(run(sc, 'wasm')).toEqual(GOLDEN[sc.name]);
+      expect(run(sc, 'alternate')).toEqual(GOLDEN[sc.name]);
     });
   }
   it('records Set* calls into a state block without applying them, and applies them later', () => {

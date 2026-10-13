@@ -9,15 +9,29 @@ import {
 } from './api';
 import { bytesPerPixel } from './trace';
 import { Pipeline } from './ref/pipe';
+import { heap, kernel, prepareKernel, refKernel } from './ref/kernel';
+export { refKernel };
 
 export class RefSurface implements Surface {
   readonly pitch: number;
-  readonly data: Uint8Array;
-  constructor(readonly width: number, readonly height: number, readonly format: Fmt, data?: Uint8Array, pitch?: number) {
+  readonly size: number;
+  /** byte offset in the WebAssembly rasterizer's memory (./ref/kernel), or -1 for JS memory */
+  readonly heapOff: number;
+  private buf: Uint8Array;
+  constructor(readonly width: number, readonly height: number, readonly format: Fmt) {
     const bpp = bytesPerPixel(format);
-    this.pitch = pitch ?? (bpp < 0 ? Math.max(1, (width + 3) >> 2) * -bpp : width * bpp);
-    this.data = data ?? new Uint8Array(this.pitch * (bpp < 0 ? Math.max(1, (height + 3) >> 2) : height));
+    this.pitch = bpp < 0 ? Math.max(1, (width + 3) >> 2) * -bpp : width * bpp;
+    this.size = this.pitch * (bpp < 0 ? Math.max(1, (height + 3) >> 2) : height);
+    this.heapOff = kernel() ? heap.alloc(this.size) : -1;
+    this.buf = this.heapOff >= 0 ? heap.view(this.heapOff, this.size) : new Uint8Array(this.size);
   }
+  /** the pixels (a view into the kernel's memory is re-made after the memory grew: the old one is detached) */
+  get data(): Uint8Array {
+    if (this.heapOff >= 0 && this.buf.byteLength === 0) this.buf = heap.view(this.heapOff, this.size);
+    return this.buf;
+  }
+  /** give the memory back (a replaced back buffer or depth buffer) */
+  free(): void { if (this.heapOff >= 0) heap.release(this.heapOff, this.size); }
   lockRect(rect: Rect | null): Locked {
     const bpp = bytesPerPixel(this.format);
     const off = rect ? (bpp < 0 ? (rect.top >> 2) * this.pitch + (rect.left >> 2) * -bpp : rect.top * this.pitch + rect.left * bpp) : 0;
@@ -146,6 +160,7 @@ export class RefDevice implements Device {
   reset(width = 0, height = 0): void {
     if (width) this.width = width;
     if (height) this.height = height;
+    this.bb.free(); this.depth?.free();
     this.bb = new RefSurface(this.width, this.height, Fmt.X8R8G8B8);
     this.depth = this.depthFormat === null ? null : new RefSurface(this.width, this.height, this.depthFormat);
     this.rt = this.bb; this.ds = this.depth;
@@ -157,6 +172,9 @@ export class RefDevice implements Device {
   }
 
   shader(h: number): RefShader | undefined { return this.shaders.get(h); }
+  /** load the WebAssembly rasterizer asynchronously (a browser's main thread cannot compile it synchronously);
+   *  devices and resources created after this resolves draw with it */
+  static prepare(): Promise<void> { return prepareKernel(); }
   transform(type: number): Float32Array { return this.st.tf.get(type) ?? IDENTITY; }
 
   createTexture(width: number, height: number, levels: number, _usage: number, format: Fmt): Texture {
