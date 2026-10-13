@@ -53,11 +53,13 @@ final class WebHolder {
     /// handler and not the async variant, which crashes on a void result in some SDKs.
     func run(_ js: String) {
         DispatchQueue.main.async {
+            let t0 = NativePerf.now()
             self.web?.evaluateJavaScript(js) { _, error in
                 guard let error, !self.failed else { return }
                 self.failed = true
                 HostLog.shared.log("audio: evaluateJavaScript failed: \(error.localizedDescription)")
             }
+            NativePerf.shared.add(eval: NativePerf.now() - t0)
         }
     }
 
@@ -112,6 +114,80 @@ final class Tilt {
             self.last = v
             WebHolder.shared.push("__wmpTilt", "wmp-tilt", v)
         }
+    }
+}
+
+/// "perf: forwarder 3.1 ms/s (encode 2.2, evaluateJavaScript 0.9), sent 118.0 KB/s, main thread busy 6% (lag avg
+/// 0.4 ms, worst 21 ms)", about once a minute while the app is in front (the owner, 2026-10-13: "my phone does
+/// overheat"): per second of wall time, what the Forwarder spends building its base64 payloads and the main
+/// thread spends in evaluateJavaScript calls (all of them: the tilt's too), the payload sent, and how busy the main
+/// thread is, by a probe: a block queued to the main queue at random 80-120 ms, its wait measured; the share
+/// that waited over 1 ms found the thread busy. The web content process is not in any of it (the page's own
+/// "page: perf2:" line has that side).
+final class NativePerf {
+    static let shared = NativePerf()
+    static func now() -> UInt64 { clock_gettime_nsec_np(CLOCK_UPTIME_RAW) }
+    private let lock = NSLock()  // guards the sums, which three queues add to
+    private var encode = 0.0, eval = 0.0, sent = 0, probes = 0, late = 0, lagSum = 0.0, lagMax = 0.0  // ms, bytes
+    private let queue = DispatchQueue(label: "native-perf")
+    private var timer: DispatchSourceTimer?  // on `queue`
+    private var since = NativePerf.now()     // on `queue`
+
+    /// From any thread: nanoseconds spent encoding / in evaluateJavaScript, payload bytes sent.
+    func add(encode: UInt64 = 0, eval: UInt64 = 0, bytes: Int = 0) {
+        lock.lock()
+        self.encode += Double(encode) / 1e6
+        self.eval += Double(eval) / 1e6
+        sent += bytes
+        lock.unlock()
+    }
+
+    /// The app is in front (or not): the probe runs, and the sums start afresh; nothing runs in the background.
+    func front(_ on: Bool) {
+        queue.async {
+            self.timer?.cancel()
+            self.timer = nil
+            guard on else { return }
+            self.clear()
+            let t = DispatchSource.makeTimerSource(queue: self.queue)
+            t.setEventHandler { self.probe() }
+            t.schedule(deadline: .now() + .milliseconds(100))
+            t.resume()
+            self.timer = t
+        }
+    }
+
+    private func clear() {
+        lock.lock()
+        encode = 0; eval = 0; sent = 0; probes = 0; late = 0; lagSum = 0; lagMax = 0
+        lock.unlock()
+        since = Self.now()
+    }
+
+    private func probe() {
+        let queued = Self.now()
+        DispatchQueue.main.async {
+            let ms = Double(Self.now() - queued) / 1e6
+            self.lock.lock()
+            self.probes += 1
+            self.lagSum += ms
+            self.lagMax = max(self.lagMax, ms)
+            if ms > 1 { self.late += 1 }
+            self.lock.unlock()
+        }
+        if Self.now() - since >= 60_000_000_000 { report() }
+        timer?.schedule(deadline: .now() + .milliseconds(Int.random(in: 80...120)))
+    }
+
+    private func report() {
+        let secs = Double(Self.now() - since) / 1e9
+        lock.lock()
+        let line = String(format: "perf: forwarder %.1f ms/s (encode %.1f, evaluateJavaScript %.1f), sent %.1f KB/s, main thread busy %.0f%% (lag avg %.1f ms, worst %.0f ms)",
+                          (encode + eval) / secs, encode / secs, eval / secs, Double(sent) / 1024 / secs,
+                          probes > 0 ? Double(late) / Double(probes) * 100 : 0, probes > 0 ? lagSum / Double(probes) : 0, lagMax)
+        lock.unlock()
+        clear()
+        HostLog.shared.log(line, quiet: true)
     }
 }
 
@@ -589,6 +665,7 @@ struct Player: View {
             CpuMeter.shared.scene(phase)
             Tilt.shared.run(phase == .active)
             Forwarder.shared.front = phase != .background
+            NativePerf.shared.front(phase != .background)
             Librespot.shared.front = phase != .background
         }
         .task {
@@ -1267,7 +1344,10 @@ final class Forwarder {
     private func flush() {
         defer { pending.removeAll(keepingCapacity: true) }
         guard !pending.isEmpty, sampleRate > 0 else { return }
-        WebHolder.shared.run("__wmpAudio.pcm('\(pending.base64EncodedString())', \(sampleRate))")
+        let t0 = NativePerf.now()
+        let js = "__wmpAudio.pcm('\(pending.base64EncodedString())', \(sampleRate))"
+        NativePerf.shared.add(encode: NativePerf.now() - t0, bytes: js.utf8.count)
+        WebHolder.shared.run(js)
     }
 }
 
