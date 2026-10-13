@@ -82,7 +82,7 @@ describe('menus', () => {
   it('a click outside closes; the picker ▾ opens the visualizations', async () => {
     const { $ } = setup();
     press($('#vpick')!);
-    expect([...menu(0)!.querySelectorAll<HTMLElement>('[role^=menuitem]')].map((b) => b.children[1]!.textContent)).toEqual(['3D Alchemy', 'Alchemy', 'Ambience', 'Bars and Waves', 'Battery', 'Blazing Colors', 'Color Cubes', 'Particle', 'Eclectic Colors', 'Picture Viz', 'Picture Viz II', 'Plenoptic', 'Pulsing Colors', 'Spikes',
+    expect([...menu(0)!.querySelectorAll<HTMLElement>('[role^=menuitem]')].map((b) => b.children[1]!.textContent)).toEqual(['3D Alchemy', 'Alchemy', 'Ambience', 'Bars and Waves', 'Battery', 'Blazing Colors', 'Color Cubes', 'Particle', 'Eclectic Colors', 'Picture Viz', 'Picture Viz II', 'Plenoptic', 'Pulsing Colors', 'SnowTime', 'Spikes',
       'Trilogy I', 'Trilogy II', 'Trilogy III', 'Goom', 'Musical Colors', 'Yule Log']);   // by registry key: Particle is "Dotplane"
     await act(() => new Promise((r) => setTimeout(r, 0)));     // Radix listens for outside presses from the next tick
     press(document.body);

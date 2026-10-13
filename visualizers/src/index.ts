@@ -135,6 +135,7 @@ const FAMILIES: readonly { key: string; vis: VisKind; group: PresetEntry['group'
   { key: 'TrilogyI', vis: 'trilogy1', group: 'Trilogy I', names: A.TrilogyI.PRESET_NAMES },
   { key: 'TrilogyII', vis: 'trilogy2', group: 'Trilogy II', names: A.TrilogyII.PRESET_NAMES },
   { key: 'TrilogyIII', vis: 'trilogy3', group: 'Trilogy III', names: A.TrilogyIII.PRESET_NAMES },
+  { key: 'SoftietheSnowman', vis: 'snowtime', group: 'SnowTime', names: A.SnowTime.PRESET_NAMES },
   { key: 'StarTime', vis: 'startime', group: 'StarTime', names: A.StarTime.PRESET_NAMES },
   { key: 'EclecticColors', vis: 'eclectic', group: 'Eclectic Colors', names: A.EclecticColors.PRESET_NAMES },
   // the Creativity Fun Pack's mpvis3d.dll (2003) registers its own Effects key, "3D-Alchemy" (named "3D Alchemy"):
@@ -267,6 +268,7 @@ type RawCtor = new (cfg: { width: number; height: number; options: EngineOptions
 const PLUS: Partial<Record<VisKind, RawCtor>> = {
   blazing: A.BlazingColors, colorcubes: A.ColorCubes, pulsing: A.PulsingColors,
   trilogy1: A.TrilogyI, trilogy2: A.TrilogyII, trilogy3: A.TrilogyIII,
+  snowtime: A.SnowTime,
   startime: A.StarTime,
   eclectic: A.EclecticColors,
 } as unknown as Partial<Record<VisKind, RawCtor>>;

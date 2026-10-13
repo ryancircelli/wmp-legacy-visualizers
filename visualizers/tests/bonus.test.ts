@@ -8,13 +8,13 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { A } from '../src/ns';
 import '../src/rand';
-import { EclecticColors, StarTime } from '../src/musical/bonus';
+import { EclecticColors, SnowTime, StarTime } from '../src/musical/bonus';
 import type { PlusClass } from '../src/musical/plus';
 import { PRESETS, nativeSize } from '../src';
 import { InputGen } from './golden/harness';
 
-const FAMS: Record<string, PlusClass> = { eclectic: EclecticColors, startime: StarTime };
-const KEYS: Record<string, string> = { eclectic: 'EclecticColors', startime: 'StarTime' };
+const FAMS: Record<string, PlusClass> = { eclectic: EclecticColors, startime: StarTime, snowtime: SnowTime };
+const KEYS: Record<string, string> = { eclectic: 'EclecticColors', startime: 'StarTime', snowtime: 'SoftietheSnowman' };
 
 describe('the Bonus Pack families: presets and wiring', () => {
   it("each family's presets, in WMP's list by its registry key", () => {
@@ -22,6 +22,8 @@ describe('the Bonus Pack families: presets and wiring', () => {
     for (const k of Object.values(KEYS)) expect(keys).toContain(k);
     expect(EclecticColors.PRESET_NAMES).toEqual(['Rolling Colors', 'Ribbon Rhythm', 'Night Fire']);
     expect(StarTime.PRESET_NAMES).toEqual(['Starlight', 'Star Clouds', 'Star Glow']);
+    expect(SnowTime.PRESET_NAMES).toEqual(['Softie the Snowman']);
+    expect(keys.indexOf('SoftietheSnowman')).toBe(keys.indexOf('PulsingColors') + 1);
     expect(keys.indexOf('EclecticColors')).toBe(keys.indexOf('Dotplane') + 1);
     expect(keys.indexOf('StarTime')).toBe(keys.indexOf('Spikes') + 1);
     for (const [vis, C] of Object.entries(FAMS)) {
@@ -38,6 +40,7 @@ const RUNS: GRun[] = [
   ...Object.entries(FAMS).flatMap(([vis, C]) => C.PRESET_NAMES.map((_, preset): GRun => ({ id: `${vis}-p${preset}`, vis, preset, w: 320, h: 240, seed: 1 }))),
   { id: 'eclectic-p1-640x480-s12345', vis: 'eclectic', preset: 1, w: 640, h: 480, seed: 12345 },
   { id: 'startime-p0-640x480-s12345', vis: 'startime', preset: 0, w: 640, h: 480, seed: 12345 },
+  { id: 'snowtime-p0-640x480-s12345', vis: 'snowtime', preset: 0, w: 640, h: 480, seed: 12345 },
   { id: 'startime-p1-1280x1024', vis: 'startime', preset: 1, w: 1280, h: 1024, seed: 1 },
 ];
 const FRAMES = 300;

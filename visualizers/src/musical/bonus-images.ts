@@ -11,6 +11,12 @@ import { fill, rampOf } from './plus-images';
 import type { Ramp } from './plus-images';
 
 const RAMPS: { [name: string]: Ramp } = {
+  snowtime1: { w: 1, h: 320, c: [
+    [0, 0x1ebb01, 29, 0x28b306, 277, 0xe81264, 319, 0xfd006f]] },
+  snowtime13: { w: 1, h: 256, c: [
+    [0, 0xff0005, 35, 0xea0e11, 54, 0xd21e1d, 55, 0xd51c1c, 99, 0xf90404, 116, 0xff0000, 179, 0xd31d1d, 234, 0xfb0202, 255, 0xff0000]] },
+  snowtime14: { w: 1, h: 30, c: [
+    [0, 0x9b0104, 7, 0xed0005, 9, 0xff0006, 11, 0xf9000b, 17, 0xc30225, 19, 0xbb022a, 21, 0xc70222, 27, 0xf90004, 29, 0xff0000]] },
   startime72: { w: 1, h: 320, c: [
     [0, 0xff0600, 24, 0xff8000, 44, 0xfff300, 48, 0xfefe00, 52, 0xf9ff00, 99, 0x0bff00, 104, 0x00ff00, 111, 0x00ff22, 138, 0x00ffdb, 145, 0x00ffff, 156, 0x00efff, 195, 0x0080ff, 215, 0x0019ff, 222, 0x0001ff, 225, 0x0500ff, 231, 0x2100ff, 268, 0xf200ff, 273, 0xff00ff, 281, 0xff00dd, 314, 0xff001c, 319, 0xff0007]] },
   eclect2: { w: 3, h: 256, c: [
@@ -170,5 +176,119 @@ export function starTimeImages(): MusicalImage[] {
   put(71, 16, 16, blob(16, 16, 7, 8, [0, 122, 122, 1, 7, 58, 2, 0, 21]));
   put(72, 1, 320, rampOf(RAMPS.startime72));
   STARTIME = im;
+  return im;
+}
+
+// ---------------------------------------------------------------- SnowTime / Softie the Snowman (DATATABLE_6)
+/** an anti-aliased ellipse: `ink` over `paper`, the coverage falling linearly across the edge (k pixels of radius per unit of the
+ *  normalised radius) */
+function ellipse(w: number, h: number, cx: number, cy: number, rx: number, ry: number, k: number, ink: number, paper: number): Uint32Array {
+  var px = new Uint32Array(w * h);
+  for (var y = 0; y < h; y++) {
+    for (var x = 0; x < w; x++) {
+      var rho = Math.sqrt(((x + 0.5 - cx) / rx) ** 2 + ((y + 0.5 - cy) / ry) ** 2), v = Math.min(1, Math.max(0, (1 - rho) * k + 0.5));
+      px[y * w + x] = mix(paper, ink, v);
+    }
+  }
+  return px;
+}
+
+/** the colour `a` taken to `b` by t (0..1), each channel rounded */
+function mix(a: number, b: number, t: number): number {
+  var out = 0;
+  for (var sh = 16; sh >= 0; sh -= 8) out = out << 8 | Math.floor((a >> sh & 255) + ((b >> sh & 255) - (a >> sh & 255)) * t + 0.5);
+  return out >>> 0;
+}
+
+/** a small black shape on white from its rows' runs [y, x0, x1] (inclusive) */
+function runs(w: number, h: number, r: number[]): Uint32Array {
+  var px = new Uint32Array(w * h).fill(0xffffff);
+  for (var i = 0; i < r.length; i += 3) for (var x = r[i + 1]; x <= r[i + 2]; x++) px[r[i] * w + x] = 0;
+  return px;
+}
+
+/** Softie's twig arms: a tapering zig-zag branch between two black mittens, on the colour the layer keys out */
+function twig(): Uint32Array {
+  var w = 156, h = 36, bg = 0x7e6b33, px = new Uint32Array(w * h).fill(bg);
+  var pts = [[26, 25], [44, 19], [58, 27], [74, 15], [88, 25], [101, 20], [124, 18]], k = 0, x: number, y: number;
+  for (y = 0; y < h; y++) {
+    for (x = 0; x < w; x++) {
+      var d = 99;
+      for (k = 0; k + 1 < pts.length; k++) {
+        var ax = pts[k][0], ay = pts[k][1], bx = pts[k + 1][0], by = pts[k + 1][1], dx = bx - ax, dy = by - ay;
+        var t = Math.min(1, Math.max(0, ((x - ax) * dx + (y - ay) * dy) / (dx * dx + dy * dy)));
+        d = Math.min(d, Math.hypot(x - ax - t * dx, y - ay - t * dy));
+      }
+      var v = Math.min(1, Math.max(0, 3.6 - d + 0.5));
+      if (v > 0) px[y * w + x] = mix(bg, 0x55404a, v);
+    }
+  }
+  var hand = (cx: number, cy: number, rx: number, ry: number): void => {
+    var e = ellipse(w, h, cx, cy, rx, ry, 8, 0, bg);
+    for (var i = 0; i < px.length; i++) if (e[i] !== bg) px[i] = mix(px[i], 0, 1 - ((e[i] >> 16 & 255) / ((bg >> 16) & 255)));
+  };
+  hand(17, 14, 15, 11);
+  hand(138, 16, 16, 12);
+  return px;
+}
+
+/** the red brush stroke (a mouth): a slab under a sloping lower edge, bright in the middle, on white */
+function brush(): Uint32Array {
+  var w = 72, h = 22, px = new Uint32Array(w * h).fill(0xffffff);
+  for (var y = 0; y < h; y++) {
+    for (var x = 0; x < w; x++) {
+      var top = 1.5, bot = 19.5 - 0.11 * x, edge = Math.min(x + 1, w - x, 6) / 6;
+      var c = Math.min(1, Math.max(0, Math.min(y + 0.5 - top, bot - y - 0.5) + 0.5)) * Math.min(1, edge * 3);
+      var t = (y + 0.5 - top) / Math.max(1, bot - top), lum = 0.62 + 0.38 * Math.sin(Math.PI * Math.min(1, Math.max(0, t)));
+      if (c > 0) px[y * w + x] = mix(0xffffff, (Math.floor(255 * lum) << 16) >>> 0, c);
+    }
+  }
+  return px;
+}
+
+/** the pink heart (point towards row 0, as the table has it), white in the middle, on white */
+function heart(): Uint32Array {
+  var w = 36, h = 36, px = new Uint32Array(w * h).fill(0xffffff);
+  for (var y = 0; y < h; y++) {
+    for (var x = 0; x < w; x++) {
+      var hx = (x + 0.5 - 18) / 15.5, hy = (y + 0.5 - 19.5) / 14;
+      var f = (hx * hx + hy * hy - 1) ** 3 - hx * hx * hy ** 3;      // < 0 inside
+      if (f < 0) px[y * w + x] = mix(0xffffff, 0xf2606a, Math.min(1, (-f) < 0.02 ? 1 - (-f) / 0.02 : 0) * 0.85);
+    }
+  }
+  return px;
+}
+
+
+var SNOWTIME: MusicalImage[] | null = null;
+/** SnowTime (DATATABLE_6): 19 images. The sky ramp (352 x 320), the snowman's three white ovals, his two eyes and four coals, a
+ *  black canvas, the red brush stroke, two red columns, three buttons, the twig arms and a heart. */
+export function snowTimeImages(): MusicalImage[] {
+  if (SNOWTIME) return SNOWTIME;
+  var { im, put } = table();
+  var col = rampOf(RAMPS.snowtime1), bg = new Uint32Array(352 * 320);
+  for (var y = 0; y < 320; y++) bg.fill(col[y], y * 352, (y + 1) * 352);
+  put(1, 352, 320, bg);
+  put(2, 84, 77, ellipse(84, 77, 42.01, 36.94, 37.93, 37.47, 29.49, 0xffffff, 0));
+  put(3, 116, 82, ellipse(116, 82, 57.65, 39.99, 53.73, 40.25, 29.68, 0xffffff, 0));
+  put(4, 136, 102, ellipse(136, 102, 68.64, 50.46, 65.46, 50.78, 30.84, 0xffffff, 0));
+  var eye = new Uint32Array(12 * 11).fill(0xffffff);
+  for (var yy = 0; yy < 11; yy++) for (var xx = 0; xx < 12; xx++) if ((xx - 5) * (xx - 5) + (yy - 5) * (yy - 5) <= 20 && yy >= 1) eye[yy * 12 + xx] = 0;
+  put(5, 12, 11, eye);
+  put(6, 12, 11, eye.slice());
+  put(7, 12, 12, ellipse(12, 12, 6.42, 6.09, 5.21, 4.38, 29.61, 0, 0xffffff));
+  put(8, 12, 12, ellipse(12, 12, 6.3, 6.12, 4.82, 4.4, 30.29, 0, 0xffffff));
+  put(9, 12, 12, ellipse(12, 12, 5.95, 5.96, 5.16, 5.21, 30.49, 0, 0xffffff));
+  put(10, 12, 12, ellipse(12, 12, 5.7, 5.63, 4.55, 5.54, 29.2, 0, 0xffffff));
+  put(11, 352, 320, fill(352, 320, 0));
+  put(12, 72, 22, brush());
+  put(13, 1, 256, rampOf(RAMPS.snowtime13));
+  put(14, 1, 30, rampOf(RAMPS.snowtime14));
+  put(15, 8, 8, runs(8, 8, [1, 2, 3, 2, 2, 5, 3, 1, 6, 4, 1, 6, 5, 2, 5, 6, 3, 4]));
+  put(16, 8, 8, runs(8, 8, [1, 3, 4, 2, 2, 5, 3, 1, 6, 4, 1, 6, 5, 2, 6, 6, 4, 5]));
+  put(17, 8, 8, runs(8, 8, [2, 3, 5, 3, 1, 5, 4, 1, 5, 5, 2, 5, 6, 2, 4]));
+  put(18, 156, 36, twig());
+  put(19, 36, 36, heart());
+  SNOWTIME = im;
   return im;
 }

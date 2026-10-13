@@ -129,6 +129,8 @@ export interface PlusDll {
    *  scaleOut's doubling and freeLayerBufs' image release, but not its clock; spectrumToLayer2 ending in a warp, a
    *  presetStep without the bars; ripple's and warp's zoom by the spin angle (l_91c, l_934) and warp's radial function */
   star?: boolean;
+  /** SnowTime (2000-10) also has Trilogy's warp that stops one pixel short and specSmooth that takes the last bin */
+  short?: boolean;
   /** SetCurrentPreset when it is not wmpvis.dll's (Trilogy: the last preset is Random Selection) */
   setPreset?(c: Core, n: number): void;
   /** the preset program (the DLL's vt+0x18c-ish dispatcher on obj+0x47bc): first call builds, later ones animate */
@@ -462,7 +464,7 @@ export class Core {
       s[0x448c >> 2] = 1;
       s[0x4494 >> 2] = 0x200;
     }
-    if (this.ver === 2 && md === 10) {             // Trilogy 0x10014fd0: the top 225 bins reversed at half height, the first ten silent
+    if ((this.ver === 2 || (this.plus && this.plus.tri)) && md === 10) {             // Trilogy 0x10014fd0: the top 225 bins reversed at half height, the first ten silent
       var n = s[0x4494 >> 2] - 0x1e;
       s[0x4494 >> 2] = n;
       for (i = 0; i < n; i++) s[(0x1f60 >> 2) + i] = (s[0x6cf - i] / 2) | 0;
@@ -554,7 +556,7 @@ export class Core {
         s[0x45f0 >> 2] = j;
         var q = j + i;
         s[0x45d0 >> 2] = q;
-        if (q >= s[0x4494 >> 2]) s[0x45d0 >> 2] = q = this.ver === 2 ? s[0x4494 >> 2] - 1 : i;   // Trilogy: the last bin
+        if (q >= s[0x4494 >> 2]) s[0x45d0 >> 2] = q = this.ver === 2 || (this.plus && this.plus.short) ? s[0x4494 >> 2] - 1 : i;   // Trilogy: the last bin
         var sum = (s[0x4c28 >> 2] + s[S + q]) | 0, r: number;
         s[0x4c28 >> 2] = sum;
         if (i !== 0 && sum === 0) {
@@ -723,7 +725,7 @@ export class Core {
       p.program(this);
       return;
     }
-    if (p.star) {                                  // StarTime 0x10016140: the trails in bar mode (which no preset sets), no bars
+    if (p.star && !p.bars) {                       // StarTime 0x10016140: the trails in bar mode (which no preset sets), no bars
       s[0x44a8 >> 2] = 0;
       if (s[LY(0) + lf(0x794)] === 0) return;
       var on = s[0x457c >> 2] !== 0;
@@ -1050,7 +1052,7 @@ export class Core {
         if (step === 3) this.solidStrip(true);       // vt+0x1bc 0x10015d90
         if (step === 5) this.mirrorStrip(false);     // vt+0x1c0 (Pulsing Colors 0x10015ea0)
         if (step === 6) this.mirrorStrip(true);      // vt+0x1c4 (Pulsing Colors 0x10015fb0)
-        if (tri && step === 7) unported(0x10016e80)();
+        if (tri && step === 7) { if (this.isStar()) this.wrapStrip(); else unported(0x10016e80)(); }
         if (step === 0x14 || step === 4) this.barStrip();
         s = m.I;
         var md = s[0x44c8 >> 2], v = s[(0x1740 >> 2) + s[0x4ee8 >> 2]];
@@ -1931,7 +1933,7 @@ export class Core {
         if (s[b + lf(0x904)] !== 0) { if (!fx(unported(0x55c0a9d8))) break doit; }
         s = m.I; F = m.F;
         if ((s[b + lf(0x848)] !== 0 || s[b + lf(0x844)] !== 0 || s[b + lf(0x840)] !== 0) && ftol(F[x + xf(0x88)]) !== 0 &&
-            s[b + lf(0x8bc)] !== 0 && s[b + lf(0x8b8)] === 1) { if (!fx(unported(0x55c089e8))) break doit; }
+            s[b + lf(0x8bc)] !== 0 && s[b + lf(0x8b8)] === 1) { if (!fx(this.isStar() ? () => this.lens() : unported(0x55c089e8))) break doit; }
         s = m.I;
         if (s[b + lf(0x834)] !== 0 || s[b + lf(0x838)] !== 0 || s[b + lf(0x83c)] !== 0 || s[b + lf(0x85c)] !== 0 ||
             s[b + lf(0x868)] !== 0) { if (!fx(() => this.ripple())) break doit; }   // vt+0x9c 0x55c0601a
@@ -2698,7 +2700,7 @@ export class Core {
     s[0x45cc >> 2] = 0;
     if (path === 2) m.B[0x4578] = 1;
     var srcp = s[0x43ec >> 2] >> 2, cx = s[0x4474 >> 2], cy = s[0x447c >> 2], wu = w >>> 0, end = s[0x4394 >> 2] >>> 0;
-    var last = this.ver === 2 ? n - 1 : n;         // wmpvis.dll warps one pixel past the image; Trilogy does not
+    var last = this.ver === 2 || (this.plus && this.plus.short) ? n - 1 : n;         // wmpvis.dll warps one pixel past the image; Trilogy does not
     for (i = 0; i <= last; i++) {
       var px = U[srcp + i];
       if (px === key) continue;
@@ -2767,6 +2769,125 @@ export class Core {
     F[0x4760 >> 2] = Y <= 0 ? Y * B8 + X : X - Y * B4;
     if (0 < C0) { F[0x4764 >> 2] = Y - C0 * B4; return; }
     F[0x4764 >> 2] = C0 * B8 + Y;
+  }
+
+  /** SnowTime vt+0x170 0x10016720 (bar step 7): layer 3's picture := the next h3 pixels of layer 1's, from row spectrum[bin], wrapping */
+  wrapStrip(): void {
+    var m = this.m, s = m.I, U = m.U, b1 = LY(1), b3 = LY(3);
+    s[0x44a8 >> 2] = 1;
+    var base = s[b1 + lf(0x794)], sel = s[b1 + lf(0x824)];
+    if (sel === 1) base = s[b1 + lf(0x828)];
+    if (sel === 2) base = s[b1 + lf(0x90c)];
+    var w1 = s[b1 + lf(0x7f4)], h1 = s[b1 + lf(0x7f8)];
+    s[b3 + lf(0x824)] = 0;
+    var end = (base + Math.imul(h1, w1) * 4) | 0;
+    s[0x4b8c >> 2] = end;
+    var dst = s[b3 + lf(0x794)];
+    var src = (base + Math.imul(s[(0x1740 >> 2) + s[0x4ee8 >> 2]], w1) * 4) | 0, cnt = s[b3 + lf(0x7f8)];
+    s[0x4ec4 >> 2] = cnt;
+    s[0x4c70 >> 2] = s[b3 + lf(0x7f4)];
+    m.B[dst - 4] = 0;
+    s[0x4390 >> 2] = dst; s[0x43ec >> 2] = src;
+    for (var i = 0; i < cnt; i++) {
+      U[(dst >> 2) + i] = U[src >> 2];
+      src += 4;
+      if (end <= src) src = base;
+    }
+    s[0x4390 >> 2] = dst + cnt * 4;
+    s[0x43ec >> 2] = src;
+  }
+
+  /** vt+0x90 0x55c089e8 (SnowTime 0x10009f60): the ball shading: where the layer's pixels are within the radius x_088 of its
+   *  centre (l_8a4 / l_8a8 off the middle), the colour (l_840, l_844, l_848) is pulled in by a factor growing with the squared
+   *  distance (x_098) from l_8bc per cent, and the alpha byte raised by l_8c0 less that factor of it. The sheared, banded and
+   *  scratch-buffer variants (x_090 / x_094, x_0ac, x_0b4) are not ported (no preset sets them). */
+  lens(): void {
+    var m = this.m, s = m.I, F = m.F, U = m.U, k = s[0x44a8 >> 2], b = LY(k), x = XF(k);
+    var P = (o: number): number => F[x + xf(o)], L = (o: number): number => s[b + lf(o)];
+    var n = Math.imul(L(0x7f8), L(0x7f4));
+    s[0x4ec4 >> 2] = n;
+    s[0x4390 >> 2] = s[0x4374 >> 2];
+    s[0x43ec >> 2] = s[0x439c >> 2];
+    s[0x4e5c >> 2] = L(0x8c0);
+    F[0x4730 >> 2] = L(0x8bc) / 100;
+    var z = P(0x88);
+    s[0x4e28 >> 2] = ftol(z * z);
+    s[0x4e58 >> 2] = L(0x840); s[0x4e54 >> 2] = L(0x844); s[0x4e4c >> 2] = L(0x848);
+    F[0x4d38 >> 2] = s[0x4e58 >> 2]; F[0x4d34 >> 2] = s[0x4e54 >> 2]; F[0x4d2c >> 2] = s[0x4e4c >> 2];
+    F[0x4804 >> 2] = z * z + z * z;
+    s[0x4474 >> 2] = ((L(0x7f4) / 2) | 0) + L(0x8a4);
+    s[0x447c >> 2] = ((L(0x7f8) / 2) | 0) + L(0x8a8);
+    var w = L(0x7f4);
+    s[0x4dcc >> 2] = w;
+    s[0x45cc >> 2] = 0;
+    F[0x4d30 >> 2] = 0;
+    F[0x4d00 >> 2] = P(0xb8) * fr(0.0010000000474974513);
+    if (P(0xb4) !== 0) unported(0x10009f60)();
+    var src = s[0x439c >> 2] >> 2, dst = s[0x4374 >> 2] >> 2, key = s[0x4df4 >> 2] >>> 0, wu = w >>> 0;
+    var cx = s[0x4474 >> 2], cy = s[0x447c >> 2], e28 = s[0x4e28 >> 2], a1 = L(0x8c0), tint = [s[0x4e58 >> 2], s[0x4e54 >> 2], s[0x4e4c >> 2]];
+    for (var i = 0; i < n; i++) {
+      var px = U[src + i];
+      s[0x4c50 >> 2] = px;
+      if (px === key) { U[dst + i] = px; continue; }
+      var row = ((i >>> 0) / wu) >>> 0, col = ((i >>> 0) % wu) >>> 0;
+      s[0x475c >> 2] = row; s[0x4758 >> 2] = col;
+      var x0b0 = P(0xb0);
+      F[0x4e50 >> 2] = x0b0 <= 0 ? -(L(0x7f8) - row) * x0b0 : row * x0b0;
+      col = (col - cx) | 0; row = (row - cy) | 0;
+      s[0x4758 >> 2] = col; s[0x475c >> 2] = row;
+      F[0x4760 >> 2] = col * P(0x94) + col;
+      F[0x4764 >> 2] = row * P(0x90) + row;
+      if (P(0xac) !== 0 && F[0x4760 >> 2] !== 0 && F[0x4764 >> 2] !== 0) unported(0x10009f60)();
+      F[0x4760 >> 2] = F[0x4760 >> 2] * F[0x4760 >> 2];
+      F[0x4764 >> 2] = F[0x4764 >> 2] * F[0x4764 >> 2];
+      var e24 = ftol(F[0x4760 >> 2] + F[0x4764 >> 2]);
+      s[0x4e24 >> 2] = e24;
+      var lim = ftol(F[0x4804 >> 2]);
+      var skip = z <= 0 ? !(lim <= e24) : lim < e24;
+      if (!skip && x0b0 !== 0 && F[0x4e50 >> 2] < F[0x4760 >> 2]) skip = true;
+      if (!skip) {
+        if (P(0xb4) !== 0) unported(0x10009f60)();
+        F[0x4724 >> 2] = e24 * P(0x98) / e28 + F[0x4730 >> 2];
+        F[0x4bb8 >> 2] = 0;
+        F[0x4d30 >> 2] = F[0x4d30 >> 2] + F[0x4d00 >> 2];
+        F[0x4bb8 >> 2] = 0 <= P(0xb8) ? F[0x4760 >> 2] * F[0x4d30 >> 2] : e24 * F[0x4d30 >> 2];
+        var ang = (L(0x8b0) + ftol(F[0x4760 >> 2] * P(0xa0) + F[0x4764 >> 2] * P(0xa4) + e24 * P(0xa8) + s[0x451c >> 2] * P(0xb4) + F[0x4bb8 >> 2])) | 0;
+        s[0x4eb8 >> 2] = ang;
+        if (ang < 0) { ang = -ang | 0; s[0x4eb8 >> 2] = ang; }
+        if (ang > 0x167) { ang = (ang >>> 0) % 0x168; s[0x4eb8 >> 2] = ang; }
+        F[0x4724 >> 2] = (P(0x9c) + F[(0x37d8 >> 2) + ang]) * F[0x4724 >> 2];
+        if (!(F[0x4724 >> 2] <= 0)) {
+          var f = F[0x4724 >> 2], alpha = px >>> 24, pb = px & 0xff, pg = (px >>> 8) & 0xff, pr = (px >>> 16) & 0xff;
+          s[0x4c0c >> 2] = alpha; s[0x4c40 >> 2] = pb; s[0x4d44 >> 2] = pg; s[0x4dd0 >> 2] = pr;
+          var cr = pr, cg = pg, cb = pb;
+          if (tint[0] !== 0) cr = (F[0x4d38 >> 2] - cr) * f + cr;
+          if (tint[1] !== 0) cg = (F[0x4d34 >> 2] - cg) * f + cg;
+          if (tint[2] !== 0) cb = (F[0x4d2c >> 2] - cb) * f + cb;
+          F[0x4d28 >> 2] = cr; F[0x4d18 >> 2] = cg; F[0x4d04 >> 2] = cb;
+          alpha = (alpha + a1 - ftol(a1 * f)) | 0;
+          if (F[0x4d28 >> 2] < 0) s[0x4d28 >> 2] = 0;
+          if (F[0x4d18 >> 2] < 0) s[0x4d18 >> 2] = 0;
+          if (F[0x4d04 >> 2] < 0) s[0x4d04 >> 2] = 0;
+          if (255 < F[0x4d28 >> 2]) s[0x4d28 >> 2] = 0x437f0000;
+          if (255 < F[0x4d18 >> 2]) s[0x4d18 >> 2] = 0x437f0000;
+          if (255 < F[0x4d04 >> 2]) s[0x4d04 >> 2] = 0x437f0000;
+          if (alpha > 0xff) alpha = 0xff;
+          s[0x4c0c >> 2] = alpha;
+          s[0x4dd0 >> 2] = ftol(F[0x4d28 >> 2]); s[0x4d44 >> 2] = ftol(F[0x4d18 >> 2]); s[0x4c40 >> 2] = ftol(F[0x4d04 >> 2]);
+          px = (((alpha << 8 | s[0x4dd0 >> 2]) << 8 | s[0x4d44 >> 2]) << 8 | s[0x4c40 >> 2]) >>> 0;
+          s[0x4c50 >> 2] = px;
+          U[dst + i] = px;
+          continue;
+        }
+      }
+      if (a1 !== 0) {                              // the alpha add of a skipped pixel, saturating on a carry
+        var add = bswap(a1 >>> 0), sum = px + add;
+        px = (sum > 0xffffffff ? ((sum - 0x100000000) | 0xff000000) : sum) >>> 0;
+        s[0x4c50 >> 2] = px;
+      }
+      U[dst + i] = px;
+    }
+    s[0x45cc >> 2] = n;
   }
 
   /** vt+0x26c 0x55c0a7b5: spin by distance (angle -= r^2 * 0x4ddc, per axis 0x88c / 0x890 / 0x894),
