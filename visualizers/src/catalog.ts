@@ -55,6 +55,8 @@ const CURRENT: Record<VisKind, Versions> = {
   pixeltrip: [7, 10],
   // Animator: Glass3D's free plug-in for WMP 9 and 10 (2.2, 2003-04)
   animator: [9, 10],
+  // Celestial: Blackfly Studios' plug-in for WMP 9 Series (2003)
+  celestial: [9, 9],
 };
 
 /** A preset's name as its name and the versions its suffix gives ("Swirl (WMP 7-9)": Swirl, [7, 9]); none: null. */
