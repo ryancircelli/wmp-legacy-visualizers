@@ -32,7 +32,6 @@ import './googly/index';
 import './corona/index';
 import './pixeltrip/index';
 import './analyzed/index';
-import type { AnalyzedOptions } from './analyzed/index';
 import './plus3d/index';
 import './animator/index';
 import './blackfly/ripple';
@@ -261,7 +260,7 @@ export function samplingOf(kind: VisKind, preset = 0): Sampling {
 }
 
 export function nativeSize(kind: VisKind, viewW: number, viewH: number, preset = 0, options?: object): [number, number] {
-  if (kind === 'analyzed') return A.Analyzed.size(options as AnalyzedOptions | undefined);   // its offscreen buffer
+  if (kind === 'analyzed') return A.Analyzed.size(options);   // its offscreen buffer
   if (kind === 'plenoptic' || kind === 'ambience') return [256, 192];
   if (kind === 'goom') return GOOM_SIZES[preset] ?? GOOM_SIZES[0];   // goom's resolution is the preset
   if (D3D.has(kind)) {                                                // the view's shape within the pixel budget

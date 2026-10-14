@@ -13,6 +13,9 @@ const bits = (x: number): number => { F1[0] = x; return I1[0]; };
 const B255 = new Float64Array(256);
 for (let i = 0; i < 256; i++) B255[i] = f32(i * f32(1 / 255));
 
+/** trunc(B255[b] * 255 + 0.5) === b for every byte (the write after a one-tap sample) */
+const BYTE_ID = B255.every((v, b) => Math.trunc(v * 255 + 0.5) === b);
+
 /** a render target or texture: 0x00RRGGBB pixels */
 export interface Target { w: number; h: number; px: Uint32Array }
 export const enum Blend { Over = 0, Fade = 1 }
@@ -43,8 +46,6 @@ export class Ref9 {
   private eA = new Float64Array(3); private eB = new Float64Array(3); private eC = new Float64Array(3); private eI = new Uint8Array(3);
   private c = new Float64Array(4);
   private t = new Float64Array(4);
-  /** with no texture bound the stage does not run (the stage count stops at it): the colour is the diffuse */
-  noTexStageRuns = false;
 
   clear(rt: Target, color: number): void { rt.px.fill(color & 0xffffff); }
 
@@ -84,14 +85,118 @@ export class Ref9 {
       this.col[k].set(B255[(ca >>> sh) & 255], B255[(cb >>> sh) & 255], B255[(cc >>> sh) & 255], s);
     }
     if (tex) { this.uv[0].set(vf[a + 5], vf[c1 + 5], vf[c2 + 5], s); this.uv[1].set(vf[a + 6], vf[c1 + 6], vf[c2 + 6], s); }
-    // pixels (the scan's 2x2 quads only order the work: each pixel stands alone here)
+    // pixels (the scan's 2x2 quads only order the work: each pixel stands alone here). The same arithmetic, sped up
+    // where a plane is flat in x or y (every quad Analyzed draws is axis-aligned): a colour per row, a texture
+    // coordinate per column and per row, a blend table per destination byte for a flat colour.
+    const cp = this.col;
+    const flat = cp[0].A === 0 && cp[0].B === 0 && cp[1].A === 0 && cp[1].B === 0 && cp[2].A === 0 && cp[2].B === 0 && cp[3].A === 0 && cp[3].B === 0;
+    if (tex) {
+      if (flat && blend === Blend.Over && cp[0].C === 1 && cp[1].C === 1 && cp[2].C === 1 && cp[3].C === 1 && this.uv[0].B === 0 && this.uv[1].A === 0) {
+        this.copyFiltered(rt, tex, x0, x1, y0, y1);
+        return;
+      }
+    } else if (flat && (x1 - x0 + 1) * (y1 - y0 + 1) >= 1024) {
+      this.flatTable(rt, blend, x0, x1, y0, y1);
+      return;
+    }
+    const rowCol = cp[0].A === 0 && cp[1].A === 0 && cp[2].A === 0 && cp[3].A === 0;
     const px = rt.px, w = rt.w;
     for (let y = y0; y <= y1; y++) {
-      for (let x = x0; x <= x1; x++) {
-        if (!this.inside(0, x, y) || !this.inside(1, x, y) || !this.inside(2, x, y)) continue;
-        this.shade(x, y, tex);
+      const perRow = rowCol && !tex;
+      if (perRow) this.colour(0, y);
+      if (!this.span(y, x0, x1)) continue;
+      for (let x = this.sx0; x <= this.sx1; x++) {
+        if (!perRow) this.shade(x, y, tex);
         const i = y * w + x;
         px[i] = this.blendWrite(px[i], blend);
+      }
+    }
+  }
+
+  /** the row's covered pixels, sx0..sx1 within x0..x1 (false: none): the three edges' tests (0x10028ae3) solved for x.
+   *  The edge values are integers below 2^41, so the quotient is exact when it is an integer and otherwise at least
+   *  2^-20 from one: floor/ceil of the double quotient are the integer answers. */
+  private sx0 = 0; private sx1 = 0;
+  private span(y: number, x0: number, x1: number): boolean {
+    let lo = x0, hi = x1;
+    for (let k = 0; k < 3; k++) {
+      const A = this.eA[k] * 16, K = y * 16 * this.eB[k] + this.eC[k], incl = this.eI[k] !== 0;
+      if (A === 0) { if (!(K < 0 || (K === 0 && !incl))) return false; continue; }
+      const t = -K / A, exact = Number.isInteger(t);
+      if (A > 0) { const m = exact && !incl ? t : Math.ceil(t) - 1; if (m < hi) hi = m; }
+      else { const m = exact && !incl ? t : Math.floor(t) + 1; if (m > lo) lo = m; }
+    }
+    this.sx0 = lo; this.sx1 = hi;
+    return lo <= hi;
+  }
+  /** the diffuse at (x, y), clamped (0x10028dc7) */
+  private colour(x: number, y: number): void {
+    const c = this.c;
+    for (let k = 0; k < 4; k++) c[k] = clamp01(this.col[k].at(x, y));
+  }
+
+  /** a flat colour: the blend's result per destination byte, then a lookup per pixel */
+  private lut = new Uint8Array(768);
+  private flatTable(rt: Target, blend: Blend, x0: number, x1: number, y0: number, y1: number): void {
+    this.colour(0, 0);
+    const lut = this.lut;
+    for (let b = 0; b < 256; b++) {
+      const v = this.blendWrite((b << 16) | (b << 8) | b, blend);
+      lut[b] = v >>> 16; lut[256 + b] = (v >>> 8) & 255; lut[512 + b] = v & 255;
+    }
+    const px = rt.px, w = rt.w;
+    for (let y = y0; y <= y1; y++) {
+      if (!this.span(y, x0, x1)) continue;
+      for (let x = this.sx0; x <= this.sx1; x++) {
+        const i = y * w + x, d = px[i];
+        px[i] = (lut[(d >>> 16) & 255] << 16) | (lut[256 + ((d >>> 8) & 255)] << 8) | lut[512 + (d & 255)];
+      }
+    }
+  }
+
+  /** a texture drawn with white opaque diffuse and SRCALPHA/INVSRCALPHA: the filtered texel itself (alpha sums to 1,
+   *  so the destination's factor is 0), u per column and v per row. Each sum of a weight times a texel and a float
+   *  is exact in a double here (the weights are multiples of 1/1024), so f32 of it is the 64-bit result's. */
+  private ca = new Int32Array(0); private cb = new Int32Array(0); private cf = new Float64Array(0); private cg = new Float64Array(0);
+  private rv = new Int32Array(0); private rf = new Float64Array(0); private rg = new Float64Array(0);
+  private copyFiltered(rt: Target, tex: Target, x0: number, x1: number, y0: number, y1: number): void {
+    const W = tex.w, H = tex.h, nx = x1 - x0 + 1, ny = y1 - y0 + 1;
+    if (this.ca.length < nx) { this.ca = new Int32Array(nx); this.cb = new Int32Array(nx); this.cf = new Float64Array(nx); this.cg = new Float64Array(nx); }
+    if (this.rv.length < ny) { this.rv = new Int32Array(ny); this.rf = new Float64Array(ny); this.rg = new Float64Array(ny); }
+    const ca = this.ca, cb = this.cb, cf = this.cf, cg = this.cg, rv = this.rv, rf = this.rf, rg = this.rg;
+    for (let x = x0; x <= x1; x++) {
+      const n = (bits(f32(f32(this.uv[0].at(x, 0) * W - 0.5) + 393216)) << 10) >> 10;
+      const i0 = n >> 5;
+      ca[x - x0] = i0 < 0 ? 0 : i0 > W - 1 ? W - 1 : i0; cb[x - x0] = i0 + 1 < 0 ? 0 : i0 + 1 > W - 1 ? W - 1 : i0 + 1;
+      cf[x - x0] = f32((n & 31) * 0.03125); cg[x - x0] = f32(1 - cf[x - x0]);
+    }
+    for (let y = y0; y <= y1; y++) {
+      const n = (bits(f32(f32(this.uv[1].at(0, y) * H - 0.5) + 393216)) << 10) >> 10;
+      rv[y - y0] = n >> 5; rf[y - y0] = f32((n & 31) * 0.03125); rg[y - y0] = f32(1 - rf[y - y0]);
+    }
+    const px = rt.px, w = rt.w, tp = tex.px, B = B255, H1 = H - 1;
+    // texel centres (every fraction 0): one tap of weight 1, so each channel is its byte through trunc(B255*255 + 0.5),
+    // which gives the byte back (BYTE_ID): a copy
+    if (BYTE_ID && cf.subarray(0, nx).every((v) => v === 0) && rf.subarray(0, ny).every((v) => v === 0)) {
+      for (let y = y0; y <= y1; y++) {
+        if (!this.span(y, x0, x1)) continue;
+        const j = rv[y - y0], ja = (j < 0 ? 0 : j > H1 ? H1 : j) * W, o = y * w;
+        for (let x = this.sx0; x <= this.sx1; x++) px[o + x] = tp[ja + ca[x - x0]] & 0xffffff;
+      }
+      return;
+    }
+    for (let y = y0; y <= y1; y++) {
+      const j0 = rv[y - y0], fv = rf[y - y0], gv = rg[y - y0];
+      const ja = (j0 < 0 ? 0 : j0 > H1 ? H1 : j0) * W, jb = (j0 + 1 < 0 ? 0 : j0 + 1 > H1 ? H1 : j0 + 1) * W;
+      if (!this.span(y, x0, x1)) continue;
+      for (let x = this.sx0; x <= this.sx1; x++) {
+        const fu = cf[x - x0], gu = cg[x - x0], ia = ca[x - x0], ib = cb[x - x0];
+        let r = 0, g = 0, b = 0, p: number, wt: number;
+        wt = gv * gu; if (wt !== 0) { p = tp[ja + ia]; r = f32(wt * B[(p >>> 16) & 255] + r); g = f32(wt * B[(p >>> 8) & 255] + g); b = f32(wt * B[p & 255] + b); }
+        wt = gv * fu; if (wt !== 0) { p = tp[ja + ib]; r = f32(wt * B[(p >>> 16) & 255] + r); g = f32(wt * B[(p >>> 8) & 255] + g); b = f32(wt * B[p & 255] + b); }
+        wt = fv * fu; if (wt !== 0) { p = tp[jb + ib]; r = f32(wt * B[(p >>> 16) & 255] + r); g = f32(wt * B[(p >>> 8) & 255] + g); b = f32(wt * B[p & 255] + b); }
+        wt = gu * fv; if (wt !== 0) { p = tp[jb + ia]; r = f32(wt * B[(p >>> 16) & 255] + r); g = f32(wt * B[(p >>> 8) & 255] + g); b = f32(wt * B[p & 255] + b); }
+        px[y * w + x] = (Math.trunc(r * 255 + 0.5) << 16) | (Math.trunc(g * 255 + 0.5) << 8) | Math.trunc(b * 255 + 0.5);
       }
     }
   }
@@ -101,20 +206,13 @@ export class Ref9 {
     this.eA[k] = A; this.eB[k] = B; this.eC[k] = -(ya * B + xa * A);
     this.eI[k] = (A !== 0 ? A > 0 : B > 0) ? 1 : 0;
   }
-  /** 0x10028ae3 at the pixel centre (x*16, y*16): the top-left rule */
-  private inside(k: number, x: number, y: number): boolean {
-    const e = y * 16 * this.eB[k] + x * 16 * this.eA[k] + this.eC[k];
-    return e < 0 || (e === 0 && this.eI[k] === 0);
-  }
+
 
   /** diffuse (clamped), the texture sample, the stage (MODULATE) */
   private shade(x: number, y: number, tex: Target | null): void {
     const c = this.c;
     for (let k = 0; k < 4; k++) c[k] = clamp01(this.col[k].at(x, y));
-    if (!tex) {
-      if (this.noTexStageRuns) { c[0] = 0; c[1] = 0; c[2] = 0; }
-      return;
-    }
+    if (!tex) return;   // no texture: the stage count stops before the stage (TEXTURE is its first argument)
     const t = this.sample(tex, this.uv[0].at(x, y), this.uv[1].at(x, y));
     for (let k = 0; k < 4; k++) c[k] = f32(t[k] * c[k]);
   }

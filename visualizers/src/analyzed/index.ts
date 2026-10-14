@@ -106,7 +106,7 @@ class Analyzed {
   private out: Surface;
 
   constructor(cfg: AnalyzedConfig = {}) {
-    this.options = (cfg.options || {}) as AnalyzedOptions;
+    this.options = cfg.options || {};
     const o = this.options;
     [this.W, this.H] = Analyzed.size(o);
     this.blur = o.analyzedBlur !== false;
