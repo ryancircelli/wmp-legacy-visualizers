@@ -269,7 +269,9 @@ describe('the analyzer build per preset', () => {
     expect(by('wmp11').sort()).toEqual(['Alchemy: Random (WMP 11)', ...PRESETS.filter((p) => p.vis === 'battery' && /\(WMP (9-)?11\)$/.test(p.name))
       .map((p) => 'Battery: ' + p.name),
       // the Psychedelia Viz Pack's, made for WMP 11
-      ...PRESETS.filter((p) => p.vis === 'bubbles').map((p) => 'Bubbles: ' + p.name)].sort());
+      ...PRESETS.filter((p) => p.vis === 'bubbles').map((p) => 'Bubbles: ' + p.name),
+      // Analyzed, a plug-in for WMP 10 and 11: the newer's
+      ...PRESETS.filter((p) => p.vis === 'analyzed').map((p) => 'Analyzed: ' + p.name)].sort());
     expect(map['Battery: brightsphere (WMP 9-10)']).toBe('wmp9');
     expect(map['Battery: dandelionaid (WMP 8-10)']).toBe('wmp9');
     expect(map['Battery: cominatcha (WMP 9-11)']).toBe('wmp11');

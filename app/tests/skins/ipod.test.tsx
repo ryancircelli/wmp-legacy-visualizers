@@ -656,7 +656,7 @@ it('Visualizer…: the wheel walks its pages, the centre opens a page or picks (
   act(() => { fireEvent.click(m.shown('[aria-label="Options"]')[0]!); });
   act(() => { fireEvent.click(m.row('Visualizer…')); });
   expect(m.sel()).toEqual(['VisualizerOn']);
-  for (let i = 0; i < 6; i++) key('ArrowDown');
+  for (let i = 0; i < 7; i++) key('ArrowDown');
   expect(m.sel()).toEqual(['Bars and WavesBars']);
   key('Enter');                                      // opened on the choice
   expect(m.sel()).toEqual(['Bars✓']);
