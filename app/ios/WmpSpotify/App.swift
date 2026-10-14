@@ -1373,6 +1373,11 @@ final class Librespot {
     private let engine = AVAudioEngine()
     private let node = AVAudioPlayerNode()
     private let format = AVAudioFormat(standardFormatWithSampleRate: 44100, channels: 2)!
+    /// Held for every start, stop and play of the engine and the node: librespot's thread and the main
+    /// thread (an output change, the idle stop) both do these, and AVAudioEngine is not safe across
+    /// threads. A play on a node whose engine another thread had just stopped raises and ends the app
+    /// (2026-10-14: headphones switched in the background, the music stopped, the app crashed on reopening).
+    private let gear = NSRecursiveLock()
     private let room = NSCondition()  // guards `queued`
     private var queued = 0            // frames scheduled and not yet played
     private var playing = false       // on librespot's player thread only
@@ -1591,6 +1596,7 @@ final class Librespot {
         // ("choppy, minimizing app fixes, coming back breaks", 2026-10-13: 144 packets in 15 s, not 323).
         NotificationCenter.default.addObserver(forName: .AVAudioEngineConfigurationChange, object: engine, queue: .main) { _ in
             HostLog.shared.log("audio: the output changed (\(Self.hardware())): starting the engine again")
+            self.gear.lock(); defer { self.gear.unlock() }
             self.node.stop()
             self.engine.stop()
             self.room.lock(); self.queued = 0; self.room.signal(); self.room.unlock()
@@ -1696,6 +1702,7 @@ final class Librespot {
             // giving it up there had the app suspended with nobody left to hear "interruption over,
             // resume", and the music stayed off (2026-10-03, the phone untouched on a counter).
             guard !self.playing, !self.interrupted else { return }
+            self.gear.lock(); defer { self.gear.unlock() }
             // The node stopped first: stopped with the engine while "playing", it played nothing after
             // the next start though both said they ran (two seconds of silence at every resume, until
             // the stalled queue was started over: 2026-10-03, twice in one log).
@@ -1706,6 +1713,7 @@ final class Librespot {
         }
     }
     private func output() {
+        gear.lock(); defer { gear.unlock() }
         guard !engine.isRunning else { return }
         do {
             // Another app's audio (a call, Spotify's own app) leaves the session inactive, and the engine
@@ -1773,8 +1781,10 @@ final class Librespot {
         if samples != nil, frames == 0 {
             playing = false
             Forwarder.shared.stopped()
+            gear.lock()
             node.stop()
             if engine.isRunning { node.play() }
+            gear.unlock()
             return
         }
         guard let samples, frames > 0 else {
@@ -1784,8 +1794,10 @@ final class Librespot {
             // (or for good, when that was held off: "pause play from control center still broken",
             // 2026-10-04). Paused, the engine starts again at the next packet (output); the session is
             // given up two seconds later (idle).
+            gear.lock()
             node.stop()
             if engine.isRunning { engine.pause() }
+            gear.unlock()
             Forwarder.shared.stopped()
             idle()
             awake(true)
@@ -1854,6 +1866,7 @@ final class Librespot {
                                       Date().timeIntervalSince(report.since), played.map { String(format: "%.1f s", $0) } ?? "?",
                                       front ? "in front" : "in the background", Self.hardware()))
         }
+        gear.lock(); defer { gear.unlock() }
         if kick {
             let s = AVAudioSession.sharedInstance()
             HostLog.shared.log("audio: nothing is being played (engine \(engine.isRunning ? "running" : "stopped"), node \(node.isPlaying ? "playing" : "stopped"), category \(s.category.rawValue) options \(s.categoryOptions.rawValue)): starting over")
