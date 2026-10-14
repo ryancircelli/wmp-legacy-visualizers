@@ -156,13 +156,14 @@ the Fun Packs and its online gallery. These are in progress or planned, to the s
 
 | Visualization | Where it shipped | Presets | Status |
 |---|---|---|---|
-| Picture Viz 3D | Creativity Fun Pack 2003 | 4 | in progress |
-| Eclectic Colors, StarTime, SnowTime (Softie the Snowman) | WMP 7 Bonus Pack (2000) | 3, 3, 1-3 | in progress |
-| Dungeon Siege | Microsoft's gallery | 2 | in progress (our own artwork in place of the game's) |
+| Picture Viz 3D | Creativity Fun Pack 2003 | 30 | engine ported (drawing calls identical to the DLL on every preset; pixels identical where checked); not yet in the player's menus |
 | Kid Drawing, Shacojin | WMP 7 Bonus Pack (2000) | 2, 4 | planned |
 | Winter (Ice Storm), Energy Bliss, Softie the Snowman II, Rhythm and Waves | Winter Fun Packs, Microsoft's gallery | 1 each | planned (Direct3D, matched against Microsoft's software renderer) |
 | Grind, T3, Looney Tunes | Microsoft's gallery | 1 each | planned (Direct3D; our own artwork in place of the film stills) |
-| Plus! 3-D: Oddworld: Munch's Oddysee, Maxx's Kingdom, Undersea Wonders | Plus! for Windows XP | 3 | planned (Direct3D; our own artwork in place of the game characters) |
+
+Done since this list began: 3D Alchemy, Picture Viz, Picture Viz II, Yule Log, Blazing Colors, Color Cubes, Pulsing
+Colors, Trilogy I-III, Eclectic Colors, StarTime, SnowTime, Dungeon Siege (our own artwork), Plus! 3-D (our own
+artwork) and Goom (the WMP 9 plug-in, LGPL).
 
 Not found yet: "Thanks" and "Chinese New Year 2005" from Microsoft's gallery.
 
