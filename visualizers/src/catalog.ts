@@ -39,6 +39,8 @@ const CURRENT: Record<VisKind, Versions> = {
   plus3d: [8, 8],
   // Windows Media 9 Series: Microsoft's online gallery's download for WMP 9 Series
   wm9s: [9, 9],
+  // Googly Moogly!: a third-party plug-in for WMP 9 and 10 (2005)
+  googly: [9, 10],
 };
 
 /** A preset's name as its name and the versions its suffix gives ("Swirl (WMP 7-9)": Swirl, [7, 9]); none: null. */
