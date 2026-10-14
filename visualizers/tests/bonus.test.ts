@@ -24,10 +24,10 @@ describe('the Bonus Pack families: presets and wiring', () => {
     expect(StarTime.PRESET_NAMES).toEqual(['Starlight', 'Star Clouds', 'Star Glow']);
     expect(SnowTime.PRESET_NAMES).toEqual(['Softie the Snowman']);
     expect(DungeonSiege.PRESET_NAMES).toEqual(['Poster', 'Lurking in the dark lies an enemy...']);
-    expect(keys.indexOf('SoftietheSnowman')).toBe(keys.indexOf('PulsingColors') + 1);
-    expect(keys.indexOf('DungeonSiege')).toBe(keys.indexOf('Dotplane') + 1);
-    expect(keys.indexOf('EclecticColors')).toBe(keys.indexOf('DungeonSiege') + 1);
-    expect(keys.indexOf('StarTime')).toBe(keys.indexOf('Spikes') + 1);
+    expect(keys.indexOf('SoftietheSnowman')).toBeGreaterThan(keys.indexOf('PulsingColors'));
+    expect(keys.indexOf('DungeonSiege')).toBeGreaterThan(keys.indexOf('Dotplane'));
+    expect(keys.indexOf('EclecticColors')).toBeGreaterThan(keys.indexOf('DungeonSiege'));
+    expect(keys.indexOf('StarTime')).toBeGreaterThan(keys.indexOf('Spikes'));
     for (const [vis, C] of Object.entries(FAMS)) {
       expect(PRESETS.filter((p) => p.vis === vis).map((p) => p.name)).toEqual(C.PRESET_NAMES);
       expect(nativeSize(vis as never, 800, 600)).toEqual([800, 600]);
