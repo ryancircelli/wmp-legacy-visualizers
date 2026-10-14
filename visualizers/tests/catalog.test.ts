@@ -29,6 +29,7 @@ describe('the catalog', () => {
       'Particle, WMP 10 2, WMP 7–8 2',
       'Dungeon Siege, WMP 8 2',
       'Eclectic Colors, WMP 7–8 3',
+      'Windows Media 9 Series, WMP 9 1',
       'Picture Viz, WMP 8 7',
       'Picture Viz II, WMP 9 62',
       'Picture Viz 3D, WMP 9 30',

@@ -1,0 +1,162 @@
+// The GDI+ drawing Rhythm and Waves does every frame (0x100134a0): the equalizer picture, as the 32-bit gdiplus.dll
+// 10.0.26100.9444 (SysWOW64 and the x86 WinSxS copies are byte-identical) produces it:
+//   b1 = 212x52 PixelFormat32bppPARGB, cleared; FillRectangle(all, ARGB 0x007ea5d3) leaves it (alpha 0)
+//   8 rules: DrawLine(pen ARGB 0x3c8ebce6, width 1) at x = 0xbe, 0xa5, 0x8b, 0x73, 0x5c, 0x43, 0x29, 0x11, y 0..51
+//   per band b (1..17), cell k (1..7): FillRectangle(x_b, y_k, 4, 4) with ARGB (v, 0x8e, 0xd5, 0xff), lit (0xff, 0xff,
+//   0xff, 0); over a transparent pixel SourceOver leaves the brush colour premultiplied: round(c * a / 255)
+//   b2 = W x H PARGB; HighQualityBicubic DrawImageRectRect(b1, src (2, 2, 208, 48) -> (0, 0, W, H))
+//   LockBits(b2, PixelFormat32bppARGB): colour * floor(0xff0000 / a) >> 16
+// The bicubic span is the one the Picture Viz port re-derived (../pictureviz/gdip.ts, A/B-verified there on opaque
+// pictures); here it runs on premultiplied pixels with alpha and on a source rectangle inside a larger bitmap.
+const f32 = Math.fround;
+const fix16 = (v: number): number => Math.floor(f32(f32(v * 65536) + 0.5));
+const keys = (x: number, a: number): number => {
+  x = Math.abs(x);
+  return x <= 1 ? (a + 2) * x * x * x - (a + 3) * x * x + 1 : x < 2 ? a * (x * x * x - 5 * x * x + 8 * x - 4) : 0;
+};
+// cumulative kernel area, index -256..256 over the normalised support [-1, 1] (stored at +256)
+const TABLE = ((): Int32Array => {
+  const t = new Int32Array(513);
+  let acc = 0;
+  for (let i = -256; i <= 256; i++) { acc += keys(i / 128, -1); t[i + 256] = Math.round(acc * 512); }
+  return t;
+})();
+const cum = (u: number): number => { const i = u >> 8; return i <= -256 ? 0 : i >= 256 ? 65536 : TABLE[i + 256]; };
+
+interface Tap { j0: number; w: Int32Array; shift: 14 | 16 }
+interface Axis { scale: number; width: number; inv: number; origin: number }
+
+/** the span's 16.16 set-up for one axis: sn source pixels onto dn (see ../pictureviz/gdip.ts axis()) */
+function axis(sn: number, dn: number, other: number, flip: boolean): Axis {
+  const m = f32(dn / sn), t = f32(dn - f32(m * sn));
+  const p0 = t, p1 = f32(f32(m * sn) + t);
+  const det = f32(sn * other), rdet = f32(1 / det);
+  const m2 = f32(f32(f32(other * p1) + f32(-other * p0)) * rdet), t2 = f32(f32(det * p0) * rdet);
+  const dst0 = t2, ext = f32(f32(f32(m2 * sn) + t2) - t2);
+  const scale = fix16(f32(sn / ext));
+  let width = fix16(f32(f32(2 * sn) / ext));
+  if (width < 0x20000) width = 0x20000;
+  const origin = Math.floor(f32(f32((flip ? -dst0 : dst0) * scale) + 0.5));
+  return { scale, width, inv: fix16(f32(65536 / width)), origin };
+}
+
+/** taps for destination d; source pixels j (in the source rectangle's coordinates) exist for lo <= j < hi */
+function taps(d: number, lo: number, hi: number, ax: Axis, mmx: boolean): Tap {
+  const pos = ax.origin + d * ax.scale - 0x8000;
+  const j0 = (pos - ax.width + 0xffff) >> 16, j1 = (pos + ax.width + 0xffff) >> 16;
+  const w = new Int32Array(j1 - j0 + 1);
+  let prev = 0;
+  for (let j = j0; j <= j1; j++) {
+    const c = cum(Math.floor(((j * 65536 - pos) * ax.inv) / 65536));
+    w[j - j0] = j < lo || j >= hi ? 0 : mmx ? (c >> 2) - (prev >> 2) : c - prev;
+    prev = c;
+  }
+  return { j0, w, shift: mmx ? 14 : 16 };
+}
+
+function horizontalTaps(lo: number, hi: number, dw: number, ax: Axis): Tap[] {
+  const P = dw + 1;
+  const pos0 = ax.origin - 0x8000;
+  const L = Math.max(0, Math.trunc((ax.width - pos0 + ax.scale - 1 + lo * 65536) / ax.scale));
+  const R = Math.min(P, Math.trunc(((hi - 1) * 65536 - pos0 - ax.width) / ax.scale));
+  const n = R - L, posL = pos0 + L * ax.scale, firstL = (posL - ax.width + 0xffff) >> 16;
+  const lastR = ((n - 1) * ax.scale + posL + ax.width) >> 16;
+  const twoToOne = n >= 16 && (2 * n + 5 + firstL === lastR || 2 * n + 5 + firstL === lastR - 1);
+  let w8: Int32Array | null = null;
+  if (twoToOne) {
+    const frac = (posL + 0x8000) & 0xffff;
+    w8 = Int32Array.from({ length: 8 }, (_, k) => Math.round(65536 * keys((((frac >> 2) - 0x10000 + k * 0x4000) >> 9) / 64, -0.5)) >> 3);
+  }
+  const out: Tap[] = [];
+  for (let x = 0; x < dw; x++) {
+    const inside = x >= L && x < R;
+    out.push(inside && w8 ? { j0: firstL + 2 * (x - L), w: w8, shift: 14 } : taps(x, lo, hi, ax, inside));
+  }
+  return out;
+}
+
+function pack(a: number, r: number, g: number, b: number, shift: number): number {
+  const half = 1 << (shift - 1);
+  a = (a + half) >> shift;
+  a = a < 0 ? 0 : a > 255 ? 255 : a;
+  const cl = (c: number): number => { c = (c + half) >> shift; return c < 0 ? 0 : c > a ? a : c; };
+  return ((a << 24) | (cl(r) << 16) | (cl(g) << 8) | cl(b)) >>> 0;
+}
+
+/** HighQualityBicubic of the premultiplied (0xAARRGGBB) source rectangle (sx, sy, sw, sh) of an fw x fh bitmap to
+ *  dw x dh, premultiplied. full: taps beyond the rectangle read the bitmap around it (else transparent). */
+export function scaleHQ(src: Uint32Array, fw: number, fh: number, sx: number, sy: number, sw: number, sh: number,
+  dw: number, dh: number, full = true): Uint32Array {
+  const out = new Uint32Array(dw * dh);
+  if (sw === dw && sh === dh) {                  // 1:1 in both axes is a plain copy
+    for (let y = 0; y < sh; y++) out.set(src.subarray((sy + y) * fw + sx, (sy + y) * fw + sx + sw), y * dw);
+    return out;
+  }
+  const loX = full ? -sx : 0, hiX = full ? fw - sx : sw, loY = full ? -sy : 0, hiY = full ? fh - sy : sh;
+  const Ht = horizontalTaps(loX, hiX, dw, axis(sw, dw, sh, false));
+  const mid = new Uint32Array(dw * fh);
+  for (let y = 0; y < fh; y++) {
+    for (let x = 0; x < dw; x++) {
+      const { j0, w, shift } = Ht[x];
+      let a = 0, r = 0, g = 0, b = 0;
+      for (let k = 0; k < w.length; k++) {
+        const wk = w[k];
+        if (wk === 0) continue;
+        const p = src[y * fw + sx + j0 + k];
+        a += (p >>> 24) * wk; r += ((p >>> 16) & 255) * wk; g += ((p >>> 8) & 255) * wk; b += (p & 255) * wk;
+      }
+      mid[y * dw + x] = pack(a, r, g, b, shift);
+    }
+  }
+  const ax = axis(sh, dh, sw, true);
+  for (let y = 0; y < dh; y++) {
+    const { j0, w } = taps(y, loY, hiY, ax, false);
+    for (let x = 0; x < dw; x++) {
+      let a = 0, r = 0, g = 0, b = 0;
+      for (let k = 0; k < w.length; k++) {
+        const wk = w[k] >> 2;
+        if (wk === 0) continue;
+        const p = mid[(sy + j0 + k) * dw + x];
+        a += (p >>> 24) * wk; r += ((p >> 16) & 255) * wk; g += ((p >> 8) & 255) * wk; b += (p & 255) * wk;
+      }
+      out[y * dw + x] = pack(a, r, g, b, 14);
+    }
+  }
+  return out;
+}
+
+/** premultiply as GDI+'s SourceOver onto transparent leaves a brush colour */
+const pm = (argb: number): number => {
+  const a = argb >>> 24, m = (c: number): number => Math.round(c * a / 255);
+  return ((a << 24) | (m((argb >>> 16) & 255) << 16) | (m((argb >>> 8) & 255) << 8) | m(argb & 255)) >>> 0;
+};
+const RULES = [0xbe, 0xa5, 0x8b, 0x73, 0x5c, 0x43, 0x29, 0x11];
+const YS = [0x2b, 0x26, 0x21, 0x16, 0x11, 0x0c, 0x07];
+
+/** b1: the 212x52 premultiplied picture; cells[b * 8] = band b's x, cells[b * 8 + k] = cell k's value (b 1..17) */
+export function eqSource(cells: Int32Array): Uint32Array {
+  const b1 = new Uint32Array(212 * 52);
+  const rule = pm(0x3c8ebce6);
+  for (const x of RULES) for (let y = 0; y < 52; y++) b1[y * 212 + x] = rule;
+  for (let b = 1; b < 18; b++) {
+    const x = cells[b * 8];
+    for (let k = 0; k < 7; k++) {
+      const v = cells[b * 8 + 1 + k] & 0xff;
+      if (v === 0) continue;
+      const c = pm(v === 0xff ? 0xffffff00 : ((v << 24) | 0x8ed5ff) >>> 0);
+      for (let y = YS[k]; y < YS[k] + 4; y++) for (let xx = x; xx < x + 4; xx++) if (xx >= 0 && xx < 212) b1[y * 212 + xx] = c;
+    }
+  }
+  return b1;
+}
+
+/** the equalizer picture W x H as 0xAARRGGBB (straight alpha), as LockBits(ARGB) hands it to the DLL */
+export function eqImage(cells: Int32Array, W: number, H: number): Uint32Array | null {
+  const b1 = eqSource(cells);
+  const b2 = scaleHQ(b1, 212, 52, 2, 2, 208, 48, W, H);
+  for (let i = 0; i < b2.length; i++) {
+    const p = b2[i], a = p >>> 24, m = a ? Math.floor(0xff0000 / a) : 0;
+    b2[i] = ((a << 24) | ((((p >>> 16) & 255) * m >> 16) << 16) | ((((p >>> 8) & 255) * m >> 16) << 8) | ((p & 255) * m >> 16)) >>> 0;
+  }
+  return b2;
+}

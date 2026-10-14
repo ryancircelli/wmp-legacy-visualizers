@@ -157,12 +157,13 @@ the Fun Packs and its online gallery. These are the ones not yet in the player:
 | Visualization | Where it shipped | Presets | Status |
 |---|---|---|---|
 | Kid Drawing, Shacojin | WMP 7 Bonus Pack (2000) | 2, 4 | not planned |
-| Winter (Ice Storm), Energy Bliss, Softie the Snowman II, Rhythm and Waves | Winter Fun Packs, Microsoft's gallery | 1 each | not planned (Direct3D; would be matched against Microsoft's software renderer) |
+| Winter (Ice Storm), Energy Bliss, Softie the Snowman II | Winter Fun Packs, Microsoft's gallery | 1 each | not planned (Direct3D; would be matched against Microsoft's software renderer) |
 | Grind, T3, Looney Tunes | Microsoft's gallery | 1 each | not planned (Direct3D; would need our own artwork in place of the film stills) |
 
 Done since this list began: 3D Alchemy, Picture Viz, Picture Viz II, Picture Viz 3D, Yule Log, Blazing Colors, Color Cubes, Pulsing
 Colors, Trilogy I-III, Eclectic Colors, StarTime, SnowTime, Dungeon Siege (our own artwork), Plus! 3-D (our own
-artwork) and Goom (the WMP 9 plug-in, LGPL).
+artwork), Goom (the WMP 9 plug-in, LGPL) and Windows Media 9 Series (Rhythm and Waves, the gallery's unsigned download; our own
+sky, hills and mark in place of its GDI+ drawing and the logos).
 
 Not found yet: "Thanks" and "Chinese New Year 2005" from Microsoft's gallery.
 

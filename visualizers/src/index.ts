@@ -25,6 +25,7 @@ import './pictureviz/pv2/index';
 import './pictureviz/pv3/index';
 import type { Picture } from './pictureviz/picture';
 import './yule/index';
+import './averett/index';
 import './goom/index';
 import './plus3d/index';
 import { RefDevice } from './d3d8/ref';
@@ -35,7 +36,7 @@ export { pictureFromRGBA, loadPicture } from './pictureviz/picture';
 
 export type VisKind = 'alchemy' | 'bars' | 'battery' | 'spikes' | 'particle' | 'plenoptic' | 'ambience' | 'musical'
   | 'blazing' | 'colorcubes' | 'pulsing' | 'trilogy1' | 'trilogy2' | 'trilogy3' | 'dungeon' | 'snowtime' | 'startime' | 'eclectic' | 'alchemy3d' | 'pictureviz' | 'pictureviz2' | 'pictureviz3' | 'yule'
-  | 'goom' | 'plus3d';
+  | 'goom' | 'plus3d' | 'wm9s';
 /** 'original' = each DLL's own surface size; 'auto' = the view, capped near 720p worth of pixels; n = view * n. */
 export type Scale = 'original' | 'auto' | number;
 
@@ -71,7 +72,7 @@ export interface PresetEntry {
   preset: number;
   group: 'Alchemy' | 'Bars and Waves' | 'Battery' | 'Spikes' | 'Particle' | 'Plenoptic' | 'Ambience' | 'Musical Colors'
     | 'Blazing Colors' | 'Color Cubes' | 'Pulsing Colors' | 'Trilogy I' | 'Trilogy II' | 'Trilogy III' | 'Dungeon Siege' | 'SnowTime' | 'StarTime' | 'Eclectic Colors' | '3D Alchemy' | 'Picture Viz' | 'Picture Viz II' | 'Picture Viz 3D' | 'Yule Log'
-    | 'Goom' | 'Plus! 3-D Visualizations';
+    | 'Goom' | 'Plus! 3-D Visualizations' | 'Windows Media 9 Series';
   name: string;
   /** the family's registry key, HKLM\SOFTWARE\Microsoft\MediaPlayer\Objects\Effects\<key> (its place in the list) */
   key: string;
@@ -158,6 +159,9 @@ const FAMILIES: readonly { key: string; vis: VisKind; group: PresetEntry['group'
   { key: 'Wmp9_goom', vis: 'goom', group: 'Goom', names: A.Goom.PRESET_NAMES },
   // Microsoft Plus! for Windows XP's plusvis.dll, key "PlusVis" (named "Plus! 3-D Visualizations")
   { key: 'PlusVis', vis: 'plus3d', group: 'Plus! 3-D Visualizations', names: A.PlusVis.PRESET_NAMES },
+  // the gallery's MediaPlayer_9.dll (Averett & Associates for Microsoft, unsigned), key "MediaPlayer_9", named
+  // "Windows Media 9 Series" (its string 101); one preset, Rhythm and Waves
+  { key: 'MediaPlayer_9', vis: 'wm9s', group: 'Windows Media 9 Series', names: A.AverettMp9.PRESET_NAMES },
 ];
 
 /** Every preset of every family, in WMP's order: the flat list its next/previous walks, wrapping. */
@@ -199,10 +203,10 @@ const FIXED_SIZE: ReadonlySet<VisKind> = new Set(['plenoptic', 'ambience', 'goom
 /** Goom's presets: 320x240, 480x360, 600x480 (the DLL's "640x480" sets 600), 800x600; its Render stretched the
  *  buffer to the window with StretchDIBits in the DC's default (non-HALFTONE) mode: nearest */
 const GOOM_SIZES: readonly [number, number][] = [[320, 240], [480, 360], [600, 480], [800, 600]];
-/** The Direct3D 8 families (Yule Log, Plus! 3-D Visualizations): their DLLs render at the window's size through the GPU; the port renders
+/** The Direct3D 8 families (Yule Log, Plus! 3-D Visualizations, Windows Media 9 Series): their DLLs render at the window's size through the GPU; the port renders
  *  through the reference-rasterizer port (d3d8/ref.ts), in software, so it draws at most D3D_PIXELS and the canvas
  *  stretches it, whatever the scale. ponytail: a fixed pixel budget; raise it as ref.ts gets faster. */
-const D3D: ReadonlySet<VisKind> = new Set(['yule', 'plus3d']);
+const D3D: ReadonlySet<VisKind> = new Set(['yule', 'plus3d', 'wm9s']);
 const D3D_PIXELS = 320 * 240;
 /** ...and Alchemy's WMP 9-11 presets: those mpvis.dlls draw into a fixed surface (384x288 for WMP 9, 640x480
  *  for 10 and 11) StretchBlt'd COLORONCOLOR to the window; WMP 12's (preset 0) follows the scale. */
@@ -306,6 +310,7 @@ function makeRaw(kind: VisKind, preset: number, options: EngineOptions): RawEngi
   // the DLL seeded its random table with a heap address: a different one each time it was loaded
   if (kind === 'goom') return new A.Goom({ preset, options, seed: (Math.random() * 0x100000000) >>> 0 }) as unknown as RawEngine;
   if (kind === 'plus3d') return new A.PlusVis({ width: 320, height: 240, preset }) as unknown as RawEngine;
+  if (kind === 'wm9s') return new A.AverettMp9({ width: 320, height: 240, preset }) as unknown as RawEngine;
   return new (A.Engine as unknown as RawCtor)({ width: 16, height: 16, options, preset });
 }
 
