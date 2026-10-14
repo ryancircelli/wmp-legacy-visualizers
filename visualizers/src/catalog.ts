@@ -49,6 +49,8 @@ const CURRENT: Record<VisKind, Versions> = {
   betterbars: [9, 9],
   // Clarify: Blackfly Studios' plug-in for WMP 9 (2003)
   clarify: [9, 9],
+  // PixelTrip: a third-party IWMPEffects plug-in (2002), offered for WMP 7 to 10
+  pixeltrip: [7, 10],
 };
 
 /** A preset's name as its name and the versions its suffix gives ("Swirl (WMP 7-9)": Swirl, [7, 9]); none: null. */

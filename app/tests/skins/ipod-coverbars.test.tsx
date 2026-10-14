@@ -111,7 +111,7 @@ it('black (the tap\'s third art): WMP\'s own look, no art, no reflection, the vi
     .toEqual(['opaque', null, false, 0, false, true, '', '', true]);
   m.menu();
   expect([m.options().map((x) => x.textContent), m.row('Opacity').getAttribute('aria-disabled')])
-    .toEqual([['VisualizerOn', 'Opacity50%', '3D Alchemy', 'Alchemy', 'Ambience', 'Bars and WavesBars', 'Battery', 'Blazing Colors', 'Clarify', 'Color Cubes', 'Phthalo\'s Corona', 'Particle', 'Dungeon Siege', 'Eclectic Colors', 'Googly Moogly!', 'Windows Media 9 Series', 'Picture Viz', 'Picture Viz II', 'Picture Viz 3D', 'Plenoptic', 'Plus! 3-D Visualizations',
+    .toEqual([['VisualizerOn', 'Opacity50%', '3D Alchemy', 'Alchemy', 'Ambience', 'Bars and WavesBars', 'Battery', 'Blazing Colors', 'Clarify', 'Color Cubes', 'Phthalo\'s Corona', 'Particle', 'Dungeon Siege', 'Eclectic Colors', 'Googly Moogly!', 'Windows Media 9 Series', 'Picture Viz', 'Picture Viz II', 'Picture Viz 3D', 'PixelTrip', 'Plenoptic', 'Plus! 3-D Visualizations',
       'Pulsing Colors', 'Ripple', 'SnowTime', 'Spikes', 'StarTime', 'Trilogy I', 'Trilogy II', 'Trilogy III', 'Better Bars', 'Goom', 'Musical Colors', 'Yule Log'], null]);   // no Background row; Opacity as ever
   m.pick('Opacity');                                 // stepped: kept for the art, not applied here
   expect([readPref('ipod.visOpacity', 50), m.layer()?.style.opacity]).toEqual([25, '']);

@@ -29,6 +29,7 @@ import './averett/index';
 import './goom/index';
 import './googly/index';
 import './corona/index';
+import './pixeltrip/index';
 import './plus3d/index';
 import './blackfly/ripple';
 import './blackfly/clarify';
@@ -41,7 +42,7 @@ export { pictureFromRGBA, loadPicture } from './pictureviz/picture';
 
 export type VisKind = 'alchemy' | 'bars' | 'battery' | 'spikes' | 'particle' | 'plenoptic' | 'ambience' | 'musical'
   | 'blazing' | 'colorcubes' | 'pulsing' | 'trilogy1' | 'trilogy2' | 'trilogy3' | 'dungeon' | 'snowtime' | 'startime' | 'eclectic' | 'alchemy3d' | 'pictureviz' | 'pictureviz2' | 'pictureviz3' | 'yule'
-  | 'goom' | 'plus3d' | 'wm9s' | 'googly' | 'corona' | 'ripple' | 'betterbars' | 'clarify';
+  | 'goom' | 'plus3d' | 'wm9s' | 'googly' | 'corona' | 'ripple' | 'betterbars' | 'clarify' | 'pixeltrip';
 /** 'original' = each DLL's own surface size; 'auto' = the view, capped near 720p worth of pixels; n = view * n. */
 export type Scale = 'original' | 'auto' | number;
 
@@ -77,7 +78,7 @@ export interface PresetEntry {
   preset: number;
   group: 'Alchemy' | 'Bars and Waves' | 'Battery' | 'Spikes' | 'Particle' | 'Plenoptic' | 'Ambience' | 'Musical Colors'
     | 'Blazing Colors' | 'Color Cubes' | 'Pulsing Colors' | 'Trilogy I' | 'Trilogy II' | 'Trilogy III' | 'Dungeon Siege' | 'SnowTime' | 'StarTime' | 'Eclectic Colors' | '3D Alchemy' | 'Picture Viz' | 'Picture Viz II' | 'Picture Viz 3D' | 'Yule Log'
-    | 'Goom' | 'Plus! 3-D Visualizations' | 'Windows Media 9 Series' | 'Googly Moogly!' | 'Phthalo\'s Corona' | 'Ripple' | 'Better Bars' | 'Clarify';
+    | 'Goom' | 'Plus! 3-D Visualizations' | 'Windows Media 9 Series' | 'Googly Moogly!' | 'Phthalo\'s Corona' | 'Ripple' | 'Better Bars' | 'Clarify' | 'PixelTrip';
   name: string;
   /** the family's registry key, HKLM\SOFTWARE\Microsoft\MediaPlayer\Objects\Effects\<key> (its place in the list) */
   key: string;
@@ -162,6 +163,8 @@ const FAMILIES: readonly { key: string; vis: VisKind; group: PresetEntry['group'
   // Picture_Viz_III.dll (the Creativity Fun Pack 2003): its REGISTRY resource's Effects key is "Picture_Viz_III",
   // which sorts after "PictureViz_II" ("V" before "_")
   { key: 'Picture_Viz_III', vis: 'pictureviz3', group: 'Picture Viz 3D', names: A.PictureViz3.PRESET_NAMES },
+  // PixelTripWMP.dll (Brian Spangler / Visolu, 2002), key "PixelTrip"
+  { key: 'PixelTrip', vis: 'pixeltrip', group: 'PixelTrip', names: A.PixelTrip.PRESET_NAMES },
   // Microsoft's downloadable Direct3D 8 visualizations (Bonus Pack, Winter Fun Packs), their own Effects keys
   { key: 'YuleLog', vis: 'yule', group: 'Yule Log', names: A.YuleLog.PRESET_NAMES },
   // What a GOOM! 2k4's WMP 9 plug-in (wmp9_goom.dll, iOS Software, LGPL): key "Wmp9_goom", before WMPVis
@@ -212,7 +215,8 @@ export function makeLevel(): TimedLevel {
 // buffer of the window's size, presented 1:1. Picture Viz's canvas is the window
 // (its own 352x320 only for a transition's first frame). Googly Moogly! draws into a memory DC the window's size and
 // BitBlts it 1:1. Phthalo's Corona draws 8-bit at the window's width and 4/5 of its height, SetDIBitsToDevice'd 1:1, its
-// lowest quarter mirrored beneath (the last height % 5 rows stay black).
+// lowest quarter mirrored beneath (the last height % 5 rows stay black). PixelTrip draws into a buffer the window's
+// size, DrawDibDraw'n 1:1.
 /** Families that draw at a size of their own whatever the window (Plenoptic and Ambience: their
  *  Plenoptic_Resolution / Assault_Resolution, 256x192 by default, StretchDIBits'd to the window): every
  *  scale renders them there, the canvas stretches. */
@@ -248,6 +252,11 @@ export function nativeSize(kind: VisKind, viewW: number, viewH: number, preset =
   // Ripple: a 32-bit DIB section of the window's size, BitBlt'd 1:1
   if (kind === 'ripple' || kind === 'betterbars' || kind === 'clarify') return [Math.min(1920, viewW), Math.min(1080, viewH)];
   if (kind === 'googly' || kind === 'corona') return [Math.max(32, Math.min(1920, viewW)), Math.max(32, Math.min(1080, viewH))];   // the window's own, 32x32 at least
+  if (kind === 'pixeltrip') {   // the window's shape within 640x480 worth of pixels (its per-pixel field runs ~18 ms there in JS)
+    // ponytail: a fixed pixel budget, as the Direct3D families; the window's own size once the field is faster
+    const k = Math.min(1, Math.sqrt(640 * 480 / (viewW * viewH)));
+    return [Math.max(16, Math.round(viewW * k)), Math.max(16, Math.round(viewH * k))];
+  }
   return kind === 'battery' ? [384, 288] : [640, 480];
 }
 
@@ -337,6 +346,7 @@ function makeRaw(kind: VisKind, preset: number, options: EngineOptions): RawEngi
   if (kind === 'wm9s') return new A.AverettMp9({ width: 320, height: 240, preset }) as unknown as RawEngine;
   if (kind === 'googly') return new (A.GooglyMoogly as unknown as RawCtor)({ width: 640, height: 480, options, preset });
   if (kind === 'corona') return new (A.Corona as unknown as RawCtor)({ width: 640, height: 480, options, preset });
+  if (kind === 'pixeltrip') return new (A.PixelTrip as unknown as RawCtor)({ width: 640, height: 480, options, preset });
   return new (A.Engine as unknown as RawCtor)({ width: 16, height: 16, options, preset });
 }
 
