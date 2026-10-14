@@ -30,9 +30,9 @@ describe('averett: x87 and D3DX helpers', () => {
     const o = new Float32Array(3);
     vec3Normalize(o, 0, 0, 0, 0); expect([...o]).toEqual([0, 0, 0]);
     vec3Normalize(o, 0, 0.6, 0.8, 0); expect([...o]).toEqual([Math.fround(0.6), Math.fround(0.8), 0]);
-    for (const v of [[3, 1, 4], [0.01, 1, -0.02], [100, -7, 2]]) {
-      vec3Normalize(o, 0, v[0], v[1], v[2]);
-      expect(Math.abs(Math.hypot(o[0], o[1], o[2]) - 1)).toBeLessThan(2e-6);
+    for (const [x, y, z] of [[3, 1, 4], [0.01, 1, -0.02], [100, -7, 2]] as const) {
+      vec3Normalize(o, 0, x, y, z);
+      expect(Math.abs(Math.hypot(o[0]!, o[1]!, o[2]!) - 1)).toBeLessThan(2e-6);
     }
   });
   it('matrices: multiply order, quaternion rotation, the right-handed projection the water uses', () => {
@@ -56,9 +56,9 @@ describe('averett: the equalizer picture (GDI+)', () => {
     const cells = new Int32Array(18 * 8);
     cells[8] = 0xcc; cells[9] = 0xff; cells[10] = 0x80;     // band 1 at x 0xcc: cell 1 lit, cell 2 half
     const b1 = eqSource(cells);
-    expect(b1[10 * 212 + 0xbe].toString(16)).toBe('3c212c36');           // pen 0x3c8ebce6
-    expect(b1[0x2b * 212 + 0xcc].toString(16)).toBe('ffffff00');         // lit: opaque yellow
-    expect(b1[0x26 * 212 + 0xcc].toString(16)).toBe('80476b80');         // round(c * 0x80 / 255)
+    expect(b1[10 * 212 + 0xbe]!.toString(16)).toBe('3c212c36');           // pen 0x3c8ebce6
+    expect(b1[0x2b * 212 + 0xcc]!.toString(16)).toBe('ffffff00');         // lit: opaque yellow
+    expect(b1[0x26 * 212 + 0xcc]!.toString(16)).toBe('80476b80');         // round(c * 0x80 / 255)
     expect(b1[0]).toBe(0);
   });
   it('the shrink keeps the picture inside 0..alpha and a 1:1 copy is exact', () => {
