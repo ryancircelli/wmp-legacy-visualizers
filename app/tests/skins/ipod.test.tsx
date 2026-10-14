@@ -497,7 +497,7 @@ function atSettings() {
            title: () => m.shown('[class*=status] [class*=title]')[0]?.textContent };
 }
 const SETTINGS = [
-  'SkiniPod', 'Color', 'MetalClassic', 'Click WheelWhite', 'ClickerOn',
+  'SkiniPod', 'Color', 'MetalResponsive', 'Click WheelWhite', 'ClickerOn',
   'Main Menu', 'Library Filters', 'Library ViewGrid',
   'About', 'Check for Updates', 'Reset Settings', 'Legal',
   'Source Code', 'Report a Problem',
@@ -527,7 +527,6 @@ it('Settings: one list under section headers, without what Now Playing or the de
 });
 
 it('Brick: a main-menu row that opens its canvas under the dark status row (the time, no title), MENU back; Settings > Main Menu hides it', () => {
-  vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(null);   // jsdom has none (it logs)
   const m = atSettings();
   key('Escape');
   m.click('Brick');
@@ -566,7 +565,7 @@ it('Settings\' host-gated rows show only with their host: Theme, Refresh Player,
   act(() => m.S().actions.setAuth({ canLogout: true }));
   expect(m.headers()).toEqual(['Appearance', 'Menus', 'General', 'Support', 'Account']);
   expect(m.rows()).toEqual([
-    'SkiniPod', 'Color', 'MetalClassic', 'Click WheelWhite', 'ClickerOn', 'ThemeAutomatic',
+    'SkiniPod', 'Color', 'MetalResponsive', 'Click WheelWhite', 'ClickerOn', 'ThemeAutomatic',
     'Main Menu', 'Library Filters', 'Library ViewGrid',
     'About', 'Check for Updates', 'Refresh Player', 'Reset Settings', 'Legal',
     'Source Code', 'Report a Problem', 'Host Log',
@@ -591,12 +590,11 @@ it('Crossfade: shown with the host\'s player only, under Sound; Off -> 2 s -> 5 
 });
 
 it('Reset Settings puts back what Settings keeps: the toggles, the click wheel, the metal, the library view; the volume as it was', () => {
-  vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(null);   // Rendered without WebGL: the classic body, logged
   const m = atSettings();
   act(() => { for (const k of ['ipod.volumeLimit', 'ipod.shake', 'ipod.clock']) localStorage.setItem(k, '50'); });   // earlier builds': read by nothing
   act(() => m.store.getState().actions.setSettings({ volume: 80 }));
-  for (const r of ['ClickerOn', 'Click WheelWhite', 'MetalClassic', 'Library ViewGrid']) m.click(r);
-  expect(m.rows()).toEqual(expect.arrayContaining(['ClickerOff', 'Click WheelBlack', 'MetalRendered', 'Library ViewList']));
+  for (const r of ['ClickerOn', 'Click WheelWhite', 'MetalResponsive', 'Library ViewGrid']) m.click(r);
+  expect(m.rows()).toEqual(expect.arrayContaining(['ClickerOff', 'Click WheelBlack', 'MetalStatic', 'Library ViewList']));
   expect(m.S().settings.volume).toBe(80);            // no limit holds it any more
   m.click('Reset Settings');
   act(() => { fireEvent.click(m.shown('div').find((x) => x.textContent === 'Reset' && !x.children.length)!); });

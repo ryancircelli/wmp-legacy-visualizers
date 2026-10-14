@@ -1,7 +1,8 @@
-// Settings > Metal > Rendered (docs/ipod-skin.md §1.7), with the GPU mocked (gl.ts createRenderer): the
-// row switches it and keeps it; the glass has its canvas over the screen while its context can be had;
-// without WebGL or with the context lost the classic look comes back, said in the host's log; Low Power
-// Mode holds it upright at the middle brightness on the same context; and it draws only on a change: a
+// The metal (docs/ipod-skin.md §1.7), with the GPU mocked (gl.ts createRenderer): Settings > Metal
+// switches it between Responsive and Static and keeps it; the glass has its canvas over the screen while
+// its context can be had; without WebGL nothing is drawn, said in the host's log, and a lost context is
+// drawn on again on a new one; Static and Low Power Mode hold it upright at the middle brightness on the
+// same context; and it draws only on a change: a
 // roll or tip past 2°, gliding at most 30 a second, a tip settling home in visible steps, never a host
 // step's flicker, the brightness once it has stood half a second, the colours, the size and the wheel's
 // and the glass's place (followed on a resize); nothing while the page is hidden.
@@ -34,9 +35,9 @@ afterEach(() => {
 });
 
 const SILVER = [0, 0, 66] as const, NAVY = [222, 31, 24] as const;
-function Body({ on = true, color = SILVER, ring = 'white', children }: { on?: boolean; color?: readonly [number, number, number]; ring?: Frame['ring']; children?: React.ReactNode }) {
+function Body({ still = false, color = SILVER, ring = 'white', children }: { still?: boolean; color?: readonly [number, number, number]; ring?: Frame['ring']; children?: React.ReactNode }) {
   const ref = useRef<HTMLDivElement>(null);
-  useMetal(ref, on, color, ring);
+  useMetal(ref, color, ring, still);
   return <div ref={ref} data-testid="body">{children}</div>;
 }
 const host = (k: '__wmpTilt' | '__wmpBrightness' | '__wmpLowPower', v: number | boolean, ev: string) =>
@@ -51,25 +52,30 @@ const lines = () => log.mock.calls.map((c) => c[0]);
 /** a roll of `deg` degrees as the host reports it (gravity's x) */
 const roll = (deg: number) => Math.sin(deg * Math.PI / 180);
 
-it('Settings > Metal: Classic by default, Rendered draws the body and is kept, Classic again frees the context', () => {
+it('Settings > Metal: Responsive by default, Static holds the body still and is kept, Responsive again follows the hand', () => {
   const { result } = renderHook(() => useIpodSettings());
   act(() => result.current[1](DEFAULTS));
   const m = mountSkinNow('spotify', fakeData(), <div data-testid="ipod"><Root /></div>);
   const ipod = m.getByTestId('ipod'), shown = (q: string) => [...ipod.querySelectorAll<HTMLElement>(q)].filter((x) => !x.closest('[hidden]'));
   const click = (label: string) => act(() => { fireEvent.click(shown('[role=option]').find((x) => x.textContent === label)!); });
-  click('Settings');
-  expect([ipod.querySelector('[data-wheel] > canvas'), vi.mocked(createRenderer).mock.calls.length]).toEqual([null, 0]);
-  click('MetalClassic');
-  expect(shown('[role=option]').map((x) => x.textContent)).toContain('MetalRendered');
   expect(ipod.querySelector('[data-wheel] > canvas')).not.toBeNull();       // the body's own canvas, under the device
-  expect([draws(), lines()]).toEqual([1, ['ipod: metal rendered (Test GPU)']]);
-  expect((JSON.parse(localStorage.getItem('ipod.settings')!) as { state: { metal: string } }).state.metal).toBe('rendered');
   expect(ipod.querySelector('[class*=bezel] > canvas[class*=glass]')).not.toBeNull(); // the glass's, over the screen
-  click('MetalRendered');
-  expect([ipod.querySelector('[data-wheel] > canvas'), ipod.querySelector('[class*=glass]'), gpu.dispose.mock.calls.length]).toEqual([null, null, 1]);
+  expect([draws(), lines()]).toEqual([1, ['ipod: metal rendered (Test GPU)']]);
+  click('Settings');
+  tilt(roll(20));
+  wait(1000);
+  expect(last().turn).toBeGreaterThan(0);                                     // followed
+  click('MetalResponsive');
+  expect(shown('[role=option]').map((x) => x.textContent)).toContain('MetalStatic');
+  expect((JSON.parse(localStorage.getItem('ipod.settings')!) as { state: { metal: string } }).state.metal).toBe('static');
+  wait(50);
+  expect([last().turn, lines().at(-1), gpu.dispose.mock.calls.length]).toEqual([0, 'ipod: metal still', 0]);   // upright, on the same context
+  click('MetalStatic');
+  wait(1000);
+  expect([lines().at(-1), last().turn > 0]).toEqual(['ipod: metal live', true]);
 });
 
-it('the glass over the screen has its own canvas there, and none (Classic\'s glare) when its context cannot be had', () => {
+it('the glass over the screen has its own canvas there, and none when its context cannot be had', () => {
   const r = render(<Body><div className={s.bezel} /></Body>);
   const over = () => r.getByTestId('body').querySelector(`.${s.bezel} > canvas`);
   expect([over()?.className, vi.mocked(createRenderer).mock.lastCall![1]]).toEqual([s.glass, over()]);
@@ -79,23 +85,25 @@ it('the glass over the screen has its own canvas there, and none (Classic\'s gla
   expect([r2.getByTestId('body').querySelector(`.${s.bezel} > canvas`), r2.getByTestId('body').querySelector(':scope > canvas')]).toEqual([null, expect.anything()]);
 });
 
-it('no WebGL: the classic body, said once', () => {
+it('no WebGL: nothing drawn, said once', () => {
   vi.mocked(createRenderer).mockReturnValue('no webgl');
   const r = render(<Body />);
-  expect([r.getByTestId('body').querySelector('canvas'), lines()]).toEqual([null, ['ipod: metal classic (no webgl)']]);
+  expect([r.getByTestId('body').querySelector('canvas'), lines()]).toEqual([null, ['ipod: metal none (no webgl)']]);
 });
 
-it('a lost context: the canvas goes (the classic body shows), freed, said; nothing draws after', () => {
+it('a lost context: freed, said, and drawn on again on a new canvas and context', () => {
   const r = render(<Body />), canvas = r.getByTestId('body').querySelector('canvas')!;
   act(() => { canvas.dispatchEvent(new Event('webglcontextlost')); });
-  expect([r.getByTestId('body').querySelector('canvas'), gpu.dispose.mock.calls.length, lines().at(-1)]).toEqual([null, 1, 'ipod: metal classic (context lost)']);
-  tilt(.5);
-  r.rerender(<Body color={NAVY} />);
+  const now = r.getByTestId('body').querySelector('canvas');
+  expect([now !== canvas && now !== null, vi.mocked(createRenderer).mock.calls.length, gpu.dispose.mock.calls.length, lines().slice(-2)])
+    .toEqual([true, 2, 1, ['ipod: metal context lost', 'ipod: metal rendered (Test GPU)']]);
+  expect(draws()).toBe(2);                                                    // the colour, on the new context
+  tilt(roll(5));
   wait(1000);
-  expect(draws()).toBe(1);
+  expect(draws()).toBeGreaterThan(2);
 });
 
-it('draws once, then only on a change: a roll past a third of a degree, never a tremor; the colour; a turned-off metal is freed', () => {
+it('draws once, then only on a change: a roll past a third of a degree, never a tremor; the colour; unmounted, it is freed', () => {
   const r = render(<Body />);
   expect([draws(), last().turn, last().exposure]).toEqual([1, 0, 1]);      // no host: upright, the middle brightness
   for (let k = 0; k < 20; k++) { tilt(roll(k % 2 ? .2 : -.2)); wait(50); }   // the hand's tremor
@@ -113,8 +121,8 @@ it('draws once, then only on a change: a roll past a third of a degree, never a 
   r.rerender(<Body color={NAVY} />);                                          // the same colour: nothing
   wait(5000);
   expect(draws()).toBe(d + 1);
-  r.rerender(<Body on={false} color={NAVY} />);
-  expect([gpu.dispose.mock.calls.length, r.getByTestId('body').querySelector('canvas')]).toEqual([1, null]);
+  r.unmount();
+  expect([gpu.dispose.mock.calls.length, document.querySelector('canvas')]).toEqual([1, null]);
 });
 
 it('a turning phone draws at most 30 a second and stops as soon as it is still', () => {
@@ -130,7 +138,7 @@ it('a turning phone draws at most 30 a second and stops as soon as it is still',
   expect(draws()).toBe(still);
 });
 
-it('the brightness: once it has stood half a second, within the classic range; the same level draws nothing', () => {
+it('the brightness: once it has stood half a second, within its range; the same level draws nothing', () => {
   render(<Body />);
   bright(1); wait(200); bright(0); wait(200); bright(.9);
   wait(400);
@@ -144,12 +152,32 @@ it('the brightness: once it has stood half a second, within the classic range; t
   expect(+last().exposure.toFixed(2)).toBe(.86);
 });
 
+it('Static holds the metal still outside Low Power Mode, and Low Power Mode holds it whatever is chosen', () => {
+  window.__wmpTilt = roll(20);
+  window.__wmpBrightness = 1;
+  const r = render(<Body still />);
+  expect([draws(), last().turn, last().exposure, lines()]).toEqual([1, 0, 1, ['ipod: metal rendered (Test GPU)', 'ipod: metal still']]);
+  tilt(roll(-30)); bright(0);
+  wait(5000);
+  expect(draws()).toBe(1);
+  r.rerender(<Body still color={NAVY} />);
+  wait(50);
+  expect([draws(), last().turn]).toEqual([2, 0]);
+  lowPower(true);                                                             // already still: nothing changes
+  r.rerender(<Body color={NAVY} />);                                          // Responsive chosen, Low Power Mode still holds it
+  wait(1000);
+  expect([draws(), lines().at(-1)]).toEqual([2, 'ipod: metal still']);
+  lowPower(false);
+  wait(1000);
+  expect([+last().turn.toFixed(3), +last().exposure.toFixed(2), lines().at(-1)]).toEqual([-0.131, .86, 'ipod: metal live']);
+});
+
 it('Low Power Mode holds the metal still on the same context: upright, the middle brightness, drawn only for the colour; off, it follows again', () => {
   window.__wmpLowPower = true;
   window.__wmpTilt = roll(20);
   window.__wmpBrightness = 1;
   const r = render(<Body />);
-  expect([draws(), last().turn, last().exposure, lines()]).toEqual([1, 0, 1, ['ipod: metal rendered (Test GPU)', 'ipod: metal still (low power)']]);
+  expect([draws(), last().turn, last().exposure, lines()]).toEqual([1, 0, 1, ['ipod: metal rendered (Test GPU)', 'ipod: metal still']]);
   tilt(roll(-30)); bright(0);
   wait(5000);
   expect(draws()).toBe(1);
@@ -165,7 +193,7 @@ it('Low Power Mode holds the metal still on the same context: upright, the middl
   expect(draws()).toBeGreaterThan(d);
   lowPower(true);                                                             // switched on mid-session: one still frame, the context kept
   wait(50);
-  expect([last().turn, last().exposure, gpu.dispose.mock.calls.length, lines().at(-1)]).toEqual([0, 1, 0, 'ipod: metal still (low power)']);
+  expect([last().turn, last().exposure, gpu.dispose.mock.calls.length, lines().at(-1)]).toEqual([0, 1, 0, 'ipod: metal still']);
   d = draws();
   tilt(roll(10));
   wait(1000);

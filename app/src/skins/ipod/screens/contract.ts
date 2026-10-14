@@ -121,8 +121,8 @@ export interface IpodSettings {
   light: number;      // 15..75 % (settings.ts LIGHT), for 'custom'
   clicker: boolean;   // the tick sound
   wheel: 'white' | 'black';
-  /** the body: the CSS cylinder, or lit by the GPU (metal/, docs/ipod-skin.md §1.7) */
-  metal: 'classic' | 'rendered';
+  /** the GPU's body (metal/, docs/ipod-skin.md §1.7): its lights follow the hand and the room, or hold still */
+  metal: 'responsive' | 'static';
   /** seconds untouched before the screen dims (the iOS app; settings.ts BACKLIGHT), 0 never */
   backlight: number;
   /** the battery's percentage beside it in the status row (the iOS app, which reports the battery) */

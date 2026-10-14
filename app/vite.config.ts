@@ -13,6 +13,7 @@ export default defineConfig({
   server: { watch: { ignored: ['**/tauri/**'] } },
   test: {
     environment: 'jsdom',
+    setupFiles: ['tests/setup.ts'],
     include: ['tests/**/*.test.{ts,tsx}', 'src/skins/**/*.test.{ts,tsx}'], // a skin's pure logic tests live beside it
   },
 });

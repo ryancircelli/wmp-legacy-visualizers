@@ -141,10 +141,12 @@ it('a blob stored before the lightness loads as it looked: lightness 50, the old
     return [s.ipodSettings(), s.bodyVars(s.ipodSettings())] as const;
   };
   const [old, vars] = await load({ state: { color: 'custom', hue: 30, sat: 0, clicker: false, wheel: 'black' }, version: 0 });
-  expect(old).toEqual({ color: 'custom', hue: 30, sat: 85, light: 50, clicker: false, wheel: 'black', metal: 'classic', backlight: 60, batteryPct: false });
+  expect(old).toEqual({ color: 'custom', hue: 30, sat: 85, light: 50, clicker: false, wheel: 'black', metal: 'responsive', backlight: 60, batteryPct: false });
   // Custom's base is the picked colour taken down by 1.15: the cylinder's lights bring it back up
   expect(vars).toEqual({ '--h': 30, '--s': 85 / 1.15 + '%', '--l': 50 / 1.15 + '%' });
   expect(JSON.parse(localStorage.getItem('ipod.settings')!)).toMatchObject({ version: 1, state: { light: 50 } });   // migrated, rewritten
   const [grey] = await load({ state: { color: 'custom', hue: 30, sat: 0, light: 90, clicker: true, wheel: 'white' }, version: 1 });
   expect([grey.sat, grey.light]).toEqual([0, 50]);                          // out of range: the default
+  for (const metal of ['classic', 'rendered', 'responsive']) expect((await load({ state: { metal }, version: 1 }))[0].metal).toBe('responsive');
+  expect((await load({ state: { metal: 'static' }, version: 1 }))[0].metal).toBe('static');
 });

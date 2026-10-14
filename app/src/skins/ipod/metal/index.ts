@@ -1,14 +1,12 @@
-// Settings > Metal > Rendered (docs/ipod-skin.md §1.7): the body and the click wheel's ring and centre
-// button drawn by the GPU (gl.ts) on a canvas under the device, the CSS cylinder's and the wheel's
-// backgrounds' place (the wheel's MENU, glyphs and touches stay the page's, where the layout puts them),
-// and the glass's reflection on a canvas over the screen, its static glare's place. Drawn when
-// something changes, never on a loop: the colours, the size and the wheel's and the glass's place, the
-// room's light (the screen's brightness, settled) and the hand (the phone's roll and pitch, past a
-// tremor, at most FPS a second while it turns). In Low Power Mode it holds still (the owner, 2026-10-06:
-// "keep pbr in low power but disable motion and light responses"): upright and at the middle
-// brightness, drawn again only for the colours, the size and the layout. Without WebGL, or with its
-// context lost, the canvases go and the classic look shows again.
-import { useLayoutEffect, useRef, type RefObject } from 'react';
+// The iPod's body (docs/ipod-skin.md §1.7): it and the click wheel's ring and centre button drawn by the
+// GPU (gl.ts) on a canvas under the device (the wheel's MENU, glyphs and touches stay the page's, where
+// the layout puts them), and the glass's reflection on a canvas over the screen. Drawn when something
+// changes, never on a loop: the colours, the size and the wheel's and the glass's place, and, Settings >
+// Metal > Responsive, the room's light (the screen's brightness, settled) and the hand (the phone's roll
+// and pitch, past a tremor, at most FPS a second while it turns). Static holds still, as Low Power Mode
+// forces (the owner, 2026-10-06: "keep pbr in low power but disable motion and light responses"):
+// upright and at the middle brightness, drawn again only for the colours, the size and the layout.
+import { useLayoutEffect, useReducer, useRef, type RefObject } from 'react';
 import { pointPx } from '../host';
 import s from '../ipod.module.css';
 import { createRenderer, type Frame, type Layout } from './gl';
@@ -40,8 +38,8 @@ const REACH = 12;
 /** the pitch is taken from how the phone is being held, a reference that follows it over this long (ms):
  *  tipping it moves the light, which settles back as the new angle becomes the way it is held */
 const HOLD = 8000;
-/** the room's light from the screen's brightness 0..1 (the classic --lux's range, in linear light);
- *  the middle, 1, where the host reports none and in Low Power Mode */
+/** the room's light from the screen's brightness 0..1 (in linear light);
+ *  the middle, 1, where the host reports none and held still */
 const exposure = (b: number) => 1 + (Math.max(0, Math.min(1, b)) - .5) * .28;
 
 type Rgb = readonly [number, number, number];
@@ -57,22 +55,24 @@ export function dye([h, sat, l]: Rgb): Rgb {
   return [linear(c(0)), linear(c(8)), linear(c(4))];
 }
 
-/** The body `body` drawn by the GPU while `on`, in `color` (hsl as it reads, settings.ts bodyLook), its
- *  click wheel's ring in `ring`. */
-export function useMetal(body: RefObject<HTMLElement | null>, on: boolean, color: Rgb, ring: Frame['ring']): void {
-  const paint = useRef<((f0: Rgb, ring: Frame['ring']) => void) | null>(null);
+/** The body `body` drawn by the GPU, in `color` (hsl as it reads, settings.ts bodyLook), its click wheel's
+ *  ring in `ring`; held still while `still` (Static), as in Low Power Mode whatever it is. */
+export function useMetal(body: RefObject<HTMLElement | null>, color: Rgb, ring: Frame['ring'], still: boolean): void {
+  const m = useRef<ReturnType<typeof start>>(null);
+  // a lost context is drawn on again on a new one
+  const [round, again] = useReducer((n: number) => n + 1, 0);
   const [h, sat, l] = color;
   useLayoutEffect(() => {
     const el = body.current;
-    if (!on || !el) return;
-    const m = start(el);
-    paint.current = m?.color ?? null;
-    return () => { paint.current = null; m?.stop(); };
-  }, [on, body]);
-  useLayoutEffect(() => { paint.current?.(dye([h, sat, l]), ring); }, [on, h, sat, l, ring]);
+    if (!el) return;
+    const mine = m.current = start(el, again);
+    return () => { m.current = null; mine?.stop(); };
+  }, [body, round]);
+  useLayoutEffect(() => { m.current?.hold(still); }, [still, round]);
+  useLayoutEffect(() => { m.current?.color(dye([h, sat, l]), ring); }, [h, sat, l, ring, round]);
 }
 
-function start(body: HTMLElement) {
+function start(body: HTMLElement, lost: () => void) {
   const canvas = document.createElement('canvas');
   canvas.className = s.metal!;
   body.prepend(canvas);
@@ -80,10 +80,10 @@ function start(body: HTMLElement) {
   const bezel = body.querySelector<HTMLElement>('.' + s.bezel!), over = bezel ? document.createElement('canvas') : null;
   if (over) { over.className = s.glass!; bezel!.append(over); }
   const r = createRenderer(canvas, over);
-  if (typeof r === 'string') { canvas.remove(); over?.remove(); log('classic (' + r + ')'); return null; }
-  if (!r.glass) over?.remove();                                 // no second context: Classic's glare stays
+  if (typeof r === 'string') { canvas.remove(); over?.remove(); log('none (' + r + ')'); return null; }
+  if (!r.glass) over?.remove();                                 // no second context: no reflection
   log('rendered (' + r.name + ')');
-  let f0: Rgb | null = null, ring: Frame['ring'] = 'white', low = !!window.__wmpLowPower, lux = window.__wmpBrightness ?? .5, w = -1, h = -1;
+  let f0: Rgb | null = null, ring: Frame['ring'] = 'white', low = !!window.__wmpLowPower, chosen = false, lux = window.__wmpBrightness ?? .5, w = -1, h = -1;
   /** the wheel and the glass on the canvas (gl.ts Layout), as a key; the wheel's ring and centre button on the page */
   let layout = '';
   const [wheelEl, hubEl] = [s.wheel, s.hub].map((c) => body.querySelector<HTMLElement>('.' + c!));
@@ -95,7 +95,7 @@ function start(body: HTMLElement) {
   let aim = deg(tilt()), pAim = pitchNow(), shown = 0, held = pAim, heldAt = performance.now(), tipped = 0;
   /** a new pitch reading is gliding in (after it, the tip follows the reference as it settles) */
   let fresh = false;
-  if (low) log('still (low power)');
+  if (low) log('still');
   const draw = () => {
     due = 0;
     if (!f0) return;
@@ -162,19 +162,20 @@ function start(body: HTMLElement) {
     clearTimeout(settle);
     settle = window.setTimeout(() => { lux = window.__wmpBrightness ?? .5; if (!low) request(); }, SETTLE);
   };
-  const onLow = () => {
-    if (!!window.__wmpLowPower === low) return;
+  /** held still: chosen (Static) or Low Power Mode */
+  const sync = () => {
+    if ((chosen || !!window.__wmpLowPower) === low) return;
     low = !low;
-    log(low ? 'still (low power)' : 'live');
+    log(low ? 'still' : 'live');
     // back from it: the roll as it is now, and the pitch as it is now taken as how it is held
     if (!low) { aim = deg(tilt()); pAim = held = pitchNow(); heldAt = performance.now(); }
     request();
   };
   const onSeen = () => { if (!document.hidden && dirty) request(); };
-  const onLost = () => { log('classic (context lost)'); stop(); };
+  const onLost = () => { log('context lost'); stop(); lost(); };
   const ro = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(fit);
   const minute = window.setInterval(() => { log(count + ' redraws/min'); count = 0; }, 60_000);
-  const heard: [EventTarget, string, () => void][] = [[window, 'wmp-tilt', onTilt], [window, 'wmp-pitch', onPitch], [window, 'wmp-brightness', onLux], [window, 'wmp-lowpower', onLow],
+  const heard: [EventTarget, string, () => void][] = [[window, 'wmp-tilt', onTilt], [window, 'wmp-pitch', onPitch], [window, 'wmp-brightness', onLux], [window, 'wmp-lowpower', sync],
                                                      [document, 'visibilitychange', onSeen], [canvas, 'webglcontextlost', onLost]];
   if (over && r.glass) heard.push([over, 'webglcontextlost', onLost]);
   for (const [t, e, f] of heard) t.addEventListener(e, f);
@@ -192,5 +193,5 @@ function start(body: HTMLElement) {
     over?.remove();
     body.style.removeProperty('--wheel-at'); body.style.removeProperty('--wheel-r');
   };
-  return { color: (c: Rgb, rg: Frame['ring']) => { if (!stopped) { f0 = c; ring = rg; request(); } }, stop };
+  return { color: (c: Rgb, rg: Frame['ring']) => { if (!stopped) { f0 = c; ring = rg; request(); } }, hold: (on: boolean) => { chosen = on; sync(); }, stop };
 }

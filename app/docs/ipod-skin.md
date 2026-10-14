@@ -111,7 +111,9 @@ in the render are duller than real photos, so the suggested values are saturated
 
 The 5G nano is a flattened oval in section, so it reads as a vertical cylinder. The render shows a
 dark edge, then the base colour, then a bright specular band about 55–60 % across, then the base
-again, then a dark edge. On top of that sits a very fine grain. That gives three layers:
+again, then a dark edge. On top of that sits a very fine grain. That gives three layers
+(the CSS gradient below is the design the GPU's body, §1.7, replaced: only the hue knob and the grain
+are still CSS):
 
 ```css
 .body {
@@ -153,7 +155,7 @@ The glass is one black rectangle around the LCD, about 2 mm proud on each side, 
 ```
 
 The glare also crosses the LCD (it is one pane of glass). Keep it at alpha ≤ .06 over the LCD itself
-so text stays crisp.
+so text stays crisp. (The CSS glare is gone: the glass's reflection is drawn by the GPU, §1.7.)
 
 ### 1.5 The click wheel
 
@@ -196,7 +198,7 @@ k  = Sw / 240                                         (CSS px per LCD pixel)
 WebKit and Chromium both support `zoom`, it stays crisp, and every metric in §2 can be used
 verbatim. The wheel is outside the zoomed box, so pointer maths there is unaffected.
 
-### 1.7 Rendered metal (Settings > Metal, beta)
+### 1.7 Rendered metal (Settings > Metal)
 
 The owner, 2026-10-06: "how computationally expensive would it be to use a pbr for the ipod skin
 and base it on the light sensor to not be dynamic. obviously this is an anodized aluminum so I might
@@ -206,22 +208,26 @@ responses". Then, the same day: "why isnt the wheel or wheel highlight mark movi
 about the wheel dot, not the wheel rim"; "u can add wheel ring effects idc prob would help"), "why
 cheap trick, can we not do the same specular pbr we do for the regular skin there" (of a CSS shift of
 the centre's highlight), and "should we also do something to the screen instead of its static glare?".
-**Settings > Metal** (under Appearance) toggles **Classic** (the CSS cylinder, §1.3, the default) and
-**Rendered**, kept in `ipod.settings` (`metal`). Reset Settings puts back Classic.
+
+The owner, 2026-10-14: rendered always, "assume WebGL is always available": the CSS cylinder (Classic), its
+static glare and the wheel's CSS backgrounds are gone, and so is the fall back to them. **Settings >
+Metal** (under Appearance) toggles **Responsive** (the default) and **Static**, kept in `ipod.settings`
+(`metal`; the old `classic` and `rendered` both load as Responsive). Reset Settings puts back Responsive.
+Static is the Low Power Mode hold-still below, chosen: it can be chosen outside Low Power Mode, and Low
+Power Mode forces it whatever is chosen.
 
 **What draws** (`src/skins/ipod/metal/`, one shader, `gl.ts`):
 
 - a WebGL 1 canvas under the device (`.metal`, z-index -1 in the body's isolated stacking context): the
-  body, the click wheel's ring and its centre button. Their CSS backgrounds go while it is there
-  (`.body:has(> .metal)`); the wheel's MENU, glyphs and touches stay the page's, as do the seams (the
+  body, the click wheel's ring and its centre button. They have no CSS backgrounds; the wheel's MENU,
+  glyphs and touches stay the page's, as do the seams (the
   ring's 1 px edge, the centre button's seat). Where the wheel is comes from the page's layout (its
   centre and radius and the button's, in the canvas's pixels), measured again on a resize.
 - a second, small context on a canvas over the screen (`.glass`, in `.bezel`, z-index 3, no pointer
-  events): the glass's reflection, in place of the bezel's static glare (hidden while that canvas is
-  there, `.bezel:has(> .glass)`). Its own context rather than a copy from the first: `drawImage` from a
-  WebGL canvas waits on its GPU every draw. Without a second context the glare stays.
-- the grain (`.body::before`) stays a full-resolution CSS layer over the body, masked off the wheel
-  (`--wheel-at`, `--wheel-r`, set with the layout), as it is under Classic's opaque ring.
+  events): the glass's reflection. Its own context rather than a copy from the first: `drawImage` from a
+  WebGL canvas waits on its GPU every draw. Without a second context there is no reflection.
+- the grain (`.body::before`) is a full-resolution CSS layer over the body, masked off the wheel
+  (`--wheel-at`, `--wheel-r`, set with the layout).
 
 **Surfaces**, all under one room (below) turned by the hand:
 
@@ -230,14 +236,14 @@ the centre's highlight), and "should we also do something to the screen instead 
   its sides (the owner's crop of a screenshot, the darkest outer strip cut away): a quarter circle's
   profile over 8% piled the reflections into a hard line down each side ("too harsh on that edge it's
   basically a line"). The eye is 3.5 body heights in front and 0.3 of a height above the middle, so
-  the foot reflects lower and darkens as Classic's does. A metal whose reflection is the dye's: F0 is the
+  the foot reflects lower and darkens as the CSS cylinder's did. A metal whose reflection is the dye's: F0 is the
   body colour as it reads (`settings.ts bodyLook`: the base lifted by LOOK, so Custom's is the colour
   picked), in linear light. Anisotropic GGX, roughness 0.25, anisotropy 0.6, brushed along the length:
   the lobe along the brushing is baked into the room's blur (3°), the lobe across it is 16 reflections
   across the brushing in the shader, weighted by GGX's slope distribution (a reflection into the metal is
   shadowed). The split sum's scale and bias come from Karis's mobile fit, and the bias is taken back out
   of the dye, so a face seen square-on in a light of 1 shows the colour. The light at the middle
-  brightness is set so the body below the wheel reads as Classic's (Silver's centre within a few levels,
+  brightness is set so the body below the wheel reads as the cylinder's did (Silver's centre within a few levels,
   Gold's bands the owner's lit sample, 41° 69% 46%). **The anodizing:** the clear oxide over the dyed
   metal would add a dielectric's 4 % of white; that washes a dark dye grey (Navy's red is 2.6 % in
   linear light), so it is left out.
@@ -251,8 +257,8 @@ the centre's highlight), and "should we also do something to the screen instead 
 - **The ring:** satin plastic, white or black by Settings > Click Wheel: a dielectric (F0 4 %, roughness
   0.5, the rough map) over a matte colour (white .86, black .013 linear; the irradiance), softly domed
   across its width (10° at its edges) and rounded at both edges. Calibrated to Classic's ring, as the
-  body's exposure is: the matte light at 1.3 (the white ring reads 235 against Classic's 246) and the gloss
-  at 0.35 of a smooth dielectric's (at all of it the black ring read mid-grey, 60-70 against Classic's 30;
+  body's exposure is: the matte light at 1.3 (the white ring reads 235 against the old CSS ring's 246) and the gloss
+  at 0.35 of a smooth dielectric's (at all of it the black ring read mid-grey, 60-70 against the old CSS ring's 30;
   now 42-50 with a sheen that moves).
 - **The glass:** the same room in the glass over the screen, on the face's arc (it follows the body's
   curve, not its rounded edges): a dielectric, F0 4 % with Fresnel's rise toward its curved sides,
@@ -279,8 +285,8 @@ and of pitch together), the body below the screen loses 10 levels of 174 on Silv
 
 **Inputs.**
 
-- `__wmpBrightness` (`wmp-brightness`) scales the room's light 0.86 to 1.14 (Classic's `--lux` range,
-  in linear light), once it has stood 0.5 s; 1 where the host reports none.
+- `__wmpBrightness` (`wmp-brightness`) scales the room's light 0.86 to 1.14 (in linear light), once it
+  has stood 0.5 s; 1 where the host reports none.
 - `__wmpTilt` (`wmp-tilt`) turns the room about the body's long axis by 25% of the phone's roll, and
   `__wmpPitch` (`wmp-pitch`, degrees from upright, from the iOS app since build 88) about its cross
   axis by 35% of how far the phone is tipped from the way it is held, each never past 12° (4° at a full
@@ -295,8 +301,6 @@ and of pitch together), the body below the screen loses 10 levels of 174 on Silv
   at 25% of the roll a degree moves the reflections about a pixel, so 2° is about two pixels.
   Each draw glides 45% of the way to the new reading; a tip settling back is drawn again only once the
   room's pitch has moved 0.1° (about half a pixel), and goes home under that.
-- Classic answers the hand too: its sheen (§1.3) with `--tilt`, and the centre button's highlight with
-  `--tilt` and `--pitch` (`Root.tsx useSheen`); its ring stays as it was.
 
 **Cost.** Drawn on change only, never on a loop: the colours, the size and the wheel's and the glass's
 place, the brightness (settled), the hand past 2°, the glide toward it (at most 30 draws a second), the
@@ -310,16 +314,18 @@ idle a minute, 0 draws; a ±0.3° tremor at 60 Hz, 0; a roll flickering between 
 0 after the glide to it; a 40° turn in 2.2 s, 57 draws (26 a second), then none; a 25° tip held still,
 38 draws in all (before: about 500 over 17 s).
 
-- **Low Power Mode** (`__wmpLowPower`, `wmp-lowpower`): Rendered stays, on the same contexts, but holds
-  still: one frame upright at the middle brightness (exposure 1), then drawn again only for the colours,
-  the size or the layout; tilt, pitch and brightness are not followed. Leaving it follows them again at
-  once (the pitch as it is then taken as the way the phone is held).
-- **Fallbacks.** No WebGL (or a shader that does not link) and a lost context both remove the canvases,
-  so Classic shows; a lost context stays Classic until Metal is switched again or the page reloads.
+- **Static, and Low Power Mode** (`__wmpLowPower`, `wmp-lowpower`): the metal stays, on the same
+  contexts, but holds still: one frame upright at the middle brightness (exposure 1), then drawn again
+  only for the colours, the size or the layout; tilt, pitch and brightness are not followed (their
+  listeners stay but do nothing). Choosing Static, or Low Power Mode coming or going, does it live,
+  without new contexts. Leaving it follows them again at once (the pitch as it is then taken as the way
+  the phone is held).
+- **A lost context** is drawn on again on a new one. There is no other fallback: without WebGL (or with a
+  shader that does not link) the body is not drawn.
 - **The host log** (`alchemyLog`): `ipod: metal rendered (<the GPU's name>)` when it starts;
   `ipod: metal N redraws/min` each minute while on, beside the app's `cpu:` and thermal lines;
-  `ipod: metal still (low power)` / `ipod: metal live` as Low Power Mode comes and goes;
-  `ipod: metal classic (no webgl)` / `ipod: metal classic (context lost)` when it falls back.
+  `ipod: metal still` / `ipod: metal live` as Static or Low Power Mode comes and goes;
+  `ipod: metal none (<why>)` when there is no WebGL, `ipod: metal context lost` when it is lost.
 
 Its knobs are the constants at the top of `metal/gl.ts` (the finishes, shapes, eye, exposure, the
 ring's light and gloss, the glass's light and cap, taps), `metal/index.ts` (the hand's threshold,
@@ -799,7 +805,7 @@ caption (`useWindowControls().onCaptionMouseDown`).
 | Mode 4, shuffle slider | **Off \| Songs** (Spotify has no album shuffle; drop "Albums"). Moving it calls `toggleShuffle()` when it differs from `playback.shuffle` |
 | Mode 5, **rating → Like** | §6. Recommended: a heart slider "♡ \| ♥" bound to `useAddTo(playingTrack).saved / toggle` |
 | Lyrics (not a centre mode) | over the art by themselves, at its foot just above the mode row (plain ones a four-line window), in every mode, whenever `lyricsShown(s)` (`settings.lyrics` on and the track has some); no centre press (the owner's ruling, 2026-10-02: the nano's mode 6 went unfound). `useLyrics()` (synced: the current line, next line dimmed, karaoke per `settings.karaoke`) or `usePlainLyrics()` plus `useLyricScroll` (scrolled by position, never by touch: a tap on them is the art's tap, the Canvas <-> the cover; the ⋯ stays over them). The centre cycles progress -> scrubber -> Radio only |
-| **The metal, live** (the owner, 2026-10-03: "have the metallic look lightly respond to the phone external brightness sensor and rotation") | `.body --lux` (.94 to 1.06 of the lightness) from the screen's brightness (`__wmpBrightness`: the phone's follows the room; apps are not given the light sensor) and `--tilt` (-1 to 1, the phone's roll, `__wmpTilt` from CoreMotion's gravity) sliding the two bands of light up to 5 % of the width; both registered as numbers and eased (`Root.tsx useSheen`). The centre tone is .95 of the base (was .84: "that center line is a little too dark"). Nothing moves where the host reports neither. |
+| **The metal, live** (the owner, 2026-10-03: "have the metallic look lightly respond to the phone external brightness sensor and rotation") | `.body --lux` (.94 to 1.06 of the lightness) from the screen's brightness (`__wmpBrightness`: the phone's follows the room; apps are not given the light sensor) and `--tilt` (-1 to 1, the phone's roll, `__wmpTilt` from CoreMotion's gravity) sliding the two bands of light up to 5 % of the width; both registered as numbers and eased (`Root.tsx useSheen`). The centre tone is .95 of the base (was .84: "that center line is a little too dark"). Nothing moves where the host reports neither. Replaced 2026-10-14 by the GPU's body (§1.7): `useSheen`, `--lux` and `--tilt` are gone. |
 | **The app's icon** (the owner, 2026-10-03: "have the icon change with theme color… support the dynamic custom color so likely shouldn't hardcode these images") | The iOS app's icon takes the body's colour three seconds after it settles (`Root.tsx`, `icon.ts iconFor`, `alchemyIcon`). iOS only switches to icons in the bundle, so `ios/icons.py` draws them at build time from the one source drawing, `ios/icon-source.png` (the owner's, 2026-10-03: "make the icons like this exactly (except color matched to the theme)"; the app's own icon is its green one): one per preset (read from `settings.ts COLORS`, with LOOK) and a grid for Custom (hue every 30° at lightness 35 and 55, three greys under 20 % saturation), to which Custom snaps. iOS shows its own notice at each change. |
 | **The Now Playing bar's text** | First line: the title and, grey, the artist ("Song • Band"); second: what it plays from (the playlist, album or radio), or the device's name when it plays on another device (never this phone's own speaker, as Spotify's mini player has it). Each marquees when too long, as Now Playing's lines do (`ui.tsx Marquee`: its box reaches 6 units past the text on each side and fades there, so a sliding line fades out rather than being cut at the text's edge, the spacing being the text's own — "add faded edges to the side to side and don't make surrounding elements clip but keep spacing"), with no "…" — the ellipsis that cut the grey artist short was the title's own dark one (the owner, 2026-10-04: "why is this darker"; then "put band back in top line so bottom stays playlist, album, radio etc; the top might need to scroll too"). |
 | **The info band** | Awake: the nano's dark band (`linear-gradient(#424242, #010101)`, opaque; the owner, 2026-10-02: "make the header like this again on non minimized"). Quiet: its own awake background at 35 % opacity, nothing swapped (the owner, 2026-10-04: "keeping the current background and adding transparency"; 35 chosen from mock-ups at 25 / 35 / 50). |
@@ -848,7 +854,7 @@ rows show only with their host, and a header with no row shown under it is not s
 
 | Header | Its rows, in order |
 |---|---|
-| **Appearance** | Skin ›, Color ›, Metal (Classic / Rendered, §1.7), Click Wheel (White / Black), Clicker (On / Off), Theme › (Light / Dark / Automatic, *`alchemyAppearance`*) |
+| **Appearance** | Skin ›, Color ›, Metal (Responsive / Static, §1.7), Click Wheel (White / Black), Clicker (On / Off), Theme › (Light / Dark / Automatic, *`alchemyAppearance`*) |
 | **Menus** | Main Menu › (Home, Search, Library, Radio, Brick, each on or off; all on at first), Library Filters ›, Library View (Grid / List) |
 | **Sound** (the whole section *`auth.hostPlayer`*: the host's own player) | EQ › (the iPod's presets, the row naming the chosen one), Audio Quality (Normal / High / Very High), Sound Check (On / Off), Crossfade (Off / 2 s / 5 s / 8 s / 12 s), Audio Cache (On / Off) |
 | **General** | About ›, Check for Updates ›, Refresh Player (*`alchemyRestart`*), Reset Settings ›, Legal › |
