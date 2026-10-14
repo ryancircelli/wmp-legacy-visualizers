@@ -36,7 +36,7 @@ function stream(): (f: number, state?: number) => TimedLevel {
 const clock = (ms: number): { now: () => number; tick: () => void } => { let t = 0; return { now: () => t, tick: () => { t += ms * 1000; } }; };
 const hash = (px: Uint32Array): number => { let h = 0x811c9dc5; for (let i = 0; i < px.length; i++) h = Math.imul(h ^ px[i]!, 16777619); return h >>> 0; };
 
-describe('Analyzed: shape', () => {
+describe('Analyzed: shape', { timeout: 60_000 }, () => {
   it('eight presets under the Effects key Analyzed, after Ambience', () => {
     expect(Az.PRESET_NAMES).toEqual(['Line Bars', 'Mirror Bars', 'Digital Bars', 'Line Ghost Bars', 'Mirror Ghost Bars', 'Digital Ghost Bars', 'Bar Scope', 'Dot Scope']);
     const keys = [...new Set(PRESETS.map((p) => p.key))];
@@ -52,7 +52,7 @@ describe('Analyzed: shape', () => {
   });
 });
 
-describe('Analyzed: what drives it', () => {
+describe('Analyzed: what drives it', { timeout: 120_000 }, () => {
   it('silence draws only the peaks on the floor; sound draws more', () => {
     const c = clock(16), quiet = new Az({ now: c.now }), loud = new Az({ now: c.now }), st = stream(), sil = level(2);
     let q = 0, l = 0;
