@@ -31,6 +31,7 @@ describe('the catalog', () => {
       'Eclectic Colors, WMP 7–8 3',
       'Picture Viz, WMP 8 7',
       'Picture Viz II, WMP 9 62',
+      'Picture Viz 3D, WMP 9 30',
       'Plenoptic, WMP 10 7, WMP 8 2, WMP 7 7',
       'Plus! 3-D Visualizations, WMP 8 3',
       'Pulsing Colors, WMP 7–8 3',

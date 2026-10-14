@@ -22,14 +22,15 @@ export interface CatalogFamily {
  *  WMP 12's Alchemy, Bars and Waves and Battery; WMP 10's Spikes, Particle, Plenoptic and Ambience; Musical
  *  Colors only ever in WMP 7 and 8; 3D Alchemy is WMP 9's (the Creativity Fun Pack for WMP 9 Series);
  *  Picture Viz, a Bonus Pack's, WMP 8 (Windows XP's);
- *  Picture Viz II, the Winter Fun Pack 2002's and the gallery's, WMP 9. */
+ *  Picture Viz II, the Winter Fun Pack 2002's and the gallery's, WMP 9;
+ *  Picture Viz 3D, the Creativity Fun Pack 2003's (for WMP 9 Series), WMP 9. */
 const CURRENT: Record<VisKind, Versions> = {
   alchemy: [12, 12], bars: [12, 12], battery: [12, 12],
   spikes: [10, 10], particle: [10, 10], plenoptic: [10, 10], ambience: [10, 10],
   musical: [7, 8],
   blazing: [7, 8], colorcubes: [7, 8], pulsing: [7, 8], trilogy1: [7, 8], trilogy2: [7, 8], trilogy3: [7, 8], dungeon: [8, 8], snowtime: [7, 8], startime: [7, 8], eclectic: [7, 8],
   alchemy3d: [9, 9],
-  pictureviz: [8, 8], pictureviz2: [9, 9],
+  pictureviz: [8, 8], pictureviz2: [9, 9], pictureviz3: [9, 9],
   // Yule Log: the Windows Media Bonus Pack for Windows XP (WMP 8) and the Winter Fun Packs for WMP 9 and 10
   yule: [8, 10],
   // Goom: the WMP 9 Series plug-in (WMP 9 and later loaded it; it was built for 9)

@@ -61,7 +61,7 @@ function SpotifyLyrics() {
 /** Picture Viz's pictures: the playing song's cover, and its Canvas when that is a still (looked up only while
  *  Picture Viz shows). */
 function VisPictures({ ticker }: { ticker: Ticker }) {
-  const { uri, art, on } = useApp((s) => ({ uri: s.playback.track?.uri ?? null, art: s.playback.track?.art ?? null, on: s.vis.kind === 'pictureviz' || s.vis.kind === 'pictureviz2' }));
+  const { uri, art, on } = useApp((s) => ({ uri: s.playback.track?.uri ?? null, art: s.playback.track?.art ?? null, on: s.vis.kind === 'pictureviz' || s.vis.kind === 'pictureviz2' || s.vis.kind === 'pictureviz3' }));
   const cv = useCanvas(on ? uri : null), still = cv?.type === 'image' ? cv.url : null;
   useEffect(() => ticker.pictures([art, still].filter((u): u is string => !!u)), [ticker, art, still]);
   return null;
