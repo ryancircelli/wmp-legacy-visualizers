@@ -23,6 +23,7 @@ describe('the catalog', () => {
       'Animator, WMP 9–10 1',
       'Alchemy, WMP 12 1, WMP 11 1, WMP 10 1, WMP 9 1',
       'Ambience, WMP 10 14, WMP 9 1, WMP 7–9 6, WMP 8 1, WMP 7–8 1, WMP 7 1',
+      'Analyzed, WMP 10–11 8',
       'Bars and Waves, WMP 12 4, WMP 10 2, WMP 7–10 2, WMP 9 2, WMP 7–8 2',
       'Battery, WMP 12 26, WMP 11 22, WMP 9–11 4, WMP 10 9, WMP 9–10 5, WMP 8–10 8, WMP 9 6, WMP 8–9 3, WMP 8 15',
       'Blazing Colors, WMP 7–8 3',
