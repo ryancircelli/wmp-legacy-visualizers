@@ -327,7 +327,7 @@ function NowPlaying() {
   };
   return (
     <div ref={root} className={css.root} data-canvas={bg ? '' : undefined} data-quiet={quiet ? '' : undefined}>
-      {black ? null : canvas?.type === 'video' ? <CanvasVideo src={canvas.url} poster={art || undefined} onError={fail} still={overlay} />
+      {black ? null : canvas?.type === 'video' ? <CanvasVideo src={canvas.url} poster={art || undefined} onError={fail} />
         : canvas ? <img className={css.bg} src={canvas.url} alt="" onError={fail} /> : null}
       {bg ? null : art ? <img className={css.art} src={art} alt="" /> : <div className={cx(css.art, css.noart)}>♪</div>}
       {/* the cover's reflection, part of the picture: under the visualizer, the lyrics' shade and the band */}
@@ -406,20 +406,19 @@ export function useOnScreen(ref: RefObject<HTMLElement | null>): boolean {
 
 /** The Canvas clip filling the screen, muted and looping as Spotify's apps play it; only while this
  *  screen is the top one (the stack hides the others: no intersection) and the page is visible. */
-function CanvasVideo({ src, poster, onError, still }: { src: string; poster?: string; onError: () => void; still?: boolean }) {
+function CanvasVideo({ src, poster, onError }: { src: string; poster?: string; onError: () => void }) {
   const ref = useRef<HTMLVideoElement>(null);
   useEffect(() => {
     const v = ref.current;
     if (!v) return;
     let seen = true;
-    // `still`: held on its frame while a visualizer draws over it (less to decode on a phone that runs hot)
-    const sync = () => { if (seen && !still && !document.hidden) v.play().catch(() => {}); else v.pause(); };
+    const sync = () => { if (seen && !document.hidden) v.play().catch(() => {}); else v.pause(); };
     const io = new IntersectionObserver(([e]) => { seen = !!e?.isIntersecting; sync(); });
     io.observe(v);
     document.addEventListener('visibilitychange', sync);
     return () => { io.disconnect(); document.removeEventListener('visibilitychange', sync); };
-  }, [src, still]);
-  return <video ref={ref} className={css.bg} src={src} poster={poster} muted loop playsInline onError={onError} />;
+  }, [src]);
+  return <video ref={ref} className={css.bg} src={src} poster={poster} muted autoPlay loop playsInline onError={onError} />;
 }
 
 /** The overlay's accent for Bars and Waves, from cover `url` ('' = none wanted): the cover fetched again for its pixels (CORS,
