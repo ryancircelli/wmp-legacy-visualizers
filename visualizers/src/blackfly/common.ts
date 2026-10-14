@@ -10,7 +10,10 @@
 //    SetCurrentPreset stores the preset (+0x20) and calls a preset hook (empty in Ripple)
 //  - TVizDIB32Double (unit VizDIB): two 32-bit DIB sections the window's size, front (+0x5c) and back
 //    (+0x58), both black when made; Render BitBlts the front to the window, then copies it to the back
-//  - TDIB.Blend (unit DIB, 0x41ecc0): per byte, back*a/256 + front*(256-a)/256 into the front
+//  - TDIB.Blend (unit DIB, 0x41ecc0): per byte, src*a/256 + dst*(256-a)/256 into dst (Ripple: the back over the
+//    front; Clarify: the front over the back)
+//  - from Clarify.dll (its VAs, image base 0x400000; its VizDIB is a later one than Ripple's): TDIB8's grey-ramp
+//    palette in one colour (rampPalette, 0x41f120) and TRadialSmear (VMT 0x41f5e4), the zoom toward the centre
 import type { Surface, TimedLevel } from '../ns';
 
 /** System.Random (0x402ef4): RandSeed = RandSeed * 0x08088405 + 1, result (RandSeed * range) >> 32. RandSeed
@@ -31,16 +34,74 @@ export function delphiRound(x: number): number {
   return r - x === 0.5 && r & 1 ? r - 1 : r;
 }
 
-/** TDIB.Blend (0x41ecc0) over two DIBs of one size: each of B, G, R becomes (back * (a & 255) >> 8) +
- *  (front * ((256 - a) & 255) >> 8), the bytes added with 8-bit wrap; the top byte is the back's. */
-export function blend(back: Uint32Array, front: Uint32Array, alpha: number): void {
+/** TDIB.Blend (0x41ecc0), Self = src, over two DIBs of one size: each of B, G, R of dst becomes
+ *  (src * (a & 255) >> 8) + (dst * ((256 - a) & 255) >> 8), the bytes added with 8-bit wrap; the top byte is src's. */
+export function blend(src: Uint32Array, dst: Uint32Array, alpha: number): void {
   const a = alpha & 255, b = (256 - alpha) & 255;
-  for (let i = 0; i < front.length; i++) {
-    const s = back[i], d = front[i];
-    front[i] = ((s & 0xff000000) |
+  for (let i = 0; i < dst.length; i++) {
+    const s = src[i], d = dst[i];
+    dst[i] = ((s & 0xff000000) |
       (((((s >>> 16) & 255) * a) >> 8) + ((((d >>> 16) & 255) * b) >> 8) & 255) << 16 |
       (((((s >>> 8) & 255) * a) >> 8) + ((((d >>> 8) & 255) * b) >> 8) & 255) << 8 |
       ((((s & 255) * a) >> 8) + (((d & 255) * b) >> 8) & 255)) >>> 0;
+  }
+}
+
+/** Clarify 0x41f120: an 8-bit DIB's colour table, black to the COLORREF `color` (0x00BBGGRR) in 256 steps,
+ *  entry i = channel * i / 255 truncated; returned as the 0x00RRGGBB pixels a BitBlt to 32 bits makes of them. */
+export function rampPalette(color: number): Uint32Array {
+  const r = color & 255, g = (color >>> 8) & 255, b = (color >>> 16) & 255, pal = new Uint32Array(256);
+  for (let i = 0; i < 256; i++) pal[i] = (((r * i) / 255) << 16) | (((g * i) / 255) << 8) | ((b * i) / 255);
+  return pal;
+}
+
+/** TRadialSmear (Clarify, VMT 0x41f5e4): every pixel of a w x h DIB takes a bilinear sample of a source DIB
+ *  (the back) nearer the centre (w >> 1, h >> 1), at f(d) of its offset, f(d) = (1 - amount / d) * 0.98f + 0.01f
+ *  past distance 1, else 0. The table (0x41f7b4, built once a size) holds per pixel four weights in 1/65536
+ *  and the sample's top-left pixel, -1 where that falls outside the DIB (the DLL's nil: the pixel is left alone). */
+export class RadialSmear {
+  /** per pixel: weights of (x, y), (x, y + 1), (x + 1, y + 1), (x + 1, y), then the source index */
+  readonly t: Int32Array;
+  constructor(readonly w: number, readonly h: number, amount: number) {
+    const t = (this.t = new Int32Array(w * h * 5));
+    for (let k = 4; k < t.length; k += 5) t[k] = -1;
+    const cx = w >>> 1, cy = h >>> 1, k98 = Math.fround(0.98), k01 = Math.fround(0.01);
+    const at = (x: number, y: number) => (x < 0 || y < 0 || x >= w || y >= h ? -1 : y * w + x);   // 0x41eb4c
+    const put = (e: number, a: number, b: number, c: number, d: number, src: number) => {
+      // entries are addressed (row * w + x) * 5 unchecked: x = w wraps to the next row (rewritten later
+      // by that row's own left quarter), past the last row it is outside the table (typed arrays drop it)
+      e *= 5;
+      t[e] = a; t[e + 1] = b; t[e + 2] = c; t[e + 3] = d; t[e + 4] = src;
+    };
+    for (let j = 0; j <= cy; j++) {
+      for (let i = 0; i <= cx; i++) {
+        const dist = Math.sqrt(i * i + j * j);
+        const f = dist > 1 ? (1 - amount / dist) * k98 + k01 : 0;
+        const sx = Math.trunc(i * f * 256), sy = Math.trunc(j * f * 256), fx = sx & 255, fy = sy & 255;
+        const A = (256 - fx) * (256 - fy), B = (256 - fx) * fy, C = fx * fy, D = fx * (256 - fy);
+        const ix = Math.trunc(i * f), iy = Math.trunc(j * f);
+        put((cy - j) * w + cx - i, C, D, A, B, at(cx - ix - 1, cy - iy - 1));
+        if (cx + i < w) put((cy - j) * w + cx + i, B, A, D, C, at(cx + ix, cy - iy - 1));
+        if (cy + j < h) {
+          put((cy + j) * w + cx - i, D, C, B, A, at(cx - ix - 1, cy + iy));
+          put((cy + j) * w + cx + i, A, B, C, D, at(cx + ix, cy + iy));
+        }
+      }
+    }
+  }
+
+  /** 0x41f6a0: dst[p] = the weighted sum of its four source pixels >> 16, per channel */
+  apply(src: Uint32Array, dst: Uint32Array): void {
+    const t = this.t, w = this.w, n = dst.length;
+    for (let p = 0, e = 0; p < n; p++, e += 5) {
+      const s = t[e + 4];
+      if (s < 0) continue;
+      const a = src[s], b = src[s + w], c = src[s + w + 1], d = src[s + 1];
+      const wa = t[e], wb = t[e + 1], wc = t[e + 2], wd = t[e + 3];
+      dst[p] = ((((a >>> 16) & 255) * wa + ((b >>> 16) & 255) * wb + ((c >>> 16) & 255) * wc + ((d >>> 16) & 255) * wd) >>> 16) << 16 |
+        ((((a >>> 8) & 255) * wa + ((b >>> 8) & 255) * wb + ((c >>> 8) & 255) * wc + ((d >>> 8) & 255) * wd) >>> 16) << 8 |
+        (((a & 255) * wa + (b & 255) * wb + (c & 255) * wc + (d & 255) * wd) >>> 16);
+    }
   }
 }
 
