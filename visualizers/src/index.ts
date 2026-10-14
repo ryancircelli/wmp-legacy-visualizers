@@ -30,6 +30,7 @@ import './goom/index';
 import './googly/index';
 import './corona/index';
 import './plus3d/index';
+import './blackfly/ripple';
 import { RefDevice } from './d3d8/ref';
 
 export { A };
@@ -38,7 +39,7 @@ export { pictureFromRGBA, loadPicture } from './pictureviz/picture';
 
 export type VisKind = 'alchemy' | 'bars' | 'battery' | 'spikes' | 'particle' | 'plenoptic' | 'ambience' | 'musical'
   | 'blazing' | 'colorcubes' | 'pulsing' | 'trilogy1' | 'trilogy2' | 'trilogy3' | 'dungeon' | 'snowtime' | 'startime' | 'eclectic' | 'alchemy3d' | 'pictureviz' | 'pictureviz2' | 'pictureviz3' | 'yule'
-  | 'goom' | 'plus3d' | 'wm9s' | 'googly' | 'corona';
+  | 'goom' | 'plus3d' | 'wm9s' | 'googly' | 'corona' | 'ripple';
 /** 'original' = each DLL's own surface size; 'auto' = the view, capped near 720p worth of pixels; n = view * n. */
 export type Scale = 'original' | 'auto' | number;
 
@@ -74,7 +75,7 @@ export interface PresetEntry {
   preset: number;
   group: 'Alchemy' | 'Bars and Waves' | 'Battery' | 'Spikes' | 'Particle' | 'Plenoptic' | 'Ambience' | 'Musical Colors'
     | 'Blazing Colors' | 'Color Cubes' | 'Pulsing Colors' | 'Trilogy I' | 'Trilogy II' | 'Trilogy III' | 'Dungeon Siege' | 'SnowTime' | 'StarTime' | 'Eclectic Colors' | '3D Alchemy' | 'Picture Viz' | 'Picture Viz II' | 'Picture Viz 3D' | 'Yule Log'
-    | 'Goom' | 'Plus! 3-D Visualizations' | 'Windows Media 9 Series' | 'Googly Moogly!' | 'Phthalo\'s Corona';
+    | 'Goom' | 'Plus! 3-D Visualizations' | 'Windows Media 9 Series' | 'Googly Moogly!' | 'Phthalo\'s Corona' | 'Ripple';
   name: string;
   /** the family's registry key, HKLM\SOFTWARE\Microsoft\MediaPlayer\Objects\Effects\<key> (its place in the list) */
   key: string;
@@ -165,6 +166,8 @@ const FAMILIES: readonly { key: string; vis: VisKind; group: PresetEntry['group'
   { key: 'Wmp9_goom', vis: 'goom', group: 'Goom', names: A.Goom.PRESET_NAMES },
   // Microsoft Plus! for Windows XP's plusvis.dll, key "PlusVis" (named "Plus! 3-D Visualizations")
   { key: 'PlusVis', vis: 'plus3d', group: 'Plus! 3-D Visualizations', names: A.PlusVis.PRESET_NAMES },
+  // Blackfly Studios' Ripple.dll (2003, for WMP 9), key "Ripple"
+  { key: 'Ripple', vis: 'ripple', group: 'Ripple', names: A.Ripple.PRESET_NAMES },
   // the gallery's MediaPlayer_9.dll (Averett & Associates for Microsoft, unsigned), key "MediaPlayer_9", named
   // "Windows Media 9 Series" (its string 101); one preset, Rhythm and Waves
   { key: 'MediaPlayer_9', vis: 'wm9s', group: 'Windows Media 9 Series', names: A.AverettMp9.PRESET_NAMES },
@@ -236,6 +239,8 @@ export function nativeSize(kind: VisKind, viewW: number, viewH: number, preset =
   }
   if (kind === 'alchemy' && preset === 1) return [384, 288];          // Random (WMP 9)
   if (kind === 'bars' || kind === 'spikes' || kind === 'particle' || kind === 'musical' || PLUS[kind] || kind === 'alchemy3d' || kind === 'pictureviz' || kind === 'pictureviz2' || kind === 'pictureviz3') return [Math.min(1920, viewW), Math.min(1080, viewH)];
+  // Ripple: a 32-bit DIB section of the window's size, BitBlt'd 1:1
+  if (kind === 'ripple') return [Math.min(1920, viewW), Math.min(1080, viewH)];
   if (kind === 'googly' || kind === 'corona') return [Math.max(32, Math.min(1920, viewW)), Math.max(32, Math.min(1080, viewH))];   // the window's own, 32x32 at least
   return kind === 'battery' ? [384, 288] : [640, 480];
 }
@@ -319,6 +324,8 @@ function makeRaw(kind: VisKind, preset: number, options: EngineOptions): RawEngi
   // the DLL seeded its random table with a heap address: a different one each time it was loaded
   if (kind === 'goom') return new A.Goom({ preset, options, seed: (Math.random() * 0x100000000) >>> 0 }) as unknown as RawEngine;
   if (kind === 'plus3d') return new A.PlusVis({ width: 320, height: 240, preset }) as unknown as RawEngine;
+  // Ripple: RandSeed 0, as the DLL loads
+  if (kind === 'ripple') return new A.Ripple({ width: 16, height: 16, options, preset }) as unknown as RawEngine;
   if (kind === 'wm9s') return new A.AverettMp9({ width: 320, height: 240, preset }) as unknown as RawEngine;
   if (kind === 'googly') return new (A.GooglyMoogly as unknown as RawCtor)({ width: 640, height: 480, options, preset });
   if (kind === 'corona') return new (A.Corona as unknown as RawCtor)({ width: 640, height: 480, options, preset });
