@@ -51,6 +51,8 @@ const CURRENT: Record<VisKind, Versions> = {
   clarify: [9, 9],
   // PixelTrip: a third-party IWMPEffects plug-in (2002), offered for WMP 7 to 10
   pixeltrip: [7, 10],
+  // Animator: Glass3D's free plug-in for WMP 9 and 10 (2.2, 2003-04)
+  animator: [9, 10],
 };
 
 /** A preset's name as its name and the versions its suffix gives ("Swirl (WMP 7-9)": Swirl, [7, 9]); none: null. */

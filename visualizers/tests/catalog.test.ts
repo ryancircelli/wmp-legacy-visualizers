@@ -20,6 +20,7 @@ describe('the catalog', () => {
     const shape = CATALOG.map((f) => [f.group, f.current.label + ' ' + f.current.items.length, ...f.older.map((g) => g.label + ' ' + g.items.length)].join(', '));
     expect(shape).toEqual([
       '3D Alchemy, WMP 9 6',
+      'Animator, WMP 9–10 1',
       'Alchemy, WMP 12 1, WMP 11 1, WMP 10 1, WMP 9 1',
       'Ambience, WMP 10 14, WMP 9 1, WMP 7–9 6, WMP 8 1, WMP 7–8 1, WMP 7 1',
       'Bars and Waves, WMP 12 4, WMP 10 2, WMP 7–10 2, WMP 9 2, WMP 7–8 2',
