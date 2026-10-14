@@ -11,6 +11,7 @@ import SwiftUI
 import UIKit
 import UserNotifications
 import WebKit
+import os
 
 @main
 struct WmpSpotifyApp: App {
@@ -466,7 +467,10 @@ final class DeviceState {
             (UIDevice.proximityStateDidChangeNotification, pushProximity),
             (.NSProcessInfoPowerStateDidChange, pushLowPower),
             (ProcessInfo.thermalStateDidChangeNotification, pushThermal),
-            (UIApplication.didReceiveMemoryWarningNotification, { WebHolder.shared.run("window.dispatchEvent(new Event('wmp-memory'))") }),
+            (UIApplication.didReceiveMemoryWarningNotification, {
+                HostLog.shared.log("memory: warning, \(os_proc_available_memory() >> 20) MB left", quiet: true)
+                WebHolder.shared.run("window.dispatchEvent(new Event('wmp-memory'))")
+            }),
         ]
         for (name, push) in watched {
             center.addObserver(forName: name, object: nil, queue: .main) { _ in push() }
@@ -905,6 +909,12 @@ struct WebView: UIViewRepresentable {
             a.addAction(UIAlertAction(title: "Cancel", style: .cancel) { _ in completionHandler(nil) })
             a.addAction(UIAlertAction(title: "OK", style: .default) { _ in completionHandler(a.textFields?.first?.text) })
             top.present(a, animated: true)
+        }
+
+        // The page's process died (iOS kills it for memory first): say so, and bring the page back.
+        func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+            HostLog.shared.log("page: web process ended, \(os_proc_available_memory() >> 20) MB left; reloading", quiet: true)
+            webView.reload()
         }
 
         // Each navigation in the stored viewport's content mode; the desktop user agent stays either way.
