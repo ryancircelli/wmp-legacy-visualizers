@@ -28,6 +28,7 @@ import './yule/index';
 import './averett/index';
 import './goom/index';
 import './googly/index';
+import './corona/index';
 import './plus3d/index';
 import { RefDevice } from './d3d8/ref';
 
@@ -37,7 +38,7 @@ export { pictureFromRGBA, loadPicture } from './pictureviz/picture';
 
 export type VisKind = 'alchemy' | 'bars' | 'battery' | 'spikes' | 'particle' | 'plenoptic' | 'ambience' | 'musical'
   | 'blazing' | 'colorcubes' | 'pulsing' | 'trilogy1' | 'trilogy2' | 'trilogy3' | 'dungeon' | 'snowtime' | 'startime' | 'eclectic' | 'alchemy3d' | 'pictureviz' | 'pictureviz2' | 'pictureviz3' | 'yule'
-  | 'goom' | 'plus3d' | 'wm9s' | 'googly';
+  | 'goom' | 'plus3d' | 'wm9s' | 'googly' | 'corona';
 /** 'original' = each DLL's own surface size; 'auto' = the view, capped near 720p worth of pixels; n = view * n. */
 export type Scale = 'original' | 'auto' | number;
 
@@ -73,7 +74,7 @@ export interface PresetEntry {
   preset: number;
   group: 'Alchemy' | 'Bars and Waves' | 'Battery' | 'Spikes' | 'Particle' | 'Plenoptic' | 'Ambience' | 'Musical Colors'
     | 'Blazing Colors' | 'Color Cubes' | 'Pulsing Colors' | 'Trilogy I' | 'Trilogy II' | 'Trilogy III' | 'Dungeon Siege' | 'SnowTime' | 'StarTime' | 'Eclectic Colors' | '3D Alchemy' | 'Picture Viz' | 'Picture Viz II' | 'Picture Viz 3D' | 'Yule Log'
-    | 'Goom' | 'Plus! 3-D Visualizations' | 'Windows Media 9 Series' | 'Googly Moogly!';
+    | 'Goom' | 'Plus! 3-D Visualizations' | 'Windows Media 9 Series' | 'Googly Moogly!' | 'Phthalo\'s Corona';
   name: string;
   /** the family's registry key, HKLM\SOFTWARE\Microsoft\MediaPlayer\Objects\Effects\<key> (its place in the list) */
   key: string;
@@ -145,6 +146,8 @@ const FAMILIES: readonly { key: string; vis: VisKind; group: PresetEntry['group'
   { key: 'EclecticColors', vis: 'eclectic', group: 'Eclectic Colors', names: A.EclecticColors.PRESET_NAMES },
   // GooglyMoogly.dll (n matlock / dfInteractive, 2005, for WMP 9 and 10), key "GooglyMoogly"
   { key: 'GooglyMoogly', vis: 'googly', group: 'Googly Moogly!', names: A.GooglyMoogly.PRESET_NAMES },
+  // Corona.dll (Richard Asbury's Phthalo's Corona, 2003-04, for WMP 9 and 10), key "Corona"
+  { key: 'Corona', vis: 'corona', group: 'Phthalo\'s Corona', names: A.Corona.PRESET_NAMES },
   // the Creativity Fun Pack's mpvis3d.dll (2003) registers its own Effects key, "3D-Alchemy" (named "3D Alchemy"):
   // WMP 9 lists it as a visualization of its own, first ("3" sorts before "A"). Its sixth preset, Draco's room,
   // is one WMP never offered (GetPresetCount says 5)
@@ -199,7 +202,8 @@ export function makeLevel(): TimedLevel {
 // canvas itself (up to 3x) into the window's DC, black around it. 3D Alchemy draws through Direct3D into a back
 // buffer of the window's size, presented 1:1. Picture Viz's canvas is the window
 // (its own 352x320 only for a transition's first frame). Googly Moogly! draws into a memory DC the window's size and
-// BitBlts it 1:1.
+// BitBlts it 1:1. Phthalo's Corona draws 8-bit at the window's width and 4/5 of its height, SetDIBitsToDevice'd 1:1, its
+// lowest quarter mirrored beneath (the last height % 5 rows stay black).
 /** Families that draw at a size of their own whatever the window (Plenoptic and Ambience: their
  *  Plenoptic_Resolution / Assault_Resolution, 256x192 by default, StretchDIBits'd to the window): every
  *  scale renders them there, the canvas stretches. */
@@ -232,7 +236,7 @@ export function nativeSize(kind: VisKind, viewW: number, viewH: number, preset =
   }
   if (kind === 'alchemy' && preset === 1) return [384, 288];          // Random (WMP 9)
   if (kind === 'bars' || kind === 'spikes' || kind === 'particle' || kind === 'musical' || PLUS[kind] || kind === 'alchemy3d' || kind === 'pictureviz' || kind === 'pictureviz2' || kind === 'pictureviz3') return [Math.min(1920, viewW), Math.min(1080, viewH)];
-  if (kind === 'googly') return [Math.max(32, Math.min(1920, viewW)), Math.max(32, Math.min(1080, viewH))];   // the window's own, 32x32 at least
+  if (kind === 'googly' || kind === 'corona') return [Math.max(32, Math.min(1920, viewW)), Math.max(32, Math.min(1080, viewH))];   // the window's own, 32x32 at least
   return kind === 'battery' ? [384, 288] : [640, 480];
 }
 
@@ -317,6 +321,7 @@ function makeRaw(kind: VisKind, preset: number, options: EngineOptions): RawEngi
   if (kind === 'plus3d') return new A.PlusVis({ width: 320, height: 240, preset }) as unknown as RawEngine;
   if (kind === 'wm9s') return new A.AverettMp9({ width: 320, height: 240, preset }) as unknown as RawEngine;
   if (kind === 'googly') return new (A.GooglyMoogly as unknown as RawCtor)({ width: 640, height: 480, options, preset });
+  if (kind === 'corona') return new (A.Corona as unknown as RawCtor)({ width: 640, height: 480, options, preset });
   return new (A.Engine as unknown as RawCtor)({ width: 16, height: 16, options, preset });
 }
 

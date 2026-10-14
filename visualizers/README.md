@@ -3,9 +3,10 @@
 Every visualizer Windows Media Player shipped, from WMP 7 to today's: **Alchemy**, **Ambience**,
 **Bars and Waves**, **Battery**, **Musical Colors**, **Particle**, **Plenoptic**, **Spikes**, **3D Alchemy**,
 **Picture Viz**, **Yule Log** and the rest of the families, reverse-engineered from Ghidra decompiles and
-ported instruction for instruction to TypeScript (with a few WebAssembly kernels). Two plug-ins that were not
+ported instruction for instruction to TypeScript (with a few WebAssembly kernels). Three plug-ins that were not
 Microsoft's are here too, ported the same way from their binaries alone: **Goom**, iOS Software's What a GOOM! 2k4 for
-Windows Media Player 9 (LGPL), and **Googly Moogly!**, n matlock's free 2005 plug-in for WMP 9 and 10. Where an older version drew
+Windows Media Player 9 (LGPL), **Googly Moogly!**, n matlock's free 2005 plug-in for WMP 9 and 10, and **Phthalo's Corona**,
+Richard Asbury's free 2003 particle storm for WMP 9 and 10. Where an older version drew
 differently, it is a preset of its own ("Vox (WMP 7)", "Particle (WMP 7-8)"). The sound reaches them through
 WMP's own spectrum analyzer, ported byte for byte, at WMP's own pace.
 
@@ -103,6 +104,7 @@ Every visualizer is byte-identical to the real Microsoft object for 30,000 conse
 | Blazing Colors, Color Cubes, Pulsing Colors (Microsoft's 2000 downloads), Trilogy I, II, III (Windows Media Bonus Pack for XP) | all 21 presets on rock and synthetic streams (30,000 each), plus silence, play-state changes, two more sizes and Trilogy's own clock; the engine on the DLLs' own images (the shipped build draws our recreation of their artwork: 82 of 99 images byte-identical, Color Cubes' Sheer Delight palette our own design) | over 1,300,000 | identical engine |
 | Goom (iOS Software's `wmp9_goom.dll` for WMP 9, all 4 presets: goom's resolutions 320x240 to 800x600) | 11 of up to 30,000 frames: every preset on the synthetic composition and on a recording (rock, electronic, classical, vocals), the paused stream with its idle credits, silence, a song title, two preset switches; seven pins (its random table's seed) | over 320,000 | identical |
 | Googly Moogly! (`GooglyMoogly.dll`, all 3 presets, the window's size) | 13 of 30,000 frames: every preset on the synthetic composition, rock and electronic; Googly Squares also at 1920x1080 and 1001x737, Frequency and Waveform at 1280x720 (those two reached by setting the DLL's draw mode, which its own SetCurrentPreset refuses; the harness frees the pen the DLL leaks each frame, which otherwise exhausts the process's GDI handles near frame 9,994) | 390,000 | identical |
+| Phthalo's Corona (`Corona.dll` 2004-12, both presets, the window's size) | 10: both presets on rock and electronic (two time pins), the synthetic composition, a paused stream, silence, 1001x737 and Blaze at 400x300 | 273,000 | identical on rock and electronic (30,000 each, both presets); silence identical (3,000); elsewhere identical for the first 4,139 to 11,004 frames, then apart: the CPU's FPATAN/FSIN/FCOS are not correctly rounded (about 1 in 40 of their 64-bit results is an ulp off, near a rounding midpoint), which the port cannot know; one particle's velocity takes it, and the swarm's 10-particle mean carries it into every particle |
 | WMP's spectrum analyzer (WMP 9-12) | 63 per build: every byte of every snapshot, six recordings and a synthetic set | 751,914 snapshots per build | identical |
 | WMP's spectrum analyzer (WMP 7.0, 7.1, 8, 8 SP1) | 63 per build, the same set: every byte of every snapshot, both spectrum layouts | 751,914 snapshots per build | identical |
 
@@ -165,7 +167,8 @@ Done since this list began: 3D Alchemy, Picture Viz, Picture Viz II, Picture Viz
 Colors, Trilogy I-III, Eclectic Colors, StarTime, SnowTime, Dungeon Siege (our own artwork), Plus! 3-D (our own
 artwork), Goom (the WMP 9 plug-in, LGPL), Windows Media 9 Series (Rhythm and Waves, the gallery's unsigned download; our own
 sky, hills and mark in place of its GDI+ drawing and the logos) and Googly Moogly! (a free WMP 9-10 plug-in; its Frequency and
-Waveform presets are drawn by its own code, though its WMP menu only ever offered Googly Squares).
+Waveform presets are drawn by its own code, though its WMP menu only ever offered Googly Squares) and Phthalo's Corona (Corona and
+Blaze, with the DLL's built-in palettes).
 
 Not found yet: "Thanks" and "Chinese New Year 2005" from Microsoft's gallery.
 

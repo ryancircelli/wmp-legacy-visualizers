@@ -82,7 +82,7 @@ describe('menus', () => {
   it('a click outside closes; the picker ▾ opens the visualizations', async () => {
     const { $ } = setup();
     press($('#vpick')!);
-    expect([...menu(0)!.querySelectorAll<HTMLElement>('[role^=menuitem]')].map((b) => b.children[1]!.textContent)).toEqual(['3D Alchemy', 'Alchemy', 'Ambience', 'Bars and Waves', 'Battery', 'Blazing Colors', 'Color Cubes', 'Particle', 'Dungeon Siege', 'Eclectic Colors', 'Googly Moogly!', 'Windows Media 9 Series', 'Picture Viz', 'Picture Viz II', 'Picture Viz 3D', 'Plenoptic', 'Plus! 3-D Visualizations', 'Pulsing Colors', 'SnowTime', 'Spikes', 'StarTime',
+    expect([...menu(0)!.querySelectorAll<HTMLElement>('[role^=menuitem]')].map((b) => b.children[1]!.textContent)).toEqual(['3D Alchemy', 'Alchemy', 'Ambience', 'Bars and Waves', 'Battery', 'Blazing Colors', 'Color Cubes', 'Phthalo\'s Corona', 'Particle', 'Dungeon Siege', 'Eclectic Colors', 'Googly Moogly!', 'Windows Media 9 Series', 'Picture Viz', 'Picture Viz II', 'Picture Viz 3D', 'Plenoptic', 'Plus! 3-D Visualizations', 'Pulsing Colors', 'SnowTime', 'Spikes', 'StarTime',
       'Trilogy I', 'Trilogy II', 'Trilogy III', 'Goom', 'Musical Colors', 'Yule Log']);   // by registry key: Particle is "Dotplane"
     await act(() => new Promise((r) => setTimeout(r, 0)));     // Radix listens for outside presses from the next tick
     press(document.body);
@@ -310,15 +310,15 @@ describe('transport', () => {
     fireEvent.click($('#vnext')!);
     expect(at()).toBe(first.vis + ':' + first.preset);
     act(() => S().actions.setVis('particle', 0));
-    fireEvent.click($('#vprev')!);                                     // out of Particle ("Dotplane"): Color Cubes' last preset
-    expect(at()).toBe(lastOf('colorcubes'));
+    fireEvent.click($('#vprev')!);                                     // out of Particle ("Dotplane"): Phthalo's Corona's last ("Corona")
+    expect(at()).toBe(lastOf('corona'));
     fireEvent.click($('#vnext')!);
     expect(at()).toBe('particle:0');
-    act(() => S().actions.setVis('colorcubes', 1));
+    act(() => S().actions.setVis('corona', 1));
     fireEvent.click($('#vnext')!, { shiftKey: true });                 // next family, its first preset
     expect(at()).toBe('particle:0');
     fireEvent.click($('#vprev')!, { shiftKey: true });                 // previous family, its last preset
-    expect(at()).toBe(lastOf('colorcubes'));
+    expect(at()).toBe(lastOf('corona'));
     act(() => S().actions.setVis(first.vis, 0));
     fireEvent.click($('#vprev')!, { shiftKey: true });                 // wraps: the last family, its last preset
     expect(at()).toBe(last.vis + ':' + last.preset);

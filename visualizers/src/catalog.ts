@@ -41,6 +41,8 @@ const CURRENT: Record<VisKind, Versions> = {
   wm9s: [9, 9],
   // Googly Moogly!: a third-party plug-in for WMP 9 and 10 (2005)
   googly: [9, 10],
+  // Phthalo's Corona: a third-party plug-in for WMP 9 and 10 (2003-04, this build 2004-12)
+  corona: [9, 10],
 };
 
 /** A preset's name as its name and the versions its suffix gives ("Swirl (WMP 7-9)": Swirl, [7, 9]); none: null. */
