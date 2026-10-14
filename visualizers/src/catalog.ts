@@ -45,6 +45,8 @@ const CURRENT: Record<VisKind, Versions> = {
   corona: [9, 10],
   // Ripple: Blackfly Studios' plug-in for WMP 9 (2003)
   ripple: [9, 9],
+  // Better Bars: a third-party plug-in of 2004, built from the WMP 9 Series SDK sample
+  betterbars: [9, 9],
 };
 
 /** A preset's name as its name and the versions its suffix gives ("Swirl (WMP 7-9)": Swirl, [7, 9]); none: null. */

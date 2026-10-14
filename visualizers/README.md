@@ -6,7 +6,7 @@ Every visualizer Windows Media Player shipped, from WMP 7 to today's: **Alchemy*
 ported instruction for instruction to TypeScript (with a few WebAssembly kernels). Plug-ins that were not
 Microsoft's are here too, ported the same way from their binaries alone: **Goom**, iOS Software's What a GOOM! 2k4 for
 Windows Media Player 9 (LGPL), **Googly Moogly!**, n matlock's free 2005 plug-in for WMP 9 and 10, **Phthalo's Corona**,
-Richard Asbury's free 2003 particle storm for WMP 9 and 10, and **Ripple**, Blackfly Studios' 2003 plug-in for WMP 9. Where an older version drew
+Richard Asbury's free 2003 particle storm for WMP 9 and 10, **Ripple**, Blackfly Studios' 2003 plug-in for WMP 9, and **Better Bars**, Rob Styles' 2004 plug-in. Where an older version drew
 differently, it is a preset of its own ("Vox (WMP 7)", "Particle (WMP 7-8)"). The sound reaches them through
 WMP's own spectrum analyzer, ported byte for byte, at WMP's own pace.
 
@@ -106,6 +106,7 @@ Every visualizer is byte-identical to the real Microsoft object for 30,000 conse
 | Googly Moogly! (`GooglyMoogly.dll`, all 3 presets, the window's size) | 13 of 30,000 frames: every preset on the synthetic composition, rock and electronic; Googly Squares also at 1920x1080 and 1001x737, Frequency and Waveform at 1280x720 (those two reached by setting the DLL's draw mode, which its own SetCurrentPreset refuses; the harness frees the pen the DLL leaks each frame, which otherwise exhausts the process's GDI handles near frame 9,994) | 390,000 | identical |
 | Phthalo's Corona (`Corona.dll` 2004-12, both presets, the window's size) | 10: both presets on rock and electronic (two time pins), the synthetic composition, a paused stream, silence, 1001x737 and Blaze at 400x300 | 273,000 | identical on rock and electronic (30,000 each, both presets); silence identical (3,000); elsewhere identical for the first 4,139 to 11,004 frames, then apart: the CPU's FPATAN/FSIN/FCOS are not correctly rounded (about 1 in 40 of their 64-bit results is an ulp off, near a rounding midpoint), which the port cannot know; one particle's velocity takes it, and the swarm's 10-particle mean carries it into every particle |
 | Ripple (Blackfly Studios' `Ripple.dll` for WMP 9, all 8 presets, the window's size) | 25 of 30,000 frames: every preset on the synthetic composition and on two recordings (rock at 640x480, classical at 1280x720), a preset switch at 800x600; three seeds (Delphi's RandSeed) | 750,000 | identical |
+| Better Bars (Rob Styles' `BetterBars2.dll`, 2004, all 3 presets, the window's size) | 30 of 30,000 frames: every preset on the synthetic composition, six recordings, silence and the paused stream, sizes 200x150 to 1920x1080, three preset switches | 900,000 | identical, except Scan in a window over 300 high from frame 9,985, where the DLL's own brush leak exhausts GDI and freezes it (the port keeps drawing); the System-font credit line under windows over 300 high is not drawn |
 | WMP's spectrum analyzer (WMP 9-12) | 63 per build: every byte of every snapshot, six recordings and a synthetic set | 751,914 snapshots per build | identical |
 | WMP's spectrum analyzer (WMP 7.0, 7.1, 8, 8 SP1) | 63 per build, the same set: every byte of every snapshot, both spectrum layouts | 751,914 snapshots per build | identical |
 
@@ -169,7 +170,8 @@ Colors, Trilogy I-III, Eclectic Colors, StarTime, SnowTime, Dungeon Siege (our o
 artwork), Goom (the WMP 9 plug-in, LGPL), Windows Media 9 Series (Rhythm and Waves, the gallery's unsigned download; our own
 sky, hills and mark in place of its GDI+ drawing and the logos), Googly Moogly! (a free WMP 9-10 plug-in; its Frequency and
 Waveform presets are drawn by its own code, though its WMP menu only ever offered Googly Squares), Phthalo's Corona (Corona and
-Blaze, with the DLL's built-in palettes) and Ripple (Blackfly Studios, 2003).
+Blaze, with the DLL's built-in palettes), Ripple (Blackfly Studios, 2003) and Better Bars (Rob Styles, 2004; Bars, Stereo
+Scope and Scan).
 
 Not found yet: "Thanks" and "Chinese New Year 2005" from Microsoft's gallery.
 
