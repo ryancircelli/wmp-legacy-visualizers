@@ -31,6 +31,8 @@ const CURRENT: Record<VisKind, Versions> = {
   blazing: [7, 8], colorcubes: [7, 8], pulsing: [7, 8], trilogy1: [7, 8], trilogy2: [7, 8], trilogy3: [7, 8], dungeon: [8, 8], snowtime: [7, 8], startime: [7, 8], eclectic: [7, 8],
   alchemy3d: [9, 9],
   pictureviz: [8, 8], pictureviz2: [9, 9], pictureviz3: [9, 9],
+  // Kid Drawing: the Windows Media Player 7 Bonus Pack's (2000), WMP 7 and 8
+  kiddraw: [7, 8],
   // Yule Log: the Windows Media Bonus Pack for Windows XP (WMP 8) and the Winter Fun Packs for WMP 9 and 10
   yule: [8, 10],
   // Goom: the WMP 9 Series plug-in (WMP 9 and later loaded it; it was built for 9)

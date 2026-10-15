@@ -27,6 +27,7 @@ import type { Picture } from './pictureviz/picture';
 import './yule/index';
 import './averett/index';
 import './goom/index';
+import './kiddraw/index';
 import './googly/index';
 import './corona/index';
 import './pixeltrip/index';
@@ -43,7 +44,7 @@ export { pictureFromRGBA, loadPicture } from './pictureviz/picture';
 
 export type VisKind = 'alchemy' | 'bars' | 'battery' | 'spikes' | 'particle' | 'plenoptic' | 'ambience' | 'musical'
   | 'blazing' | 'colorcubes' | 'pulsing' | 'trilogy1' | 'trilogy2' | 'trilogy3' | 'dungeon' | 'snowtime' | 'startime' | 'eclectic' | 'alchemy3d' | 'pictureviz' | 'pictureviz2' | 'pictureviz3' | 'yule'
-  | 'goom' | 'plus3d' | 'wm9s' | 'googly' | 'corona' | 'ripple' | 'betterbars' | 'clarify' | 'pixeltrip' | 'animator';
+  | 'goom' | 'kiddraw' | 'plus3d' | 'wm9s' | 'googly' | 'corona' | 'ripple' | 'betterbars' | 'clarify' | 'pixeltrip' | 'animator';
 /** 'original' = each DLL's own surface size; 'auto' = the view, capped near 720p worth of pixels; n = view * n. */
 export type Scale = 'original' | 'auto' | number;
 
@@ -78,7 +79,7 @@ export interface PresetEntry {
   vis: VisKind;
   preset: number;
   group: 'Alchemy' | 'Bars and Waves' | 'Battery' | 'Spikes' | 'Particle' | 'Plenoptic' | 'Ambience' | 'Musical Colors'
-    | 'Blazing Colors' | 'Color Cubes' | 'Pulsing Colors' | 'Trilogy I' | 'Trilogy II' | 'Trilogy III' | 'Dungeon Siege' | 'SnowTime' | 'StarTime' | 'Eclectic Colors' | '3D Alchemy' | 'Picture Viz' | 'Picture Viz II' | 'Picture Viz 3D' | 'Yule Log'
+    | 'Blazing Colors' | 'Color Cubes' | 'Pulsing Colors' | 'Trilogy I' | 'Trilogy II' | 'Trilogy III' | 'Dungeon Siege' | 'SnowTime' | 'StarTime' | 'Eclectic Colors' | '3D Alchemy' | 'Picture Viz' | 'Picture Viz II' | 'Picture Viz 3D' | 'Kid Drawing' | 'Yule Log'
     | 'Goom' | 'Plus! 3-D Visualizations' | 'Windows Media 9 Series' | 'Googly Moogly!' | 'Phthalo\'s Corona' | 'Ripple' | 'Better Bars' | 'Clarify' | 'PixelTrip' | 'Animator';
   name: string;
   /** the family's registry key, HKLM\SOFTWARE\Microsoft\MediaPlayer\Objects\Effects\<key> (its place in the list) */
@@ -168,6 +169,8 @@ const FAMILIES: readonly { key: string; vis: VisKind; group: PresetEntry['group'
   { key: 'Picture_Viz_III', vis: 'pictureviz3', group: 'Picture Viz 3D', names: A.PictureViz3.PRESET_NAMES },
   // PixelTripWMP.dll (Brian Spangler / Visolu, 2002), key "PixelTrip"
   { key: 'PixelTrip', vis: 'pixeltrip', group: 'PixelTrip', names: A.PixelTrip.PRESET_NAMES },
+  // dance.dll (the WMP 7 Bonus Pack, 2000): its REGISTRY resource's Effects key is "KidDrawing" (named "Kid Drawing"), two presets
+  { key: 'KidDrawing', vis: 'kiddraw', group: 'Kid Drawing', names: A.KidDrawing.PRESET_NAMES },
   // Microsoft's downloadable Direct3D 8 visualizations (Bonus Pack, Winter Fun Packs), their own Effects keys
   { key: 'YuleLog', vis: 'yule', group: 'Yule Log', names: A.YuleLog.PRESET_NAMES },
   // What a GOOM! 2k4's WMP 9 plug-in (wmp9_goom.dll, iOS Software, LGPL): key "Wmp9_goom", before WMPVis
@@ -252,7 +255,7 @@ export function nativeSize(kind: VisKind, viewW: number, viewH: number, preset =
     return [Math.max(16, Math.round(viewW * k)), Math.max(16, Math.round(viewH * k))];
   }
   if (kind === 'alchemy' && preset === 1) return [384, 288];          // Random (WMP 9)
-  if (kind === 'bars' || kind === 'spikes' || kind === 'particle' || kind === 'musical' || PLUS[kind] || kind === 'alchemy3d' || kind === 'pictureviz' || kind === 'pictureviz2' || kind === 'pictureviz3') return [Math.min(1920, viewW), Math.min(1080, viewH)];
+  if (kind === 'bars' || kind === 'spikes' || kind === 'particle' || kind === 'musical' || PLUS[kind] || kind === 'alchemy3d' || kind === 'pictureviz' || kind === 'pictureviz2' || kind === 'pictureviz3' || kind === 'kiddraw') return [Math.min(1920, viewW), Math.min(1080, viewH)];
   // Ripple: a 32-bit DIB section of the window's size, BitBlt'd 1:1
   if (kind === 'ripple' || kind === 'betterbars' || kind === 'clarify') return [Math.min(1920, viewW), Math.min(1080, viewH)];
   if (kind === 'googly' || kind === 'corona' || kind === 'animator') return [Math.max(32, Math.min(1920, viewW)), Math.max(32, Math.min(1080, viewH))];   // the window's own, 32x32 at least
@@ -335,6 +338,7 @@ function makeRaw(kind: VisKind, preset: number, options: EngineOptions): RawEngi
   if (kind === 'alchemy3d') return new (A.Alchemy3D as unknown as RawCtor)({ width: 640, height: 480, options, preset });
   if (kind === 'pictureviz') return new (A.PictureViz as unknown as RawCtor)({ width: 16, height: 16, options, preset });
   if (kind === 'pictureviz2') return new (A.PictureViz2 as unknown as RawCtor)({ width: 16, height: 16, options, preset });
+  if (kind === 'kiddraw') return new (A.KidDrawing as unknown as RawCtor)({ width: 16, height: 16, options, preset });
   if (kind === 'pictureviz3') return new (A.PictureViz3 as unknown as RawCtor)({ width: 16, height: 16, options, preset });
   if (kind === 'yule') {
     // its options are the Preset1 registry values (defaults: the DLL's); the shell's options are set on it after
