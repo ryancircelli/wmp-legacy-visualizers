@@ -57,6 +57,8 @@ const CURRENT: Record<VisKind, Versions> = {
   animator: [9, 10],
   // Celestial: Blackfly Studios' plug-in for WMP 9 Series (2003)
   celestial: [9, 9],
+  // the Psychedelia Viz Pack's visualizations (2007): for WMP 11
+  bubbles: [11, 11],
 };
 
 /** A preset's name as its name and the versions its suffix gives ("Swirl (WMP 7-9)": Swirl, [7, 9]); none: null. */

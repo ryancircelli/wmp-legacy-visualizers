@@ -66,6 +66,35 @@ WMP 7-12) and feeds each call the snapshot WMP's analyzer would have made, with 
 the WMP the preset draws (four arithmetics: WMP 7.0-8 SP1, 9-10, 11, 12), in the layout it asks for (Musical
 Colors, alone, the fixed-step one).
 
+## Bubbles (2026-10-15): the Psychedelia Viz Pack, Direct3D 9
+
+Bubbles.dll (the Psychedelia Viz Pack, 2007, Tim Cowley and Stephen Coy, for WMP 11) draws with Direct3D 9 and an HLSL
+effect D3DX 9 compiles when the device is made. The ground truth renders it on Microsoft's software reference device
+(Windows' own `d3dref9.dll`, the Graphics Tools' 10.0.19041.685, which d3d9.dll binds `D3DDEVTYPE_REF` to), so the
+pixels are deterministic and the GPU never takes part; the port draws through `src/d3d9/`, our reproduction of that
+device. D3DX runs on its portable x87 path (`DisableD3DXPSGP`, set in the host's registry sandbox), and the DLL's
+math runs at the 24-bit x87 precision Direct3D 9 leaves the thread in. Bubbles reads no clock; its randomness is the
+C runtime's `rand()`, seeded by `time()` when its device is made, so the two pins are two seeds. The textures are the
+DLL's own for these runs (the public build draws our own artwork). Every run is 320x240 unless marked.
+
+| Preset | Streams | Seeds | Frames | Result |
+|---|---|---|---|---|
+| Random | the composition, rock (both seeds each); electronic at 240x320 | 2 | 150,000 | identical |
+| Centered | the composition, rock (both seeds each); electronic at 240x320 | 2 | 150,000 | identical |
+| Gravity | the composition, rock (both seeds each); electronic at 240x320 | 2 | 150,000 | identical |
+| Pop | the composition, rock (both seeds each); electronic at 240x320 | 2 | 150,000 | identical |
+| Pop, then Centered at 3,000, then Random at 5,000 | rock | 1 | 8,000 | identical |
+| Gravity, then Pop at 2,500, then Gravity at 6,000 | the composition | 1 | 8,000 | identical |
+
+The sound drives it on both sides: Gravity sizes each bubble by its own frequency band, Centered pulses the cover
+bubble with the level, Pop pops a bubble on each detected beat. Ten of the twenty long runs were captured twice:
+the first captures ran six at a time sharing one registry sandbox, and a run that recreated the sandbox while
+another's D3DX read `DisableD3DXPSGP` sent that one down D3DX's CPU-specific math (and a sleeping display lost some
+runs' devices); captured again, each in a sandbox of its own, all ten are identical.
+
+The cover bubble shows the song's art here; the DLL loads the album's Folder.jpg through Windows' imaging codecs,
+which a browser's decoder cannot reproduce, so the art's own pixels are outside the comparison.
+
 ## Goom (2026-10-13): What a GOOM! 2k4's plug-in for WMP 9
 
 Goom is not Microsoft's: iOS Software's LGPL visualizer, whose installer (archived by the Wayback Machine from the

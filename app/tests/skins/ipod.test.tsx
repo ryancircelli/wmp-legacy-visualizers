@@ -624,7 +624,7 @@ it('the ⋯ over the cover opens this page\'s options: Lyrics and Karaoke toggle
   expect([m.S().settings.karaoke, rows()]).toEqual([false, ['Play On…', 'Visualizer…', 'LyricsOff', 'KaraokeOff']]);
   pick('Visualizer…');                               // its pages: the switch, Opacity, the families
   const title = () => np.querySelector('[class*=pagetitle]')?.textContent;
-  expect([title(), rows()]).toEqual(['Visualizer', ['VisualizerOn', 'Opacity50%', '3D Alchemy', 'Animator', 'Alchemy', 'Ambience', 'Bars and WavesBars', 'Battery', 'Blazing Colors', 'Celestial', 'Clarify', 'Color Cubes', 'Phthalo\'s Corona', 'Particle', 'Dungeon Siege', 'Eclectic Colors', 'Googly Moogly!', 'Kid Drawing', 'Windows Media 9 Series', 'Picture Viz', 'Picture Viz II', 'Picture Viz 3D', 'PixelTrip', 'Plenoptic', 'Plus! 3-D Visualizations',
+  expect([title(), rows()]).toEqual(['Visualizer', ['VisualizerOn', 'Opacity50%', '3D Alchemy', 'Animator', 'Alchemy', 'Ambience', 'Bars and WavesBars', 'Battery', 'Blazing Colors', 'Bubbles', 'Celestial', 'Clarify', 'Color Cubes', 'Phthalo\'s Corona', 'Particle', 'Dungeon Siege', 'Eclectic Colors', 'Googly Moogly!', 'Kid Drawing', 'Windows Media 9 Series', 'Picture Viz', 'Picture Viz II', 'Picture Viz 3D', 'PixelTrip', 'Plenoptic', 'Plus! 3-D Visualizations',
       'Pulsing Colors', 'Ripple', 'SnowTime', 'Spikes', 'StarTime', 'Trilogy I', 'Trilogy II', 'Trilogy III', 'Better Bars', 'Goom', 'Musical Colors', 'Yule Log']]);
   pick('VisualizerOn');                              // off, the page kept open
   expect([rows().slice(0, 2), !!np.querySelector('canvas')]).toEqual([['VisualizerOff', 'Opacity50%'], false]);

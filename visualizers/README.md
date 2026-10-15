@@ -175,8 +175,9 @@ artwork), Goom (the WMP 9 plug-in, LGPL), Windows Media 9 Series (Rhythm and Wav
 sky, hills and mark in place of its GDI+ drawing and the logos), Googly Moogly! (a free WMP 9-10 plug-in; its Frequency and
 Waveform presets are drawn by its own code, though its WMP menu only ever offered Googly Squares), Phthalo's Corona (Corona and
 Blaze, with the DLL's built-in palettes), Ripple and Clarify (Blackfly Studios, 2003), Better Bars (Rob Styles, 2004; Bars, Stereo
-Scope and Scan), PixelTrip (Visolu, 2002), Animator (Glass3D, 2003; its 2.2, the last free WMP build) and Celestial (Blackfly Studios,
-2003; its ten presets).
+Scope and Scan), PixelTrip (Visolu, 2002), Animator (Glass3D, 2003; its 2.2, the last free WMP build), Celestial (Blackfly Studios,
+2003; its ten presets) and Bubbles (the Psychedelia Viz Pack's, Direct3D 9, our own artwork; the pack's Distortion,
+Gigertron 3D, Hypnobloom, Album Art 3D, Ribbons and Up Cuber are next).
 
 Not found yet: "Thanks" and "Chinese New Year 2005" from Microsoft's gallery.
 

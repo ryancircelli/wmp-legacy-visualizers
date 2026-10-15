@@ -26,6 +26,7 @@ describe('the catalog', () => {
       'Bars and Waves, WMP 12 4, WMP 10 2, WMP 7–10 2, WMP 9 2, WMP 7–8 2',
       'Battery, WMP 12 26, WMP 11 22, WMP 9–11 4, WMP 10 9, WMP 9–10 5, WMP 8–10 8, WMP 9 6, WMP 8–9 3, WMP 8 15',
       'Blazing Colors, WMP 7–8 3',
+      'Bubbles, WMP 11 4',
       'Celestial, WMP 9 10',
       'Clarify, WMP 9 4',
       'Color Cubes, WMP 7–8 3',
