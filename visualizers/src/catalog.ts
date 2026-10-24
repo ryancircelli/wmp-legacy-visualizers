@@ -61,6 +61,8 @@ const CURRENT: Record<VisKind, Versions> = {
   bubbles: [11, 11],
   // Analyzed: Miha Software's plug-in, tested by its author on WMP 10 and 11
   analyzed: [10, 11],
+  // Grind: Microsoft's online gallery's download for WMP 9 Series (2003)
+  grind: [9, 9],
 };
 
 /** A preset's name as its name and the versions its suffix gives ("Swirl (WMP 7-9)": Swirl, [7, 9]); none: null. */

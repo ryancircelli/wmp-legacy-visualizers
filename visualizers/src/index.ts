@@ -26,6 +26,7 @@ import './pictureviz/pv3/index';
 import type { Picture } from './pictureviz/picture';
 import './yule/index';
 import './averett/index';
+import './averett/grind/index';
 import './goom/index';
 import './kiddraw/index';
 import './googly/index';
@@ -48,7 +49,7 @@ export { pictureFromRGBA, loadPicture } from './pictureviz/picture';
 
 export type VisKind = 'alchemy' | 'bars' | 'battery' | 'spikes' | 'particle' | 'plenoptic' | 'ambience' | 'musical'
   | 'blazing' | 'colorcubes' | 'pulsing' | 'trilogy1' | 'trilogy2' | 'trilogy3' | 'dungeon' | 'snowtime' | 'startime' | 'eclectic' | 'alchemy3d' | 'pictureviz' | 'pictureviz2' | 'pictureviz3' | 'yule'
-  | 'goom' | 'kiddraw' | 'plus3d' | 'wm9s' | 'googly' | 'corona' | 'ripple' | 'betterbars' | 'clarify' | 'pixeltrip' | 'animator' | 'celestial' | 'bubbles' | 'analyzed';
+  | 'goom' | 'kiddraw' | 'plus3d' | 'wm9s' | 'googly' | 'corona' | 'ripple' | 'betterbars' | 'clarify' | 'pixeltrip' | 'animator' | 'celestial' | 'bubbles' | 'analyzed' | 'grind';
 /** 'original' = each DLL's own surface size; 'auto' = the view, capped near 720p worth of pixels; n = view * n. */
 export type Scale = 'original' | 'auto' | number;
 
@@ -84,7 +85,7 @@ export interface PresetEntry {
   preset: number;
   group: 'Alchemy' | 'Bars and Waves' | 'Battery' | 'Spikes' | 'Particle' | 'Plenoptic' | 'Ambience' | 'Musical Colors'
     | 'Blazing Colors' | 'Color Cubes' | 'Pulsing Colors' | 'Trilogy I' | 'Trilogy II' | 'Trilogy III' | 'Dungeon Siege' | 'SnowTime' | 'StarTime' | 'Eclectic Colors' | '3D Alchemy' | 'Picture Viz' | 'Picture Viz II' | 'Picture Viz 3D' | 'Kid Drawing' | 'Yule Log'
-    | 'Goom' | 'Plus! 3-D Visualizations' | 'Windows Media 9 Series' | 'Googly Moogly!' | 'Phthalo\'s Corona' | 'Ripple' | 'Better Bars' | 'Clarify' | 'PixelTrip' | 'Animator' | 'Celestial' | 'Bubbles' | 'Analyzed';
+    | 'Goom' | 'Plus! 3-D Visualizations' | 'Windows Media 9 Series' | 'Googly Moogly!' | 'Phthalo\'s Corona' | 'Ripple' | 'Better Bars' | 'Clarify' | 'PixelTrip' | 'Animator' | 'Celestial' | 'Bubbles' | 'Analyzed' | 'Grind(2003)';
   name: string;
   /** the family's registry key, HKLM\SOFTWARE\Microsoft\MediaPlayer\Objects\Effects\<key> (its place in the list) */
   key: string;
@@ -188,6 +189,9 @@ const FAMILIES: readonly { key: string; vis: VisKind; group: PresetEntry['group'
   // the gallery's MediaPlayer_9.dll (Averett & Associates for Microsoft, unsigned), key "MediaPlayer_9", named
   // "Windows Media 9 Series" (its string 101); one preset, Rhythm and Waves
   { key: 'MediaPlayer_9', vis: 'wm9s', group: 'Windows Media 9 Series', names: A.AverettMp9.PRESET_NAMES },
+  // the gallery's Grind.dll (Averett & Associates, a film promotion; unsigned), key "Grind", named "Grind(2003)" (its
+  // string 101); one preset, Go BIG or Go Home
+  { key: 'Grind', vis: 'grind', group: 'Grind(2003)', names: A.AverettGrind.PRESET_NAMES },
   // Better Bars (BetterBars2.dll, Rob Styles 2004, open source): its Effects key is the WMP SDK sample's "Visualizationone"
   { key: 'Visualizationone', vis: 'betterbars', group: 'Better Bars', names: A.BetterBars.PRESET_NAMES },
   // Blackfly Studios' Celestial.dll (2003, a WMP 9 plug-in): its Effects key is its title, "Celestial"
@@ -242,10 +246,10 @@ const FIXED_SIZE: ReadonlySet<VisKind> = new Set(['plenoptic', 'ambience', 'goom
 /** Goom's presets: 320x240, 480x360, 600x480 (the DLL's "640x480" sets 600), 800x600; its Render stretched the
  *  buffer to the window with StretchDIBits in the DC's default (non-HALFTONE) mode: nearest */
 const GOOM_SIZES: readonly [number, number][] = [[320, 240], [480, 360], [600, 480], [800, 600]];
-/** The Direct3D 8 families (Yule Log, Plus! 3-D Visualizations, Windows Media 9 Series): their DLLs render at the window's size through the GPU; the port renders
+/** The Direct3D 8 families (Yule Log, Plus! 3-D Visualizations, Windows Media 9 Series, Grind): their DLLs render at the window's size through the GPU; the port renders
  *  through the reference-rasterizer port (d3d8/ref.ts), in software, so it draws at most D3D_PIXELS and the canvas
  *  stretches it, whatever the scale. ponytail: a fixed pixel budget; raise it as ref.ts gets faster. */
-const D3D: ReadonlySet<VisKind> = new Set(['yule', 'plus3d', 'wm9s']);
+const D3D: ReadonlySet<VisKind> = new Set(['yule', 'plus3d', 'wm9s', 'grind']);
 const D3D_PIXELS = 320 * 240;
 /** ...and Alchemy's WMP 9-11 presets: those mpvis.dlls draw into a fixed surface (384x288 for WMP 9, 640x480
  *  for 10 and 11) StretchBlt'd COLORONCOLOR to the window; WMP 12's (preset 0) follows the scale. */
@@ -366,6 +370,7 @@ function makeRaw(kind: VisKind, preset: number, options: EngineOptions): RawEngi
   if (kind === 'ripple') return new A.Ripple({ width: 16, height: 16, options, preset }) as unknown as RawEngine;
   if (kind === 'clarify') return new A.Clarify({ width: 16, height: 16, options, preset }) as unknown as RawEngine;
   if (kind === 'wm9s') return new A.AverettMp9({ width: 320, height: 240, preset }) as unknown as RawEngine;
+  if (kind === 'grind') return new A.AverettGrind({ width: 320, height: 240, preset }) as unknown as RawEngine;
   if (kind === 'googly') return new (A.GooglyMoogly as unknown as RawCtor)({ width: 640, height: 480, options, preset });
   if (kind === 'corona') return new (A.Corona as unknown as RawCtor)({ width: 640, height: 480, options, preset });
   if (kind === 'pixeltrip') return new (A.PixelTrip as unknown as RawCtor)({ width: 640, height: 480, options, preset });

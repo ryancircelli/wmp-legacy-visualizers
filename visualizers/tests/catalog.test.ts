@@ -36,6 +36,7 @@ describe('the catalog', () => {
       'Dungeon Siege, WMP 8 2',
       'Eclectic Colors, WMP 7–8 3',
       'Googly Moogly!, WMP 9–10 3',
+      'Grind(2003), WMP 9 1',
       'Kid Drawing, WMP 7–8 2',
       'Windows Media 9 Series, WMP 9 1',
       'Picture Viz, WMP 8 7',

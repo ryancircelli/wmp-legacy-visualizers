@@ -54,8 +54,8 @@ function st(c: Core): St {
 }
 const tex = (c: Core, h: number): Texture | null => (h ? c.objs[h] as Texture : null);
 const mat = (c: Core, o: number): Float32Array => c.m.F.subarray(o >> 2, (o >> 2) + 16);
-function setVS(c: Core, v: number): void { c.d.setVertexShader(v); st(c).vs = v; }
-function setTex(c: Core, stage: number, t: Texture | null): void {
+export function setVS(c: Core, v: number): void { c.d.setVertexShader(v); st(c).vs = v; }
+export function setTex(c: Core, stage: number, t: Texture | null): void {
   c.d.setTexture(stage, t);
   if (stage === 0) st(c).tex0 = t; else if (stage === 1) st(c).tex1 = t;
 }

@@ -113,6 +113,7 @@ Every visualizer is byte-identical to the real Microsoft object for 30,000 conse
 | PixelTrip (`PixelTripWMP.dll`, its one preset, the window's size; the DLL's clock pinned) | 6 of 30,000 frames: the synthetic composition, rock, electronic, classical and silence; 512x384 to 800x600; its frame-rate cap at 30, 60 and off; motion, bounce and beat detection never, sometimes and always; five clock pins. Silence and sound differ on 23,311 of 30,000 frames, in the DLL and the port alike | 180,000 | identical |
 | Animator (Glass3D's `Animator2.dll` 2.2, its one preset Show, the window's size; the DLL's own draw thread run in lockstep with a pinned GetTickCount) | 8 of 30,000 frames: the synthetic composition, rock, electronic, classical and silence at two clock pins (20 Renders a second, and 30, where the DLL paces itself and skips Renders), and 1001x737 | 240,000 | identical |
 | Analyzed (Miha Software's `Analyzed.dll` 0.5.1.0, all 8 presets, 512x384; drawn as Direct3D 9's reference rasterizer draws, its clock pinned) | 27: every preset with blur off on the synthetic composition (30,000 each); with its default blur on, Digital Bars on the composition and Line Bars and Mirror Bars on rock (30,000 each) and 11 more preset-stream runs as far as the DLL got (3,000 to 24,000 frames); the other three resolutions and the red and green schemes (500 to 3,000) | 421,500 | identical |
+| Grind (the gallery's `Grind.dll`, its one preset Go BIG or Go Home, 320x240; drawn through our port of Direct3D 8's reference rasterizer, the DLL's clock pinned) | 4: rock at two clock steps (16 and 33 ms a frame) and the synthetic composition at 16 ms, 30,000 frames each; the composition at 33 ms for the 1,001 frames the DLL ran before its host hung | 91,001 | identical |
 | WMP's spectrum analyzer (WMP 9-12) | 63 per build: every byte of every snapshot, six recordings and a synthetic set | 751,914 snapshots per build | identical |
 | WMP's spectrum analyzer (WMP 7.0, 7.1, 8, 8 SP1) | 63 per build, the same set: every byte of every snapshot, both spectrum layouts | 751,914 snapshots per build | identical |
 
@@ -169,7 +170,7 @@ the Fun Packs and its online gallery. These are the ones not yet in the player:
 |---|---|---|---|
 | Shacojin | WMP 7 Bonus Pack (2000) | 4 | not planned |
 | Winter (Ice Storm), Energy Bliss, Softie the Snowman II | Winter Fun Packs, Microsoft's gallery | 1 each | not planned (Direct3D; would be matched against Microsoft's software renderer) |
-| Grind, T3, Looney Tunes | Microsoft's gallery | 1 each | not planned (Direct3D; would need our own artwork in place of the film stills) |
+| T3, Looney Tunes | Microsoft's gallery | 1 each | not planned (Direct3D; would need our own artwork in place of the film stills) |
 
 Done since this list began: 3D Alchemy, Picture Viz, Picture Viz II, Picture Viz 3D, Yule Log, Blazing Colors, Color Cubes, Pulsing
 Colors, Trilogy I-III, Eclectic Colors, StarTime, SnowTime, Kid Drawing, Dungeon Siege (our own artwork), Plus! 3-D (our own
@@ -178,7 +179,8 @@ sky, hills and mark in place of its GDI+ drawing and the logos), Googly Moogly! 
 Waveform presets are drawn by its own code, though its WMP menu only ever offered Googly Squares), Phthalo's Corona (Corona and
 Blaze, with the DLL's built-in palettes), Ripple and Clarify (Blackfly Studios, 2003), Better Bars (Rob Styles, 2004; Bars, Stereo
 Scope and Scan), PixelTrip (Visolu, 2002), Animator (Glass3D, 2003; its 2.2, the last free WMP build), Celestial (Blackfly Studios,
-2003; its ten presets), Analyzed (Miha Software, Direct3D 9) and Bubbles (the Psychedelia Viz Pack's, Direct3D 9, our own artwork; the pack's Distortion,
+2003; its ten presets), Analyzed (Miha Software, Direct3D 9), Grind (Go BIG or Go Home, the gallery's unsigned download, on Picture Viz 3D's
+engine; our own photos, backdrop and sign in place of the film's) and Bubbles (the Psychedelia Viz Pack's, Direct3D 9, our own artwork; the pack's Distortion,
 Gigertron 3D, Hypnobloom, Album Art 3D, Ribbons and Up Cuber are next).
 
 Not found yet: "Thanks" and "Chinese New Year 2005" from Microsoft's gallery.

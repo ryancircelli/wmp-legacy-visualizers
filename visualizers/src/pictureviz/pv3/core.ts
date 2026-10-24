@@ -42,7 +42,7 @@ export type Method = (c: Core, ...a: number[]) => number;
 /** the main vtable (0x10083f4c): `vt(c, 0x36c)` is the DLL's `call [eax+0x36c]`; each module fills its slots */
 export const VT: (Method | undefined)[] = [];
 export function vt(c: Core, off: number, ...a: number[]): number {
-  const f = VT[off >> 2];
+  const f = (c.vtab || VT)[off >> 2];
   if (!f) throw new Error('PictureViz3: unported engine method vt+0x' + off.toString(16));
   return f(c, ...a);
 }
@@ -72,6 +72,8 @@ export class Core {
   declare found: number;
   /** set by Present */
   declare presented: boolean;
+  /** an engine built on this one (Grind, T3) swaps in its own table: VT with its methods over it */
+  declare vtab?: (Method | undefined)[];
 
   constructor(env: Env) {
     const m = new Mem(64 << 20);
