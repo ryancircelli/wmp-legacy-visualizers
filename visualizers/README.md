@@ -7,7 +7,8 @@ ported instruction for instruction to TypeScript (with a few WebAssembly kernels
 Microsoft's are here too, ported the same way from their binaries alone: **Goom**, iOS Software's What a GOOM! 2k4 for
 Windows Media Player 9 (LGPL), **Googly Moogly!**, n matlock's free 2005 plug-in for WMP 9 and 10, **Phthalo's Corona**,
 Richard Asbury's free 2003 particle storm for WMP 9 and 10, **Ripple** and **Clarify**, Blackfly Studios' 2003 plug-ins for WMP 9, **Better Bars**, Rob Styles' 2004 plug-in,
-**PixelTrip**, Brian Spangler's (Visolu) free 2002 plug-in, and **Animator**, Glass3D's free 2003 plug-in for WMP 9 and 10. Where an older version drew
+**PixelTrip**, Brian Spangler's (Visolu) free 2002 plug-in, **Animator**, Glass3D's free 2003 plug-in for WMP 9 and 10, and **Analyzed**, Miha Software's
+Direct3D 9 plug-in for WMP 10 and 11. Where an older version drew
 differently, it is a preset of its own ("Vox (WMP 7)", "Particle (WMP 7-8)"). The sound reaches them through
 WMP's own spectrum analyzer, ported byte for byte, at WMP's own pace.
 
@@ -111,6 +112,7 @@ Every visualizer is byte-identical to the real Microsoft object for 30,000 conse
 | Better Bars (Rob Styles' `BetterBars2.dll`, 2004, all 3 presets, the window's size) | 30 of 30,000 frames: every preset on the synthetic composition, six recordings, silence and the paused stream, sizes 200x150 to 1920x1080, three preset switches | 900,000 | identical, except Scan in a window over 300 high from frame 9,985, where the DLL's own brush leak exhausts GDI and freezes it (the port keeps drawing); the System-font credit line under windows over 300 high is not drawn |
 | PixelTrip (`PixelTripWMP.dll`, its one preset, the window's size; the DLL's clock pinned) | 6 of 30,000 frames: the synthetic composition, rock, electronic, classical and silence; 512x384 to 800x600; its frame-rate cap at 30, 60 and off; motion, bounce and beat detection never, sometimes and always; five clock pins. Silence and sound differ on 23,311 of 30,000 frames, in the DLL and the port alike | 180,000 | identical |
 | Animator (Glass3D's `Animator2.dll` 2.2, its one preset Show, the window's size; the DLL's own draw thread run in lockstep with a pinned GetTickCount) | 8 of 30,000 frames: the synthetic composition, rock, electronic, classical and silence at two clock pins (20 Renders a second, and 30, where the DLL paces itself and skips Renders), and 1001x737 | 240,000 | identical |
+| Analyzed (Miha Software's `Analyzed.dll` 0.5.1.0, all 8 presets, 512x384; drawn as Direct3D 9's reference rasterizer draws, its clock pinned) | 27: every preset with blur off on the synthetic composition (30,000 each); with its default blur on, Digital Bars on the composition and Line Bars and Mirror Bars on rock (30,000 each) and 11 more preset-stream runs as far as the DLL got (3,000 to 24,000 frames); the other three resolutions and the red and green schemes (500 to 3,000) | 421,500 | identical |
 | WMP's spectrum analyzer (WMP 9-12) | 63 per build: every byte of every snapshot, six recordings and a synthetic set | 751,914 snapshots per build | identical |
 | WMP's spectrum analyzer (WMP 7.0, 7.1, 8, 8 SP1) | 63 per build, the same set: every byte of every snapshot, both spectrum layouts | 751,914 snapshots per build | identical |
 
@@ -176,7 +178,7 @@ sky, hills and mark in place of its GDI+ drawing and the logos), Googly Moogly! 
 Waveform presets are drawn by its own code, though its WMP menu only ever offered Googly Squares), Phthalo's Corona (Corona and
 Blaze, with the DLL's built-in palettes), Ripple and Clarify (Blackfly Studios, 2003), Better Bars (Rob Styles, 2004; Bars, Stereo
 Scope and Scan), PixelTrip (Visolu, 2002), Animator (Glass3D, 2003; its 2.2, the last free WMP build), Celestial (Blackfly Studios,
-2003; its ten presets) and Bubbles (the Psychedelia Viz Pack's, Direct3D 9, our own artwork; the pack's Distortion,
+2003; its ten presets), Analyzed (Miha Software, Direct3D 9) and Bubbles (the Psychedelia Viz Pack's, Direct3D 9, our own artwork; the pack's Distortion,
 Gigertron 3D, Hypnobloom, Album Art 3D, Ribbons and Up Cuber are next).
 
 Not found yet: "Thanks" and "Chinese New Year 2005" from Microsoft's gallery.
