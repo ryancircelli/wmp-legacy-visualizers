@@ -35,6 +35,7 @@ describe('the catalog', () => {
       'Particle, WMP 10 2, WMP 7–8 2',
       'Dungeon Siege, WMP 8 2',
       'Eclectic Colors, WMP 7–8 3',
+      'Flashes, WMP 9–10 1',
       'Googly Moogly!, WMP 9–10 3',
       'Grind(2003), WMP 9 1',
       'Kid Drawing, WMP 7–8 2',

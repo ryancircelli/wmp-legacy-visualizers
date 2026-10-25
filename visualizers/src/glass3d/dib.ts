@@ -1,20 +1,22 @@
-// The 8-bit DIB Glass3D's plug-ins draw into (Animator 2.2: object 0x2284fc bytes made by 0x10014ae0 ->
-// 0x100150f0 / 0x100152d0 / 0x10015290). Memory row 0 is the picture's bottom (a bottom-up DIB), rows are
-// `stride` = width rounded up to 4, plus 4, bytes apart, and there are height + 2 of them. Drawing is clipped to
-// (1, 1, w - 2, h - 2). The object keeps 65,536 rand() values (filled at creation) that the "sparkle" drawing
-// thresholds against. The 16- and 32-bit paths of the DLL are dead here (the DIB is always 8-bit) and not ported.
+// The DIB Glass3D's plug-ins draw into (Animator 2.2: object 0x2284fc bytes made by 0x10014ae0 ->
+// 0x100150f0 / 0x100152d0 / 0x10015290; Flashes 2.0: 0x1000d0d0). Memory row 0 is the picture's bottom (a bottom-up
+// DIB), rows are `stride` = width rounded up to 4, plus 4, pixels apart, and there are height + 2 of them. Drawing is
+// clipped to (1, 1, w - 2, h - 2). The object keeps 65,536 rand() values (filled at creation) that the "sparkle"
+// drawing thresholds against. Animator's DIB is 8-bit (palette indices), Flashes' 16-bit (x555 pixels); the DLLs'
+// 16-bit line and fill (Flashes 0x1000fc50 / 0x100105c0) are the 8-bit ones with 2-byte pixels, so one code path
+// serves both. The 32-bit paths are dead in both and not ported.
 import type { Lcg } from './lcg';
 
 /** the line code's first step: bits 30 and 31 of a coordinate both become its sign */
 const fold = (v: number): number => ((v >> 1) & 0xc0000000) | (v & 0x3fffffff);
 
-export class Dib {
-  /** +0x40004: width rounded up to 4; +0x40008: height; +0x40018: bytes per row (+0x40014, bytes per pixel, is 1) */
+export class Dib<P extends Uint8Array | Uint16Array = Uint8Array> {
+  /** +0x40004: width rounded up to 4; +0x40008: height; stride: pixels per row (+0x40018 bytes per row / +0x40014) */
   readonly w: number;
   readonly h: number;
   readonly stride: number;
-  /** the pixels, stride * (h + 2) bytes, memory row 0 = bottom */
-  readonly bits: Uint8Array;
+  /** the pixels, stride * (h + 2) of them, memory row 0 = bottom */
+  readonly bits: P;
   /** +4: rand() values, 65,536 of them (in the DLL the last is then overwritten by the DC handle; nothing reads it) */
   readonly rt = new Int32Array(65536);
   /** +0x4000c..+0x40012: the clip rectangle (shorts) */
@@ -29,15 +31,15 @@ export class Dib {
   /** the colour table SetDIBColorTable got (BGRX) */
   readonly palette = new Uint8Array(1024);
 
-  /** 0x10014ae0(0, width, height, 8): the rand() table first, then the bitmap and the clip */
-  constructor(width: number, height: number, private readonly rng: Lcg) {
+  /** 0x10014ae0(0, width, height, bpp): the rand() table first, then the bitmap and the clip */
+  constructor(width: number, height: number, private readonly rng: Lcg, bpp: 8 | 16 = 8) {
     for (let i = 0; i < 65536; i++) this.rt[i] = rng.rand();
     if (width < 0) width = 0;
     if (height < 0) height = 0;
     this.w = ((width + 3) >> 2) * 4;
     this.h = height;
     this.stride = this.w + 4;
-    this.bits = new Uint8Array(this.stride * (height + 2));
+    this.bits = (bpp === 16 ? new Uint16Array(this.stride * (height + 2)) : new Uint8Array(this.stride * (height + 2))) as P;
     // 0x10015240(null) then 0x10015290(1, 1, w - 2, h - 2): the intersection (0x10019cd0)
     this.clipL = 1; this.clipT = 1;
     this.clipR = Math.min(width - 2, this.w);

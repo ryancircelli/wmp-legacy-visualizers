@@ -35,6 +35,7 @@ import './pixeltrip/index';
 import './analyzed/index';
 import './plus3d/index';
 import './animator/index';
+import './flashes/index';
 import './blackfly/ripple';
 import './blackfly/clarify';
 import './betterbars/index';
@@ -49,7 +50,7 @@ export { pictureFromRGBA, loadPicture } from './pictureviz/picture';
 
 export type VisKind = 'alchemy' | 'bars' | 'battery' | 'spikes' | 'particle' | 'plenoptic' | 'ambience' | 'musical'
   | 'blazing' | 'colorcubes' | 'pulsing' | 'trilogy1' | 'trilogy2' | 'trilogy3' | 'dungeon' | 'snowtime' | 'startime' | 'eclectic' | 'alchemy3d' | 'pictureviz' | 'pictureviz2' | 'pictureviz3' | 'yule'
-  | 'goom' | 'kiddraw' | 'plus3d' | 'wm9s' | 'googly' | 'corona' | 'ripple' | 'betterbars' | 'clarify' | 'pixeltrip' | 'animator' | 'celestial' | 'bubbles' | 'analyzed' | 'grind';
+  | 'goom' | 'kiddraw' | 'plus3d' | 'wm9s' | 'googly' | 'corona' | 'ripple' | 'betterbars' | 'clarify' | 'pixeltrip' | 'animator' | 'flashes' | 'celestial' | 'bubbles' | 'analyzed' | 'grind';
 /** 'original' = each DLL's own surface size; 'auto' = the view, capped near 720p worth of pixels; n = view * n. */
 export type Scale = 'original' | 'auto' | number;
 
@@ -85,7 +86,7 @@ export interface PresetEntry {
   preset: number;
   group: 'Alchemy' | 'Bars and Waves' | 'Battery' | 'Spikes' | 'Particle' | 'Plenoptic' | 'Ambience' | 'Musical Colors'
     | 'Blazing Colors' | 'Color Cubes' | 'Pulsing Colors' | 'Trilogy I' | 'Trilogy II' | 'Trilogy III' | 'Dungeon Siege' | 'SnowTime' | 'StarTime' | 'Eclectic Colors' | '3D Alchemy' | 'Picture Viz' | 'Picture Viz II' | 'Picture Viz 3D' | 'Kid Drawing' | 'Yule Log'
-    | 'Goom' | 'Plus! 3-D Visualizations' | 'Windows Media 9 Series' | 'Googly Moogly!' | 'Phthalo\'s Corona' | 'Ripple' | 'Better Bars' | 'Clarify' | 'PixelTrip' | 'Animator' | 'Celestial' | 'Bubbles' | 'Analyzed' | 'Grind(2003)';
+    | 'Goom' | 'Plus! 3-D Visualizations' | 'Windows Media 9 Series' | 'Googly Moogly!' | 'Phthalo\'s Corona' | 'Ripple' | 'Better Bars' | 'Clarify' | 'PixelTrip' | 'Animator' | 'Flashes' | 'Celestial' | 'Bubbles' | 'Analyzed' | 'Grind(2003)';
   name: string;
   /** the family's registry key, HKLM\SOFTWARE\Microsoft\MediaPlayer\Objects\Effects\<key> (its place in the list) */
   key: string;
@@ -161,6 +162,8 @@ const FAMILIES: readonly { key: string; vis: VisKind; group: PresetEntry['group'
   { key: 'Corona', vis: 'corona', group: 'Phthalo\'s Corona', names: A.Corona.PRESET_NAMES },
   // Animator2.dll (Glass3D's free Animator 2.2, 2003-04), key "AA7": first after "3D-Alchemy"
   { key: 'AA7', vis: 'animator', group: 'Animator', names: A.Animator.PRESET_NAMES },
+  // Flashes.dll (Glass3D's free Flashes 2.0, 2004, Animator's sibling), key "Flashes"
+  { key: 'Flashes', vis: 'flashes', group: 'Flashes', names: A.Flashes.PRESET_NAMES },
   // the Creativity Fun Pack's mpvis3d.dll (2003) registers its own Effects key, "3D-Alchemy" (named "3D Alchemy"):
   // WMP 9 lists it as a visualization of its own, first ("3" sorts before "A"). Its sixth preset, Draco's room,
   // is one WMP never offered (GetPresetCount says 5)
@@ -238,7 +241,7 @@ export function makeLevel(): TimedLevel {
 // BitBlts it 1:1. Phthalo's Corona draws 8-bit at the window's width and 4/5 of its height, SetDIBitsToDevice'd 1:1, its
 // lowest quarter mirrored beneath (the last height % 5 rows stay black). PixelTrip draws into a buffer the window's
 // size, DrawDibDraw'n 1:1. Animator draws 8-bit at the window's size (its DIB two rows taller, BitBlt'd from its
-// top-left corner, so the picture sits 2 rows down).
+// top-left corner, so the picture sits 2 rows down); Flashes the same at 16 bits (x555).
 /** Families that draw at a size of their own whatever the window (Plenoptic and Ambience: their
  *  Plenoptic_Resolution / Assault_Resolution, 256x192 by default, StretchDIBits'd to the window): every
  *  scale renders them there, the canvas stretches. */
@@ -275,7 +278,7 @@ export function nativeSize(kind: VisKind, viewW: number, viewH: number, preset =
   if (kind === 'bars' || kind === 'spikes' || kind === 'particle' || kind === 'musical' || PLUS[kind] || kind === 'alchemy3d' || kind === 'pictureviz' || kind === 'pictureviz2' || kind === 'pictureviz3' || kind === 'kiddraw') return [Math.min(1920, viewW), Math.min(1080, viewH)];
   // Ripple: a 32-bit DIB section of the window's size, BitBlt'd 1:1
   if (kind === 'ripple' || kind === 'betterbars' || kind === 'clarify' || kind === 'celestial' || kind === 'bubbles') return [Math.min(1920, viewW), Math.min(1080, viewH)];
-  if (kind === 'googly' || kind === 'corona' || kind === 'animator') return [Math.max(32, Math.min(1920, viewW)), Math.max(32, Math.min(1080, viewH))];   // the window's own, 32x32 at least
+  if (kind === 'googly' || kind === 'corona' || kind === 'animator' || kind === 'flashes') return [Math.max(32, Math.min(1920, viewW)), Math.max(32, Math.min(1080, viewH))];   // the window's own, 32x32 at least
   if (kind === 'pixeltrip') {   // the window's shape within 640x480 worth of pixels (its per-pixel field runs ~18 ms there in JS)
     // ponytail: a fixed pixel budget, as the Direct3D families; the window's own size once the field is faster
     const k = Math.min(1, Math.sqrt(640 * 480 / (viewW * viewH)));
@@ -375,6 +378,7 @@ function makeRaw(kind: VisKind, preset: number, options: EngineOptions): RawEngi
   if (kind === 'corona') return new (A.Corona as unknown as RawCtor)({ width: 640, height: 480, options, preset });
   if (kind === 'pixeltrip') return new (A.PixelTrip as unknown as RawCtor)({ width: 640, height: 480, options, preset });
   if (kind === 'animator') return new (A.Animator as unknown as RawCtor)({ width: 640, height: 480, options, preset });
+  if (kind === 'flashes') return new (A.Flashes as unknown as RawCtor)({ width: 640, height: 480, options, preset });
   // Celestial draws into DIBs of the window's size and BitBlts them 1:1; Randomize seeds it from the clock
   if (kind === 'celestial') return new (A.Celestial as unknown as RawCtor)({ width: 16, height: 16, options, preset });
   if (kind === 'bubbles') return new (A.Bubbles as unknown as RawCtor)({ width: 16, height: 16, options, preset });

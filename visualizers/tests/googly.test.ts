@@ -11,9 +11,9 @@ import { PRESETS, makeLevel, nativeSize } from '../src';
 import { InputGen } from './golden/harness';
 
 describe('Googly Moogly!: presets and wiring', () => {
-  it('three presets under its key, after Eclectic Colors; the window\'s size, 32x32 at least', () => {
+  it('three presets under its key, after Flashes; the window\'s size, 32x32 at least', () => {
     const keys = [...new Set(PRESETS.map((p) => p.key))];
-    expect(keys.indexOf('GooglyMoogly')).toBe(keys.indexOf('EclecticColors') + 1);
+    expect(keys.indexOf('GooglyMoogly')).toBe(keys.indexOf('Flashes') + 1);
     expect(PRESETS.filter((p) => p.vis === 'googly').map((p) => p.name)).toEqual(['Googly Squares', 'Frequency', 'Waveform']);
     expect(nativeSize('googly', 800, 600)).toEqual([800, 600]);
     expect(nativeSize('googly', 4000, 20)).toEqual([1920, 32]);
