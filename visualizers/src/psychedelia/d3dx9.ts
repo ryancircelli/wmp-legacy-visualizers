@@ -41,18 +41,20 @@ export function orthoRH(out: Float32Array, w: number, h: number, zn: number, zf:
 
 /** The reciprocal square root D3DX's fast x87 routines use: the squared length's mantissa m in [0.5, 2) (the
  *  exponent's low bit kept) times a slope plus an offset from a 512-entry table indexed by that bit and the top
- *  eight mantissa bits (no Newton step), times the halved exponent. ponytail: only the entries a port has needed are
- *  here (the DLL's table is data we have not yet derived a formula for); a new index throws, so a scene that reaches
- *  one fails loudly in its tests rather than drawing something close. */
-const RSQ: Record<number, [number, number]> = {
-  56: [float(0xbf863600), float(0x3ff5c18a)],   // squared lengths 2420..2500 and the like: |(0, 0, 50)|^2 (Bubbles' eye)
-};
+ *  eight mantissa bits (no Newton step), times the halved exponent. The table is the secant of 1/sqrt over each of the
+ *  512 segments ([0.5, 1) in 256 steps of 1/512, [1, 2) in 256 of 1/256) through its ends' values rounded to float;
+ *  d3dx9_28, _29 and _31 hold the same one. */
+const RSQ = new Float32Array(1024);
+for (let i = 0; i < 512; i++) {
+  const w = i < 256 ? 1 / 512 : 1 / 256, a = i < 256 ? 0.5 + i * w : 1 + (i - 256) * w;
+  const fa = f(1 / Math.sqrt(a)), fb = f(1 / Math.sqrt(a + w)), sl = f((fb - fa) / w);
+  RSQ[2 * i] = sl; RSQ[2 * i + 1] = fa - sl * a;
+}
 export function rsqrtTable(l2: number): number {
-  const u = bits(l2), i = (u >>> 15) & 0x1ff, e = RSQ[i];
-  if (!e) throw new Error(`d3dx9: rsqrt table entry ${i} not derived`);
+  const u = bits(l2), i = (u >>> 15) & 0x1ff;
   const m = float((u & 0xffffff) | 0x3f000000);
   const s = float(((0xbeffffff - u) >>> 1) & 0xff800000);
-  return f(f(f(m * e[0]) + e[1]) * s);
+  return f(f(f(m * RSQ[2 * i]) + RSQ[2 * i + 1]) * s);
 }
 
 /** D3DXVec3Normalize (d3dx9_29 0x449a82): zero stays zero; unchanged when |squared length - 1| <= 1e-5 (0x3727c5ac);

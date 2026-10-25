@@ -60,6 +60,7 @@ describe('the catalog', () => {
       'Trilogy III, WMP 7–8 4',
       'TwistedPixel, WMP 9–10 1',
       'Better Bars, WMP 9 3',
+      '3D Spectrum Analyzer, WMP 11 8',
       'Goom, WMP 9 4',
       'Musical Colors, WMP 7–8 20, WMP 7 1',
       'Yule Log, WMP 8–10 1',

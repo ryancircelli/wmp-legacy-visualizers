@@ -7,8 +7,8 @@ ported instruction for instruction to TypeScript (with a few WebAssembly kernels
 Microsoft's are here too, ported the same way from their binaries alone: **Goom**, iOS Software's What a GOOM! 2k4 for
 Windows Media Player 9 (LGPL), **Googly Moogly!**, n matlock's free 2005 plug-in for WMP 9 and 10, **Phthalo's Corona**,
 Richard Asbury's free 2003 particle storm for WMP 9 and 10, **Ripple**, **Clarify**, **Celestial** and **Fire Dancer**, Blackfly Studios' 2003 plug-ins for WMP 9, **Better Bars**, Rob Styles' 2004 plug-in,
-**PixelTrip** and **TwistedPixel**, Brian Spangler's (Visolu) free 2002 and 2003 plug-ins (TwistedPixel runs scripted presets of our own), **Animator** and **Flashes**, Glass3D's free 2003 and 2004 plug-ins for WMP 9 and 10, and **Analyzed**, Miha Software's
-Direct3D 9 plug-in for WMP 10 and 11. Where an older version drew
+**PixelTrip** and **TwistedPixel**, Brian Spangler's (Visolu) free 2002 and 2003 plug-ins (TwistedPixel runs scripted presets of our own), **Animator** and **Flashes**, Glass3D's free 2003 and 2004 plug-ins for WMP 9 and 10, **Analyzed**, Miha Software's
+Direct3D 9 plug-in for WMP 10 and 11, and **3D Spectrum Analyzer**, Carlo McWhirter's 2009 Direct3D 9 plug-in for WMP 11. Where an older version drew
 differently, it is a preset of its own ("Vox (WMP 7)", "Particle (WMP 7-8)"). The sound reaches them through
 WMP's own spectrum analyzer, ported byte for byte, at WMP's own pace.
 
@@ -119,6 +119,7 @@ Every visualizer is byte-identical to the real Microsoft object for 30,000 conse
 | T3 (the gallery's `T3.dll`, its one preset Rise of the Machines, 320x240 and 401x301; drawn through our port of Direct3D 8's reference rasterizer, the DLL's clock pinned) | 5: rock and the synthetic composition at two clock steps (16 and 33 ms a frame) and rock at 401x301, 30,000 frames each | 150,000 | identical |
 | Windows Media Player 10 (the gallery's `MediaPlayer_10.dll` 1.0.3.1, its one preset Energy Bliss, 320x240 and 401x301; drawn through our port of Direct3D 8's reference rasterizer, its GDI+ equalizer panel through our own GDI+ steps, the DLL's clock pinned) | 4: rock at two clock steps (16 and 33 ms a frame), the synthetic composition at 33 ms and rock at 401x301, 30,000 frames each | 120,000 | identical |
 | TwistedPixel (Visolu's `TwistedPixel.dll` 1.0.0.1, its VBScript and JScript engines on our own 12 presets, the window's size; drawn through our port of Direct3D 8's reference rasterizer, the DLL's clock pinned and its new memory zeroed, since its cross-fades read fields it never wrote) | 4: rock at 34 ms a frame, electronic at 100 ms, classical at 400 ms and 333x247, and a long stream at 34 ms, 30,000 frames each, every preset and its cross-fades | 120,000 | identical |
+| 3D Spectrum Analyzer (Carlo McWhirter's `WM3DSpectrum.dll`, 2009, all 8 presets, the window's size; drawn as Direct3D 9's reference rasterizer draws, D3DX 9 on its x87 path) | 4: rock and classical at 320x240, electronic at 401x301 and a long stream at 640x480, 30,000 frames each, every preset (a switch every 3,750 frames); its history texture compared after every frame, the picture on 1,015 frames a run | 120,000 | identical; its Verdana credit line (Windows' font) is not drawn |
 | Shacojin (the WMP 7 Bonus Pack's `shacojin.dll`, all 4 presets, the window's size; drawn through our own GDI rasterizer) | 21: every preset on the synthetic composition, rock, classical and electronic at 640x480 and on rock at 333x247, and a preset switch at frame 15,000 | 630,000 | identical |
 | WMP's spectrum analyzer (WMP 9-12) | 63 per build: every byte of every snapshot, six recordings and a synthetic set | 751,914 snapshots per build | identical |
 | WMP's spectrum analyzer (WMP 7.0, 7.1, 8, 8 SP1) | 63 per build, the same set: every byte of every snapshot, both spectrum layouts | 751,914 snapshots per build | identical |
@@ -184,7 +185,7 @@ sky, hills and mark in place of its GDI+ drawing and the logos), Googly Moogly! 
 Waveform presets are drawn by its own code, though its WMP menu only ever offered Googly Squares), Phthalo's Corona (Corona and
 Blaze, with the DLL's built-in palettes), Ripple and Clarify (Blackfly Studios, 2003), Better Bars (Rob Styles, 2004; Bars, Stereo
 Scope and Scan), PixelTrip (Visolu, 2002), Animator (Glass3D, 2003; its 2.2, the last free WMP build), Flashes (Glass3D, 2004; its 2.0), Celestial (Blackfly Studios,
-2003; its ten presets), Fire Dancer (Blackfly Studios, 2003; its dancer of flame), Analyzed (Miha Software, Direct3D 9), Grind (Go BIG or Go Home, the gallery's unsigned download, on Picture Viz 3D's
+2003; its ten presets), Fire Dancer (Blackfly Studios, 2003; its dancer of flame), Analyzed (Miha Software, Direct3D 9), 3D Spectrum Analyzer (Carlo McWhirter, 2009, Direct3D 9; its eight presets), Grind (Go BIG or Go Home, the gallery's unsigned download, on Picture Viz 3D's
 engine; our own photos, backdrop and sign in place of the film's), T3 (Rise of the Machines, Grind's engine rebuilt; our own machine-age
 pictures and sign in place of the film's), Windows Media Player 10 (Energy Bliss, the gallery's download for WMP 10; our own sky,
 clouds and buttons in place of its pictures), TwistedPixel (Visolu, 2003, Direct3D 8, with its VBScript and
