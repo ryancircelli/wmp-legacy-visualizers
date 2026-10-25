@@ -26,6 +26,11 @@ export class DelphiRandom {
     const t = (this.seed >>> 16) * range + Math.floor(((this.seed & 0xffff) * range) / 65536);
     return Math.floor(t / 65536);
   }
+  /** System.Random with no range (Fire Dancer 0x402f88): RandSeed stepped, then RandSeed / 2^32 (exact) */
+  randomFloat(): number {
+    this.seed = (Math.imul(this.seed, 0x08088405) + 1) >>> 0;
+    return this.seed / 4294967296;
+  }
 }
 
 /** System.Round (0x402a44): FISTP under the default control word, halves to even. */

@@ -41,6 +41,7 @@ import './blackfly/ripple';
 import './blackfly/clarify';
 import './betterbars/index';
 import './celestial/index';
+import './blackfly/firedancer';
 import './psychedelia/bubbles/index';
 import { RefDevice } from './d3d8/ref';
 import { RefDevice9 } from './d3d9/ref';
@@ -51,7 +52,7 @@ export { pictureFromRGBA, loadPicture } from './pictureviz/picture';
 
 export type VisKind = 'alchemy' | 'bars' | 'battery' | 'spikes' | 'particle' | 'plenoptic' | 'ambience' | 'musical'
   | 'blazing' | 'colorcubes' | 'pulsing' | 'trilogy1' | 'trilogy2' | 'trilogy3' | 'dungeon' | 'snowtime' | 'startime' | 'eclectic' | 'alchemy3d' | 'pictureviz' | 'pictureviz2' | 'pictureviz3' | 'yule'
-  | 'goom' | 'kiddraw' | 'shacojin' | 'plus3d' | 'wm9s' | 'googly' | 'corona' | 'ripple' | 'betterbars' | 'clarify' | 'pixeltrip' | 'animator' | 'flashes' | 'celestial' | 'bubbles' | 'analyzed' | 'grind';
+  | 'goom' | 'kiddraw' | 'shacojin' | 'plus3d' | 'wm9s' | 'googly' | 'corona' | 'ripple' | 'betterbars' | 'clarify' | 'pixeltrip' | 'animator' | 'flashes' | 'celestial' | 'bubbles' | 'analyzed' | 'grind' | 'firedancer';
 /** 'original' = each DLL's own surface size; 'auto' = the view, capped near 720p worth of pixels; n = view * n. */
 export type Scale = 'original' | 'auto' | number;
 
@@ -87,7 +88,7 @@ export interface PresetEntry {
   preset: number;
   group: 'Alchemy' | 'Bars and Waves' | 'Battery' | 'Spikes' | 'Particle' | 'Plenoptic' | 'Ambience' | 'Musical Colors'
     | 'Blazing Colors' | 'Color Cubes' | 'Pulsing Colors' | 'Trilogy I' | 'Trilogy II' | 'Trilogy III' | 'Dungeon Siege' | 'SnowTime' | 'StarTime' | 'Eclectic Colors' | '3D Alchemy' | 'Picture Viz' | 'Picture Viz II' | 'Picture Viz 3D' | 'Kid Drawing' | 'Shacojin' | 'Yule Log'
-    | 'Goom' | 'Plus! 3-D Visualizations' | 'Windows Media 9 Series' | 'Googly Moogly!' | 'Phthalo\'s Corona' | 'Ripple' | 'Better Bars' | 'Clarify' | 'PixelTrip' | 'Animator' | 'Flashes' | 'Celestial' | 'Bubbles' | 'Analyzed' | 'Grind(2003)';
+    | 'Goom' | 'Plus! 3-D Visualizations' | 'Windows Media 9 Series' | 'Googly Moogly!' | 'Phthalo\'s Corona' | 'Ripple' | 'Better Bars' | 'Clarify' | 'PixelTrip' | 'Animator' | 'Flashes' | 'Celestial' | 'Bubbles' | 'Analyzed' | 'Grind(2003)' | 'Fire Dancer';
   name: string;
   /** the family's registry key, HKLM\SOFTWARE\Microsoft\MediaPlayer\Objects\Effects\<key> (its place in the list) */
   key: string;
@@ -202,6 +203,8 @@ const FAMILIES: readonly { key: string; vis: VisKind; group: PresetEntry['group'
   { key: 'Visualizationone', vis: 'betterbars', group: 'Better Bars', names: A.BetterBars.PRESET_NAMES },
   // Blackfly Studios' Celestial.dll (2003, a WMP 9 plug-in): its Effects key is its title, "Celestial"
   { key: 'Celestial', vis: 'celestial', group: 'Celestial', names: A.Celestial.PRESET_NAMES },
+  // Blackfly Studios' FireDancer.dll (2003, a WMP 9 plug-in): its Effects key is its title, "Fire Dancer"
+  { key: 'Fire Dancer', vis: 'firedancer', group: 'Fire Dancer', names: A.FireDancer.PRESET_NAMES },
   // the Psychedelia Viz Pack (2007, Tim Cowley and Stephen Coy, for WMP 11): each DLL registers its own Effects key;
   // Bubbles.dll's is "Bubbles"
   { key: 'Bubbles', vis: 'bubbles', group: 'Bubbles', names: A.Bubbles.PRESET_NAMES },
@@ -280,7 +283,7 @@ export function nativeSize(kind: VisKind, viewW: number, viewH: number, preset =
   if (kind === 'alchemy' && preset === 1) return [384, 288];          // Random (WMP 9)
   if (kind === 'bars' || kind === 'spikes' || kind === 'particle' || kind === 'musical' || PLUS[kind] || kind === 'alchemy3d' || kind === 'pictureviz' || kind === 'pictureviz2' || kind === 'pictureviz3' || kind === 'kiddraw' || kind === 'shacojin') return [Math.min(1920, viewW), Math.min(1080, viewH)];
   // Ripple: a 32-bit DIB section of the window's size, BitBlt'd 1:1
-  if (kind === 'ripple' || kind === 'betterbars' || kind === 'clarify' || kind === 'celestial' || kind === 'bubbles') return [Math.min(1920, viewW), Math.min(1080, viewH)];
+  if (kind === 'ripple' || kind === 'betterbars' || kind === 'clarify' || kind === 'celestial' || kind === 'bubbles' || kind === 'firedancer') return [Math.min(1920, viewW), Math.min(1080, viewH)];
   if (kind === 'googly' || kind === 'corona' || kind === 'animator' || kind === 'flashes') return [Math.max(32, Math.min(1920, viewW)), Math.max(32, Math.min(1080, viewH))];   // the window's own, 32x32 at least
   if (kind === 'pixeltrip') {   // the window's shape within 640x480 worth of pixels (its per-pixel field runs ~18 ms there in JS)
     // ponytail: a fixed pixel budget, as the Direct3D families; the window's own size once the field is faster
@@ -385,6 +388,8 @@ function makeRaw(kind: VisKind, preset: number, options: EngineOptions): RawEngi
   if (kind === 'flashes') return new (A.Flashes as unknown as RawCtor)({ width: 640, height: 480, options, preset });
   // Celestial draws into DIBs of the window's size and BitBlts them 1:1; Randomize seeds it from the clock
   if (kind === 'celestial') return new (A.Celestial as unknown as RawCtor)({ width: 16, height: 16, options, preset });
+  // Fire Dancer draws a 320x384 frame and StretchBlts it to the window's height; Randomize seeds it from the clock
+  if (kind === 'firedancer') return new A.FireDancer({ width: 16, height: 16, options, preset, seed: (Date.now() % 86400000) >>> 0 }) as unknown as RawEngine;
   if (kind === 'bubbles') return new (A.Bubbles as unknown as RawCtor)({ width: 16, height: 16, options, preset });
   return new (A.Engine as unknown as RawCtor)({ width: 16, height: 16, options, preset });
 }

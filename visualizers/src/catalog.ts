@@ -61,6 +61,8 @@ const CURRENT: Record<VisKind, Versions> = {
   flashes: [9, 10],
   // Celestial: Blackfly Studios' plug-in for WMP 9 Series (2003)
   celestial: [9, 9],
+  // Fire Dancer: Blackfly Studios' plug-in for WMP 9 Series (2003)
+  firedancer: [9, 9],
   // the Psychedelia Viz Pack's visualizations (2007): for WMP 11
   bubbles: [11, 11],
   // Analyzed: Miha Software's plug-in, tested by its author on WMP 10 and 11
