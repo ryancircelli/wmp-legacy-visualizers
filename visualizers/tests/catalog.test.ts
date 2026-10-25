@@ -48,6 +48,7 @@ describe('the catalog', () => {
       'Plus! 3-D Visualizations, WMP 8 3',
       'Pulsing Colors, WMP 7–8 3',
       'Ripple, WMP 9 8',
+      'Shacojin, WMP 7–8 4',
       'SnowTime, WMP 7–8 1',
       'Spikes, WMP 10 2',
       'StarTime, WMP 7–8 3',

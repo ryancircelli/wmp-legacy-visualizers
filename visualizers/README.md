@@ -115,6 +115,7 @@ Every visualizer is byte-identical to the real Microsoft object for 30,000 conse
 | Flashes (Glass3D's `Flashes.dll` 2.0, its one preset Show, the window's size; the DLL's own draw thread run in lockstep with a pinned GetTickCount) | 10 of 30,000 frames: the synthetic composition, rock, electronic, classical and silence at two clock pins (20 Renders a second, and 30, where the DLL paces itself and skips Renders), 1001x737, and two runs with its rarest style (one long burst, which the DLL picks once in 32,768) forced at every pick on both sides. Silence stays black in the DLL and the port alike | 300,000 | identical |
 | Analyzed (Miha Software's `Analyzed.dll` 0.5.1.0, all 8 presets, 512x384; drawn as Direct3D 9's reference rasterizer draws, its clock pinned) | 27: every preset with blur off on the synthetic composition (30,000 each); with its default blur on, Digital Bars on the composition and Line Bars and Mirror Bars on rock (30,000 each) and 11 more preset-stream runs as far as the DLL got (3,000 to 24,000 frames); the other three resolutions and the red and green schemes (500 to 3,000) | 421,500 | identical |
 | Grind (the gallery's `Grind.dll`, its one preset Go BIG or Go Home, 320x240; drawn through our port of Direct3D 8's reference rasterizer, the DLL's clock pinned) | 4: rock at two clock steps (16 and 33 ms a frame) and the synthetic composition at 16 ms, 30,000 frames each; the composition at 33 ms for the 1,001 frames the DLL ran before its host hung | 91,001 | identical |
+| Shacojin (the WMP 7 Bonus Pack's `shacojin.dll`, all 4 presets, the window's size; drawn through our own GDI rasterizer) | 21: every preset on the synthetic composition, rock, classical and electronic at 640x480 and on rock at 333x247, and a preset switch at frame 15,000 | 630,000 | identical |
 | WMP's spectrum analyzer (WMP 9-12) | 63 per build: every byte of every snapshot, six recordings and a synthetic set | 751,914 snapshots per build | identical |
 | WMP's spectrum analyzer (WMP 7.0, 7.1, 8, 8 SP1) | 63 per build, the same set: every byte of every snapshot, both spectrum layouts | 751,914 snapshots per build | identical |
 
@@ -169,12 +170,11 @@ the Fun Packs and its online gallery. These are the ones not yet in the player:
 
 | Visualization | Where it shipped | Presets | Status |
 |---|---|---|---|
-| Shacojin | WMP 7 Bonus Pack (2000) | 4 | not planned |
 | Winter (Ice Storm), Energy Bliss, Softie the Snowman II | Winter Fun Packs, Microsoft's gallery | 1 each | not planned (Direct3D; would be matched against Microsoft's software renderer) |
 | T3, Looney Tunes | Microsoft's gallery | 1 each | not planned (Direct3D; would need our own artwork in place of the film stills) |
 
 Done since this list began: 3D Alchemy, Picture Viz, Picture Viz II, Picture Viz 3D, Yule Log, Blazing Colors, Color Cubes, Pulsing
-Colors, Trilogy I-III, Eclectic Colors, StarTime, SnowTime, Kid Drawing, Dungeon Siege (our own artwork), Plus! 3-D (our own
+Colors, Trilogy I-III, Eclectic Colors, StarTime, SnowTime, Kid Drawing, Shacojin, Dungeon Siege (our own artwork), Plus! 3-D (our own
 artwork), Goom (the WMP 9 plug-in, LGPL), Windows Media 9 Series (Rhythm and Waves, the gallery's unsigned download; our own
 sky, hills and mark in place of its GDI+ drawing and the logos), Googly Moogly! (a free WMP 9-10 plug-in; its Frequency and
 Waveform presets are drawn by its own code, though its WMP menu only ever offered Googly Squares), Phthalo's Corona (Corona and

@@ -1,4 +1,4 @@
-// Self-consistency checks for the Kid Drawing GDI rasterizer (the pixel-exactness against Windows GDI is
+// Self-consistency checks for the GDI rasterizer (Kid Drawing's and Shacojin's) (the pixel-exactness against Windows GDI is
 // verified by private oracle tooling; nothing here comes from it).
 import { describe, expect, it } from 'vitest';
 import { Gdi } from '../src/kiddraw/gdi';
@@ -98,6 +98,45 @@ describe('Gdi shapes', () => {
     for (const [x, y] of dot) expect(Math.hypot(x - 10, y - 10)).toBeLessThan(4.6);
   });
 
+  it('Rectangle: the outline on [l,r-1]x[t,b-1], the brush inside, nothing for an empty box', () => {
+    const g = new Gdi(12, 10);
+    g.rectangle(9, 7, 2, 1, 0x0000ff, WHITE);
+    for (let y = 0; y < 10; y++)
+      for (let x = 0; x < 12; x++) {
+        const inBox = x >= 2 && x <= 8 && y >= 1 && y <= 6, edge = x === 2 || x === 8 || y === 1 || y === 6;
+        expect(g.px[y * 12 + x]).toBe(inBox ? (edge ? WHITE : 0xff0000) : 0);
+      }
+    const e = new Gdi(10, 10);
+    e.rectangle(3, 3, 3, 8, 0xff, WHITE);
+    e.rectangle(2, 5, 8, 5, 0xff, WHITE);
+    expect(lit(e)).toEqual([]);
+  });
+
+  it('Arc from the top-left radial round to itself: a ring round an empty centre, within the box (widened by half the pen)', () => {
+    for (const width of [1, 3, 5]) {
+      const g = new Gdi(80, 60);
+      g.arc(20, 15, 60, 45, WHITE, width);          // symmetric about (40, 30)
+      const px = lit(g), pad = width >> 1;
+      expect(px.length).toBeGreaterThan(80);
+      for (const [x, y] of px) expect(x >= 20 - pad && x < 60 + pad && y >= 15 - pad && y < 45 + pad).toBe(true);
+      expect(g.px[30 * 80 + 40]).toBe(0);           // a ring: the centre stays empty
+    }
+    const g = new Gdi(10, 10);
+    g.arc(2, 2, 2, 8, WHITE, 3);
+    expect(lit(g)).toEqual([]);
+  });
+
+  it('3- and 5-pixel lines are that many rows thick; unmodelled widths throw', () => {
+    for (const w of [3, 5]) {
+      const g = new Gdi(40, 20);
+      g.moveTo(10, 10);
+      g.wideLineTo(30, 10, WHITE, w);
+      const ys = [...new Set(lit(g).filter(([x]) => x === 20).map(([, y]) => y))].sort((a, b) => a - b);
+      expect(ys).toEqual(Array.from({ length: w }, (_, i) => 10 - (w >> 1) + i));
+    }
+    expect(() => new Gdi(4, 4).wideLineTo(2, 2, WHITE, 4)).toThrow();
+  });
+
   it('clipping never shifts pixels', () => {
     clipInvariant((g, dx, dy) => {
       g.moveTo(3 + dx, 100 + dy);
@@ -110,5 +149,7 @@ describe('Gdi shapes', () => {
       g.moveTo(8 + dx, 110 + dy);
       g.wideLineTo(152 + dx, 12 + dy, WHITE, 8);
     });
+    clipInvariant((g, dx, dy) => g.rectangle(10 + dx, 8 + dy, 151 + dx, 113 + dy, 0x0000ff, WHITE));
+    for (const w of [1, 3, 5]) clipInvariant((g, dx, dy) => g.arc(12 + dx, 9 + dy, 148 + dx, 111 + dy, WHITE, w));
   });
 });

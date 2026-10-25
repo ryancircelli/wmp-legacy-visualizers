@@ -26,6 +26,8 @@ function inDiamond(U: number, V: number, cx: number, cy: number): boolean {
 }
 
 const KAPPA = (4 * (Math.SQRT2 - 1)) / 3;
+/** the control length of a 45-degree arc's Bezier, 4/3 tan(45/4 degrees) */
+const KAPPA45 = (4 / 3) * Math.tan(Math.PI / 16);
 
 /**
  * GDI's Bezier flattener (hybrid forward differencing in 32-bit fixed point), appending the points after the
@@ -101,38 +103,93 @@ function flattenBezier(c: ArrayLike<number>, o: number, out: number[]): void {
   }
 }
 
-// Width-8 round pen, 28.4 offsets counter-clockwise on screen from +x: the polygonized pen used to pick the
-// side offset, that pen snapped to whole pixels (the offsets GDI emits), and its cap points.
-const PEN8 = [
-  [64, 0],
-  [46, -45],
-  [0, -64],
-  [-45, -45],
-  [-64, 0],
-  [-46, 45],
-  [0, 64],
-  [45, 45],
-] as const;
-const SNAP8 = [
-  [64, 0],
-  [48, -48],
-  [0, -64],
-  [-48, -48],
-  [-64, 0],
-  [-48, 48],
-  [0, 64],
-  [48, 48],
-] as const;
-const CAP8 = [
-  [63, 0],
-  [45, -44],
-  [0, -63],
-  [-44, -44],
-  [-63, 0],
-  [-45, 44],
-  [0, 63],
-  [44, 44],
-] as const;
+type Pen = readonly (readonly [number, number])[];
+/** a pen polygon from its first quarter, turned three times by a quarter (screen (x, y) -> (y, -x)) */
+const ring = (q: Pen): Pen => {
+  const v: [number, number][] = [];
+  for (let r = 0; r < 4; r++)
+    for (const [x, y] of q) {
+      let a = x,
+        b = y;
+      for (let k = 0; k < r; k++) [a, b] = [b, -a];
+      v.push([a, b]);
+    }
+  return v;
+};
+/**
+ * The round pens modelled (CreatePen(PS_SOLID, w)): the polygon GDI widens with, 28.4 offsets from the centre in the
+ * order its caps run (counter-clockwise on screen), from the last vertex before straight up (pick() depends on it).
+ */
+const PENS: Record<number, Pen> = {
+  3: ring([[8, -24], [-8, -24]]),
+  5: ring([[8, -40], [-8, -40], [-24, -32], [-32, -24]]),
+  8: [[46, -45], [0, -64], [-45, -45], [-64, 0], [-46, 45], [0, 64], [45, 45], [64, 0]],
+}; // prettier-ignore
+
+/**
+ * The pen vertex a piece heading (dx, dy) is offset by on its left: the one most extreme along the left normal. When
+ * the pen's edge e (V[e] to V[e+1]) is parallel to the piece, GDI takes V[e+1] for e in [n/4, 3n/4) and V[e]
+ * otherwise. A zero-length piece counts as heading right.
+ */
+function pick(V: Pen, dx: number, dy: number): number {
+  if (dx === 0 && dy === 0) dx = 1;
+  const n = V.length;
+  const c = (k: number): number => V[k][0] * dy - V[k][1] * dx;
+  let m = 0;
+  for (let k = 1; k < n; k++) if (c(k) > c(m)) m = k;
+  const late = (e: number): boolean => e >= n / 4 && e < (3 * n) / 4;
+  const pv = (m + n - 1) % n,
+    nx = (m + 1) % n;
+  if (c(pv) === c(m)) return late(pv) ? m : pv;
+  if (c(nx) === c(m)) return late(m) ? nx : m;
+  return m;
+}
+
+/**
+ * GDI's widened outline of an open 28.4 polyline F with one heading per piece in D, for the round pen V: a cap at the
+ * start (the left offset, the pen's vertices half way round, the right offset), along the right side, a cap at the
+ * end, back along the left side. The offsets are pen vertices snapped to half pixels. Where two pieces meet, the
+ * outer side turns through the pen's vertices between the two offsets and the inner side goes through the centre
+ * point. Cap and join vertices are pulled one 28.4 unit toward the centre when the centre is on the pixel grid.
+ */
+function widen(F: number[], D: number[], V: Pen): number[] {
+  const n = V.length,
+    h = n / 2,
+    m = D.length / 2;
+  const J: number[] = [];
+  for (let k = 0; k < m; k++) J.push(pick(V, D[2 * k], D[2 * k + 1]));
+  const out: number[] = [];
+  const off = (i: number, k: number): void => {
+    out.push(F[2 * i] + Math.round(V[k][0] / 8) * 8, F[2 * i + 1] + Math.round(V[k][1] / 8) * 8);
+  };
+  const fan = (i: number, a: number, b: number): void => {
+    const x = F[2 * i],
+      y = F[2 * i + 1],
+      g = x % 16 === 0 && y % 16 === 0 ? 1 : 0;
+    for (let k = (a + 1) % n; k !== b; k = (k + 1) % n) out.push(x + V[k][0] - g * Math.sign(V[k][0]), y + V[k][1] - g * Math.sign(V[k][1]));
+  };
+  const join = (i: number, a: number, b: number): void => {
+    if (a === b) return;
+    if ((b - a + n) % n < h) fan(i, a, b);
+    else out.push(F[2 * i], F[2 * i + 1]);
+    off(i, b);
+  };
+  const o0 = (J[0] + h) % n;
+  off(0, J[0]);
+  fan(0, J[0], o0);
+  off(0, o0);
+  for (let k = 0; k < m; k++) {
+    off(k + 1, (J[k] + h) % n);
+    if (k + 1 < m) join(k + 1, (J[k] + h) % n, (J[k + 1] + h) % n);
+  }
+  fan(m, (J[m - 1] + h) % n, J[m - 1]);
+  off(m, J[m - 1]);
+  for (let k = m - 1; k > 0; k--) {
+    off(k, J[k]);
+    join(k, J[k], J[k - 1]);
+  }
+  return out;
+}
 
 export class Gdi {
   readonly w: number;
@@ -225,6 +282,91 @@ export class Gdi {
     for (let i = 2; i < pts.length; i += 2) this.strokeFix(pts[i - 2], pts[i - 1], pts[i], pts[i + 1], pen);
   }
 
+  /** Rectangle with a cosmetic pen: the outline on [l, r-1] x [t, b-1], the brush inside it. */
+  rectangle(l: number, t: number, r: number, b: number, brushColorref: number, penColorref: number): void {
+    if (l > r) [l, r] = [r, l];
+    if (t > b) [t, b] = [b, t];
+    if (l === r || t === b) return;
+    this.span(l + 1, r - 1, t + 1, b - 1, toRgb(brushColorref));
+    const pen = toRgb(penColorref);
+    const xs = [l, r - 1, r - 1, l, l],
+      ys = [t, t, b - 1, b - 1, t];
+    for (let i = 0; i < 4; i++) this.line(xs[i], ys[i], xs[i + 1], ys[i + 1], pen);
+  }
+
+  /**
+   * Arc(l, t, r, b, l, t, l, t): the whole ellipse, starting and ending on the radial through the box's top-left
+   * corner (the only Arc this rasterizer models). GDI builds it over the box shrunk by one pixel at the right and
+   * bottom, in 28.4: the start point at 135 degrees, centre - (a, b)/sqrt2 rounded; a 45-degree Bezier to the left
+   * point, the ellipse's own quarters (as in ellipse()) round the bottom, right and top, and a 45-degree Bezier back
+   * (controls 4/3 tan(11.25 deg) along the tangents, rounded). Nothing when the box has no width or height.
+   * Exact against GDI for the cosmetic pen on any box with l < r and t < b, and for widths 3 and 5 on boxes of even
+   * width and height (Shacojin's: 30,351 sizes each). Not yet fitted: wide pens on odd-sized boxes (edge pixels
+   * differ), and boxes given right-to-left or bottom-to-top (GDI's start radial is then not the top-left one).
+   */
+  arc(l: number, t: number, r: number, b: number, colorref: number, width: number): void {
+    if (l > r) [l, r] = [r, l];
+    if (t > b) [t, b] = [b, t];
+    if (l === r || t === b) return;
+    const L = 16 * l,
+      T = 16 * t,
+      R = 16 * (r - 1),
+      B = 16 * (b - 1);
+    const cx = (L + R) / 2,
+      cy = (T + B) / 2,
+      a = (R - L) / 2,
+      e = (B - T) / 2;
+    const ox = Math.ceil(KAPPA * a),
+      oy = Math.floor(KAPPA * e);
+    const S = Math.SQRT1_2,
+      H = KAPPA45,
+      rd = Math.round;
+    const sx = cx + rd(-a * S),
+      sy = cy + rd(-e * S);
+    const ctl = [
+      sx, sy,
+      rd(cx - a * (S + H * S)), rd(cy - e * (S - H * S)), rd(cx - a), rd(cy - e * H), L, cy,
+      L, cy + oy, cx - ox, B, cx, B,
+      cx + ox, B, R, cy + oy, R, cy,
+      R, cy - oy, cx + ox, T, cx, T,
+      rd(cx - a * H), rd(cy - e), rd(cx - a * (S - H * S)), rd(cy - e * (S + H * S)), sx, sy,
+    ]; // prettier-ignore
+    const rgb = toRgb(colorref);
+    const pts = [sx, sy];
+    // the pieces' headings: their chords, but a curve flattened to several pieces heads its first piece along its
+    // start tangent and its last along its end tangent; zero-length pieces are dropped
+    const F = [sx, sy],
+      D: number[] = [];
+    for (let q = 0; q < 5; q++) {
+      const s0 = pts.length;
+      flattenBezier(ctl, 6 * q, pts);
+      const o = 6 * q,
+        np = (pts.length - s0) / 2;
+      for (let i = 0; i < np; i++) {
+        const x = pts[s0 + 2 * i],
+          y = pts[s0 + 2 * i + 1],
+          px = pts[s0 + 2 * i - 2],
+          py = pts[s0 + 2 * i - 1];
+        if (x === px && y === py) continue;
+        F.push(x, y);
+        if (np > 1 && i === 0) D.push(ctl[o + 2] - ctl[o], ctl[o + 3] - ctl[o + 1]);
+        else if (np > 1 && i === np - 1) D.push(ctl[o + 6] - ctl[o + 4], ctl[o + 7] - ctl[o + 5]);
+        else D.push(x - px, y - py);
+      }
+    }
+    if (width <= 1) {
+      for (let i = 2; i < pts.length; i += 2) this.strokeFix(pts[i - 2], pts[i - 1], pts[i], pts[i + 1], rgb);
+      return;
+    }
+    const V = PENS[width];
+    if (!V) throw new Error(`Gdi.arc: width ${width} is not modelled`);
+    if (!D.length) {
+      F.push(sx, sy);
+      D.push(0, 0);
+    }
+    this.fillFix(widen(F, D, V), rgb, true);
+  }
+
   polygon(xs: ArrayLike<number>, ys: ArrayLike<number>, brushColorref: number, penColorref: number): void {
     const n = xs.length;
     if (n < 2) return;
@@ -249,11 +391,11 @@ export class Gdi {
   }
 
   /**
-   * ALTERNATE fill of a 28.4 polygon given as [X0,Y0,X1,Y1,...]: pixel (x,y) is filled when its centre
+   * ALTERNATE (or WINDING) fill of a 28.4 polygon given as [X0,Y0,X1,Y1,...]: pixel (x,y) is filled when its centre
    * (16x,16y) is inside. Edges own their top row but not their bottom one; a crossing exactly on a centre
    * belongs to the span it starts.
    */
-  private fillFix(p: ArrayLike<number>, rgb: number): void {
+  private fillFix(p: ArrayLike<number>, rgb: number, winding = false): void {
     const n = p.length >> 1;
     let top = Infinity;
     let bot = -Infinity;
@@ -264,34 +406,46 @@ export class Gdi {
     const y0 = Math.max(Math.ceil(top / 16), 0);
     const y1 = Math.min(Math.ceil(bot / 16), this.h); // rows with 16y in [top, bot)
     const cross: number[] = [];
+    const wind: number[] = [];
     for (let y = y0; y < y1; y++) {
       const Y = 16 * y;
       cross.length = 0;
+      wind.length = 0;
       for (let i = 0; i < n; i++) {
         const j = i + 1 === n ? 0 : i + 1;
         let xa = p[2 * i],
           ya = p[2 * i + 1],
           xb = p[2 * j],
           yb = p[2 * j + 1];
-        if (ya > yb) {
+        const up = ya > yb;
+        if (up) {
           [xa, xb] = [xb, xa];
           [ya, yb] = [yb, ya];
         }
         if (Y < ya || Y >= yb) continue;
         // first pixel whose centre is at or right of the crossing: ceil((xa + (Y-ya)(xb-xa)/(yb-ya)) / 16)
         cross.push(-mulAddDiv(-(Y - ya), xb - xa, -xa, yb - ya, 16 * (yb - ya)));
+        wind.push(up ? -1 : 1);
       }
-      cross.sort((a, b) => a - b);
-      for (let k = 0; k + 1 < cross.length; k += 2) this.span(cross[k], cross[k + 1], y, y + 1, rgb);
+      if (!winding) {
+        cross.sort((a, b) => a - b);
+        for (let k = 0; k + 1 < cross.length; k += 2) this.span(cross[k], cross[k + 1], y, y + 1, rgb);
+        continue;
+      }
+      const ord = cross.map((_, k) => k).sort((a, b) => cross[a] - cross[b]);
+      for (let k = 0, w = 0, x0 = 0; k < ord.length; k++) {
+        const w1 = w + wind[ord[k]];
+        if (w === 0) x0 = cross[ord[k]];
+        else if (w1 === 0) this.span(x0, cross[ord[k]], y, y + 1, rgb);
+        w = w1;
+      }
     }
   }
 
   /**
-   * Geometric round-capped pen, width 8 only (what Dance.dll uses); width 0/1 is the cosmetic pen. GDI widens
-   * the segment into a 10-point convex outline in 28.4 units and fills it: at each end a cap made of a
-   * perpendicular offset, three points of a flattened radius-4 circle, and the opposite offset. The offset is
-   * the vertex of a polygonized pen most extreme along the left normal (ties to the larger x+y), snapped to
-   * whole pixels; a zero-length segment counts as pointing right and leaves a dot.
+   * Geometric round-capped pen (widths 3, 5 and 8: PENS); width 0/1 is the cosmetic pen. GDI widens the segment into a
+   * convex outline (widen(): two caps joined by the side offsets) and fills it; a zero-length segment counts as
+   * heading right and leaves a dot.
    */
   wideLineTo(x: number, y: number, colorref: number, width: number): void {
     const x0 = this.cx,
@@ -299,30 +453,9 @@ export class Gdi {
     this.cx = x;
     this.cy = y;
     if (width <= 1) return this.line(x0, y0, x, y, toRgb(colorref));
-    if (width !== 8) throw new Error(`Gdi.wideLineTo: width ${width} is not modelled`);
-    let dx = x - x0;
-    const dy = y - y0;
-    if (dx === 0 && dy === 0) dx = 1;
-    let j = 0;
-    for (let k = 1, best = -Infinity; k <= 8; k++) {
-      const [qx, qy] = PEN8[k & 7];
-      const d = qx * dy - qy * dx;
-      if (d > best || (d === best && qx + qy > PEN8[j][0] + PEN8[j][1])) {
-        best = d;
-        j = k & 7;
-      }
-    }
-    const pts: number[] = [];
-    const cap = (px: number, py: number, k0: number): void => {
-      const a = SNAP8[(k0 + 8) & 7],
-        b = SNAP8[(k0 + 4) & 7];
-      pts.push(px + a[0], py + a[1]);
-      for (let k = 1; k <= 3; k++) pts.push(px + CAP8[(k0 + k) & 7][0], py + CAP8[(k0 + k) & 7][1]);
-      pts.push(px + b[0], py + b[1]);
-    };
-    cap(16 * x0, 16 * y0, j);
-    cap(16 * x, 16 * y, j + 4);
-    this.fillFix(pts, toRgb(colorref));
+    const V = PENS[width];
+    if (!V) throw new Error(`Gdi.wideLineTo: width ${width} is not modelled`);
+    this.fillFix(widen([16 * x0, 16 * y0, 16 * x, 16 * y], [x - x0, y - y0], V), toRgb(colorref));
   }
 
   /** Fill [l,r) x [t,b), clipped. */
