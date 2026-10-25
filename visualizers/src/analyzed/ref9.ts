@@ -28,6 +28,16 @@ class Plane {
   A = 0; B = 0; C = 0;
   set(a0: number, a1: number, a2: number, s: Setup): void {
     const d2 = f32(a2 - a0), d1 = f32(a1 - a0);
+    // a flat plane: A and B are the triangle's zero gradients (signed zeros, the same for every flat plane of it),
+    // and C = a0 exactly unless a0 is 0 (the zero's sign then comes from the 64-bit arithmetic)
+    if (d1 === 0 && d2 === 0 && a0 !== 0) {
+      if (!s.flatOk) { s.flatOk = true; ZERO.slow(0, 0, 0, s); s.flatA = ZERO.A; s.flatB = ZERO.B; }
+      this.A = s.flatA; this.B = s.flatB; this.C = a0;
+      return;
+    }
+    this.slow(a0, d1, d2, s);
+  }
+  slow(a0: number, d1: number, d2: number, s: Setup): void {
     E.ld(s.dY20 * d1); E.fadd(s.dY01 * d2); E.fmul(s.invDet); this.A = E.st32();
     E.ld(s.dX10 * d2); E.fadd(s.dX02 * d1); E.fmul(s.invDet); this.B = E.st32();
     E.ld(a0); E.fsub(this.A * s.fX0); E.fsub(this.B * s.fY0); this.C = E.st32();
@@ -35,12 +45,31 @@ class Plane {
   /** 0x10028dc7: f32((y*B + x*A) + C) (times W = 1) */
   at(x: number, y: number): number { return E.sum32x3(y * this.B, x * this.A, this.C); }
 }
-interface Setup { fX0: number; fY0: number; dX10: number; dX02: number; dY01: number; dY20: number; invDet: number }
+/** scratch for the flat planes' gradients */
+const ZERO = new Plane();
+interface Setup {
+  fX0: number; fY0: number; dX10: number; dX02: number; dY01: number; dY20: number; invDet: number;
+  /** the flat planes' A and B, worked out once per triangle */
+  flatOk: boolean; flatA: number; flatB: number;
+}
+
+/** one channel (at bit sh) of four texels as REF's bilinear sums it, fractions ku/32, kv/32: f32(w * B255[byte] + sum)
+ *  per tap of weight w != 0, then the write's trunc(c * 255 + 0.5). Integers in and out: a double argument to a call
+ *  that is not inlined would be boxed. */
+function chain(sh: number, pa: number, pb: number, pc: number, pd: number, ku: number, kv: number): number {
+  const fu = ku * 0.03125, gu = 1 - fu, fv = kv * 0.03125, gv = 1 - fv;
+  let r = 0, wt: number;
+  wt = gv * gu; if (wt !== 0) r = f32(wt * B255[(pa >>> sh) & 255] + r);
+  wt = gv * fu; if (wt !== 0) r = f32(wt * B255[(pb >>> sh) & 255] + r);
+  wt = fv * fu; if (wt !== 0) r = f32(wt * B255[(pc >>> sh) & 255] + r);
+  wt = gu * fv; if (wt !== 0) r = f32(wt * B255[(pd >>> sh) & 255] + r);
+  return Math.trunc(r * 255 + 0.5);
+}
 
 const clamp01 = (v: number): number => (v > 1 ? 1 : v >= 0 ? v : 0);
 
 export class Ref9 {
-  private s: Setup = { fX0: 0, fY0: 0, dX10: 0, dX02: 0, dY01: 0, dY20: 0, invDet: 0 };
+  private s: Setup = { fX0: 0, fY0: 0, dX10: 0, dX02: 0, dY01: 0, dY20: 0, invDet: 0, flatOk: false, flatA: 0, flatB: 0 };
   private col = [new Plane(), new Plane(), new Plane(), new Plane()];
   private uv = [new Plane(), new Plane()];
   private eA = new Float64Array(3); private eB = new Float64Array(3); private eC = new Float64Array(3); private eI = new Uint8Array(3);
@@ -57,25 +86,23 @@ export class Ref9 {
   /** 0x10023262 */
   private triangle(rt: Target, vf: Float32Array, vu: Uint32Array, o0: number, o1: number, o2: number, tex: Target | null, blend: Blend): void {
     // the vertex with the smallest x (then y) first, the order rotated
-    const o = [o0, o1, o2];
-    let b = 0;
-    for (let k = 1; k < 3; k++) {
-      if (vf[o[k]] < vf[o[b]] || (vf[o[k]] === vf[o[b]] && vf[o[k] + 1] < vf[o[b] + 1])) b = k;
-    }
-    const a = o[b], c1 = o[(b + 1) % 3], c2 = o[(b + 2) % 3];
+    let a = o0, c1 = o1, c2 = o2;
+    if (vf[o1] < vf[a] || (vf[o1] === vf[a] && vf[o1 + 1] < vf[a + 1])) { a = o1; c1 = o2; c2 = o0; }
+    if (vf[o2] < vf[a] || (vf[o2] === vf[a] && vf[o2 + 1] < vf[a + 1])) { a = o2; c1 = o0; c2 = o1; }
     const X0 = snap(vf[a]), Y0 = snap(vf[a + 1]), X1 = snap(vf[c1]), Y1 = snap(vf[c1 + 1]), X2 = snap(vf[c2]), Y2 = snap(vf[c2 + 1]);
     const X10 = X1 - X0, Y20 = Y2 - Y0, X02 = X0 - X2, Y01 = Y0 - Y1;
     const det = Y20 * X10 - Y01 * X02;
     if (det <= 0) return;                 // degenerate, or counter-clockwise: CULLMODE CCW (the default)
     // bounding box (trunc(min + 0.5) .. trunc(max + 0.5)) in the target
-    const xs = [vf[a], vf[c1], vf[c2]], ys = [vf[a + 1], vf[c1 + 1], vf[c2 + 1]];
-    const x0 = Math.max(0, Math.trunc(Math.min(...xs) + 0.5)), x1 = Math.min(rt.w - 1, Math.trunc(Math.max(...xs) + 0.5));
-    const y0 = Math.max(0, Math.trunc(Math.min(...ys) + 0.5)), y1 = Math.min(rt.h - 1, Math.trunc(Math.max(...ys) + 0.5));
+    const xa = vf[a], xb = vf[c1], xc = vf[c2], ya = vf[a + 1], yb = vf[c1 + 1], yc = vf[c2 + 1];
+    const x0 = Math.max(0, Math.trunc(Math.min(xa, xb, xc) + 0.5)), x1 = Math.min(rt.w - 1, Math.trunc(Math.max(xa, xb, xc) + 0.5));
+    const y0 = Math.max(0, Math.trunc(Math.min(ya, yb, yc) + 0.5)), y1 = Math.min(rt.h - 1, Math.trunc(Math.max(ya, yb, yc) + 0.5));
     if (x0 > x1 || y0 > y1) return;
     const s = this.s;
     s.fX0 = X0 * 0.0625; s.fY0 = Y0 * 0.0625;
     s.dX10 = X10 * 0.0625; s.dX02 = X02 * 0.0625; s.dY01 = Y01 * 0.0625; s.dY20 = Y20 * 0.0625;
     s.invDet = f32(1 / f32(f32(det) * 0.00390625));
+    s.flatOk = false;
     // edges 0x1002891d (det > 0: flipped)
     this.edge(0, X0, Y0, X1, Y1); this.edge(1, X1, Y1, X2, Y2); this.edge(2, X2, Y2, X0, Y0);
     // planes: diffuse R, G, B, A as bytes * f32(1/255) floats, then u, v
@@ -105,6 +132,8 @@ export class Ref9 {
       const perRow = rowCol && !tex;
       if (perRow) this.colour(0, y);
       if (!this.span(y, x0, x1)) continue;
+      // an opaque colour over SRCALPHA/INVSRCALPHA: the destination's factor is 0, so the row is one value
+      if (perRow && blend === Blend.Over && this.c[3] === 1) { px.fill(this.blendWrite(0, blend), y * w + this.sx0, y * w + this.sx1 + 1); continue; }
       for (let x = this.sx0; x <= this.sx1; x++) {
         if (!perRow) this.shade(x, y, tex);
         const i = y * w + x;
@@ -145,11 +174,13 @@ export class Ref9 {
       lut[b] = v >>> 16; lut[256 + b] = (v >>> 8) & 255; lut[512 + b] = v & 255;
     }
     const px = rt.px, w = rt.w;
+    let pd = -1, pr = 0;   // the last destination colour and its result (runs of one colour are common)
     for (let y = y0; y <= y1; y++) {
       if (!this.span(y, x0, x1)) continue;
       for (let x = this.sx0; x <= this.sx1; x++) {
         const i = y * w + x, d = px[i];
-        px[i] = (lut[(d >>> 16) & 255] << 16) | (lut[256 + ((d >>> 8) & 255)] << 8) | lut[512 + (d & 255)];
+        if (d !== pd) { pd = d; pr = (lut[(d >>> 16) & 255] << 16) | (lut[256 + ((d >>> 8) & 255)] << 8) | lut[512 + (d & 255)]; }
+        px[i] = pr;
       }
     }
   }
@@ -157,46 +188,62 @@ export class Ref9 {
   /** a texture drawn with white opaque diffuse and SRCALPHA/INVSRCALPHA: the filtered texel itself (alpha sums to 1,
    *  so the destination's factor is 0), u per column and v per row. Each sum of a weight times a texel and a float
    *  is exact in a double here (the weights are multiples of 1/1024), so f32 of it is the 64-bit result's. */
-  private ca = new Int32Array(0); private cb = new Int32Array(0); private cf = new Float64Array(0); private cg = new Float64Array(0);
-  private rv = new Int32Array(0); private rf = new Float64Array(0); private rg = new Float64Array(0);
+  private ca = new Int32Array(0); private cb = new Int32Array(0); private rv = new Int32Array(0);
+  /** the fractions in 32nds (u per column, v per row) */
+  private cn = new Int32Array(0); private rn = new Int32Array(0);
   private copyFiltered(rt: Target, tex: Target, x0: number, x1: number, y0: number, y1: number): void {
     const W = tex.w, H = tex.h, nx = x1 - x0 + 1, ny = y1 - y0 + 1;
-    if (this.ca.length < nx) { this.ca = new Int32Array(nx); this.cb = new Int32Array(nx); this.cf = new Float64Array(nx); this.cg = new Float64Array(nx); }
-    if (this.rv.length < ny) { this.rv = new Int32Array(ny); this.rf = new Float64Array(ny); this.rg = new Float64Array(ny); }
-    const ca = this.ca, cb = this.cb, cf = this.cf, cg = this.cg, rv = this.rv, rf = this.rf, rg = this.rg;
+    if (this.ca.length < nx) { this.ca = new Int32Array(nx); this.cb = new Int32Array(nx); this.cn = new Int32Array(nx); }
+    if (this.rv.length < ny) { this.rv = new Int32Array(ny); this.rn = new Int32Array(ny); }
+    const ca = this.ca, cb = this.cb, rv = this.rv, cn = this.cn, rn = this.rn;
     for (let x = x0; x <= x1; x++) {
       const n = (bits(f32(f32(this.uv[0].at(x, 0) * W - 0.5) + 393216)) << 10) >> 10;
       const i0 = n >> 5;
       ca[x - x0] = i0 < 0 ? 0 : i0 > W - 1 ? W - 1 : i0; cb[x - x0] = i0 + 1 < 0 ? 0 : i0 + 1 > W - 1 ? W - 1 : i0 + 1;
-      cf[x - x0] = f32((n & 31) * 0.03125); cg[x - x0] = f32(1 - cf[x - x0]);
+      cn[x - x0] = n & 31;
     }
     for (let y = y0; y <= y1; y++) {
       const n = (bits(f32(f32(this.uv[1].at(0, y) * H - 0.5) + 393216)) << 10) >> 10;
-      rv[y - y0] = n >> 5; rf[y - y0] = f32((n & 31) * 0.03125); rg[y - y0] = f32(1 - rf[y - y0]);
+      rv[y - y0] = n >> 5; rn[y - y0] = n & 31;
     }
-    const px = rt.px, w = rt.w, tp = tex.px, B = B255, H1 = H - 1;
+    const px = rt.px, w = rt.w, tp = tex.px, H1 = H - 1;
     // texel centres (every fraction 0): one tap of weight 1, so each channel is its byte through trunc(B255*255 + 0.5),
     // which gives the byte back (BYTE_ID): a copy
-    if (BYTE_ID && cf.subarray(0, nx).every((v) => v === 0) && rf.subarray(0, ny).every((v) => v === 0)) {
+    if (BYTE_ID && cn.subarray(0, nx).every((v) => v === 0) && rn.subarray(0, ny).every((v) => v === 0)) {
+      let run = true;   // consecutive texels for consecutive columns
+      for (let i = 1; i < nx; i++) if (ca[i] !== ca[0] + i) { run = false; break; }
       for (let y = y0; y <= y1; y++) {
         if (!this.span(y, x0, x1)) continue;
-        const j = rv[y - y0], ja = (j < 0 ? 0 : j > H1 ? H1 : j) * W, o = y * w;
-        for (let x = this.sx0; x <= this.sx1; x++) px[o + x] = tp[ja + ca[x - x0]] & 0xffffff;
+        const j = rv[y - y0], ja = (j < 0 ? 0 : j > H1 ? H1 : j) * W, o = y * w, s0 = this.sx0, s1 = this.sx1;
+        // the targets' pixels have no high byte (every write is 0x00RRGGBB), so a run of columns is a row copy
+        if (run) px.set(tp.subarray(ja + ca[s0 - x0], ja + ca[s1 - x0] + 1), o + s0);
+        else for (let x = s0; x <= s1; x++) px[o + x] = tp[ja + ca[x - x0]] & 0xffffff;
       }
       return;
     }
+    // The bilinear sum in integers. The weights are k/1024 (fractions in 32nds), so with bytes a..d the exact
+    // value of sum(w * byte) * 255 + 0.5 is N/1024, N = sum(1024w * byte) + 512. The float chain (texels B255[byte],
+    // four f32 roundings) is off from it by under 1e-4 (B255[b]*255 is within 3.1e-5 of b; the roundings add at
+    // most 4 * 2^-25 * 255), and N/1024 is 1/1024 or more from an integer unless N is a multiple of 1024: so the
+    // byte is N >> 10, and only at those ties is the chain worked out, for that channel.
     for (let y = y0; y <= y1; y++) {
-      const j0 = rv[y - y0], fv = rf[y - y0], gv = rg[y - y0];
+      const j0 = rv[y - y0], kv = rn[y - y0];
       const ja = (j0 < 0 ? 0 : j0 > H1 ? H1 : j0) * W, jb = (j0 + 1 < 0 ? 0 : j0 + 1 > H1 ? H1 : j0 + 1) * W;
       if (!this.span(y, x0, x1)) continue;
+      const o = y * w;
       for (let x = this.sx0; x <= this.sx1; x++) {
-        const fu = cf[x - x0], gu = cg[x - x0], ia = ca[x - x0], ib = cb[x - x0];
-        let r = 0, g = 0, b = 0, p: number, wt: number;
-        wt = gv * gu; if (wt !== 0) { p = tp[ja + ia]; r = f32(wt * B[(p >>> 16) & 255] + r); g = f32(wt * B[(p >>> 8) & 255] + g); b = f32(wt * B[p & 255] + b); }
-        wt = gv * fu; if (wt !== 0) { p = tp[ja + ib]; r = f32(wt * B[(p >>> 16) & 255] + r); g = f32(wt * B[(p >>> 8) & 255] + g); b = f32(wt * B[p & 255] + b); }
-        wt = fv * fu; if (wt !== 0) { p = tp[jb + ib]; r = f32(wt * B[(p >>> 16) & 255] + r); g = f32(wt * B[(p >>> 8) & 255] + g); b = f32(wt * B[p & 255] + b); }
-        wt = gu * fv; if (wt !== 0) { p = tp[jb + ia]; r = f32(wt * B[(p >>> 16) & 255] + r); g = f32(wt * B[(p >>> 8) & 255] + g); b = f32(wt * B[p & 255] + b); }
-        px[y * w + x] = (Math.trunc(r * 255 + 0.5) << 16) | (Math.trunc(g * 255 + 0.5) << 8) | Math.trunc(b * 255 + 0.5);
+        const ku = cn[x - x0], ia = ca[x - x0], ib = cb[x - x0];
+        const w0 = (32 - kv) * (32 - ku), w1 = (32 - kv) * ku, w2 = kv * ku, w3 = (32 - ku) * kv;
+        const pa = tp[ja + ia], pb = tp[ja + ib], pc = tp[jb + ib], pd = tp[jb + ia];
+        let r = w0 * ((pa >>> 16) & 255) + w1 * ((pb >>> 16) & 255) + w2 * ((pc >>> 16) & 255) + w3 * ((pd >>> 16) & 255) + 512;
+        let g = w0 * ((pa >>> 8) & 255) + w1 * ((pb >>> 8) & 255) + w2 * ((pc >>> 8) & 255) + w3 * ((pd >>> 8) & 255) + 512;
+        let b = w0 * (pa & 255) + w1 * (pb & 255) + w2 * (pc & 255) + w3 * (pd & 255) + 512;
+        if ((r & 1023) === 0 || (g & 1023) === 0 || (b & 1023) === 0) {   // a tie: those channels by the chain
+          r = (r & 1023) === 0 ? chain(16, pa, pb, pc, pd, ku, kv) : r >> 10;
+          g = (g & 1023) === 0 ? chain(8, pa, pb, pc, pd, ku, kv) : g >> 10;
+          b = (b & 1023) === 0 ? chain(0, pa, pb, pc, pd, ku, kv) : b >> 10;
+          px[o + x] = (r << 16) | (g << 8) | b;
+        } else px[o + x] = ((r >> 10) << 16) | ((g >> 10) << 8) | (b >> 10);
       }
     }
   }
