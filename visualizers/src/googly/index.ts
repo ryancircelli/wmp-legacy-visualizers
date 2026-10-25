@@ -15,7 +15,32 @@
 // own, reached here as presets 1 and 2. Settings: the DLL's defaults (its registry read 0x0f301280 never finds the
 // values it writes): base colour 0xd96d26, luminance variation 0.53, start 15, no wrap, hue variation 1.75.
 import { A, type Surface, type TimedLevel } from '../ns';
-import { hlsToRgb, line, roundRectMask } from './raster';
+import { Gdi } from '../gdi';
+
+// ---- shlwapi ColorHLSToRGB (hue, luminance, saturation on 0..240): RGB as 0x00RRGGBB
+function hueToRgb(n1: number, n2: number, h: number): number {
+  if (h < 0) h += 240;
+  if (h > 240) h -= 240;
+  if (h < 40) return n1 + Math.trunc(((n2 - n1) * h + 20) / 40);
+  if (h < 120) return n2;
+  if (h < 160) return n1 + Math.trunc(((n2 - n1) * (160 - h) + 20) / 40);
+  return n1;
+}
+export function hlsToRgb(h: number, l: number, s: number): number {
+  // grey only for the "undefined" hue 160; any other hue at saturation 0 gives black
+  if (s === 0) { const v = h === 160 ? Math.trunc((l * 255) / 240) : 0; return (v << 16) | (v << 8) | v; }
+  const m2 = l <= 120 ? Math.trunc((l * (240 + s) + 120) / 240) : l + s - Math.trunc((l * s + 120) / 240);
+  const m1 = 2 * l - m2;
+  const c = (hh: number) => Math.trunc((hueToRgb(m1, m2, hh) * 255 + 120) / 240) & 255;
+  return (c(h + 80) << 16) | (c(h) << 8) | c(h - 80);
+}
+
+/** a RoundRect's brush pixels (1) in its w x h box, drawn by the shared GDI (white brush, black pen) */
+export function roundRectMask(w: number, h: number, ew: number, eh: number): Uint8Array {
+  const g = new Gdi(w, h);
+  g.roundRect(0, 0, w, h, ew, eh, 0xffffff, 0);
+  return Uint8Array.from(g.px, (v) => (v === 0xffffff ? 1 : 0));
+}
 
 declare module '../ns' {
   interface AlchemyNS {
@@ -25,8 +50,8 @@ declare module '../ns' {
 
 const PRESET_NAMES: string[] = ['Googly Squares', 'Frequency', 'Waveform'];
 
-/** the base colour COLORREF 0xd96d26 (R 0x26, G 0x6d, B 0xd9) as 0x00RRGGBB, and its ColorRGBToHLS hue and saturation */
-const BASE_RGB = 0x266dd9, BASE_HUE = 144, BASE_SAT = 168;
+/** the base colour COLORREF 0xd96d26 (R 0x26, G 0x6d, B 0xd9), and its ColorRGBToHLS hue and saturation */
+const BASE_COLORREF = 0xd96d26, BASE_HUE = 144, BASE_SAT = 168;
 const LUM_VAR = 0.53, LUM_LOW = 15, HUE_VAR = 1.75;
 
 export interface GooglyMooglyConfig {
@@ -42,14 +67,14 @@ class GooglyMoogly {
   h: number;
   preset = 0;
   options: Record<string, unknown>;
-  private px: Uint32Array;
+  private g: Gdi;
   private mask: Uint8Array | null = null;
   private frames = 0;
 
   constructor(cfg: GooglyMooglyConfig = {}) {
     this.w = Math.max(32, cfg.width || 640); this.h = Math.max(32, cfg.height || 480);
     this.options = Object.assign({ intended: false, fps: 60, backgroundColor: 0x000000 }, cfg.options);
-    this.px = new Uint32Array(this.w * this.h);
+    this.g = new Gdi(this.w, this.h);
     if (cfg.preset) this.setPreset(cfg.preset);
   }
 
@@ -61,7 +86,7 @@ class GooglyMoogly {
     w = Math.max(32, w | 0); h = Math.max(32, h | 0);
     if (w === this.w && h === this.h) return;
     this.w = w; this.h = h;
-    this.px = new Uint32Array(w * h);
+    this.g = new Gdi(w, h);
     this.mask = null;
   }
 
@@ -72,12 +97,12 @@ class GooglyMoogly {
   }
 
   render(level: TimedLevel): Surface | null {
-    this.px.fill(0);                                // FillRect with the object's CreateSolidBrush(0)
+    this.g.px.fill(0);                              // FillRect with the object's CreateSolidBrush(0)
     if (this.preset === 0) this.squares(level.freq[0], level.wave[0]);
     else if (this.preset === 1) this.polyline((i) => ((this.h * level.freq[0][i]) >> 8) + 5);
     else this.polyline((i) => ((this.h - (this.h >> 31)) >> 1) - 254 + 2 * level.wave[0][i]);
     this.frames++;
-    return { w: this.w, h: this.h, px: this.px };
+    return { w: this.w, h: this.h, px: this.g.px };
   }
 
   /** mode 0: the spiral of rounded squares (Render 0x0f3017b4) */
@@ -85,7 +110,7 @@ class GooglyMoogly {
     const W = this.w, H = this.h, cw = W >> 5, ch = H >> 5;
     // every square is RoundRect(x, y, x+cw, y+ch, cw/2.5, ch/2.5): one shape, its pen black on black
     const m = this.mask ??= roundRectMask(cw, ch, Math.trunc(cw / 2.5), Math.trunc(ch / 2.5));
-    const px = this.px;
+    const px = this.g.px;
     let i = 0;
     const cell = (x: number, y: number): void => {
       // 0x0f301510: luminance = bin * 0.53 + 15 (capped at 240), hue = base + (sample - 127) * 1.75, wrapped into 0..240
@@ -97,7 +122,7 @@ class GooglyMoogly {
       i++;
       const rgb = hlsToRgb(hu, l, BASE_SAT);
       for (let r = 0, o = y * W + x, k = 0; r < ch; r++, o += W) {
-        for (let c = 0; c < cw; c++, k++) if (m[k] === 2) px[o + c] = rgb;
+        for (let c = 0; c < cw; c++, k++) if (m[k]) px[o + c] = rgb;
       }
     };
     let x = (W - cw * 32) >> 1, y = H - ((H - ch * 32) >> 1) - ch;
@@ -115,12 +140,8 @@ class GooglyMoogly {
   /** modes 2 and 3: MoveToEx(0, y(0)), then LineTo(x, y(x+1)) for x < min(width, 1023), a cosmetic pen in the base colour */
   private polyline(yAt: (i: number) => number): void {
     const n = Math.min(this.w, 0x3ff);
-    let cx = 0, cy = yAt(0);
-    for (let x = 0; x < n; x++) {
-      const y = yAt(x + 1);
-      line(this.px, this.w, this.h, cx, cy, x, y, BASE_RGB);
-      cx = x; cy = y;
-    }
+    this.g.moveTo(0, yAt(0));
+    for (let x = 0; x < n; x++) this.g.lineTo(x, yAt(x + 1), BASE_COLORREF);
   }
 
   debug(): Record<string, unknown> {

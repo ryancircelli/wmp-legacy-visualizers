@@ -4,10 +4,10 @@
 // the beat: a loud enough frame repaints it with one solid rectangle. IWMPEffects only, no rand, no clock.
 //
 // The numbers in the comments are the DLL's own addresses (0x1000xxxx) and its object's offsets from the IWMPEffects
-// pointer: the constructor 0x10001000, Render 0x10001080, SetCurrentPreset 0x10001b10. ../kiddraw/gdi.ts is the GDI
+// pointer: the constructor 0x10001000, Render 0x10001080, SetCurrentPreset 0x10001b10. ../gdi is the GDI
 // rasterizer it draws through.
 import { A, type Surface, type TimedLevel } from '../ns';
-import { Gdi } from '../kiddraw/gdi';
+import { Gdi } from '../gdi';
 import { sin87, cos87, ftol } from '../goom/fpu';
 import { mulExt } from '../plenoptic/x87';
 

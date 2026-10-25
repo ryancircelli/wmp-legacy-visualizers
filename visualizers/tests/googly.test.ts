@@ -5,8 +5,8 @@ import { describe, expect, it } from 'vitest';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { GooglyMoogly } from '../src/googly/index';
-import { hlsToRgb, roundRectMask } from '../src/googly/raster';
+import { GooglyMoogly, hlsToRgb } from '../src/googly/index';
+import { Gdi } from '../src/gdi';
 import { PRESETS, makeLevel, nativeSize } from '../src';
 import { InputGen } from './golden/harness';
 
@@ -37,8 +37,10 @@ describe('the Windows pieces', () => {
   });
 
   it('RoundRect: the corners GDI draws, not left-right symmetric', () => {
-    const m = roundRectMask(10, 18, 4, 7), rows: string[] = [];
-    for (let y = 0; y < 3; y++) rows.push([...m.subarray(y * 10, y * 10 + 10)].map((v) => '.#o'[v]).join(''));
+    const g = new Gdi(10, 18), rows: string[] = [];
+    g.roundRect(0, 0, 10, 18, 4, 7, 0x00ff00, 0x0000ff);
+    const ch = (v: number) => (v === 0xff0000 ? '#' : v === 0x00ff00 ? 'o' : '.');
+    for (let y = 0; y < 3; y++) rows.push([...g.px.subarray(y * 10, y * 10 + 10)].map(ch).join(''));
     expect(rows).toEqual(['..######..', '##oooooo#.', '#oooooooo#']);
   });
 });

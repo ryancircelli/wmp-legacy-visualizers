@@ -3,13 +3,13 @@
 // GDI calls (lines, ellipses, a polygon, one thick line) onto an off-screen DC and BitBlt'd to the window. IWMPEffects
 // only, no resources, no clock: one animation step per Render, the CRT's rand() the only randomness.
 //
-// The DLL keeps seven joints (a head, a neck, a hip, two hands, two feet) joined by six bones; ./gdi.ts is the GDI
+// The DLL keeps seven joints (a head, a neck, a hip, two hands, two feet) joined by six bones; ../gdi is the GDI
 // rasterizer it draws through. The numbers in the comments are the DLL's own addresses (0x1000xxxx): Render 0x10001180
 // (a black FillRect, then preset 0's 0x10001290 or preset 1's 0x10001320, then the BitBlt), the layout 0x10002100, the
 // ring shapes' builder 0x10001cc0, their constructor 0x10002d30 and Draw 0x10002f10, the joint kick 0x10002950 / 0x10002b80,
 // the joint step 0x10002cb0, bones 0x10002a90, heads 0x10002c30.
 import { A, type Surface, type TimedLevel } from '../ns';
-import { Gdi } from './gdi';
+import { Gdi } from '../gdi';
 
 declare module '../ns' {
   interface AlchemyNS {

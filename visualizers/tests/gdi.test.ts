@@ -1,7 +1,7 @@
-// Self-consistency checks for the GDI rasterizer (Kid Drawing's and Shacojin's) (the pixel-exactness against Windows GDI is
-// verified by private oracle tooling; nothing here comes from it).
+// Self-consistency checks for the GDI rasterizer (Kid Drawing's, Shacojin's and Celestial's) (the pixel-exactness
+// against Windows GDI is verified by private oracle tooling; nothing here comes from it).
 import { describe, expect, it } from 'vitest';
-import { Gdi } from '../src/kiddraw/gdi';
+import { Gdi } from '../src/gdi';
 
 const WHITE = 0xffffff;
 const lit = (g: Gdi): [number, number][] => {
@@ -126,15 +126,15 @@ describe('Gdi shapes', () => {
     expect(lit(g)).toEqual([]);
   });
 
-  it('3- and 5-pixel lines are that many rows thick; unmodelled widths throw', () => {
-    for (const w of [3, 5]) {
-      const g = new Gdi(40, 20);
-      g.moveTo(10, 10);
-      g.wideLineTo(30, 10, WHITE, w);
-      const ys = [...new Set(lit(g).filter(([x]) => x === 20).map(([, y]) => y))].sort((a, b) => a - b);
-      expect(ys).toEqual(Array.from({ length: w }, (_, i) => 10 - (w >> 1) + i));
+  it('a w-pixel horizontal line is w rows thick', () => {
+    for (let w = 2; w <= 40; w++) {
+      const g = new Gdi(80, 60);
+      g.moveTo(20, 30);
+      g.wideLineTo(60, 30, WHITE, w);
+      const ys = [...new Set(lit(g).filter(([x]) => x === 40).map(([, y]) => y))].sort((a, b) => a - b);
+      expect(ys.length).toBe(w);
+      expect(Math.max(...ys) - Math.min(...ys)).toBe(w - 1);
     }
-    expect(() => new Gdi(4, 4).wideLineTo(2, 2, WHITE, 4)).toThrow();
   });
 
   it('clipping never shifts pixels', () => {
@@ -151,5 +151,108 @@ describe('Gdi shapes', () => {
     });
     clipInvariant((g, dx, dy) => g.rectangle(10 + dx, 8 + dy, 151 + dx, 113 + dy, 0x0000ff, WHITE));
     for (const w of [1, 3, 5]) clipInvariant((g, dx, dy) => g.arc(12 + dx, 9 + dy, 148 + dx, 111 + dy, WHITE, w));
+    for (const rop of [13, 7]) {
+      const xs = [5, 150, 90, 30, 140], ys = [5, 40, 115, 70, 100];
+      const at = (a: number[], d: number) => a.map((v) => v + d);
+      clipInvariant((g, dx, dy) => {
+        g.rop = rop;
+        g.polyline(at(xs, dx), at(ys, dy), WHITE, 9);
+      });
+      clipInvariant((g, dx, dy) => {
+        g.rop = rop;
+        g.polygon(at(xs, dx), at(ys, dy), 0xff, 0xff00, 6);
+      });
+      clipInvariant((g, dx, dy) => {
+        g.rop = rop;
+        g.ellipse(10 + dx, 8 + dy, 151 + dx, 113 + dy, 0x0000ff, WHITE, 13);
+      });
+    }
+  });
+});
+
+describe('Gdi pens and ROP2 (Celestial)', () => {
+  const XS = [10, 70, 40, 40, 20, 65],
+    YS = [10, 15, 50, 50, 45, 5];
+
+  it('draws into a given buffer', () => {
+    const px = new Uint32Array(12);
+    const g = new Gdi(4, 3, px);
+    g.fillRect(0, 0, 4, 3, 0x0000ff);
+    expect(px[11]).toBe(0xff0000);
+  });
+
+  it('a cosmetic Polyline is the LineTo chain and leaves the current position alone', () => {
+    for (const w of [0, 1]) {
+      const a = new Gdi(80, 60),
+        b = new Gdi(80, 60);
+      a.moveTo(3, 3);
+      a.polyline(XS, YS, WHITE, w);
+      a.lineTo(79, 59, 0xff);
+      b.moveTo(10, 10);
+      XS.forEach((x, i) => i && b.lineTo(x, YS[i] ?? 0, WHITE));
+      b.moveTo(3, 3);
+      b.lineTo(79, 59, 0xff);
+      expect(a.px).toEqual(b.px);
+    }
+  });
+
+  it('a wide two-point Polyline is wideLineTo; a zero-length one leaves a dot', () => {
+    for (const w of [2, 3, 8, 21]) {
+      const a = new Gdi(80, 60),
+        b = new Gdi(80, 60);
+      a.polyline([12, 61], [50, 17], WHITE, w);
+      b.moveTo(12, 50);
+      b.wideLineTo(61, 17, WHITE, w);
+      expect(a.px).toEqual(b.px);
+      const d = new Gdi(80, 60);
+      d.polyline([40, 40], [30, 30], WHITE, w);
+      expect(lit(d).length).toBeGreaterThan(0);
+    }
+  });
+
+  it('Polygon and Ellipse keep their cosmetic-pen pixels with the default width; the NULL pen only fills', () => {
+    const a = new Gdi(80, 60),
+      b = new Gdi(80, 60);
+    a.polygon(XS, YS, 0xff, WHITE);
+    b.polygon(XS, YS, 0xff, WHITE, 1);
+    expect(a.px).toEqual(b.px);
+    const n = new Gdi(80, 60);
+    n.polygon(XS, YS, 0xff, null);
+    expect(n.px.some((v) => v === WHITE)).toBe(false);
+    for (let i = 0; i < n.px.length; i++) if (n.px[i]) expect(a.px[i]).not.toBe(0);
+  });
+
+  it('under XOR every pixel of a wide figure is painted once: drawing it twice restores the canvas', () => {
+    for (const w of [2, 3, 6, 7, 14, 40]) {
+      const g = new Gdi(80, 60);
+      g.fillRect(0, 0, 80, 60, 0x406080);
+      const before = g.px.slice();
+      g.rop = 7;
+      const draw = (): void => {
+        g.polyline(XS, YS, 0xff00ff, w);
+        g.polygon(XS, YS, 0x00ff00, 0xff0000, w);
+        g.ellipse(15, 12, 55, 52, 0x00ff00, 0xff0000, w);
+      };
+      draw();
+      expect(g.px).not.toEqual(before);
+      draw();
+      expect(g.px).toEqual(before);
+      // a single figure on black: only the pen and brush colours, never their XOR
+      const s = new Gdi(80, 60);
+      s.rop = 7;
+      s.ellipse(15, 12, 55, 52, 0x00ff00, 0xff0000, w);
+      for (const v of new Set(s.px)) expect([0, 0xff00, 0xff]).toContain(v);
+    }
+  });
+
+  it('MERGE ORs the colours; FillRect ignores the ROP', () => {
+    const g = new Gdi(80, 60);
+    g.rop = 15;
+    g.fillRect(0, 0, 80, 60, 0x000080);
+    expect(g.px[0]).toBe(0x800000);
+    g.fillRect(0, 0, 80, 60, 0x000001);
+    expect(g.px[0]).toBe(0x010000);
+    g.polyline(XS, YS, 0x00ff00, 5);
+    expect(new Set(g.px)).toEqual(new Set([0x010000, 0x01ff00]));
   });
 });

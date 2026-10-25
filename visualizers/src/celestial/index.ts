@@ -9,7 +9,7 @@
 // and shows W, which becomes the next F. Nothing reads a clock but Randomize (the first frame, seeding Delphi's Random
 // for presets 8 and 9); the frame counter (obj+0x48, int64) drives presets 6, 8 and 9.
 import { A, type Surface, type TimedLevel } from '../ns';
-import { Gdi } from './gdi';
+import { Gdi } from '../gdi';
 import { extLiteral, mul53, div53, sub53, toFix, toNum, rint, rintTrigMul, trigF32 } from './x87';
 
 declare module '../ns' {
@@ -126,7 +126,7 @@ class Celestial {
     this.w = w; this.h = h;
     this.last = new Uint32Array(w * h);
     this.work = new Uint32Array(w * h);
-    this.gdi = new Gdi(this.work, w, h);
+    this.gdi = new Gdi(w, h, this.work);
     this.buildMap(0.8500000238418579);           // 0x3f59999a
     this.surface = { w, h, px: this.work };
   }
@@ -172,7 +172,7 @@ class Celestial {
 
   render(L: TimedLevel | null): Surface | null {
     if (!L) return this.surface;
-    const W = this.w, H = this.h, g = this.gdi;
+    const W = this.w, H = this.h;
     if (this.frame === 0) this.firstFrame();
     // 0x41fb59: the waveforms smoothed, (old + new) >> 1
     for (let c = 0; c < 2; c++) {
@@ -186,7 +186,7 @@ class Celestial {
     const c1 = m255(f0[9] * 8) | (m255(f0[49] * 4) << 8) | ((255 - m255(f0[249] * 8)) << 16);
     const c2 = (255 - m255(f1[9] * 8)) | (m255(f1[49] * 4) << 8) | (m255(f1[249] * 8) << 16);
     const c1x = c1 ^ 0xf0ff0, c2x = c2 ^ 0xf0ff0;
-    g.clear();                                         // PatBlt BLACKNESS
+    this.work.fill(0);                                 // PatBlt BLACKNESS
     this.points(L, cx, cy);
     this.draw(L, cx, cy, c1, c2, c1x, c2x);
     this.blend();
@@ -307,71 +307,72 @@ class Celestial {
     }
   }
 
-  /** the preset's GDI calls (0x420741..0x420f12); colours are COLORREFs */
+  /** the preset's GDI calls (0x420741..0x420f12) through the shared GDI rasterizer; colours are COLORREFs */
   private draw(L: TimedLevel, cx: number, cy: number, c1: number, c2: number, c1x: number, c2x: number): void {
     const g = this.gdi, f0 = L.freq[0], f1 = L.freq[1];
     const MERGE = 15, XOR = 7, COPY = 13;
+    // the points P0 / P1 from index s, n of them (the DLL's arrays are 1-based)
+    const x0 = (s: number, n: number) => this.xs0.subarray(s, s + n), y0 = (s: number, n: number) => this.ys0.subarray(s, s + n);
+    const x1 = (n: number) => this.xs1.subarray(1, 1 + n), y1 = (n: number) => this.ys1.subarray(1, 1 + n);
     switch (this.preset) {
       case 0:
         g.rop = MERGE;
-        g.pen(c1, 3); g.polyline(this.xs0, this.ys0, 1, 128);
-        g.pen(c2, 3); g.polyline(this.xs1, this.ys1, 1, 128);
+        g.polyline(x0(1, 128), y0(1, 128), c1, 3);
+        g.polyline(x1(128), y1(128), c2, 3);
         g.rop = COPY;
         break;
       case 1:
         g.rop = MERGE;
-        g.pen(c1, 8); g.polyline(this.xs0, this.ys0, 1, 128);
-        g.brush(c2x); g.pen(c2, 4); g.polygon(this.xs1, this.ys1, 1, 128);
+        g.polyline(x0(1, 128), y0(1, 128), c1, 8);
+        g.polygon(x1(128), y1(128), c2x, c2, 4);
         g.rop = COPY;
         break;
       case 2: {
         g.rop = MERGE;
-        g.pen(c1, 16); g.polyline(this.xs0, this.ys0, 1, 128);
-        g.pen(c2, 16); g.polyline(this.xs1, this.ys1, 1, 128);
+        g.polyline(x0(1, 128), y0(1, 128), c1, 16);
+        g.polyline(x1(128), y1(128), c2, 16);
         g.rop = COPY;
         let v = ((f0[255] + f1[255]) >> 4) + this.st * 7;
         if (v < 0) v += 7;
         this.st = (v >> 3) + 4;
-        g.brush(c2x | 0xffff); g.pen(c2x | 0xff, this.st);
-        g.ellipse(cx - 20, cy - 20, cx + 20, cy + 20);
+        g.ellipse(cx - 20, cy - 20, cx + 20, cy + 20, c2x | 0xffff, c2x | 0xff, this.st);
         break;
       }
       case 3:
         g.rop = XOR;
-        g.brush(0); g.pen(c1, 6); g.polygon(this.xs0, this.ys0, 1, 256);
-        g.brush(c1 ^ 0xf0f00f); g.pen(c2, 3); g.polygon(this.xs1, this.ys1, 1, 256);
+        g.polygon(x0(1, 256), y0(1, 256), 0, c1, 6);
+        g.polygon(x1(256), y1(256), c1 ^ 0xf0f00f, c2, 3);
         g.rop = COPY;
         break;
       case 4:
-        g.brush(0); g.pen(c1, 6); g.polygon(this.xs0, this.ys0, 1, 128);
-        g.brush(0); g.pen(c2, 4); g.polygon(this.xs1, this.ys1, 1, 128);
+        g.polygon(x0(1, 128), y0(1, 128), 0, c1, 6);
+        g.polygon(x1(128), y1(128), 0, c2, 4);
         break;
       case 5:
-        g.brush(c2x); g.rop = MERGE;
-        g.pen(c1, 4); g.polygon(this.xs0, this.ys0, 1, 256);
-        g.brush(c1x); g.pen(c2, 4); g.polygon(this.xs1, this.ys1, 1, 256);
+        g.rop = MERGE;
+        g.polygon(x0(1, 256), y0(1, 256), c2x, c1, 4);
+        g.polygon(x1(256), y1(256), c1x, c2, 4);
         g.rop = COPY;
         break;
       case 6:
-        g.brush(0); g.rop = MERGE;
-        g.pen(c1, 5); g.polygon(this.xs0, this.ys0, 1, 256);
-        g.brush(0); g.pen(c2, 5); g.polygon(this.xs1, this.ys1, 1, 256);
+        g.rop = MERGE;
+        g.polygon(x0(1, 256), y0(1, 256), 0, c1, 5);
+        g.polygon(x1(256), y1(256), 0, c2, 5);
         g.rop = COPY;
         break;
       case 7: {
         g.rop = XOR;
-        g.brush(c1 | 0xff0000); g.pen(c2x | 0xff00ff, 6); g.polygon(this.xs0, this.ys0, 1, 256);
-        g.brush(c1 ^ 0xf0f00f);
+        g.polygon(x0(1, 256), y0(1, 256), c1 | 0xff0000, c2x | 0xff00ff, 6);
         let v = ((f0[255] + f1[255]) >> 3) + this.st * 7;
         if (v < 0) v += 7;
         this.st = (v >> 3) + 2;
-        g.pen(c2, this.st); g.polygon(this.xs1, this.ys1, 1, 256);
+        g.polygon(x1(256), y1(256), c1 ^ 0xf0f00f, c2, this.st);
         g.rop = COPY;
         break;
       }
       case 8: case 9: {
+        // 8: brush 0, a 3-pixel pen in the blob's colour; 9: the NULL pen, a brush in the blob's colour
         g.rop = XOR;
-        if (this.preset === 8) g.brush(0); else g.nullPen();
         for (let b = 1; b <= 16; b++) {
           const B = this.blobs[b - 1];
           let v = B.level * 7 + (f0[56 * b - 1] + f1[56 * b - 1]) * 2;
@@ -380,8 +381,9 @@ class Celestial {
           B.level = v;
           const R = Math.min(255, ((B.r * v) / 255) | 0), G = Math.min(255, ((B.g * v) / 191) | 0), Bl = Math.min(255, ((B.b * v) / 127) | 0);
           const col = (R << 16) | (G << 8) | Bl;
-          if (this.preset === 8) g.pen(col, 3); else g.brush(col);
-          g.polygon(this.xs0, this.ys0, (b - 1) * 16 + 1, 16);
+          const s = (b - 1) * 16 + 1;
+          if (this.preset === 8) g.polygon(x0(s, 16), y0(s, 16), 0, col, 3);
+          else g.polygon(x0(s, 16), y0(s, 16), col, null);
         }
         g.rop = COPY;
         break;

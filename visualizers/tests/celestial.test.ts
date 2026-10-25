@@ -1,5 +1,5 @@
-// Celestial (Blackfly Studios, Celestial.dll 1.0.0.0): presets, Delphi's Random, the zoom map, the GDI wide-pen model
-// (pens, outlines, fills), then a golden guard over a synthetic stream. The golden fixture
+// Celestial (Blackfly Studios, Celestial.dll 1.0.0.0): presets, Delphi's Random, the zoom map (its GDI drawing is the
+// shared rasterizer's, tested in gdi.test.ts), then a golden guard over a synthetic stream. The golden fixture
 // (./golden/fixtures/celestial.json) is the port's own output, written once the port was verified frame-identical to the
 // DLL; GOLDEN_UPDATE=1 npx vitest run tests/celestial.test.ts rewrites it.
 import { describe, expect, it } from 'vitest';
@@ -8,7 +8,6 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { A } from '../src/ns';
 import '../src/celestial/index';
-import { Gdi, penRecord, widen, fillSpans } from '../src/celestial/gdi';
 import { rint, extLiteral, toNum } from '../src/celestial/x87';
 import { InputGen } from './golden/harness';
 
@@ -51,46 +50,6 @@ describe('Celestial: the zoom map', () => {
       if (m.mapSrc[p]! < 0) continue;
       expect(m.mapW[4 * p]! + m.mapW[4 * p + 1]! + m.mapW[4 * p + 2]! + m.mapW[4 * p + 3]!).toBe(65536);
     }
-  });
-});
-
-describe('Celestial: the GDI wide pen', () => {
-  it('pens are centrally symmetric half polygons whose ends overlap the other half', () => {
-    for (const w of [1, 2, 3, 4, 5, 6, 7, 8, 16, 40, 79]) {
-      const P = penRecord(w), n = P.length >> 1;
-      expect(P[0]! + P[2 * (n - 2)]! === 0 && P[1]! + P[2 * (n - 2) + 1]! === 0, `w=${w} start`).toBe(true);
-      expect(P[2 * (n - 1)]! + P[2]! === 0 && P[2 * (n - 1) + 1]! + P[3]! === 0, `w=${w} end`).toBe(true);
-    }
-  });
-  it('a dot is a round blob within its pen width that grows with the width', () => {
-    let last = 0;
-    for (let w = 2; w <= 30; w++) {
-      const px = new Uint32Array(64 * 64), g = new Gdi(px, 64, 64);
-      g.pen(0xffffff, w);
-      g.polyline([32, 32], [32, 32], 0, 2);
-      let n = 0;
-      for (let y = 0; y < 64; y++) for (let x = 0; x < 64; x++) if (px[y * 64 + x]) {
-        n++;
-        expect((x - 32) ** 2 + (y - 32) ** 2, `w=${w} (${x},${y})`).toBeLessThanOrEqual((w / 2) ** 2);
-      }
-      expect(n).toBeGreaterThanOrEqual(last);
-      last = n;
-    }
-    expect(last).toBeGreaterThan(600);
-  });
-  it('a closed figure widens into two loops whose winding leaves the inside open', () => {
-    const q = [0, 0, 320, 0, 320, 320, 0, 320];
-    const figs = widen(4, q, true);
-    expect(figs).toHaveLength(2);
-    let inside = 0;
-    fillSpans(figs, true, 40, 40, (y, x0, x1) => { if (y === 10) for (let x = x0; x < x1; x++) if (x > 3 && x < 17) inside++; });
-    expect(inside).toBe(0);
-  });
-  it('XOR fills a polygon once: the outline and the interior never overlap', () => {
-    const px = new Uint32Array(64 * 64), g = new Gdi(px, 64, 64);
-    g.rop = 7; g.brush(0x0000ff); g.pen(0xff0000, 5);
-    g.polygon([10, 50, 30], [10, 12, 50], 0, 3);
-    for (const v of px) expect(v === 0 || v === 0x0000ff || v === 0xff0000).toBe(true);
   });
 });
 
