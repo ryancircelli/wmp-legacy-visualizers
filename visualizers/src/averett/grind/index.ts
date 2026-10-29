@@ -28,6 +28,8 @@ export interface GrindArt {
   background: Picture[];
   /** Grind_Media\Grind_logo: Grind_Logo_0, _1, _1_hover, _3D, _3D_hover */
   logos: (ArgbPicture | null)[];
+  /** Grind_Media\Foreground's file names (T3 reads each picture's transition from its name) */
+  names?: string[];
   /** DATATABLE_PARTICLE_2 decoded as D3DX gives it: 128 x 128 X8R8G8B8 (BGRA bytes) */
   particle: Uint8Array;
 }
@@ -53,6 +55,7 @@ declare module '../../ns' {
 
 export class AverettGrind {
   static PRESET_NAMES: string[] = ['Go BIG or Go Home'];
+  static ENGINE = 'AverettGrind';
   declare w: number;
   declare h: number;
   declare core: GrindCore;
@@ -72,12 +75,13 @@ export class AverettGrind {
   }
   /** a fresh DLL object (WMP creates one per visualization switch) */
   private build(): void {
-    const o = this.opt, art = o.art || ownArt();
+    const o = this.opt, art = o.art || this.ownArt();
     const t0 = typeof performance !== 'undefined' ? performance.now() : Date.now();
     const clock = o.clock || (() => (Math.floor((typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0) + 1000000) | 0);
     this.env = {
       tick: clock,
       pictures: art.photos,
+      names: art.names,
       background: art.background,
       logos: art.logos,
       levels: new Uint8Array(4100),
@@ -94,11 +98,15 @@ export class AverettGrind {
         return { h: d.getHours(), m: d.getMinutes(), s: d.getSeconds(), ms: d.getMilliseconds() };
       }),
     };
-    this.core = new GrindCore(this.env);
+    this.core = this.makeCore(this.env);
     this.core.seedVal = this.seedV;
     setPreset(this.core, 0);
     this.frame = 0;
   }
+  /** the engine object (T3 builds its own on Grind's) */
+  protected makeCore(env: GrindEnv): GrindCore { return new GrindCore(env); }
+  /** our own pictures */
+  protected ownArt(): GrindArt { return ownArt(); }
   seed(n: number): this { this.seedV = n | 0; this.build(); return this; }
   /** the DLL resets its device for a new client size; the port starts over at the new size */
   resize(w: number, h: number): void {
@@ -131,7 +139,8 @@ export class AverettGrind {
   }
 
   debug(): Record<string, unknown> {
-    return { engine: 'AverettGrind', preset: 0, presetName: AverettGrind.PRESET_NAMES[0], size: this.w + 'x' + this.h,
+    const k = this.constructor as typeof AverettGrind;
+    return { engine: k.ENGINE, preset: 0, presetName: k.PRESET_NAMES[0], size: this.w + 'x' + this.h,
       frame: this.frame, device: !!this.core.dev };
   }
 }

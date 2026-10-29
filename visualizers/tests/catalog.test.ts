@@ -53,6 +53,7 @@ describe('the catalog', () => {
       'SnowTime, WMP 7–8 1',
       'Spikes, WMP 10 2',
       'StarTime, WMP 7–8 3',
+      'T3, WMP 9 1',
       'Trilogy I, WMP 7–8 4',
       'Trilogy II, WMP 7–8 4',
       'Trilogy III, WMP 7–8 4',

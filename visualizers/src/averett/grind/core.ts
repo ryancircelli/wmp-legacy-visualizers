@@ -33,6 +33,8 @@ export interface GrindEnv extends Env {
   background: Picture[];
   /** Grind_Media\Grind_logo: Grind_Logo_0 (the sign), _1, _1_hover, _3D, _3D_hover; null where a file is missing */
   logos: (ArgbPicture | null)[];
+  /** Foreground's file names, in env.pictures' order (T3 picks each picture's transition by its name) */
+  names?: string[];
   /** this frame's levels: 1024 spectrum bytes per channel then the waveform (WMP's TimedLevel layout, 4100 bytes) */
   levels: Uint8Array;
   /** GetLocalTime (the clock in the scene); the A/B host pins 12:00:00.000 */
@@ -41,11 +43,13 @@ export interface GrindEnv extends Env {
 
 export class GrindCore extends Core {
   declare genv: GrindEnv;
-  constructor(env: GrindEnv) {
+  /** `own`: methods of an engine built on Grind's (T3), over Grind's own (gdef's table, keyed the same way) */
+  constructor(env: GrindEnv, own?: Map<number, Method>) {
     super(env);
     this.genv = env;
     this.vtab = VT.slice();
     for (const [k, f] of OWN) this.vtab[k >> 2] = f;
+    if (own) for (const [k, f] of own) this.vtab[k >> 2] = f;
     construct(this);
   }
 }
@@ -54,12 +58,12 @@ export class GrindCore extends Core {
 /** Grind's own methods by Grind slot (registered at 0x1000 + slot, and at the twin's Picture Viz 3D slot so that
  *  Picture Viz 3D's code calling that slot reaches Grind's) */
 const OWN = new Map<number, Method>();
-export function gdef(t: Record<number, Method>): void {
+export function gdef(t: Record<number, Method>, into = OWN): void {
   for (const k in t) {
     const g = +k;
-    OWN.set(0x1000 + g, t[k]);
+    into.set(0x1000 + g, t[k]);
     const p = SLOT.get(g);
-    if (p !== undefined) OWN.set(p, t[k]);
+    if (p !== undefined) into.set(p, t[k]);
   }
 }
 /** Grind's `call [eax + slot]`: its own method, else the twin's in Picture Viz 3D's table */
@@ -113,8 +117,6 @@ function construct(c: GrindCore): void {
 
 /** the folder the DLL sits in (Grind_Media\Foreground etc. are below it); only its name's identity matters here */
 export const MODULE_DIR = 'Visualizations';
-export const FOREGROUND = MODULE_DIR + '\\Grind_Media\\Foreground';
-export const BACKGROUND = MODULE_DIR + '\\Grind_Media\\Background';
 
 /** IWMPEffects::SetCurrentPreset 0x10022790 (this = main+0x2258): one preset, selection mode 1 (the favourites) */
 export function setPreset(c: Core, n: number): boolean {

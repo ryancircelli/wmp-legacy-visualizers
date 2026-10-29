@@ -334,12 +334,12 @@ function leave(c: Core, kind: 'spatter' | 'blast' | 'electric'): number {
 
 /** Spatter (vt+0xd4 0x1003a190) and Burst (vt+0xd8 0x1003a4a0): random ring bursts (0x10006940) every frame;
  *  Spatter's strength (from 1.4) grows by 1.09 for the first fifth (the water's depth 0x3728 = 60) and it ends on
- *  t >= 1; Burst's stays 12 and it ends on the fade */
-function spatter(c: Core, burst: boolean): number {
+ *  t >= 1; Burst's stays 12 and it ends on the fade. Grind's and T3's Spatter: from `start` 0.5, growing by `grow` 1.13 */
+export function spatter(c: Core, burst: boolean, start = fr(1.4), grow = fr(1.09)): number {
   if (handoff(c)) return 0;
   const I = c.m.I, F = c.m.F;
   if (arrived(c)) {
-    I[fade(c)] = 0; F[tr(c, 0x114)] = burst ? 12 : fr(1.4); I[0x256c >> 2] = 0; I[0x3166c >> 2] = 1;
+    I[fade(c)] = 0; F[tr(c, 0x114)] = burst ? 12 : start; I[0x256c >> 2] = 0; I[0x3166c >> 2] = 1;
     return 0;
   }
   const st = I[0x3166c >> 2];
@@ -358,7 +358,7 @@ function spatter(c: Core, burst: boolean): number {
       if (lt(G[0x31534 >> 2], fr(0.2))) {
         G[0x3728 >> 2] = 60;
         J[0x3160c >> 2] = ftol(G[tr(c, 0x114)]);
-        G[tr(c, 0x114)] = G[tr(c, 0x114)] * fr(1.09);
+        G[tr(c, 0x114)] = G[tr(c, 0x114)] * grow;
         f10006940(c);
       }
       if (lt(G[0x31534 >> 2], 1)) return 0;
@@ -369,8 +369,8 @@ function spatter(c: Core, burst: boolean): number {
 }
 
 /** vt+0xdc 0x1003a770: Blast-off: a jet from the centre (0x10006b10, strength from 2 growing by 1.08) under a
- *  deep pool (0x3728 = 31), the floor tilting (0x1f28 = cos * 1.5) */
-function blastOff(c: Core): number {
+ *  deep pool (0x3728 = 31), the floor tilting (0x1f28 = cos * 1.5). `spark`: Grind's and T3's jet (0x100070f0) */
+export function blastOff(c: Core, spark: (c: Core) => number = f10006b10): number {
   if (handoff(c)) return 0;
   const I = c.m.I, F = c.m.F;
   if (arrived(c)) {
@@ -386,7 +386,7 @@ function blastOff(c: Core): number {
     G[0x3728 >> 2] = 31;
     J[0x3160c >> 2] = ftol(G[tr(c, 0x114)]);
     G[tr(c, 0x114)] = G[tr(c, 0x114)] * fr(1.08);
-    f10006b10(c);
+    spark(c);
     G[0x1f28 >> 2] = cosBack(c, progress(c, 0x2574)) * 1.5;
     if (ftol(G[fade(c)]) <= 0xf5) return 0;
     J[fade(c)] = 0x437f0000;
@@ -496,8 +496,9 @@ function sundrops(c: Core): number {
 }
 
 /** vt+0xec 0x1003b7c0: Volcanic: Sundrops' rings (from 10) under an erupting fountain (0x1f1c falls by t^3 * 100,
- *  by 80 more after 0.6; the floor tilts, 0x1f28 = cos * 1.6; the fountain stops at 0.9) */
-function volcanic(c: Core): number {
+ *  by 80 more after 0.6; the floor tilts, 0x1f28 = cos * 1.6; the fountain stops at 0.9). Grind's and T3's
+ *  (`stop` false) never clear the fountain flag 0x2deec at 0.9 */
+export function volcanic(c: Core, stop = true): number {
   if (handoff(c, true)) return 0;
   const I = c.m.I, F = c.m.F;
   if (arrived(c)) {
@@ -523,7 +524,7 @@ function volcanic(c: Core): number {
     F[tr(c, 0x114)] = F[tr(c, 0x114)] * fr(1.1);
     f10006780(c);
     if (F[0x31534 >> 2] >= fr(0.4)) I[0x1f70 >> 2] = 0;
-    if (F[0x31534 >> 2] >= fr(0.9)) I[0x2deec >> 2] = 0;
+    if (stop && F[0x31534 >> 2] >= fr(0.9)) I[0x2deec >> 2] = 0;
     if (F[0x31534 >> 2] >= fr(0.6)) {
       F[0x1f1c >> 2] = F[0x1f1c >> 2] - 80;
       F[0x1f20 >> 2] = F[0x1f20 >> 2] + 5;
@@ -543,9 +544,9 @@ def({
   0xd0: flower,                              // 0x10039e80 Flower
   0xd4: (c) => spatter(c, false),            // 0x1003a190 Spatter
   0xd8: (c) => spatter(c, true),             // 0x1003a4a0 Burst
-  0xdc: blastOff,                            // 0x1003a770 Blast-off
+  0xdc: (c) => blastOff(c),                  // 0x1003a770 Blast-off
   0xe0: electric,                            // 0x1003ab40 Electric
   0xe4: (c) => wisp(c, true),                // 0x1003aef0 Crossing
   0xe8: sundrops,                            // 0x1003b3d0 Sundrops
-  0xec: volcanic,                            // 0x1003b7c0 Volcanic
+  0xec: (c) => volcanic(c),                  // 0x1003b7c0 Volcanic
 });

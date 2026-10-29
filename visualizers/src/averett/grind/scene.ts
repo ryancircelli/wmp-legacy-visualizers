@@ -2,14 +2,16 @@
 // size check, the transition step (which picture comes when, and the music's say: a quiet stretch turns the next
 // change into a plain fade), the common step that dispatches the 29 transitions, and Grind's versions of Picture Viz
 // 3D's transitions (the camera pulled back to -11000 when a picture leaves). Offsets are Grind's (core.ts).
-import { type Core, VT } from '../../pictureviz/pv3/core';
+import { type Core, VT, xb } from '../../pictureviz/pv3/core';
+import { blastOff, spatter, volcanic } from '../../pictureviz/pv3/txliquid2';
 import { f100073f0 } from '../../pictureviz/pv3/frame';
 import { fr64 } from '../../pictureviz/pv3/d3dx';
 import { sincos87, mulExt } from '../../plenoptic/x87';
 import { ftol, fr } from '../../pictureviz/pv2/mem';
-import { type GrindCore, gdef, gvt, gi, si, gf, sf, tick, cur, unported } from './core';
+import { type GrindCore, gdef, gvt, gi, si, gf, sf, tick, cur } from './core';
 import { o } from './layout';
 import { f10004320 } from './particles';
+import { fountain31, fountain32, fountain33 } from './txfountain';
 
 const E_FAIL = 0x80004005 | 0;
 
@@ -27,6 +29,13 @@ function spriteTable(c: Core): number {
 /** vt+0x2cc 0x100360e0: the scene start (state 0x31418 == 0), then the clock and fountains (vt+0x208) and the
  *  transition step (vt+0x2d0) */
 function sceneStart(c: Core): number {
+  sceneSetup(c);
+  gvt(c, 0x208);
+  gvt(c, 0x2d0);
+  return 0;
+}
+/** 0x100360e0's scene start (state 0x31418 == 0), shared with T3's (which has no clock) */
+export function sceneSetup(c: Core): void {
   if (gi(c, 0x31418) === 0) {
     gvt(c, 0x2ac);
     si(c, 0x3a98, 0x41200000);               // 10.0
@@ -40,9 +49,6 @@ function sceneStart(c: Core): number {
     I[0x5b8] = 2; I[0x4b0] = 0; I[0x447] = 2; I[0x466] = 0; I[0x467] = 0; I[0x46e] = -0x32; I[0x465] = -2; I[0x4bd] = 1;
     I[0x480] = 0; I[0x47f] = 300;
   }
-  gvt(c, 0x208);
-  gvt(c, 0x2d0);
-  return 0;
 }
 
 /** vt+0x1d8 0x10038540: the canvas size or the state asks for the scene again (the particles are cleared only when
@@ -71,6 +77,10 @@ function transitionStep(c: Core): number {
     c.str.set(o(0x3150), c.str.get(o(0x29bc)) ?? '');      // lstrcpyA
     if (gi(c, 0x312dc) <= 10) si(c, 0x316a8, 6);
   }
+  return runTransition(c);
+}
+/** the rest of 0x10036200, from the transition id on (T3's step differs only before it) */
+export function runTransition(c: Core): number {
   const id = gi(c, 0x316a8);
   if (id < 5 || id > 33) return 0;
   gvt(c, 0x108);
@@ -170,10 +180,6 @@ function transparency(c: Core): number {
   }
   return 0;
 }
-
-/** ids 31..33 (vt+0xf8..0x100: fountains of the clock's kind): no selection reaches them (the favourites name ids
- *  5..30 and the random selections stop at 30) */
-const unreachable = (va: number) => (): number => unported(va);
 
 // ------------------------------------------------------------------------------------------------ the fountains
 const SC = new Float64Array(4), SC2 = new Float64Array(4);
@@ -326,9 +332,21 @@ function hand(c: Core, a: number, rgba: number[], k: number, near: number, far: 
   f10004320(c);
 }
 
+/** 0x100070f0: Blast-off's jet, Picture Viz 3D's (0x10006b10) without the random spot and off centre: the water cell
+ *  at row 25, column 31 (cells of height, velocity; 64 a row) set to the strength, its 8 neighbours' velocities to
+ *  0.9 of it */
+function jet(c: Core): number {
+  const I = c.m.I, F = c.m.F, p = I[0x373c >> 2];
+  F[0x31120 >> 2] = F[(xb(c) + 0x114) >> 2];
+  F[(p + 0x32f8) >> 2] = F[0x31120 >> 2];
+  for (const k of [0x32f4, 0x3304, 0x30fc, 0x34fc, 0x30f4, 0x3504, 0x3104, 0x34f4]) F[(p + k) >> 2] = F[0x31120 >> 2] * fr(0.9);
+  return 0;
+}
+
 gdef({
   0x2a4: spriteTable, 0x2cc: sceneStart, 0x1d8: sceneCheck, 0x2d0: transitionStep, 0x88: common, 0x208: fountains,
   0x94: transparency, 0x98: farOnLeave(0x90), 0x9c: farOnLeave(0x94), 0xa0: farOnLeave(0x98), 0xa4: farOnLeave(0x9c),
-  0xb0: farOnLeave(0xa8), 0xb4: farOnLeave(0xac),
-  0xf8: unreachable(0x1003d950), 0xfc: unreachable(0x1003dcc0), 0x100: unreachable(0x1003e030),
+  0xb0: farOnLeave(0xa8), 0xb4: farOnLeave(0xac), 0xdc: (c) => spatter(c, false, 0.5, fr(1.13)), 0xe4: (c) => blastOff(c, jet),
+  0xf4: (c) => volcanic(c, false),
+  0xf8: fountain31, 0xfc: fountain32, 0x100: fountain33,   // ids 31..33: only T3 picks them (txfountain.ts)
 });

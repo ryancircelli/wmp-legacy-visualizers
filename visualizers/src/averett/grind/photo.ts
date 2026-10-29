@@ -4,7 +4,7 @@
 // ../../pictureviz/pv3/photo.ts and sprite.ts; offsets here are Grind's (core.ts).
 //
 // The folders: as Picture Viz 3D's (FindFirstFileA from *.jpg on, one node per folder), but the port has two
-// folders, told apart by name (core.ts FOREGROUND / BACKGROUND): env.pictures and env.background. Grind's pictures
+// folders, told apart by name (Foreground / Background): env.pictures and env.background. Grind's pictures
 // are JPEGs: every one is found by the first pass (*.jpg), which counts n files as n. c.found is the picture the
 // search stopped at, in the list of the folder it searched.
 //
@@ -19,7 +19,7 @@ import { ftol, fr } from '../../pictureviz/pv2/mem';
 import { scaleHQ } from '../gdip';
 import { A } from '../../ns';
 import '../../rand';
-import { type GrindCore, type GrindEnv, type ArgbPicture, gdef, gvt, gi, si, gf, sf, tick, FOREGROUND, BACKGROUND } from './core';
+import { type GrindCore, type GrindEnv, type ArgbPicture, gdef, gvt, gi, si, gf, sf, tick } from './core';
 import { o } from './layout';
 
 const E_FAIL = 0x80004005 | 0;
@@ -49,7 +49,7 @@ function lock(c: Core, w: number, h: number): [number, number] {
 /** vt+0x64 0x100339a0 (Picture Viz 3D's 0x1002c630): count the current folder's (0x3550) pictures into 0x27f4 */
 function countFiles(c: Core): number {
   const s = c.str.get(o(0x3550)) ?? '', e = genv(c);
-  si(c, 0x27f4, s === FOREGROUND ? e.pictures.length : s === BACKGROUND ? e.background.length : 0);
+  si(c, 0x27f4, s.endsWith('\\Foreground') ? e.pictures.length : s.endsWith('\\Background') ? e.background.length : 0);
   return 0;
 }
 
@@ -109,6 +109,7 @@ function search(c: Core, pass: number, n: number, load: number): number {
         si(c, 0x287c, gi(c, 0x287c) + 1);
         if (gi(c, 0x227c) === gi(c, 0x287c)) {
           c.found = k;
+          if (pass === 0x313fc) c.str.set(o(0x29bc), genv(c).names?.[k] ?? '');   // the find data's cFileName
           gvt(c, load);
           return 0;
         }
@@ -116,6 +117,7 @@ function search(c: Core, pass: number, n: number, load: number): number {
     }
     si(c, pass, gi(c, pass) + 1);
   } while (gi(c, pass) < 6);
+  if (pass === 0x313fc) c.str.set(o(0x29bc), '');           // the last pass zeroed the find data
   return E_FAIL;
 }
 
@@ -294,18 +296,20 @@ function signBitmap(pic: ArgbPicture | null, w: number, h: number): Uint32Array 
  *  drawn): the PNG's size from the normal one, the fit (vt+0x1b0 for sprite 1 at How_big_should_picture_be 90),
  *  no larger than the PNG, drawn by GDI+ (signBitmap), then blended into the backdrop (sprite 6's image) from
  *  column 2, row 3 on: alpha 0 skipped, 255 copied, else each channel d * (1 - a/255) + s * a/255 truncated (x87:
- *  a times the float 1/255, both products and the sum double), alpha 0xff. `rect` gets x, y (2, 2), w, h. */
-function sign(c: Core, normal: number, hover: number, state: number, rect: number): number {
+ *  a times the float 1/255, both products and the sum double), alpha 0xff. `rect` gets x, y (2, 2), w, h. T3's
+ *  one sign (0x1001f450) is this with How_big 30, a margin of 5 and its height elsewhere (`big`, `margin`, `hAt`). */
+export function sign(c: Core, normal: number, hover: number, state: number, rect: number,
+  big = 0x5a, margin = 2, hAt = rect + 12): number {
   gdipStart(c);
   const logos = genv(c).logos, pic = logos[normal];
   si(c, 0x3181c, pic ? pic.w : 0);
   si(c, 0x3180c, pic ? pic.h : 0);
   if (Math.imul(gi(c, 0x3181c), gi(c, 0x3180c)) === 0) return E_FAIL;
-  const big = gi(c, 0x3a68);
-  si(c, 0x3a68, 0x5a);
+  const was = gi(c, 0x3a68);
+  si(c, 0x3a68, big);
   si(c, 0x1ca4, 1);
   gvt(c, 0x1b0);
-  si(c, 0x3a68, big);
+  si(c, 0x3a68, was);
   si(c, 0x1ca4, 6);
   if (gi(c, 0x2830) > gi(c, 0x3180c) || gi(c, 0x282c) > gi(c, 0x3181c)) {
     si(c, 0x282c, gi(c, 0x3181c)); si(c, 0x2830, gi(c, 0x3180c));
@@ -320,8 +324,8 @@ function sign(c: Core, normal: number, hover: number, state: number, rect: numbe
   const sw = ri(c, 0x9f4);
   si(c, 0x31308, sw);
   si(c, 0x31304, ri(c, 0x9f8));
-  si(c, 0x31274, ri(c, 0x994) + sw * 8 + 8);
-  si(c, rect, 2); si(c, rect + 4, 2); si(c, rect + 8, w); si(c, rect + 12, h);
+  si(c, 0x31274, ri(c, 0x994) + (sw + 1) * margin * 4);
+  si(c, rect, margin); si(c, rect + 4, margin); si(c, rect + 8, w); si(c, hAt, h);
   const I = c.m.I;
   si(c, 0x31494, 0);
   for (let r = 0; r < h; r++) {

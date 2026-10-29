@@ -64,8 +64,24 @@ function frame(c: Core): number {
     for (I[j] = 0; I[j] < 0x43; I[j]++) s = (s + I[(o(HIST) >> 2) + I[j]]) | 0;
     si(c, 0x312dc, (s / 0x44) | 0);
   }
-  I = c.m.I;
-  // which transition comes next (selection mode 0x3165c: 1 the favourites, 2..4 the random selections)
+  chooseTransition(c);
+  // frames per second
+  const t = tick(c);
+  if ((t - gi(c, 0x9c)) >>> 0 > 1000) {
+    si(c, 0xa0, Math.floor((Math.imul(gi(c, 0x98), 1000) >>> 0) / ((t - gi(c, 0x9c)) >>> 0)));
+    si(c, 0x9c, tick(c));
+    si(c, 0x98, 0);
+  }
+  si(c, 0x98, gi(c, 0x98) + 1);
+  gvt(c, 0x2c4);
+  gvt(c, 0x17c);
+  return 0;
+}
+
+/** which transition comes next (selection mode 0x3165c: 1 the favourites, 2..4 the random selections) and the
+ *  sign's hover state; T3's frame (../t3) is this alone */
+export function chooseTransition(c: Core): void {
+  const I = c.m.I, k = o(0x31474) >> 2;
   const fav = new Int32Array(27);
   if (gi(c, 0x3165c) === 1) {
     I[k] = 0;
@@ -127,17 +143,6 @@ function frame(c: Core): number {
   // TrackMouseEvent(TME_LEAVE) then PeekMessage: the A/B host's window is off-screen, so WM_MOUSELEAVE is there
   if (gi(c, 0x31bec) !== 0 && gi(c, 0x2948) === 2) { si(c, 0x2948, 1); si(c, 0x294c, 1); }
   if (gf(c, 0x3c40) > 2 && gi(c, 0x291c) === 0 && gi(c, 0x2948) === 1) { si(c, 0x2948, 0); si(c, 0x294c, 1); }
-  // frames per second
-  const t = tick(c);
-  if ((t - gi(c, 0x9c)) >>> 0 > 1000) {
-    si(c, 0xa0, Math.floor((Math.imul(gi(c, 0x98), 1000) >>> 0) / ((t - gi(c, 0x9c)) >>> 0)));
-    si(c, 0x9c, tick(c));
-    si(c, 0x98, 0);
-  }
-  si(c, 0x98, gi(c, 0x98) + 1);
-  gvt(c, 0x2c4);
-  gvt(c, 0x17c);
-  return 0;
 }
 
 /** IWMPEffects::DisplayPropertyPage (the options dialog): the app has none; the registry the port keeps never asks */

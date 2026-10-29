@@ -51,9 +51,9 @@ export function o(g: number): number {
 export const GRIND_END = 0x31994;
 
 // The main vtable: Grind's slot -> the slot of the twin function in Picture Viz 3D's table, as runs of
-// [Grind slot, Picture Viz 3D slot, slots]
+// [Grind slot, Picture Viz 3D slot, slots] (Grind 0xf8..0x100, ids 31..33, have no twin: txfountain.ts)
 const SLOT_RUNS = [
-  0x0, 0x0, 14, 0x40, 0x38, 46, 0xf8, 0xec, 1, 0x104, 0xf0, 43, 0x1b4, 0x19c, 1, 0x1bc, 0x1a0, 19, 0x20c, 0x1ec, 47,
+  0x0, 0x0, 14, 0x40, 0x38, 46, 0x104, 0xf0, 43, 0x1b4, 0x19c, 1, 0x1bc, 0x1a0, 19, 0x20c, 0x1ec, 47,
   0x2cc, 0x2a8, 50,
 ];
 export const SLOT = new Map<number, number>();

@@ -9,7 +9,7 @@ import type { Core } from '../../pictureviz/pv3/core';
 
 /** the defaults, in the order 0x10030150 stores them (transition n's flag at 0x28ac + 4 (n - 1): 3..10 on;
  *  0x2914 Chk_PicIII_Favorite_Randomize on) */
-const DEFAULTS: [number, number][] = [
+export const DEFAULTS: [number, number][] = [
   [0x3a64, 6],          // How_often_should_picture_be_changed (s)
   [0x27e4, 0],          // Randomize_picture
   [0x2814, 0], [0x2818, 0],                  // Use_temp_Show_effects, Use_temp_Transition_effects
@@ -34,13 +34,17 @@ const DEFAULTS: [number, number][] = [
 /** vt+0x114 0x10030150: the settings, every frame: Display_this_photo_1st, the picture size (90 %), the logos (on
  *  with a window), the folders (%s\Grind_Media\Foreground and \Background below 0x3960), the defaults */
 function settings(c: Core): number {
+  return settingsWith(c, 'Grind_Media', DEFAULTS);
+}
+/** 0x10030150 with the media folder's name and the defaults as arguments (T3's twin differs in nothing else) */
+export function settingsWith(c: Core, media: string, defaults: [number, number][]): number {
   si(c, 0x2280, 1);
   si(c, 0x3a68, 0x5a);                       // How_big_should_picture_be
   si(c, 0x291c, gi(c, 0x31bec) !== 0 ? 1 : 0);   // Flag_Logos_on_or_off: on when there is a window
   const dir = c.str.get(o(0x3960)) ?? '';
-  c.str.set(o(0x2288), dir + '\\Grind_Media\\Foreground');
-  c.str.set(o(0x2594), dir + '\\Grind_Media\\Background');
-  for (const [g, v] of DEFAULTS) si(c, g, v);
+  c.str.set(o(0x2288), dir + '\\' + media + '\\Foreground');
+  c.str.set(o(0x2594), dir + '\\' + media + '\\Background');
+  for (const [g, v] of defaults) si(c, g, v);
   if (gi(c, 0x2270) !== 1) unported(0x10030527);     // the registry
   return 0;
 }
