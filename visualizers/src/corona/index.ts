@@ -19,6 +19,7 @@
 import { A, type Surface, type TimedLevel } from '../ns';
 import { ftol } from '../x86';
 import { sincos87, mulExt } from '../plenoptic/x87';
+import { fsin87, fcos87, fpatan87, f2xm187 } from '../x87';
 
 declare module '../ns' {
   interface AlchemyNS {
@@ -125,7 +126,34 @@ function exp87(t: number): number {
     sh = ph / n; sl = (A.fma(-sh, n, ph) + pl) / n;
   }
   round64(sh, sl, E2);
-  return add3(E2[0], E2[1], 1) * Math.pow(2, k);
+  let v = add3(E2[0], E2[1], 1);
+  if (touchy(v, E2[0], E2[1], 1)) { f2xm187(f, X87); v = add3(X87[0], X87[1], 1); }
+  return v * Math.pow(2, k);
+}
+// The double-double models above are correctly rounded to 64 bits; the FPU is not (one 64-bit ulp off now and then).
+// Where one 64-bit ulp could change the double the next instruction makes, the exact models (../x87) decide.
+const X87 = new Float64Array(2);
+/** at least one 64-bit ulp of the value hi + lo */
+function u64(hi: number): number { return hi === 0 ? 0 : Math.pow(2, Math.floor(Math.log2(Math.abs(hi))) - 62); }
+/** would hi + lo +- one ulp change add3(hi, lo, c) from v? (add3 is monotone, so the two ends decide) */
+function touchy(v: number, hi: number, lo: number, c: number): boolean {
+  const u = u64(hi);
+  return add3(hi, lo + u, c) !== v || add3(hi, lo - u, c) !== v;
+}
+/** FPATAN(y, x) + c at 53 bits */
+function atanAdd(y: number, x: number, c: number): number {
+  fpatan(y, x, E2);
+  const v = add3(E2[0], E2[1], c);
+  if (!touchy(v, E2[0], E2[1], c)) return v;
+  fpatan87(y, x, X87);
+  return add3(X87[0], X87[1], c);
+}
+/** m * FCOS(a) (which 2) or m * FSIN(a) (which 0) at 53 bits, SC holding sincos87(a) */
+function trigMul(m: number, a: number, which: 0 | 2): number {
+  const hi = SC[which], lo = SC[which + 1], v = mulExt(m, hi, lo), u = u64(hi);
+  if (mulExt(m, hi, lo + u) === v && mulExt(m, hi, lo - u) === v) return v;
+  (which ? fcos87 : fsin87)(a, X87);
+  return mulExt(m, X87[0], X87[1]);
 }
 
 export interface CoronaConfig {
@@ -267,8 +295,8 @@ class Corona {
     let a = Math.atan2(fy, fx) + q;
     let vx = (Math.cos(a) * this.fs * r - fx) * W, vy = (Math.sin(a) * this.fs * r - fy) * H;
     if (Math.abs(vx - Math.round(vx)) < 1e-7 || Math.abs(vy - Math.round(vy)) < 1e-7) {
-      fpatan(fy, fx, E2); a = add3(E2[0], E2[1], q);
-      sincos87(a, SC);
+      fpatan87(fy, fx, E2); a = add3(E2[0], E2[1], q);
+      fcos87(a, SC, 2); fsin87(a, SC, 0);
       vx = (mulExt(this.fs, SC[2], SC[3]) * r - fx) * W; vy = (mulExt(this.fs, SC[0], SC[1]) * r - fy) * H;
     }
     let dx = this.rand() % 5 - 2 + ftol(vx);
@@ -339,10 +367,10 @@ class Corona {
       P[i + 3] = P[i + 3] - 0.0006;
       if (this.countdown > 0) {
         const dx = P[i] - this.vx0, dy = P[i + 1] - this.vy0, d2 = dy * dy + dx * dx, r = Math.sqrt(d2);
-        fpatan(dy, dx, E2);
-        sincos87(add3(E2[0], E2[1], this.strength / (d2 + 0.01)), SC);
-        P[i + 2] = (mulExt(r, SC[2], SC[3]) * this.factor - dx) + P[i + 2];
-        P[i + 3] = (mulExt(r, SC[0], SC[1]) * this.factor - dy) + P[i + 3];
+        const a = atanAdd(dy, dx, this.strength / (d2 + 0.01));
+        sincos87(a, SC);
+        P[i + 2] = (trigMul(r, a, 2) * this.factor - dx) + P[i + 2];
+        P[i + 3] = (trigMul(r, a, 0) * this.factor - dy) + P[i + 3];
       }
       P[i + 2] = (this.rand() * 1.2207403790398878e-08 + P[i + 2]) - 0.0002;
       P[i + 3] = (this.rand() * 1.2207403790398878e-08 + P[i + 3]) - 0.0002;
