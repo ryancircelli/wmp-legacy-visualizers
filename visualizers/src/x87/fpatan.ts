@@ -6,8 +6,7 @@
 // Model (all values exact unless stated):
 //  1. n0 = min(|y|,|x|), d0 = max(|y|,|x|) (swap when |y| > |x|).
 //  2. j = round-half-even(32*n0/d0), exactly.
-//  3. j <= 1:  S = trunc67(n0/d0);  I = S + (atan(S) - S) - polybias(S)*G,  G = 2^(ilogb(S) - 66)
-//              (exact atan correction plus a measured smooth bias, table DT below); I = S when S < 2^-40
+//  3. j <= 1:  S = trunc67(n0/d0);  I = polyI(S) (below); I = S when S < 2^-40
 //     j >= 2:  S = trunc67(|n0 - d0*j/32| / (d0 + n0*j/32));
 //              c = S*z*(C3 + z*(C5 + z*(C7 + z*C9))), z = S*S       (fitted coefficients below)
 //              G = 2^(ilogb(S + c) - 66);  A = S + floor(c/G)*G;  I = T[j] +/- A  (sign of the numerator)
@@ -17,6 +16,8 @@
 //                                    | PIO2 + I' (x <= 0, swapped);  PIO2, PI rounded to nearest at 67 bits.
 //  5. result = round-to-nearest-even at 64 bits of r, sign of y.
 // trunc67 = truncate to 67 significant bits.
+
+import { FB, hexf, mul, rnd } from './fix';
 
 const FP = 160n; // fixed-point fraction bits for the polynomials
 const TWO66 = 1n << 66n;
@@ -34,9 +35,6 @@ const C3 = dec('-0.3333333333333333060521106836095467887209');
 const C5 = dec('0.1999999999989655747712548804990625918332');
 const C7 = dec('-0.1428571306567178210804088574339760103945');
 const C9 = dec('0.1110543957005887152829442524722304060466');
-// atan(s) - s = s*z*sum_k (-1)^k z^k/(2k+3): coefficients 1/(2k+3) with sign, k = 0..12 (to z^12)
-const SER: bigint[] = [];
-for (let k = 27; k >= 3; k -= 2) SER.push((((k & 2) ? -1n : 1n) << FP) / BigInt(k));
 
 // 67-bit constants: mantissa, exponent (value = m * 2^e)
 const PIO2_M = 0x6487ed5110b4611a6n, PIO2_E = -66, PI_E = -65;
@@ -50,19 +48,15 @@ const TM: bigint[] = [0n, 0n, 0x7fd56edcb3f7a71b6n, 0x5fb860980bc43a305n, 0x7f56
 const TE: number[] = [0, 0, -71, -70, -70, -69, -69, -69, -69, -68, -68, -68, -68, -68, -68, -68, -68, -68,
   -67, -67, -67, -67, -67, -67, -67, -67, -67, -67, -67, -67, -67, -67, -67];
 
-// poly-path bias in units of G, measured at s = 0.00051 + 0.001*i; linear interpolation
-const DT = [0, -1.75e-05, -5.4e-05, -0.0001195, -0.000153, -0.000223, -0.0003215, -0.000378, -0.000278,
-  -0.000345, -0.000377, -0.0004895, -0.0005885, -0.00044, -0.0004995, -0.0002405, -0.0005, -0.0003615, -0.000377,
-  -0.0005015, -0.0005235, -0.000474, -0.0007365, -0.000943, -0.000884, -0.001209, -0.0017025, -0.001349, -0.0018225,
-  -0.002024, -0.001549, -0.0016595, -0.0014765, -0.001718, -0.001882, -0.001701, -0.00245, -0.0025325, -0.002094,
-  -0.002673, -0.0024255, -0.00298, -0.003047, -0.003547, -0.004026, -0.003241, -0.0035845];
-function polybias(s: number): number {
-  const u = (s - 0.00051) / 0.001;
-  if (u < 0) return 0;
-  const i = Math.floor(u);
-  if (i >= 46) return DT[46];
-  const w = u - i;
-  return DT[i] * (1 - w) + DT[i + 1] * w;
+// j <= 1 polynomial: the minimax of (atan(s)/s - 1)/z (absolute error of atan(s)/s - 1) on (0, 3/64], k1 to 67 bits,
+// k2..k6 to 64. z = T67(S S); Horner with T67 products and RN64 sums; I = S + T67(T64(S) T67(t z)).
+const K = ['-0x1.5555555555555550cp-2', '0x1.9999999999985ed4p-3', '-0x1.2492492484215474p-3', '0x1.c71c71313fdb470ep-4',
+  '-0x1.745b861def688df8p-4', '0x1.39031c98b3469ebcp-4'].map(hexf);
+function polyI(S: bigint): bigint {
+  const z = rnd(mul(S, S), 67, 'T');
+  let t = rnd(mul(K[5], z), 67, 'T');
+  for (let i = 4; i >= 0; i--) { t = rnd(t + K[i], 64, 'N'); if (i) t = rnd(mul(t, z), 67, 'T'); }
+  return S + rnd(mul(rnd(S, 64, 'T'), rnd(mul(t, z), 67, 'T')), 67, 'T');
 }
 
 const dv = new DataView(new ArrayBuffer(8));
@@ -126,15 +120,7 @@ export function fpatan87(y: number, x: number, out: Float64Array): void {
   if (j <= 1) {
     const r = trunc67div(Mn, Md), eS = qE + en - ed;
     if (eS + 66 < -40) { Im = r; Ie = eS; } // measured: no correction below 2^-40
-    else { // corr/2^eS = r * z * sum, z = r^2 * 2^(2 eS); in units of 2^(eS - FP)
-      const zf = shl(r * r, 2 * eS + Number(FP));
-      let p = 0n;
-      for (let i = 0; i < SER.length; i++) p = ((p * zf) >> FP) + SER[i];
-      const corr = r * ((zf * p) >> FP);
-      const S = Number(r) * 2 ** eS; // only needs ~1e-9 relative for the bias lookup
-      const bias = BigInt(Math.round(polybias(S) * 2 ** 40)) << (FP - 40n);
-      Im = (r << FP) + corr - bias; Ie = eS - Number(FP);
-    }
+    else { Im = polyI(r << BigInt(eS + Number(FB))); Ie = -Number(FB); }
   } else {
     const e0 = Math.min(en, ed);
     const N = shl(Mn, en - e0), D = shl(Md, ed - e0), J = BigInt(j);

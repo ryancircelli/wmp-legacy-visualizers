@@ -1,5 +1,6 @@
 // The shared x87 models (src/x87/) against results measured on the FPU they were fitted to (an i7-11370H, CW 0x027F):
-// mostly inputs whose correctly rounded 64-bit result is NOT what the FPU returns, plus some ordinary ones.
+// mostly inputs whose correctly rounded 64-bit result is NOT what the FPU returns (and ones earlier fits got wrong:
+// F2XM1 below 1/4, FSIN below 1/4, the table path, FPATAN's small ratios), plus some ordinary ones.
 // Lines: hex bits of the argument(s), then of hi and lo (hi + lo = the 80-bit result).
 import { describe, expect, it } from 'vitest';
 import { fsin87, fcos87, fpatan87, f2xm187 } from '../src/x87';
@@ -20,6 +21,37 @@ function check(lines: string, f: (a: number, b: number) => void, two = false) {
 
 describe('x87 transcendentals, bit for bit', () => {
   const SIN = `
+    3ff4dc823c98a3b0 3feeddd091a23387 3c8bc00000000000
+    3fceeae20d9f9e02 3fce9e24e726dc66 3c69180000000000
+    3fcb4ea0f739ee64 3fcb19b8e5183eef bc6d080000000000
+    bfcc614bfb829fa7 bfcc25eaa8dd6100 3c53d00000000000
+    3fcf3c5482182616 3fceed33d9c2b8fd bc6ac80000000000
+    bfc56fef7d6994fb bfc55650f4d2ee96 bc3b800000000000
+    bfc81ef0a3b34743 bfc7fa754e1dce91 bc61a80000000000
+    bfce67b816ecc500 bfce1eb9b7f7daa0 bc62b80000000000
+    3fccba1795cc94eb 3fcc7c8302d4af3e 3c58a00000000000
+    bfcc84bab1553c2f bfcc487a3eff4241 bc48400000000000
+    3fcc170195f83311 3fcbdd6d17c17c8f 3c6cb00000000000
+    bfcc44835e25a7d7 bfcc09d5b63c5cb5 bc58000000000000
+    3fcffccece844dbb 3fcfa7d708835d74 3c6b300000000000
+    3fccd228a84c9f9f 3fcc93f911565f41 3c56000000000000
+    bfcfd1aeed34284b bfcf7e0c4bf6acb4 3c6a980000000000
+    3fcc77cfd3655504 3fcc3be0f90bc37e bc6e100000000000
+    bfcff0aa03a33e95 bfcf9c12ab147ba3 3c58200000000000
+    bfc9b111bb8e6faa bfc984ff1467587e 3c47600000000000
+    bfcf40534d643121 bfcef11453ab7088 3c40800000000000
+    3fc88a24b377c6d8 3fc863bb10252937 3c68b80000000000
+    bfcbcbbd8afadb1f bfcb93f25b67197e 3c4b800000000000
+    bfc7f7004947545d bfc7d338ca4c295f 3c58400000000000
+    bfcc3483c558f1c5 bfcbfa395d0929d2 3c59000000000000
+    3fc92bc8eb09a903 3fc9025587d69208 bc33800000000000
+    bfcfff734b52933b bfcfaa667ffe3513 bc6f400000000000
+    bfcf80858fbfbd09 bfcf2f5b4b337aae bc5ea00000000000
+    3fc85f8f4a43cc3b 3fc839ec086f2db5 3c5f100000000000
+    bfcbe613858d9ae6 bfcbada96958480b 3c5e500000000000
+    3fcc1bafb20aa6e7 3fcbe1fe730c4132 bc56a00000000000
+    3fccb28d792c5202 3fcc752941260bea bc59900000000000
+    3fced1553da38be0 3fce85555c5b4ec7 bc69680000000000
     bfcbad3eaa115b57 bfcb762a0bf4063a bc6cf80000000000
     40059bd4a906f83f 3fdb4a0dd75da2ae 3c6f700000000000
     400e72207fd4ba1e bfe3b95c2aa39550 3c69200000000000
@@ -88,6 +120,8 @@ describe('x87 transcendentals, bit for bit', () => {
     3ff2dab231e8fd5a 3fed9158c1ec1a47 3c6e200000000000
 `;
   const COS = `
+    4000bb3ac8dd675a bfdfd5c2a86b98ab 3c71880000000000
+    c00f08c66a107454 bfe7ae4455b68f0c bc51000000000000
     bfcbad3eaa115b57 3fef413e97045242 bc8b480000000000
     c005047213227a52 bfebdbc4e64e0e3b bc88e00000000000
     bfe8fe701eef3c0e 3fe6b9b288a933c7 bc86100000000000
@@ -156,6 +190,15 @@ describe('x87 transcendentals, bit for bit', () => {
     c0006a1b1f1c603c bfdd9c82bdfb5862 bc54200000000000
 `;
   const F2XM1 = `
+    3fc7fde4abecd480 3fc1c229be51d704 3bd0000000000000
+    bfb50dcf5571eac0 bfac5ee21615a748 bbb0000000000000
+    3ba3000000000000 3b9a56ef8ec924cc 380f000000000000
+    bbafffffffffffff bba62e42fefa39ef 384f000000000000
+    39b23456789abcde 39a93c99986fc27b b631900000000000
+    ad35000000000000 ad2d1cb7eea86c0a 2993c00000000000
+    3bb0000000000000 3ba62e42fefa39ef 383ac00000000000
+    bbb0000000000000 bba62e42fefa39ef b83ac00000000000
+    3bb0000000000001 3ba62e42fefa39f1 b849e80000000000
     bf9a5bda281087c0 bf921bc6772c5bad bc3df00000000000
     bfd4043be1762b5a bfc8f273cb386148 bc3e400000000000
     3fa69d6f02ff0dd0 3f9fd5fbc3d52c1f 3c27e00000000000
@@ -200,6 +243,17 @@ describe('x87 transcendentals, bit for bit', () => {
     bfdf30744b121562 bfd25897243af002 bc6a200000000000
 `;
   const ATAN = `
+    bfd27ad42f376114 3f893d6f01cdb5ff bff87343795f7d47 bc8bc00000000000
+    3f93e6d6cffccc12 3fe2b71b4e951cce 3fa1021058c2d943 3c31400000000000
+    bf94b5a3430027cb 3fddd644d19d51cc bfa63269e6957236 bc33f00000000000
+    3faa8d4a48aee214 3ff2b0992c3e236b 3fa6b735075f2d8b 3c42780000000000
+    3f905a855756d522 3fef4a2f3ab206de 3f90b92a8186852d bc30a00000000000
+    bf76744e92d6a4af 3fbe73db58bbc740 bfa794224bf473d9 3c3f400000000000
+    bf8a8892b98bd9b3 3fdd563bcbf17b10 bf9cef3835961f20 3c23a00000000000
+    bf9da046c6a2d46e 3ff0fb684b845185 bf9be7ea0c56cbe8 3c16400000000000
+    3f88633c5a1418e3 3fd2c04cdd811a68 3fa4cc4c28f56a02 3c3b400000000000
+    bf617e56b7bd7e8b 3fbe2d1f627baf40 bf928c792a36523b 3c3a800000000000
+    3f94b42bb438ede2 3fdf2b8bbb8ad2b0 3fa53e2a12ece922 bc2f400000000000
     bfaa5bda281087c0 bfe573232a1474d0 c00884fedd3fb00f bca5880000000000
     3feeb53714b2cbe8 bfeb865972e08b5c 400269a6c3682b2b 3cacf00000000000
     bfe6ae2ca1b034e2 3fdcf154cfedbd94 bff00bba66762eec bc9e000000000000
