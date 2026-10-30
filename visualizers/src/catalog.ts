@@ -73,6 +73,8 @@ const CURRENT: Record<VisKind, Versions> = {
   t3: [9, 9],
   // TwistedPixel: Visolu's free plug-in for WMP 9 and 10
   twistedpixel: [9, 10],
+  // Windows Media Player 10 (Energy Bliss): Microsoft's online gallery's download for WMP 10 (2004)
+  wm10: [10, 10],
 };
 
 /** A preset's name as its name and the versions its suffix gives ("Swirl (WMP 7-9)": Swirl, [7, 9]); none: null. */

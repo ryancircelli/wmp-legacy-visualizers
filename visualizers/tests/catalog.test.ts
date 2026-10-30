@@ -40,6 +40,7 @@ describe('the catalog', () => {
       'Googly Moogly!, WMP 9–10 3',
       'Grind(2003), WMP 9 1',
       'Kid Drawing, WMP 7–8 2',
+      'Windows Media Player 10, WMP 10 1',
       'Windows Media 9 Series, WMP 9 1',
       'Picture Viz, WMP 8 7',
       'Picture Viz II, WMP 9 62',

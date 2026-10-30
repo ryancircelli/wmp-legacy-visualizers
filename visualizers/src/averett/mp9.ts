@@ -12,7 +12,7 @@ import {
   type Device, type Texture, type Surface, type Buffer, type StateBlock, Fmt, Pool, Usage, Lock, Prim, ClearFlag, Ts, Rs, Tss,
 } from '../d3d8/api';
 import { drawEq } from './eq';
-import { FONT_RS, FONT_TSS } from '../d3d8/d3dfont';
+import { Crt, DxTimer, fontInit, fontRestore, WaterEffect, RenderToSurface } from './framework';
 
 export const OBJ_SIZE = 0x3123c;
 
@@ -72,15 +72,6 @@ const INIT_F: [number, number][] = [
 // matrices the constructor leaves as identity (rewritten each frame by 10004cd0, but read before that on frame 1)
 const INIT_IDENT = [0x2dba8, 0x2dbe8, 0x2dc28, 0x2dd28, 0x2dd68];
 
-// effect T0 / P0 of DATATABLE_sha ("Water effect"), the states its pass sets, in the order D3DX records them
-const P0_RS: [number, number][] = [[Rs.LIGHTING, 1], [Rs.SPECULARENABLE, 1]];
-const P0_TSS0: [number, number][] = [[24, 2], [1, 2], [2, 2], [3, 1], [4, 10], [5, 2], [6, 0], [17, 2], [16, 2], [18, 1]];
-const P0_TSS1: [number, number][] = [[24, 2], [1, 7], [2, 2], [3, 1], [4, 3], [5, 2], [6, 1], [17, 2], [16, 2], [18, 1]];
-const P0_TSS2: [number, number][] = [[1, 1], [4, 1]];
-
-/** The DLL's CRT rand: holdrand on the render thread */
-class Crt { h = 1; srand(s: number): void { this.h = s >>> 0; } rand(): number { this.h = (Math.imul(this.h, 214013) + 2531011) >>> 0; return (this.h >>> 16) & 0x7fff; } }
-
 export class Mp9Engine {
   readonly heap = new Heap(OBJ_SIZE, 24 << 20);
   readonly I = this.heap.I; readonly U = this.heap.U; readonly F = this.heap.F; readonly B = this.heap.B;
@@ -92,8 +83,8 @@ export class Mp9Engine {
   private refractU = new Uint32Array(this.refract.buffer);
   private diffuse = new Uint32Array(8);          // 0x10083930
   private w = 0; private h = 0;
-  // DXUtil_Timer (0x10002ed0) statics, microseconds
-  private tInit = false; private tStop = 0; private tLast = 0; private tBase = 0; private tStopped = false;
+  // DXUtil_Timer (0x10002ed0), QPC at 1 MHz
+  private tm = new DxTimer(() => this.qpc());
   private blocks: StateBlock[] = [];
   private mats = new Float32Array(16 * 4);
   frame = 0;
@@ -648,7 +639,7 @@ export class Mp9Engine {
       I[0xb6e1] = this.handle(tex);
     }
     this.heap.release(buf);
-    if (this.i(0x2db58)) this.effParam(0, I[0xb6e1]);
+    if (this.i(0x2db58)) this.eff.param(0, this.tex(I[0xb6e1]));
   }
   /** 0x10003a20: the floor's alpha fades to 0 over the outer 0xa7c (border width) pixels of the TGA */
   private alpha10003a20(pix: number, tw: number, th: number): void {
@@ -853,31 +844,16 @@ export class Mp9Engine {
   private i10003480(): void {
     const I = this.I;
     I[0xb6e4] = 1; I[0xb6e5] = 1;
-    this.fontInit(); this.fontInit();
+    this.fonts.push(fontInit(this.d), fontInit(this.d));
     this.si(0x347c, I[0xd34]);
     I[0x734] = I[0x95c];
     this.floor100034f0();
-  }
-  /** CD3DFont::InitDeviceObjects: the glyph texture (A4R4G4B4; its glyphs never reach a draw) */
-  private fontInit(): void {
-    const t = this.d.createTexture(256, 256, 1, 0, Fmt.A4R4G4B4, Pool.MANAGED);
-    t.lockRect(0, null, 0); t.unlockRect(0);
-    this.fonts.push(t);
   }
   private fonts: Texture[] = [];
   /** RestoreDeviceObjects (0x10002830) */
   private r10002830(): void {
     const I = this.I, d = this.d;
-    for (const t of this.fonts) {
-      d.createVertexBuffer(0x20d0, Usage.WRITEONLY | Usage.DYNAMIC, 0, Pool.DEFAULT);
-      for (let k = 0; k < 2; k++) {
-        d.beginStateBlock();
-        d.setTexture(0, t);
-        for (const [s, v] of FONT_RS) d.setRenderState(s, v);
-        for (const [st, s, v] of FONT_TSS) d.setTextureStageState(st, s, v);
-        this.blocks.push(d.endStateBlock());
-      }
-    }
+    for (const t of this.fonts) fontRestore(d, t, this.blocks);
     // light 0 (directional) and the material, from the object
     const L = new ArrayBuffer(104), lv = new DataView(L), lf = new Float32Array(L);
     lv.setUint32(0, 3, true);
@@ -900,49 +876,16 @@ export class Mp9Engine {
     I[0xb6e3] = this.handle(ct.getSurfaceLevel(0));
     I[0xb6d8] = this.handle({});
     I[0xb6d6] = this.handle({});
-    this.effParam(0, I[0xb6e1]); this.effParam(1, I[0xb6e2]);
-    this.effTechnique();
+    this.eff.param(0, this.tex(I[0xb6e1])); this.eff.param(1, this.tex(I[0xb6e2]));
+    this.eff.technique();
     this.w100066b0();
   }
   private lightEnable(on: boolean): void { this.d.lightEnable(0, on); }
 
   // ---- the effect (ID3DXEffect over DATATABLE_sha, technique T0) ----
-  private effTex: number[] = [0, 0];
-  private effParam(k: number, h: number): void { this.effTex[k] = h; }
+  private effObj: WaterEffect | null = null;
+  private get eff(): WaterEffect { return this.effObj ??= new WaterEffect(this.d); }
   private tex(h: number): Texture | null { return h ? this.objs[h] as Texture : null; }
-  /** SetTechnique (0x100017d0): D3DX records the pass into a state block and a second block for what it changes,
-   *  captures the latter, validates, and restores */
-  private effTechnique(): void {
-    const d = this.d;
-    const ident = new Float32Array(16); ident[0] = ident[5] = ident[10] = ident[15] = 1;
-    d.beginStateBlock();
-    d.setVertexShader(0x152);
-    for (const [s, v] of P0_RS) d.setRenderState(s, v);
-    d.setTexture(0, this.tex(this.effTex[0])); d.setTransform(Ts.TEXTURE0, ident);
-    for (const [s, v] of P0_TSS0) d.setTextureStageState(0, s, v);
-    d.setTexture(1, this.tex(this.effTex[1])); d.setTransform(Ts.TEXTURE0 + 1, ident);
-    for (const [s, v] of P0_TSS1) d.setTextureStageState(1, s, v);
-    for (const [s, v] of P0_TSS2) d.setTextureStageState(2, s, v);
-    this.effSaved = d.endStateBlock();
-    d.captureStateBlock(this.effSaved);
-    d.beginStateBlock();
-    d.setVertexShader(0x152);
-    for (const [s, v] of P0_RS) d.setRenderState(s, v);
-    for (const [s, v] of P0_TSS0) d.setTextureStageState(0, s, v);
-    for (const [s, v] of P0_TSS1) d.setTextureStageState(1, s, v);
-    for (const [s, v] of P0_TSS2) d.setTextureStageState(2, s, v);
-    this.effPass = d.endStateBlock();
-    this.effPass0();
-    d.applyStateBlock(this.effSaved);
-  }
-  private effSaved = 0; private effPass = 0;
-  private effPass0(): void {
-    const d = this.d;
-    const ident = new Float32Array(16); ident[0] = ident[5] = ident[10] = ident[15] = 1;
-    d.applyStateBlock(this.effPass);
-    d.setTexture(0, this.tex(this.effTex[0])); d.setTransform(Ts.TEXTURE0, ident);
-    d.setTexture(1, this.tex(this.effTex[1])); d.setTransform(Ts.TEXTURE0 + 1, ident);
-  }
 
   /** 0x100066b0 CWater::RestoreDeviceObjects: the strip index buffer and the two vertex buffers */
   private w100066b0(): void {
@@ -969,13 +912,7 @@ export class Mp9Engine {
 
   // ======== DXUtil_Timer (0x10002ed0), QPC at 1 MHz ========
   private qpc(): number { return this.tgt() * 1000; }
-  private timer(cmd: number): number {
-    const now = this.tStopped && cmd !== 1 && cmd !== 4 ? this.tStop : this.qpc();
-    if (cmd === 1) { if (this.tStopped) this.tBase += now - this.tStop; this.tStop = 0; this.tStopped = false; this.tLast = now; this.tInit = true; return 0; }
-    if (cmd === 5) return (now - this.tBase) / 1e6;
-    if (cmd === 6) { const e = (now - this.tLast) / 1e6; this.tLast = now; return e; }
-    return 0;
-  }
+  private timer(cmd: number): number { return this.tm.cmd(cmd); }
 
   // ======== 0x10004b50: the frame ========
   private f10004b50(): void {
@@ -1032,7 +969,7 @@ export class Mp9Engine {
     this.sf(0x35f0, this.f(0x2dba0) + this.f(0x35f0));
     if (!caustics) return;
     const d = this.d;
-    this.rtsBegin();
+    this.rts.begin(this.obj<Surface>(0x2db8c));
     const aspect = fr(this.i(0x35c0) * 0.20000000298023224 / this.i(0x35c4));
     perspectiveFovRH(this.mat(0x2dd68), 1.0471975803375244, aspect, 0.10000000149011612, 2000);
     d.setTransform(Ts.PROJECTION, this.mat(0x2dd68));
@@ -1045,28 +982,12 @@ export class Mp9Engine {
     d.setIndices(this.obj<Buffer>(0x3480), 0);
     d.drawIndexedPrimitive(Prim.TRIANGLESTRIP, 0, this.i(0x3470), 0, this.i(0x346c) - 2);
     d.setRenderState(Rs.CULLMODE, 2); d.setRenderState(Rs.ALPHABLENDENABLE, 0); d.setRenderState(Rs.ZENABLE, 1);
-    this.rtsEnd();
+    this.rts.end();
   }
   private effUsesCaustics(): boolean { return true; }  // ID3DXEffect::IsParameterUsed("tCAU") for T0
   // ---- ID3DXRenderToSurface (128x128, no depth) ----
-  private rtsBlock = 0; private rtsOld: Surface | null = null; private rtsOldDs: Surface | null = null;
-  private rtsBegin(): void {
-    const d = this.d;
-    const vp = new ArrayBuffer(24), vv = new DataView(vp);
-    vv.setUint32(8, 128, true); vv.setUint32(12, 128, true); vv.setFloat32(16, 0, true); vv.setFloat32(20, 1, true);
-    if (!this.rtsBlock) { d.beginStateBlock(); d.setViewport(vp); this.rtsBlock = d.endStateBlock(); }
-    d.captureStateBlock(this.rtsBlock);
-    this.rtsOld = d.getRenderTarget(); this.rtsOldDs = d.getDepthStencilSurface();
-    d.setRenderTarget(this.obj<Surface>(0x2db8c), null);
-    d.setViewport(vp);
-    d.beginScene();
-  }
-  private rtsEnd(): void {
-    const d = this.d;
-    d.endScene();
-    d.setRenderTarget(this.rtsOld, this.rtsOldDs);
-    d.applyStateBlock(this.rtsBlock);
-  }
+  private rtsObj: RenderToSurface | null = null;
+  private get rts(): RenderToSurface { return this.rtsObj ??= new RenderToSurface(this.d, 128); }
 
   /** 0x10005890: the first time, render once and find the first row the water left non-black (0x36f0) */
   private s10005890(): void {
@@ -1096,13 +1017,13 @@ export class Mp9Engine {
     if (I[0xb6e4] === 1) {
       d.setRenderState(Rs.ALPHABLENDENABLE, 1); d.setRenderState(Rs.SRCBLEND, 5); d.setRenderState(Rs.DESTBLEND, 6);
       if (this.f(0x2dba4) < 0.662) {
-        d.captureStateBlock(this.effSaved);    // Begin
-        this.effPass0();                       // Pass(0)
+        this.eff.begin();
+        this.eff.pass0();
         // 0x100071e0 CWater::DrawSurface
         d.setStreamSource(0, this.obj<Buffer>(0x3484), 0x24);
         d.setIndices(this.obj<Buffer>(0x3480), 0);
         d.drawIndexedPrimitive(Prim.TRIANGLESTRIP, 0, this.i(0x3470), 0, this.i(0x346c) - 2);
-        d.applyStateBlock(this.effSaved);      // End
+        this.eff.end();
       }
     }
     d.endScene();

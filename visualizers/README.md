@@ -117,6 +117,7 @@ Every visualizer is byte-identical to the real Microsoft object for 30,000 conse
 | Analyzed (Miha Software's `Analyzed.dll` 0.5.1.0, all 8 presets, 512x384; drawn as Direct3D 9's reference rasterizer draws, its clock pinned) | 27: every preset with blur off on the synthetic composition (30,000 each); with its default blur on, Digital Bars on the composition and Line Bars and Mirror Bars on rock (30,000 each) and 11 more preset-stream runs as far as the DLL got (3,000 to 24,000 frames); the other three resolutions and the red and green schemes (500 to 3,000) | 421,500 | identical |
 | Grind (the gallery's `Grind.dll`, its one preset Go BIG or Go Home, 320x240; drawn through our port of Direct3D 8's reference rasterizer, the DLL's clock pinned) | 4: rock at two clock steps (16 and 33 ms a frame) and the synthetic composition at 16 ms, 30,000 frames each; the composition at 33 ms for the 1,001 frames the DLL ran before its host hung | 91,001 | identical |
 | T3 (the gallery's `T3.dll`, its one preset Rise of the Machines, 320x240 and 401x301; drawn through our port of Direct3D 8's reference rasterizer, the DLL's clock pinned) | 5: rock and the synthetic composition at two clock steps (16 and 33 ms a frame) and rock at 401x301, 30,000 frames each | 150,000 | identical |
+| Windows Media Player 10 (the gallery's `MediaPlayer_10.dll` 1.0.3.1, its one preset Energy Bliss, 320x240 and 401x301; drawn through our port of Direct3D 8's reference rasterizer, its GDI+ equalizer panel through our own GDI+ steps, the DLL's clock pinned) | 4: rock at two clock steps (16 and 33 ms a frame), the synthetic composition at 33 ms and rock at 401x301, 30,000 frames each | 120,000 | identical |
 | TwistedPixel (Visolu's `TwistedPixel.dll` 1.0.0.1, its VBScript and JScript engines on our own 12 presets, the window's size; drawn through our port of Direct3D 8's reference rasterizer, the DLL's clock pinned and its new memory zeroed, since its cross-fades read fields it never wrote) | 4: rock at 34 ms a frame, electronic at 100 ms, classical at 400 ms and 333x247, and a long stream at 34 ms, 30,000 frames each, every preset and its cross-fades | 120,000 | identical |
 | Shacojin (the WMP 7 Bonus Pack's `shacojin.dll`, all 4 presets, the window's size; drawn through our own GDI rasterizer) | 21: every preset on the synthetic composition, rock, classical and electronic at 640x480 and on rock at 333x247, and a preset switch at frame 15,000 | 630,000 | identical |
 | WMP's spectrum analyzer (WMP 9-12) | 63 per build: every byte of every snapshot, six recordings and a synthetic set | 751,914 snapshots per build | identical |
@@ -173,7 +174,7 @@ the Fun Packs and its online gallery. These are the ones not yet in the player:
 
 | Visualization | Where it shipped | Presets | Status |
 |---|---|---|---|
-| Winter (Ice Storm), Energy Bliss, Softie the Snowman II | Winter Fun Packs, Microsoft's gallery | 1 each | not planned (Direct3D; would be matched against Microsoft's software renderer) |
+| Winter (Ice Storm), Softie the Snowman II | Winter Fun Packs, Microsoft's gallery | 1 each | not planned (Direct3D; would be matched against Microsoft's software renderer) |
 | Looney Tunes | Microsoft's gallery | 1 | not planned (Direct3D; would need our own artwork in place of the film stills) |
 
 Done since this list began: 3D Alchemy, Picture Viz, Picture Viz II, Picture Viz 3D, Yule Log, Blazing Colors, Color Cubes, Pulsing
@@ -185,7 +186,8 @@ Blaze, with the DLL's built-in palettes), Ripple and Clarify (Blackfly Studios, 
 Scope and Scan), PixelTrip (Visolu, 2002), Animator (Glass3D, 2003; its 2.2, the last free WMP build), Flashes (Glass3D, 2004; its 2.0), Celestial (Blackfly Studios,
 2003; its ten presets), Fire Dancer (Blackfly Studios, 2003; its dancer of flame), Analyzed (Miha Software, Direct3D 9), Grind (Go BIG or Go Home, the gallery's unsigned download, on Picture Viz 3D's
 engine; our own photos, backdrop and sign in place of the film's), T3 (Rise of the Machines, Grind's engine rebuilt; our own machine-age
-pictures and sign in place of the film's), TwistedPixel (Visolu, 2003, Direct3D 8, with its VBScript and
+pictures and sign in place of the film's), Windows Media Player 10 (Energy Bliss, the gallery's download for WMP 10; our own sky,
+clouds and buttons in place of its pictures), TwistedPixel (Visolu, 2003, Direct3D 8, with its VBScript and
 JScript engines; twelve presets of our own, since its 333 are their authors') and Bubbles (the Psychedelia Viz Pack's, Direct3D 9, our own artwork; the pack's Distortion,
 Gigertron 3D, Hypnobloom, Album Art 3D, Ribbons and Up Cuber are next).
 

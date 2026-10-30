@@ -40,6 +40,36 @@ function axis(sn: number, dn: number, other: number, flip: boolean): Axis {
   return { scale, width, inv: fix16(f32(65536 / width)), origin };
 }
 
+/** Both axes of the span for a source rectangle at (X, Y), W x H, onto (0, 0, dw, dh), the whole chain in float32
+ *  (axis() above is the shortcut mp9 is verified with):
+ *   - GdipDrawImageRectRect's source-to-destination matrix: scale d / s, translation anchored at the far corners,
+ *     t = d - (d / s) * (X + W); the rectangle's corners go through it, so the near corner lands an ulp or so of d
+ *     off 0, by an amount that depends on the ratio;
+ *   - the driver re-infers a matrix from those three points and the rectangle (the general 3-point solve, X and Y
+ *     in every term) and maps the corners through that;
+ *   - the span rounds the near corner to 28.4, and its origin is fix16((corner - floor(corner)) * scale / 65536 + X)
+ *     (vertically floor - corner, + Y), here returned relative to the rectangle. */
+function rectAxes(X: number, Y: number, W: number, H: number, dw: number, dh: number): [Axis, Axis] {
+  const mx = f32(dw / W), my = f32(dh / H), XW = f32(X + W), YH = f32(Y + H);
+  const tx = f32(dw - f32(mx * XW)), ty = f32(dh - f32(my * YH));
+  const x0 = f32(f32(mx * X) + tx), x1 = f32(f32(mx * XW) + tx), y0 = f32(f32(my * Y) + ty), y2 = f32(f32(my * YH) + ty);
+  const det = f32(f32(f32(XW * YH) - f32(Y * X)) + f32(f32(-H * X) - f32(Y * W))), rdet = f32(1 / det);
+  const A2 = f32(f32(YH * XW) - f32(X * Y)), XH = f32(-X * H), YWn = f32(-Y * W);
+  const m11 = f32(f32(f32(H * x1) + f32(-H * x0)) * rdet), m22 = f32(f32(f32(W * y2) + f32(-W * y0)) * rdet);
+  const tx2 = f32(f32(f32(f32(XH * x1) + f32(A2 * x0)) + f32(YWn * x0)) * rdet);
+  const ty2 = f32(f32(f32(f32(XH * y0) + f32(A2 * y0)) + f32(YWn * y2)) * rdet);
+  const one = (P: number, S: number, m: number, t: number, flip: boolean): Axis => {
+    const c0 = f32(f32(m * P) + t), ext = f32(f32(f32(m * f32(P + S)) + t) - c0);
+    const scale = fix16(f32(S / ext));
+    let width = fix16(f32(f32(2 * S) / ext));
+    if (width < 0x20000) width = 0x20000;
+    const px = Math.floor(Math.floor(f32(f32(c0 * 16) + 0.5)) / 16), fr = flip ? f32(px - c0) : f32(c0 - px);
+    const origin = fix16(f32(f32(f32(fr * scale) * 2 ** -16) + P)) - P * 65536;
+    return { scale, width, inv: fix16(f32(65536 / width)), origin };
+  };
+  return [one(X, W, m11, tx2, false), one(Y, H, m22, ty2, true)];
+}
+
 /** taps for destination d; source pixels j (in the source rectangle's coordinates) exist for lo <= j < hi */
 function taps(d: number, lo: number, hi: number, ax: Axis, mmx: boolean): Tap {
   const pos = ax.origin + d * ax.scale - 0x8000;
@@ -84,16 +114,18 @@ function pack(a: number, r: number, g: number, b: number, shift: number): number
 }
 
 /** HighQualityBicubic of the premultiplied (0xAARRGGBB) source rectangle (sx, sy, sw, sh) of an fw x fh bitmap to
- *  dw x dh, premultiplied. full: taps beyond the rectangle read the bitmap around it (else transparent). */
+ *  dw x dh, premultiplied. full: taps beyond the rectangle read the bitmap around it (else transparent).
+ *  exact: the set-up through rectAxes() (Energy Bliss' panel), else axis() (mp9, Grind; unchanged). */
 export function scaleHQ(src: Uint32Array, fw: number, fh: number, sx: number, sy: number, sw: number, sh: number,
-  dw: number, dh: number, full = true): Uint32Array {
+  dw: number, dh: number, full = true, exact = false): Uint32Array {
   const out = new Uint32Array(dw * dh);
   if (sw === dw && sh === dh) {                  // 1:1 in both axes is a plain copy
     for (let y = 0; y < sh; y++) out.set(src.subarray((sy + y) * fw + sx, (sy + y) * fw + sx + sw), y * dw);
     return out;
   }
   const loX = full ? -sx : 0, hiX = full ? fw - sx : sw, loY = full ? -sy : 0, hiY = full ? fh - sy : sh;
-  const Ht = horizontalTaps(loX, hiX, dw, axis(sw, dw, sh, false));
+  const [axX, axY] = exact ? rectAxes(sx, sy, sw, sh, dw, dh) : [axis(sw, dw, sh, false), axis(sh, dh, sw, true)];
+  const Ht = horizontalTaps(loX, hiX, dw, axX);
   const mid = new Uint32Array(dw * fh);
   for (let y = 0; y < fh; y++) {
     for (let x = 0; x < dw; x++) {
@@ -108,9 +140,8 @@ export function scaleHQ(src: Uint32Array, fw: number, fh: number, sx: number, sy
       mid[y * dw + x] = pack(a, r, g, b, shift);
     }
   }
-  const ax = axis(sh, dh, sw, true);
   for (let y = 0; y < dh; y++) {
-    const { j0, w } = taps(y, loY, hiY, ax, false);
+    const { j0, w } = taps(y, loY, hiY, axY, false);
     for (let x = 0; x < dw; x++) {
       let a = 0, r = 0, g = 0, b = 0;
       for (let k = 0; k < w.length; k++) {
@@ -159,4 +190,65 @@ export function eqImage(cells: Int32Array, W: number, H: number): Uint32Array | 
     b2[i] = ((a << 24) | ((((p >>> 16) & 255) * m >> 16) << 16) | ((((p >>> 8) & 255) * m >> 16) << 8) | ((p & 255) * m >> 16)) >>> 0;
   }
   return b2;
+}
+
+// Energy Bliss' equalizer panel (MediaPlayer_10, ./mp10/eqpanel.ts) adds three steps.
+
+/** LockBits(PixelFormat32bppARGB, write) of straight-alpha pixels into a PARGB bitmap: GDI+'s premultiply */
+export function premultiply(argb: Uint32Array): Uint32Array {
+  const out = new Uint32Array(argb.length);
+  for (let i = 0; i < argb.length; i++) out[i] = pm(argb[i]);
+  return out;
+}
+
+/** LockBits(PixelFormat32bppARGB, read) of a PARGB bitmap, in place: colour * floor(0xff0000 / a) >> 16 */
+export function unpremultiply(p: Uint32Array): Uint32Array {
+  for (let i = 0; i < p.length; i++) {
+    const v = p[i], a = v >>> 24, m = a ? Math.floor(0xff0000 / a) : 0;
+    p[i] = ((a << 24) | ((((v >>> 16) & 255) * m >> 16) << 16) | ((((v >>> 8) & 255) * m >> 16) << 8) | ((v & 255) * m >> 16)) >>> 0;
+  }
+  return p;
+}
+
+/** DrawImageRectRectI(UnitPixel, no attributes) of an opaque sw x sh picture onto a PARGB fw x fh bitmap with the
+ *  Graphics' default state. The source rectangle is clipped to the picture first and the destination shrinks with
+ *  it. 1:1 is a copy. Otherwise the default interpolation, bilinear: destination pixel d samples source
+ *  d * srw / dw (16.16, pixel centres on integers), its 8-bit fraction weighing the next pixel (sum + 128 >> 8,
+ *  rows first, then between rows); pixels past the picture (not the rectangle) are transparent, so the far edges
+ *  come out half transparent, and the result goes SourceOver onto the bitmap (d * (255 - a) / 255 rounded). */
+export function drawOpaque(dst: Uint32Array, fw: number, fh: number, src: Uint32Array, sw: number, sh: number,
+  dx: number, dy: number, dw: number, dh: number, sx: number, sy: number, srw: number, srh: number): void {
+  const cw = Math.min(srw, sw - sx), ch = Math.min(srh, sh - sy);
+  if (cw <= 0 || ch <= 0) return;
+  if (dw === srw && dh === srh) {
+    for (let y = Math.max(0, -dy); y < ch && dy + y < fh; y++) {
+      for (let x = Math.max(0, -dx); x < cw && dx + x < fw; x++) dst[(dy + y) * fw + dx + x] = (src[(sy + y) * sw + sx + x] | 0xff000000) >>> 0;
+    }
+    return;
+  }
+  // ponytail: exact when the scale ratios are powers of two (the hd reflections' 2x); other ratios start each axis
+  // at 0, where GDI+ starts at a float residual of its inverse matrix (a few 1/65536 px, depends on the position)
+  const stepX = Math.floor((srw / dw) * 65536 + 0.5), stepY = Math.floor((srh / dh) * 65536 + 0.5);
+  const at = (x: number, y: number): number => (x < sw && y < sh ? (src[y * sw + x] | 0xff000000) >>> 0 : 0);
+  const lerp = (p: number, q: number, w: number): number => {
+    let o = 0;
+    for (let s = 0; s < 32; s += 8) o |= ((((p >>> s) & 255) * (256 - w) + ((q >>> s) & 255) * w + 128) >> 8) << s;
+    return o >>> 0;
+  };
+  const ow = Math.ceil((dw * cw) / srw), oh = Math.ceil((dh * ch) / srh);
+  for (let j = Math.max(0, -dy); j < oh && dy + j < fh; j++) {
+    const py = j * stepY, y0 = sy + (py >> 16), wy = (py >> 8) & 255;
+    for (let i = Math.max(0, -dx); i < ow && dx + i < fw; i++) {
+      const px = i * stepX, x0 = sx + (px >> 16), wx = (px >> 8) & 255;
+      const c = lerp(lerp(at(x0, y0), at(x0 + 1, y0), wx), lerp(at(x0, y0 + 1), at(x0 + 1, y0 + 1), wx), wy);
+      const k = (dy + j) * fw + dx + i, inv = 255 - (c >>> 24);
+      if (inv === 0) { dst[k] = c; continue; }
+      let o = 0;
+      for (let s = 0; s < 32; s += 8) {
+        const t = ((dst[k] >>> s) & 255) * inv;
+        o |= Math.min(255, ((c >>> s) & 255) + ((t + 128 + ((t + 128) >> 8)) >> 8)) << s;
+      }
+      dst[k] = o >>> 0;
+    }
+  }
 }
