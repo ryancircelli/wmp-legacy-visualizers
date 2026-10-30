@@ -49,7 +49,7 @@ export class Pipeline {
     const sh = st.vs & 1 ? d.shader(st.vs) : undefined;
     if (st.vs & 1 && !sh?.fn) throw new Error('RefDevice: declaration-only vertex shaders are not implemented');
     const fvf = st.vs;
-    if (!sh && (fvf & 0xe) === 4 /* XYZRHW */) throw new Error('RefDevice: pre-transformed vertices are not implemented');
+    const tlIn = !sh && (fvf & 0xe) === 4;   // XYZRHW: DrawPrimitive's TL branch (0x423288 / 0x423525)
     const nIdx = primVertices(type, count);
     const n = indices ? nverts : nIdx;
     const data = up ? up.data : st.streams[0].vb?.data, stride = up ? up.stride : st.streams[0].stride;
@@ -64,13 +64,16 @@ export class Pipeline {
     }
     const vp = this.vp, tl = this.tl;
     this.clipper.ensurePool();   // before the TL buffer: an allocation may grow the kernel's memory (detaching views)
-    const out = sh ? this.vm.process(st, sh, vp, base, n, tl) : vp.process(st, d.lightList, fvf, type, data, stride, up ? 0 : base, n, tl, ns);
+    const out = sh ? this.vm.process(st, sh, vp, base, n, tl)
+      : tlIn ? vp.processTL(st, fvf, data, stride, up ? 0 : base, n, tl, ns)
+        : vp.process(st, d.lightList, fvf, type, data, stride, up ? 0 : base, n, tl, ns);
     if (type !== Prim.POINTLIST && vp.isect !== 0) return;
     const rs = st.rs;
     this.rast.begin(st, d.rt, d.ds, out, ns);
     // the WebAssembly rasterizer when it has everything this draw touches in its memory
-    const K = kernel(), useK = K !== null && tl.off >= 0 && this.rast.toKernel();
-    if (!useK && refKernel.mode === 'wasm' && K) throw new Error('RefDevice: this draw cannot take the WebAssembly rasterizer');
+    const lines = type === Prim.LINELIST || type === Prim.LINESTRIP;   // lines: rast.ts only
+    const K = kernel(), useK = !lines && K !== null && tl.off >= 0 && this.rast.toKernel();
+    if (!useK && !lines && refKernel.mode === 'wasm' && K) throw new Error('RefDevice: this draw cannot take the WebAssembly rasterizer');
     this.clipper.begin(out, rs[Rs.SHADEMODE] === 2, out.setDims.length, out.setDims);
     const needClip = vp.union !== 0, flat = rs[Rs.SHADEMODE] === 1;
     const f = tl.f, fo = f.byteOffset;
@@ -104,7 +107,24 @@ export class Pipeline {
       case Prim.TRIANGLEFAN:
         for (let j = 1; j + 1 < nIdx; j++) tri(j, j + 1, 0);
         break;
-      default: throw new Error('RefDevice: lines are not implemented');
+      case Prim.LINELIST: case Prim.LINESTRIP: {
+        // 0x41e5d6 / 0x41e86c: a list draws pairs; a strip draws its segments with LASTPIXEL off (0x409415) but the
+        // last, which gets the state's LASTPIXEL. Each segment: 0x41e445 (trivial reject on the clip codes; inside
+        // the guard band DrawLine directly)
+        const last = rs[Rs.LASTPIXEL] !== 0, strip = type === Prim.LINESTRIP, nSeg = strip ? nIdx - 1 : nIdx >> 1;
+        for (let j = 0; j < nSeg; j++) {
+          const a = strip ? j : 2 * j;
+          va.o = (idx ? idx[a] : a) * ST; vb.o = (idx ? idx[a + 1] : a + 1) * ST;
+          if (needClip) {
+            const ca = f[va.o + CODE], cb = f[vb.o + CODE];
+            if ((ca & cb) !== 0) continue;
+            if (((ca | cb) & 0xfff0) !== 0) throw new Error('RefDevice: clipped lines (0x41e017) are not implemented');
+          }
+          this.rast.line(va, vb, strip && j < nSeg - 1 ? false : last);
+        }
+        break;
+      }
+      default: throw new Error(`RefDevice: primitive type ${type as number} is not implemented`);
     }
   }
 }

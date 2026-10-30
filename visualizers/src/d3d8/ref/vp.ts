@@ -301,6 +301,84 @@ export class VertexProcessor {
     return out;
   }
 
+  /**
+   * Pre-transformed (XYZRHW) vertices start..start+n-1 into tl, as DrawPrimitive's TL branch copies them (0x406c45 ->
+   * 0x4068ec after the reset 0x406871): x, y, z, rhw and point size raw; colours unpacked (0x406787); no DIFFUSE =
+   * (1,1,1,1), no SPECULAR = 0; each texcoord set's TEXCOORDSIZE floats, the rest 0 with q = 1. With CLIPPING on,
+   * the clip codes and clip coordinates of 0x41b9cb (REF computes them per vertex on first use; the same values).
+   * Sets isect = 0 (no whole-draw reject on this path) and union.
+   */
+  processTL(st: State, fvf: number, data: Uint8Array, stride: number, start: number, n: number, tl: TLBuf, stageCount: number): OutFvf {
+    const rs = st.rs, clipping = rs[Rs.CLIPPING] !== 0;
+    this.viewport(st);
+    let off = 16;
+    const pOff = fvf & Fvf.PSIZE ? off : -1; if (fvf & Fvf.PSIZE) off += 4;
+    const dOff = fvf & Fvf.DIFFUSE ? off : -1; if (fvf & Fvf.DIFFUSE) off += 4;
+    const sOff = fvf & Fvf.SPECULAR ? off : -1; if (fvf & Fvf.SPECULAR) off += 4;
+    const ntex = (fvf >> 8) & 0xf, tOff: number[] = [], tDim: number[] = [];
+    for (let t = 0; t < ntex; t++) { const d = texDims(fvf, t); tOff.push(off); tDim.push(d); off += d * 4; }
+    const out: OutFvf = { diffuse: dOff >= 0, specular: sOff >= 0, psize: pOff >= 0, texSet: [], texDims: [], setDims: tDim.slice() };
+    for (let i = 0; i < 8; i++) {
+      const set = st.tss[i * 32 + 11] & 0xffff;
+      out.texSet.push(set); out.texDims.push(set < ntex ? tDim[set] : 0);
+    }
+    void stageCount;
+    const dv = new DataView(data.buffer, data.byteOffset, data.byteLength);
+    tl.grow(n);
+    const f = tl.f;
+    // 0x41b7e1: the clip rect (viewport) and the guard band in screen space (the guard band is on)
+    const v = st.vp, X = f32(v.x >>> 0), Y = f32(v.y >>> 0);
+    const R = f32(f32(v.w >>> 0) + X), B = f32(f32(v.h >>> 0) + Y);
+    const zOn = rs[Rs.ZENABLE] !== 0;   // clipper flag 0x20 (0x408449): z codes only with z enabled
+    let union = 0;
+    for (let i = 0; i < n; i++) {
+      const b = (start + i) * stride, o = i * ST;
+      const sx = dv.getFloat32(b, true), sy = dv.getFloat32(b + 4, true), sz = dv.getFloat32(b + 8, true), rhw = dv.getFloat32(b + 12, true);
+      f[o + SX] = sx; f[o + SY] = sy; f[o + SZ] = sz; f[o + RHW] = rhw;
+      if (dOff >= 0) unpack(dv.getUint32(b + dOff, true), f, o + DIF); else { f[o + DIF] = 1; f[o + DIF + 1] = 1; f[o + DIF + 2] = 1; f[o + DIF + 3] = 1; }
+      if (sOff >= 0) unpack(dv.getUint32(b + sOff, true), f, o + SPE); else { f[o + SPE] = 0; f[o + SPE + 1] = 0; f[o + SPE + 2] = 0; f[o + SPE + 3] = 0; }
+      f[o + FOG] = sOff >= 0 ? f[o + SPE + 3] : 0;
+      f[o + PSZ] = pOff >= 0 ? dv.getFloat32(b + pOff, true) : 1;
+      for (let t = 0; t < 8; t++) {
+        const q = o + TEX + t * 4;
+        f[q] = 0; f[q + 1] = 0; f[q + 2] = 0; f[q + 3] = 1;
+        if (t < ntex) for (let c = 0; c < tDim[t]; c++) f[q + c] = dv.getFloat32(b + tOff[t] + c * 4, true);
+      }
+      let code = 0;
+      if (clipping) {
+        // 0x41b9cb: a negative rhw (not -0) negates x, y, z; NaN compares fall to "inside"
+        const neg = rhw < 0, x = neg ? -sx : sx, y = neg ? -sy : sy, z = neg ? -sz : sz;
+        if (x < X) code = 1; else if (!(x < R)) code = 2;
+        if (y < Y) code |= 4; else if (!(y < B)) code |= 8;
+        if (z < 0) { if (zOn) code |= 0x10; } else if (!(z < 1) && zOn) code |= 0x20;
+        if (x < -32768) code |= 0x1000; else if (!(x < 32767)) code |= 0x2000;
+        if (y < -32768) code |= 0x4000; else if (!(y < 32767)) code |= 0x8000;
+        union |= code;
+      }
+      f[o + CODE] = code;
+    }
+    // clip coordinates (only the clipper reads them): w = f32(1/rhw), c' = f32(((s - off) * invScale) * (1/rhw))
+    if (union & 0xfff0) {
+      E.ld(1); E.fdiv(f32(v.w >>> 0)); const ix = E.st32();
+      E.ld(1); E.fdiv(-f32(v.h >>> 0)); const iy = E.st32();
+      E.ld(v.maxZ); E.fsub(v.minZ); E.fdivr(1); const iz = E.st32();
+      for (let i = 0; i < n; i++) {
+        const o = i * ST, rhw = f[o + RHW];
+        if (rhw === 0) {   // 1/±0 = ±inf: IEEE double arithmetic gives the same infinities and NaNs
+          const w = 1 / rhw; f[o + CW] = w;
+          f[o + CX] = f32((f32(f[o + SX] - this.offX) * ix) * w); f[o + CY] = f32((f32(f[o + SY] - this.offY) * iy) * w);
+          f[o + CZ] = f32((f32(f[o + SZ] - this.offZ) * iz) * w); continue;
+        }
+        E.ld(1); E.fdiv(rhw); const wh = E.A[0], wl = E.A[1]; f[o + CW] = E.st32();
+        E.ld(f[o + SX]); E.fsub(this.offX); E.fmul(ix); E.fmulE(wh, wl); f[o + CX] = E.st32();
+        E.ld(f[o + SY]); E.fsub(this.offY); E.fmul(iy); E.fmulE(wh, wl); f[o + CY] = E.st32();
+        E.ld(f[o + SZ]); E.fsub(this.offZ); E.fmul(iz); E.fmulE(wh, wl); f[o + CZ] = E.st32();
+      }
+    }
+    this.isect = 0; this.union = union;
+    return out;
+  }
+
   /** screen mapping 0x420001 with 1/w kept at 64 bits: f32((invW * scale) * c + off), rhw = f32(invW). iw is
    *  1/w in double; the 64-bit path recomputes it */
   private screen(f: Float64Array, o: number, zeroW: boolean): void {

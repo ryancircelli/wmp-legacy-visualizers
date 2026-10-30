@@ -27,7 +27,8 @@ function add32(a: number, b: number): number {
   if (s - a === b && s - b === a) return f32(s);   // exact in double
   E.ld(a); E.fadd(b); return E.st32();
 }
-function clamp01(v: number): number { return v > 1 ? 1 : v >= 0 ? v : 0; }
+/** REF's colour clamp (0x419771, the colour planes' 0x418148): > 1 -> 1, < 0 -> 0, NaN stays NaN (and writes byte 0) */
+function clamp01(v: number): number { return v > 1 ? 1 : v < 0 ? 0 : v; }
 
 /** a vertex reference: array + offset of a TL vertex */
 export interface V { f: Float64Array; o: number }
@@ -148,7 +149,7 @@ export class Rasterizer {
       const q = c * 8, op = P[q];
       if (op === 1) break;
       const plain = (a: number): boolean => a >= 0 && a <= 3;
-      if (!(op === 2 || op === 3 || op === 4 || op === 7) || !(P[q + 4] === 1 || P[q + 4] === 2 || P[q + 4] === 3 || P[q + 4] === 4 || P[q + 4] === 10) ||
+      if (!(op === 2 || op === 3 || op === 4 || op === 5 || op === 7) || !(P[q + 4] === 1 || P[q + 4] === 2 || P[q + 4] === 3 || P[q + 4] === 4 || P[q + 4] === 10) ||
         !plain(P[q + 1]) || !plain(P[q + 2]) || !plain(P[q + 5]) || !plain(P[q + 6]) || P[q + 7] === 5) fast = 0;
     }
     i32[35] = fast;
@@ -191,6 +192,100 @@ export class Rasterizer {
     this.attributes(r0, r1, r2, v0, v1, v2);
     this.scan();
   }
+  // ---- lines ----
+  /** line state (RefRast+0x470..0x4a0): x-major?, major length f32(d*1/16), minor delta, the int64 constant of the
+   *  minor-axis equation, pixel step, current major pixel, pixel count - 1 */
+  private lineMode = false; private lXmaj = false; private lLen = 0; private lMinorD = 0; private lC = 0; private lStep = 0;
+  private lCur = 0; private lCount = 0;
+  /** DrawLine 0x4117e1 without multisampling: setup 0x4143d7, the attribute planes in line mode (0x410f7d with the
+   *  first vertex as the third, planes 0x418272), scan 0x418c00. lastPixel = RS LASTPIXEL as the caller has it. */
+  line(v0: V, v1: V, lastPixel: boolean): void {
+    if (this.lineSetup(v0, v1, lastPixel)) return;
+    if (this.st.rs[Rs.FILLMODE] !== 3 && this.st.rs[Rs.FILLMODE] !== 2) throw new Error('RefDevice: lines in FILLMODE POINT are not implemented');
+    const c = this.clip;
+    this.bx = Math.max(Math.abs(c.l), Math.abs(c.r) + 1); this.by = Math.max(Math.abs(c.t), Math.abs(c.b) + 1);
+    this.wConst = this.Arhw === 0 && this.Brhw === 0 ? recip(0, 0, this.Crhw) : NaN;
+    this.Mrhw = (Math.abs(this.Arhw) * this.bx + Math.abs(this.Brhw) * this.by + Math.abs(this.Crhw)) * EPS;
+    this.lineMode = true;
+    this.attributes(v0, v1, v0, v0, v1, v0);
+    this.lineMode = false;
+    // scan 0x418c00: pixel 0 of the quad only; the clip rect test and LINEPATTERN (RS 10: repeat, pattern) per pixel
+    const cov = this.cov; cov[0] = 1; cov[1] = 0; cov[2] = 0; cov[3] = 0;
+    const lp = this.st.rs[Rs.LINEPATTERN] >>> 0, rep = lp & 0xffff, pat = lp >>> 16;
+    let cnt = 0, bit = 0;
+    const den = 16 * this.lLen16, k1 = den < 0 ? 1 : 0, aden = Math.abs(den), dC = this.lC, dM = this.lMinorD;
+    for (let i = 0; i <= this.lCount; i++) {
+      // step 0x413b03: minor = (16*cur*delta + C) / (16*len) rounded to nearest, ties toward -inf (exact in doubles:
+      // |terms| < 2^47)
+      const cur = this.lCur;
+      const num = 16 * cur * dM + dC, k = (num < 0 ? 1 : 0) + k1, t = k === 1 ? 0 : 1;
+      const n = Math.abs(num) + ((aden - t) >> 1);
+      let q = Math.floor(n / aden);
+      if (q * aden > n) q--; else if ((q + 1) * aden <= n) q++;   // the int64 division's floor, whatever the rounding
+      if (t === 0) q = -q;
+      const px = this.lXmaj ? cur : q, py = this.lXmaj ? q : cur;
+      this.lCur = cur + this.lStep;
+      if (px < c.l || px > c.r || py < c.t || py > c.b) continue;
+      let on = 1;
+      if (rep !== 0) { on = (pat >> bit) & 1; if (++cnt >= rep) { cnt = 0; bit = (bit + 1) & 15; } }
+      if (on) this.quad(px, py);
+    }
+  }
+  /** the major delta in 28.4 (RefRast+0x480) */
+  private lLen16 = 0;
+  /** line setup 0x4143d7; true = nothing to draw */
+  private lineSetup(a: V, b: V, lastPixel: boolean): boolean {
+    const fr = Math.fround;
+    F1[0] = fr(a.f[a.o + SX] + 786432); const X0 = (I1[0] << 10) >> 10; F1[0] = fr(a.f[a.o + SY] + 786432); const Y0 = (I1[0] << 10) >> 10;
+    F1[0] = fr(b.f[b.o + SX] + 786432); const X1 = (I1[0] << 10) >> 10; F1[0] = fr(b.f[b.o + SY] + 786432); const Y1 = (I1[0] << 10) >> 10;
+    const dx = X1 - X0, dy = Y1 - Y0;
+    if (dx === 0 && dy === 0) return true;
+    const xm = Math.abs(dx) >= Math.abs(dy), major = xm ? dx : dy;
+    this.lXmaj = xm; this.lLen16 = major; this.lMinorD = xm ? dy : dx;
+    this.lC = xm ? X1 * Y0 - X0 * Y1 : X0 * Y1 - X1 * Y0;   // < 2^43: exact
+    const len = major * 0.0625; this.lLen = len;
+    // diagonal ties (|dx| == |dy|): sp = the slope is positive; it biases the x rounding and the diamond's corners
+    const diag = Math.abs(dx) === Math.abs(dy), sp = diag && dy / dx > 0;
+    const ax = 7 + (sp ? 1 : 0);
+    const sx = (X0 + ax) >> 4, ex = (X1 + ax) >> 4, sy = (Y0 + 7) >> 4, ey = (Y1 + 7) >> 4;
+    const inS = diamond(X0 - 16 * sx, Y0 - 16 * sy, diag, sp), inE = diamond(X1 - 16 * ex, Y1 - 16 * ey, diag, sp);
+    const step = len > 0 ? 1 : -1;
+    this.lStep = step;
+    const mS = xm ? X0 : Y0, mE = xm ? X1 : Y1;
+    let s = xm ? sx : sy, e = xm ? ex : ey;
+    // a start outside the diamond: its pixel only when the line starts before the pixel's centre (along the step)
+    if (!inS && !(step > 0 ? mS < 16 * s : mS > 16 * s)) s += step;
+    // the end: inside the diamond, LASTPIXEL decides; outside, the line must pass the pixel's centre
+    if (!(inE ? lastPixel : step > 0 ? 16 * e < mE : 16 * e > mE)) e -= step;
+    if (step > 0 ? e < s : e > s) return true;
+    // the clip rect on the major axis (both ends beyond one side: nothing); clamped to [0, max] (sic: 0, not min)
+    const c = this.clip, mn = xm ? c.l : c.t, mx = xm ? c.r : c.b;
+    if ((s < mn && e < mn) || (s > mx && e > mx)) return true;
+    let t = Math.min(s, mx); s = t < 0 ? 0 : t;
+    t = Math.min(e, mx); e = t < 0 ? 0 : t;
+    if (step > 0 ? e < s : e > s) return true;
+    this.lCount = Math.abs(e - s); this.lCur = s;
+    this.fX0 = X0 * 0.0625; this.fY0 = Y0 * 0.0625;
+    // the rhw plane: as a line attribute plane with values 1
+    const w0 = a.f[a.o + RHW], w1 = b.f[b.o + RHW];
+    this.linePlane(w0, w1);
+    this.Arhw = this.lA; this.Brhw = this.lB; this.Crhw = this.lCc;
+    return false;
+  }
+  private lA = 0; private lB = 0; private lCc = 0;
+  /** a line attribute plane (0x418272; the rhw plane of 0x4143d7 is the same with a = 1): from p0 = f32(w0*a0) and
+   *  x1 = w1*a1 (exact in double), slope = E(E(x1 - p0) / len) along the major axis, A or B = f32(slope), C =
+   *  f32(E(E(p0 - A*fX0) - B*fY0)) with B unrounded */
+  private linePlane(p0: number, x1: number): void {
+    E.ld(x1); E.fsub(p0); E.fdiv(this.lLen);
+    const sh = E.A[0], sl = E.A[1], s32 = E.st32();
+    const A = this.lXmaj ? s32 : 0;
+    this.lA = A; this.lB = this.lXmaj ? 0 : s32;
+    E.ld(A * this.fX0); E.fsubr(p0); const ch = E.A[0], cl = E.A[1];
+    if (this.lXmaj) { E.ldE(ch, cl); } else { E.ldE(sh, sl); E.fmul(this.fY0); E.ldE(-E.A[0], -E.A[1]); E.faddE(ch, cl); }
+    this.lCc = E.st32();
+  }
+
   /** W when the rhw plane is constant (A = B = 0), else NaN */
   private wConst = NaN;
   /** the rhw plane's bound, as Plane.M */
@@ -330,6 +425,12 @@ export class Rasterizer {
   }
   private plane(p: Plane, i: number, w: Float64Array): void {
     const a0 = this.pa[0], a1 = this.pa[1], a2 = this.pa[2];
+    if (this.lineMode) {   // 0x4183aa in line mode -> 0x418272
+      this.linePlane(f32(w[0] * a0), w[1] * a1);
+      const A = this.lA, B = this.lB, C = this.lCc;
+      p.A[i] = A; p.B[i] = B; p.C[i] = C; p.M[i] = (Math.abs(A) * this.bx + Math.abs(B) * this.by + Math.abs(C)) * EPS;
+      return;
+    }
     // fast path: doubles with error bounds (see evalW); the products w*a are exact
     {
       const p0 = w[0] * a0, x1 = w[1] * a1, x2 = w[2] * a2;
@@ -458,7 +559,7 @@ export class Rasterizer {
       const xa = x * A[i], yb = y * B[i], c = C[i], r = (xa + yb + c) * w, e = M[i] * aw;
       let v = fr(r - e);
       if (v !== fr(r + e)) v = r === 0 && sum3Exact(xa, yb, c) ? r : evalW(xa, yb, c, w);
-      out[i] = v > 1 ? 1 : v >= 0 ? v : 0;
+      out[i] = v > 1 ? 1 : v < 0 ? 0 : v;
     }
   }
 
@@ -695,6 +796,15 @@ export class Rasterizer {
   }
 }
 
+/** the diamond test of a line end 0x413aa8: (fx, fy) = the end's 28.4 offset from its pixel's centre. Inside |fx| +
+ *  |fy| < 8, plus the corners (8, 0) ((-8, 0) for a positive diagonal) and (0, 8); on a diagonal the edge points of
+ *  one quadrant ((+,+), or (-,+) for a positive diagonal) */
+function diamond(fx: number, fy: number, diag: boolean, sp: boolean): boolean {
+  const s = Math.abs(fx) + Math.abs(fy);
+  if (s < 8 || (fx === (sp ? -8 : 8) && fy === 0) || (fy === 8 && fx === 0)) return true;
+  if (diag && s === 8) return (sp ? fx < 0 : fx > 0) && fy > 0;
+  return false;
+}
 /** the stage ops the kernel has (rast.ts's colorOp / alphaOp cases) */
 const KOPS = new Set([2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 22, 23, 25, 26]);
 const DITHER = [0.03125, 0.53125, 0.15625, 0.65625, 0.78125, 0.28125, 0.90625, 0.40625, 0.21875, 0.71875, 0.09375, 0.59375,
@@ -736,7 +846,8 @@ export function depth16(a: number, b: number, c: number): number {
     if (q === Math.floor(v + e)) return q;
   }
   E.ld(a); E.fadd(b); E.fadd(c);
-  E.ld(clamp01(E.st64())); E.fmul(65535); E.fadd(0.5);
+  const zc = E.st64();
+  E.ld(zc > 1 ? 1 : zc >= 0 ? zc : 0); E.fmul(65535); E.fadd(0.5);
   return truncE(E.A[0], E.A[1]);
 }
 

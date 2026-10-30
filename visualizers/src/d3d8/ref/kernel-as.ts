@@ -43,7 +43,7 @@ function fr(x: f64): f64 { return <f64><f32>x; }
 function bitsOf(x: f64): i32 { return reinterpret<i32>(<f32>x); }
 function fromBits(u: i32): f64 { return <f64>reinterpret<f32>(u); }
 function ftol(v: f64): i32 { return v > -2147483649.0 && v < 2147483648.0 ? <i32>v : -2147483648; }
-function clamp01(v: f64): f64 { return v > 1 ? 1 : v >= 0 ? v : 0; }
+function clamp01(v: f64): f64 { return v > 1 ? 1 : v < 0 ? 0 : v; }   // NaN stays NaN, as REF's
 function si(i: i32): i32 { return load<i32>(SI + (<usize>i << 2)); }
 function sf(i: i32): f64 { return load<f64>(SF + (<usize>i << 3)); }
 
@@ -184,7 +184,7 @@ function depth16(a: f64, b: f64, c: f64): i32 {
     if (q == Math.floor(v + e)) return <i32>q;
   }
   ld(a); fadd(b); fadd(c);
-  ld(clamp01(A0)); fmul(65535); fadd(0.5);
+  const zc = A0; ld(zc > 1 ? 1 : zc >= 0 ? zc : 0); fmul(65535); fadd(0.5);
   return <i32>truncE(A0, A1);
 }
 function lenE(a: f64, b: f64): void {
@@ -523,7 +523,7 @@ function color(p: usize, out: usize, x: i32, y: i32, w: f64): void {
     const xa = <f64>x * pA(p, i), yb = <f64>y * pB(p, i), c = pC(p, i), r = (xa + yb + c) * w, e = pM(p, i) * aw;
     let v = fr(r - e);
     if (v != fr(r + e)) v = r == 0 && sum3Exact(xa, yb, c) ? r : evalW(xa, yb, c, w);
-    store<f64>(out + (<usize>i << 3), v > 1 ? 1 : v >= 0 ? v : 0);
+    store<f64>(out + (<usize>i << 3), v > 1 ? 1 : v < 0 ? 0 : v);
   }
 }
 
@@ -719,7 +719,7 @@ function alphaOp(op: i32, a1: f64, a2: f64, c1: f64, c2: f64, c0: f64, difA: f64
   }
 }
 
-/** the stage chain for the common case (i32 35 set by the glue: every op in SELECTARG1/2, MODULATE, ADD, alpha also
+/** the stage chain for the common case (i32 35 set by the glue: every op in SELECTARG1/2, MODULATE, MODULATE2X, ADD, alpha also
  *  DISABLE and SUBTRACT, arguments DIFFUSE / CURRENT / TEXTURE / TFACTOR without modifiers, results to CURRENT):
  *  the same arithmetic as the generic loop below, in locals */
 function stagesFast(k: i32): void {
@@ -744,6 +744,7 @@ function stagesFast(k: i32): void {
     if (op == 2) { rr = x1r; rg = x1g; rb = x1b; }
     else if (op == 3) { rr = x2r; rg = x2g; rb = x2b; }
     else if (op == 4) { rr = fr(x2r * x1r); rg = fr(x2g * x1g); rb = fr(x2b * x1b); }
+    else if (op == 5) { ld(x2r * 2); fmul(x1r); rr = st32(); ld(x2g * 2); fmul(x1g); rg = st32(); ld(x2b * 2); fmul(x1b); rb = st32(); }
     else { rr = add32(x2r, x1r); rg = add32(x2g, x1g); rb = add32(x2b, x1b); }
     const aop = si(q + 4), m1 = si(q + 5), m2 = si(q + 6);
     const al1 = m1 == 0 ? da : m1 == 1 ? ca : m1 == 2 ? t3 : f3, al2 = m2 == 0 ? da : m2 == 1 ? ca : m2 == 2 ? t3 : f3;

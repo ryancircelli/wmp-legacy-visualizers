@@ -12,6 +12,7 @@ import {
   type Device, type Texture, type Surface, type Buffer, type StateBlock, Fmt, Pool, Usage, Lock, Prim, ClearFlag, Ts, Rs, Tss,
 } from '../d3d8/api';
 import { drawEq } from './eq';
+import { FONT_RS, FONT_TSS } from '../d3d8/d3dfont';
 
 export const OBJ_SIZE = 0x3123c;
 
@@ -76,11 +77,6 @@ const P0_RS: [number, number][] = [[Rs.LIGHTING, 1], [Rs.SPECULARENABLE, 1]];
 const P0_TSS0: [number, number][] = [[24, 2], [1, 2], [2, 2], [3, 1], [4, 10], [5, 2], [6, 0], [17, 2], [16, 2], [18, 1]];
 const P0_TSS1: [number, number][] = [[24, 2], [1, 7], [2, 2], [3, 1], [4, 3], [5, 2], [6, 1], [17, 2], [16, 2], [18, 1]];
 const P0_TSS2: [number, number][] = [[1, 1], [4, 1]];
-// CD3DFont (the DirectX 8 SDK framework's d3dfont.cpp) draw state, recorded twice per font (saved + drawing block)
-const FONT_RS: [number, number][] = [[7, 0], [27, 1], [19, 5], [20, 6], [15, 1], [24, 8], [25, 7], [8, 3], [22, 3], [52, 0],
-  [136, 1], [40, 0], [152, 0], [151, 0], [167, 0], [28, 0]];
-const FONT_TSS: [number, number, number][] = [[0, 1, 4], [0, 2, 2], [0, 3, 0], [0, 4, 4], [0, 5, 2], [0, 6, 0], [0, 17, 1],
-  [0, 16, 1], [0, 18, 0], [0, 11, 0], [0, 24, 0], [1, 1, 1], [1, 4, 1]];
 
 /** The DLL's CRT rand: holdrand on the render thread */
 class Crt { h = 1; srand(s: number): void { this.h = s >>> 0; } rand(): number { this.h = (Math.imul(this.h, 214013) + 2531011) >>> 0; return (this.h >>> 16) & 0x7fff; } }
