@@ -268,6 +268,9 @@ function level(m: RefSurface9, lc: LodControls, which: number, uv: Float64Array,
   out[o] = r; out[o + 1] = g; out[o + 2] = b; out[o + 3] = a;
 }
 
+/** WritePixelColor 0x10016572's dither offsets (0x10059530), by (x & 3) * 4 + (y & 3) */
+export const DITHER = [1, 17, 5, 21, 25, 9, 29, 13, 7, 23, 3, 19, 31, 15, 27, 11].map((k) => k / 32);
+
 const GEN_ST = new SamplerState().s;
 GEN_ST[Ss.ADDRESSU] = Address.CLAMP; GEN_ST[Ss.ADDRESSV] = Address.CLAMP;
 const GEN_LC = new LodControls();
@@ -280,11 +283,14 @@ const GEN_C = new Float64Array(4);
  *  The x87 precision is whatever the DrawPrimitives2 batch has: BeginRendering 0x100143ea sets 64 bits only when the
  *  batch's first drawing token runs, so a GENERATEMIPSUBLEVELS ahead of it runs at the application's precision
  *  (Bubbles: 24 bits, CW 0x007F). At 24 bits every step of this path rounds as its float store does, except
- *  ConvertTo's c * 255 and + 0.5, which round to 24 bits before the truncation. */
-export function generateMips(tex: RefTexture9, filter: number, pc64: boolean): void {
+ *  ConvertTo's c * 255 and + 0.5, which round to 24 bits before the truncation.
+ *  WritePixel goes through the device's render target writer, so DITHERENABLE (RefDev+0x10d6f0) dithers the levels
+ *  too: + DITHER[(x & 3) * 4 + (y & 3)] at the level's texel in place of + 0.5 (Distortion). */
+export function generateMips(tex: RefTexture9, filter: number, pc64: boolean, dither: boolean): void {
   GEN_ST[Ss.MINFILTER] = filter;
   const x8 = tex.format === Fmt.X8R8G8B8;
-  const cv = pc64 ? (c: number): number => (c * 255 + 0.5) | 0 : (c: number): number => fr(fr(c * 255) + 0.5) | 0;
+  let h = 0.5;
+  const cv = pc64 ? (c: number): number => (c * 255 + h) | 0 : (c: number): number => fr(fr(c * 255) + h) | 0;
   for (let L = 1; L < tex.mips.length; L++) {
     const src: MipChain = { mips: [tex.mips[L - 1]] }, dst = tex.mips[L], W = dst.width, H = dst.height, d = dst.data;
     lodFromValue(src, GEN_ST, 1, Filter.NONE, filterOf(filter), 0, GEN_LC);
@@ -293,6 +299,7 @@ export function generateMips(tex: RefTexture9, filter: number, pc64: boolean): v
       for (let x = 0; x < W; x++) {
         GEN_UV[0] = fr((x + 0.5) / W);
         sample(src, GEN_ST, GEN_LC, GEN_UV, 0, 1, GEN_C, 0);
+        if (dither) h = DITHER[((x & 3) << 2) | (y & 3)];
         const q = y * dst.pitch + x * 4;
         d[q] = cv(GEN_C[2]); d[q + 1] = cv(GEN_C[1]); d[q + 2] = cv(GEN_C[0]); d[q + 3] = x8 ? 0 : cv(GEN_C[3]);
       }

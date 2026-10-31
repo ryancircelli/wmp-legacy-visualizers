@@ -9,7 +9,43 @@
 // and quotient of two floats to more than 2 * 24 + 2 bits), so this file and the scenes round after each operation.
 // Matrices are 16 float32s, row-major as D3DMATRIX.
 export const f = Math.fround;
-const F1 = new Float32Array(1), U1 = new Uint32Array(F1.buffer);
+
+// When an operand is NOT a float (a double constant, a double the CRT returned, a 32-bit integer), JS's f(a * b)
+// rounds twice: to a double, then to a float. The x87 rounds the exact result once. The two differ only when the
+// double lands exactly halfway between two floats while the exact result does not (about 2^-29 of such operations).
+// xmul / xdiv / xadd return the double nudged one double-ulp toward the exact result in that case, so the caller's
+// f() (or any 24-bit round) then rounds the way the x87 does; anywhere else they are a * b, a / b, a + b.
+const D1 = new Float64Array(1), W1 = new Uint32Array(D1.buffer);
+const SPLIT = 134217729;   // 2^27 + 1 (Veltkamp)
+/** x halfway between two floats: its 29 mantissa bits below a float's are 1 then 28 zeros */
+const mid = (x: number): boolean => { D1[0] = x; return (W1[0] & 0x1fffffff) === 0x10000000; };
+/** x one double-ulp toward the side err (exact result - x) points to (x is a midpoint: no carry or borrow) */
+function nudge(x: number, err: number): number {
+  if (err === 0) return x;
+  D1[0] = x;
+  W1[0] = W1[0] + ((err > 0) === (x > 0) ? 1 : -1);
+  return D1[0];
+}
+/** the rounding error of a * b (Dekker: exact while nothing over/underflows) */
+function mulErr(a: number, b: number, p: number): number {
+  const t = SPLIT * a, ah = t - (t - a), al = a - ah, u = SPLIT * b, bh = u - (u - b), bl = b - bh;
+  return ((ah * bh - p) + ah * bl + al * bh) + al * bl;
+}
+export function xmul(a: number, b: number): number { const p = a * b; return mid(p) ? nudge(p, mulErr(a, b, p)) : p; }
+export function xdiv(a: number, b: number): number {
+  const q = a / b;
+  if (!mid(q)) return q;
+  const ph = q * b, rem = (a - ph) - mulErr(q, b, ph);   // a - q b, exact
+  return nudge(q, b > 0 ? rem : -rem);
+}
+export function xadd(a: number, b: number): number {
+  const s = a + b;
+  if (!mid(s)) return s;
+  const v = s - a;
+  return nudge(s, (a - (s - v)) + (b - v));
+}
+
+const F1 =new Float32Array(1), U1 = new Uint32Array(F1.buffer);
 const bits = (x: number): number => { F1[0] = x; return U1[0]; };
 const float = (u: number): number => { U1[0] = u >>> 0; return F1[0]; };
 
@@ -81,5 +117,17 @@ export function lookAtRH(out: Float32Array, eye: ArrayLike<number>, at: ArrayLik
   out[13] = -f(f(f(y[0] * eye[0]) + f(y[1] * eye[1])) + f(y[2] * eye[2]));
   out[14] = -f(f(f(z[0] * eye[0]) + f(z[1] * eye[1])) + f(z[2] * eye[2]));
   out[15] = 1;
+  return out;
+}
+
+/** D3DXMatrixPerspectiveFovRH (d3dx9_29 0x441e96): FSINCOS of fovy * 0.5 (its results stored as floats) */
+export function perspectiveFovRH(out: Float32Array, fovy: number, aspect: number, zn: number, zf: number): Float32Array {
+  const h = f(fovy * 0.5), ys = f(f(Math.cos(h)) / f(Math.sin(h)));
+  out.fill(0);
+  out[0] = f(ys / aspect);
+  out[5] = ys;
+  out[10] = f(zf / f(zn - zf));
+  out[11] = -1;
+  out[14] = f(out[10] * zn);
   return out;
 }

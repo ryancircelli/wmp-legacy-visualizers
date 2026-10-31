@@ -1,7 +1,8 @@
 /* eslint-disable */
 // @ts-nocheck
 // AssemblyScript source of ./kernel-wasm.ts: the per-quad part of ./rast.ts (the 2x2-quad scan, EVAL, the pixel
-// shader of ./ps.ts with texld's LOD and bilinear sampling from ./tex.ts, the pixel operations) compiled to
+// shader of ./ps.ts (ps_2_0 and ps_1_x) with texld's LOD and bilinear sampling from ./tex.ts, the fixed-function
+// texture stages, the pixel operations) compiled to
 // WebAssembly, the same arithmetic operation for operation (doubles where the JS uses doubles, an f32 conversion where
 // it calls Math.fround, the same 64-bit x87 emulation for the fallbacks: see ../../d3d8/ref/ext.ts, ported here as
 // ../../d3d8/ref/kernel-as.ts did), so its pixels are the JS path's. The JS stays the reference and the path without
@@ -12,10 +13,15 @@
 
 // ---- layout (byte offsets; ./kernel.ts mirrors these) ----
 // i32 at SI + 4*i: 0 xmin 1 xmax 2 ymin 3 ymax 4..6 edge inclusive flags 7 live0 8 nInputs 9 rt 10 rtPitch 11 rtX8
-//  12 readDst 13 blend 14 srcBlend 15 destBlend 16 cwe 17 nOps; inputs at 32 + 2*i: register (f64 index in a
-//  pixel's file), coord flag
+//  12 readDst 13 blend 14 srcBlend 15 destBlend 16 cwe 17 nOps 18 kill op 19 kill register 20 the colour result's
+//  register (oC0, r0 for ps_1_x) 21 legacy (REF's fixed-function shader: the stages below) 22 SPECULARENABLE
+//  23 ZFUNC (0: no depth) 24 the D16 depth buffer 25 its pitch in texels 26 ZWRITEENABLE 27 DITHERENABLE
+//  28 the target's texel plane when the draw also samples the target (0: none) 29 the target's width;
+//  inputs at 32 + 2*i: register (f64 index in a pixel's file), flags (1 texld coordinate, 2 clamped to [0, 1]);
+//  the legacy texture stages at 64 + 8*s: COLOROP ALPHAOP COLORARG1 COLORARG2 ALPHAARG1 ALPHAARG2 RESULTARG
+//  (up to the first COLOROP DISABLE)
 // f64 at SF + 8*i: 0..2 edge A 3..5 edge B 6..8 edge C (exact integers), 9 wConst (NaN: none), 10..12 rhw plane
-//  A B C; input planes at 16 + 4*i: A B C K (K NaN: not constant)
+//  A B C, 13..15 z plane A B C; input planes at 16 + 4*i: A B C K (K NaN: not constant)
 // samplers at SAMP + 256*s: i32 0 hasTex 1 nLevels 2 mag 3 min 4 mip 5 bias bits 6 maxMip 7 addrU 8 addrV
 //  9 format; levels at i32 16 + 4*l: ptr, width, height, texel plane (f64 r g b a per texel: tex.ts planeFor)
 // ops at PROG + 96*n: i32 op dst mask sat sampler a0 a1 a2 a3 na b0 b1 b2 b3 nb c0 c1 c2 c3 nc (register indices)
@@ -26,7 +32,8 @@ const STATE: usize = 1024;
 const SI: usize = STATE, SF: usize = STATE + 1024;
 const SAMP: usize = 4096, PROG: usize = 8192, PROGF: usize = 14336, B255: usize = 22528, REGS: usize = 24576;
 const SMP: usize = 34816, DER: usize = 34880, SCA: usize = 35072, SCW: usize = 35328, SMPQ: usize = 35840, LODC: usize = 36864;
-const PS_REGS: i32 = 312, PS_OC: i32 = 168;
+const LEG: usize = 40960;   // the legacy stages' current, temp, argument 1, argument 2 (f64 r g b a each)
+const PS_REGS: i32 = 312, PS_OC: i32 = 168, PS_V: i32 = 128, PS_T: i32 = 136;
 
 export function heapBase(): usize { return (__heap_base + 15) & ~(<usize>15); }
 export function stateBase(): usize { return STATE; }
@@ -74,6 +81,11 @@ function flog(x: f64): f64 {
   if (k == 0) return f - s * (f - R);
   return dk * ln2_hi - ((s * (f - R) - dk * ln2_lo) - f);
 }
+
+/** Math.pow(2, x) from the host (ps.ts pow's exp: V8's pow, which AssemblyScript's Math.pow is not) */
+declare function pow2(x: f64): f64;   // imported as kernel-as.pow2 (./kernel.ts)
+/** ooLOG2 (ps.ts OOLOG2): f32(1 / f32(ln 2)) */
+const OOLOG2: f64 = <f64><f32>(1 / <f64><f32>0.6931471805599453);
 
 const EPS: f64 = 8.881784197001252e-16;
 const LOG2E: f64 = 1.4426950408889634;
@@ -389,16 +401,29 @@ function runPS(live: i32): i32 {
       let ax = rg(b + a0), ay = rg(b + a1), az = rg(b + a2), aw = rg(b + a3);
       if (na) { ax = -ax; ay = -ay; az = -az; aw = -aw; }
       let vx = ax, vy = ay, vz = az, vw = aw;
-      if (o != 1) {
+      // ps_2_0's scalar ops (ps.ts run): rsq, nrm (rsq of the dp3, then mul), pow (log, mul, exp)
+      if (o == 7) { vx = fr(1 / fr(Math.sqrt(abs<f64>(ax)))); vy = vx; vz = vx; vw = vx; }
+      else if (o == 0x24) {
+        const sc = fr(1 / fr(Math.sqrt(abs<f64>(sum32x3(ax * ax, ay * ay, az * az)))));
+        vx = fr(ax * sc); vy = fr(ay * sc); vz = fr(az * sc); vw = fr(aw * sc);
+      } else if (o != 1) {
         let bx = rg(b + b0), by = rg(b + b1), bz = rg(b + b2), bw = rg(b + b3);
         if (nb) { bx = -bx; by = -by; bz = -bz; bw = -bw; }
-        if (o == 4) {
+        if (o == 0x20) { vx = fr(pow2(fr(fr(fr(flog(abs<f64>(ax))) * OOLOG2) * bx))); vy = vx; vz = vx; vw = vx; }
+        else if (o == 0x58) {
+          // cmp: src0 >= 0 (not NaN) picks src1, else src2
+          let cx = rg(b + c0), cy = rg(b + c1), cz = rg(b + c2), cw = rg(b + c3);
+          if (nc) { cx = -cx; cy = -cy; cz = -cz; cw = -cw; }
+          vx = ax >= 0 ? bx : cx; vy = ay >= 0 ? by : cy; vz = az >= 0 ? bz : cz; vw = aw >= 0 ? bw : cw;
+        } else if (o == 4) {
           let cx = rg(b + c0), cy = rg(b + c1), cz = rg(b + c2), cw = rg(b + c3);
           if (nc) { cx = -cx; cy = -cy; cz = -cz; cw = -cw; }
           // add32 on lane pairs (x, y) and (z, w); an unwritten lane's value is computed and dropped
           if ((mask & 3) != 0) { const v = add32v(f64x2.mul(pair(ax, ay), pair(bx, by)), pair(cx, cy)); vx = f64x2.extract_lane(v, 0); vy = f64x2.extract_lane(v, 1); }
           if ((mask & 12) != 0) { const v = add32v(f64x2.mul(pair(az, aw), pair(bz, bw)), pair(cz, cw)); vz = f64x2.extract_lane(v, 0); vw = f64x2.extract_lane(v, 1); }
-        } else if (o == 2) { vx = fr(ax + bx); vy = fr(ay + by); vz = fr(az + bz); vw = fr(aw + bw); }
+        } else if (o == 11) { vx = ax >= bx ? ax : bx; vy = ay >= by ? ay : by; vz = az >= bz ? az : bz; vw = aw >= bw ? aw : bw; }   // max
+        else if (o == 8) { vx = sum32x3(ax * bx, ay * by, az * bz); vy = vx; vz = vx; vw = vx; }   // dp3
+        else if (o == 2) { vx = fr(ax + bx); vy = fr(ay + by); vz = fr(az + bz); vw = fr(aw + bw); }
         else { vx = fr(ax * bx); vy = fr(ay * by); vz = fr(az * bz); vw = fr(aw * bw); }
       }
       if (sat != 0) {
@@ -417,7 +442,81 @@ function runPS(live: i32): i32 {
 // ---- the quad scan and the pixel operations (rast.ts scan / quad / pixel) ----
 /** the draw's target and blend state, read once per triangle by scan() */
 let gRt: usize = 0, gPitch = 0, gX8 = false, gRead = false, gBlend = false, gSb = 0, gDb = 0, gCwe = 0, gLive0 = 0, gNIn = 0;
-let gWc: f64 = 0, gRA: f64 = 0, gRB: f64 = 0, gRC: f64 = 0;
+let gWc: f64 = 0, gRA: f64 = 0, gRB: f64 = 0, gRC: f64 = 0, gOut = 0, gLegacy = false, gSpec = false;
+let gDith = false, gSelf: usize = 0, gSelfW = 0;
+let gZf = 0, gZb: usize = 0, gZp = 0, gZw = false, gZA: f64 = 0, gZB: f64 = 0, gZC: f64 = 0;
+
+/** rast.ts depthTest: the covered pixels that pass ZFUNC, writing their depth for ZWRITEENABLE */
+function depthTest(x: i32, y: i32, cov: i32): i32 {
+  const zf = gZf;
+  let pass = 0;
+  for (let k = 0; k < 4; k++) {
+    if (((cov >> k) & 1) == 0) continue;
+    const px = x + (k & 1), py = y + (k >> 1);
+    const z = sum32x3(gZB * <f64>py, gZA * <f64>px, gZC);
+    const u = <i32>(clamp01(z) * 65535 + 0.5), a: usize = gZb + (<usize>(py * gZp + px) << 1), b = <i32>load<u16>(a);
+    const ok = zf == 2 ? u < b : zf == 3 ? u == b : zf == 4 ? u <= b : zf == 5 ? u > b : zf == 6 ? u != b : zf == 7 ? u >= b : zf != 1;
+    if (ok) { pass |= 1 << k; if (gZw) store<u16>(a, <u16>u); }
+  }
+  return pass;
+}
+
+// ---- the legacy texture stages (rast.ts legacyOp / legacyBlend / arg) ----
+function legOp(op: i32, a1: f64, a2: f64): f64 {
+  if (op == 2) return a1;
+  if (op == 3) return a2;
+  if (op == 4) return fr(a2 * a1);
+  if (op == 5) return fr(a2 * a1 * 2);
+  if (op == 6) return fr(a2 * a1 * 4);
+  if (op == 11) return addSmooth(a1, a2);
+  return fr(a2 + a1);   // 7 (rast.ts upload admits 2..7 and 11 only)
+}
+/** rast.ts addSmooth */
+function addSmooth(a1: f64, a2: f64): f64 {
+  const p = (1 - a1) * a2, r = p + a1, e = (abs<f64>(p) + abs<f64>(a1)) * EPS, lo = fr(r - e);
+  if (lo == fr(r + e)) return lo;
+  ld(1); A0 = eadd(A0, A1, -a1, 0); A1 = T2; A0 = emul(A0, A1, a2, 0); A1 = T2; fadd(a1); return st32();
+}
+function clamp01(v: f64): f64 { return v > 1 ? 1 : v >= 0 ? v : 0; }
+/** ComputeTextureBlendArg into out */
+function legArg(code: i32, alpha: bool, b: i32, stage: i32, out: usize): void {
+  const c = code & 0xf;
+  const src: usize = c == 0 ? REGS + (<usize>(b + PS_V) << 3) : c == 1 ? LEG : c == 2 ? REGS + (<usize>(b + PS_T + stage * 4) << 3)
+    : c == 4 ? REGS + (<usize>(b + PS_V + 4) << 3) : LEG + 32;
+  let r = load<f64>(src), g = load<f64>(src, 8), bl = load<f64>(src, 16), a = load<f64>(src, 24);
+  if ((code & 0x10) != 0) {
+    a = fr(1 - a);
+    if (!alpha) { r = fr(1 - r); g = fr(1 - g); bl = fr(1 - bl); }
+  }
+  if (!alpha && (code & 0x20) != 0) { r = a; g = a; bl = a; }
+  store<f64>(out, r); store<f64>(out, g, 8); store<f64>(out, bl, 16); store<f64>(out, a, 24);
+}
+/** the stages for the pixel whose file starts at register b, into its oC0 */
+function legacyBlend(b: i32): void {
+  const v: usize = REGS + (<usize>(b + PS_V) << 3), A1: usize = LEG + 64, A2: usize = LEG + 96;
+  store<f64>(LEG, load<f64>(v)); store<f64>(LEG, load<f64>(v, 8), 8); store<f64>(LEG, load<f64>(v, 16), 16); store<f64>(LEG, load<f64>(v, 24), 24);
+  store<f64>(LEG, 0, 32); store<f64>(LEG, 0, 40); store<f64>(LEG, 0, 48); store<f64>(LEG, 0, 56);
+  for (let s = 0; s < 8; s++) {
+    const o = 64 + 8 * s, cop = si(o);
+    if (cop == 1) break;
+    legArg(si(o + 2), false, b, s, A1); legArg(si(o + 3), false, b, s, A2);
+    const c0 = legOp(cop, load<f64>(A1), load<f64>(A2)), c1 = legOp(cop, load<f64>(A1, 8), load<f64>(A2, 8)), c2 = legOp(cop, load<f64>(A1, 16), load<f64>(A2, 16));
+    legArg(si(o + 4), true, b, s, A1); legArg(si(o + 5), true, b, s, A2);
+    const c3 = legOp(si(o + 1), load<f64>(A1, 24), load<f64>(A2, 24));
+    const d: usize = si(o + 6) == 5 ? LEG + 32 : LEG;
+    store<f64>(d, clamp01(c0)); store<f64>(d, clamp01(c1), 8); store<f64>(d, clamp01(c2), 16); store<f64>(d, clamp01(c3), 24);
+  }
+  if (gSpec) for (let j = 0; j < 3; j++) store<f64>(LEG + (<usize>j << 3), clamp01(fr(load<f64>(LEG + (<usize>j << 3)) + load<f64>(v + (<usize>(4 + j) << 3)))));
+  const oc: usize = REGS + (<usize>(b + PS_OC) << 3);
+  for (let j = 0; j < 4; j++) store<f64>(oc + (<usize>j << 3), load<f64>(LEG + (<usize>j << 3)));
+}
+
+/** rast.ts DITHER: WritePixelColor's offset for (x & 3) * 4 + (y & 3), k / 32 */
+function dither(x: i32, y: i32): f64 {
+  const i = ((x & 3) << 2) | (y & 3);
+  return <f64>(<i32>load<u8>(changetype<usize>(DITH) + <usize>i)) / 32;
+}
+const DITH: StaticArray<u8> = [1, 17, 5, 21, 25, 9, 29, 13, 7, 23, 3, 19, 31, 15, 27, 11];
 
 function pixel(px: i32, py: i32, o: i32): void {
   if (gRead && gCwe == 15) { pixelBlend(px, py, o); return; }
@@ -442,8 +541,10 @@ function pixel(px: i32, py: i32, o: i32): void {
     if ((cwe & 8) == 0) a = ta;
     r = r > 1 ? 1 : r >= 0 ? r : 0; g = g > 1 ? 1 : g >= 0 ? g : 0; b = b > 1 ? 1 : b >= 0 ? b : 0; a = a > 1 ? 1 : a >= 0 ? a : 0;
   }
-  store<u8>(ro, <u8><i32>(b * 255 + 0.5)); store<u8>(ro + 1, <u8><i32>(g * 255 + 0.5)); store<u8>(ro + 2, <u8><i32>(r * 255 + 0.5));
-  store<u8>(ro + 3, x8 ? 0 : <u8><i32>(a * 255 + 0.5));
+  const h = gDith ? dither(px, py) : 0.5;
+  store<u8>(ro, <u8><i32>(b * 255 + h)); store<u8>(ro + 1, <u8><i32>(g * 255 + h)); store<u8>(ro + 2, <u8><i32>(r * 255 + h));
+  store<u8>(ro + 3, x8 ? 0 : <u8><i32>(a * 255 + h));
+  if (gSelf != 0) selfTexel(px, py, ro);
 }
 
 /** pixel() for a blended (or not) full colour write, on lane pairs (r, g), (b, a) */
@@ -461,13 +562,23 @@ function pixelBlend(px: i32, py: i32, o: i32): void {
     rgv = clampv(frv(f64x2.add(frv(f64x2.mul(rgv, sv)), frv(f64x2.mul(trg, dv)))));
     bav = clampv(frv(f64x2.add(frv(f64x2.mul(bav, sv)), frv(f64x2.mul(tba, dv)))));
   }
-  const h = f64x2.splat(255), half = f64x2.splat(0.5);
+  const h = f64x2.splat(255), half = f64x2.splat(gDith ? dither(px, py) : 0.5);
   const crg = f64x2.add(f64x2.mul(rgv, h), half), cba = f64x2.add(f64x2.mul(bav, h), half);
   store<u8>(ro, <u8><i32>f64x2.extract_lane(cba, 0)); store<u8>(ro + 1, <u8><i32>f64x2.extract_lane(crg, 1));
   store<u8>(ro + 2, <u8><i32>f64x2.extract_lane(crg, 0)); store<u8>(ro + 3, x8 ? 0 : <u8><i32>f64x2.extract_lane(cba, 1));
+
+  if (gSelf != 0) selfTexel(px, py, ro);
+}
+/** a draw that samples its own target reads what it has written so far (the JS samples the surface itself): the
+ *  written texel into the target's plane too (tex.ts planeFor's conversion) */
+function selfTexel(px: i32, py: i32, ro: usize): void {
+  const t = load<u32>(ro), q: usize = gSelf + (<usize>(py * gSelfW + px) << 5);
+  store<f64>(q, lut((t >> 16) & 255)); store<f64>(q, lut((t >> 8) & 255), 8); store<f64>(q, lut(t & 255), 16);
+  store<f64>(q, gX8 ? 1 : lut(t >> 24), 24);
 }
 
 function quad(x: i32, y: i32, cov: i32): void {
+  if (gZf != 0) { cov = depthTest(x, y, cov); if (cov == 0) return; }
   const wc = gWc, live = cov | gLive0, nIn = gNIn;
   const rA = gRA, rB = gRB, rC = gRC;
   for (let k = 0; k < 4; k++) {
@@ -477,16 +588,21 @@ function quad(x: i32, y: i32, cov: i32): void {
     let W = wc;
     if (W != W) { const r = sum32x3(rA * px, rB * py, rC); W = r == 0 ? 0 : fr(1 / r); }
     for (let i = 0; i < nIn; i++) {
-      if (lk == 0 && si(33 + 2 * i) == 0) continue;
+      const fl = si(33 + 2 * i);
+      if (lk == 0 && (fl & 1) == 0) continue;
       const pl = 16 + 4 * i, K = sf(pl + 3), reg = si(32 + 2 * i);
       if (K == K) { setRg(b + reg, K); continue; }
-      setRg(b + reg, fr(sum32x3(sf(pl) * px, sf(pl + 1) * py, sf(pl + 2)) * W));
+      const v = fr(sum32x3(sf(pl) * px, sf(pl + 1) * py, sf(pl + 2)) * W);
+      setRg(b + reg, (fl & 2) != 0 ? clamp01(v) : v);
     }
   }
   const left = runPS(live);
   for (let k = 0; k < 4; k++) {
     if (((cov >> k) & 1) == 0) continue;
-    if (((left >> k) & 1) != 0) pixel(x + (k & 1), y + (k >> 1), k * PS_REGS + PS_OC);
+    if (((left >> k) & 1) != 0) {
+      if (gLegacy) legacyBlend(k * PS_REGS);
+      pixel(x + (k & 1), y + (k >> 1), k * PS_REGS + gOut);
+    }
     // a killed pixel blends to the target's own colour; an X8 target's byte 3 is written 0
     else if (gX8) store<u8>(gRt + <usize>((y + (k >> 1)) * gPitch + (x + (k & 1)) * 4) + 3, 0);
   }
@@ -496,6 +612,8 @@ function quad(x: i32, y: i32, cov: i32): void {
 export function scan(): void {
   gRt = <usize>si(9); gPitch = si(10); gX8 = si(11) != 0; gRead = si(12) != 0; gBlend = si(13) != 0; gSb = si(14); gDb = si(15);
   gCwe = si(16); gLive0 = si(7); gNIn = si(8); gWc = sf(9); gRA = sf(10); gRB = sf(11); gRC = sf(12);
+  gOut = si(20); gLegacy = si(21) != 0; gSpec = si(22) != 0;
+  gDith = si(27) != 0; gSelf = <usize>si(28); gSelfW = si(29); gZf = si(23); gZb = <usize>si(24); gZp = si(25); gZw = si(26) != 0; gZA = sf(13); gZB = sf(14); gZC = sf(15);
   const a0 = sf(0) * 16, a1 = sf(1) * 16, a2 = sf(2) * 16, b0 = sf(3) * 16, b1 = sf(4) * 16, b2 = sf(5) * 16;
   const xmin = si(0), xmax = si(1), ymax = si(3);
   for (let y = si(2); y <= ymax; y += 2) {

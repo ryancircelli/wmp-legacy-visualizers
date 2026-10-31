@@ -14,12 +14,18 @@ import { type Dcl, Reg, parse } from './vs';
 import * as E from '../../d3d8/ref/ext';
 
 const fr = Math.fround;
-const Op = { MOV: 1, ADD: 2, MAD: 4, MUL: 5, TEXLD: 66 } as const;
+const Op = { MOV: 1, ADD: 2, MAD: 4, MUL: 5, RSQ: 7, DP3: 8, POW: 0x20, NRM: 0x24, CMP: 0x58, TEXLD: 66, MAX: 11 } as const;
+/** ooLOG2 0x1005b934 (its dynamic initializer 0x100071d0): f32(1 / f32(ln 2)) */
+const OOLOG2 = fr(1 / fr(Math.LN2));
+/** REF's own fixed-function pixel shader version (UpdateLegacyPixelShader 0x1002234f) */
+export const PS_LEGACY = 0xfffffefe;
 /** ps register types beyond vs's */
 const PReg = { TEXTURE: 3, COLOROUT: 8 } as const;
 
 /** the sampler a texld reads: its texture and states (filled by the device for each draw) */
 export interface Sampler { tex: RefTexture9 | null; st: Uint32Array }
+
+const PS_OPS = new Set<number>(Object.values(Op));
 
 /** per-pixel register file layout (doubles holding float values): r0..r31, v0..v1, t0..t7, oC0..oC3, c0..c31 */
 const R = 0, V = 32 * 4, T = V + 2 * 4, OC = T + 8 * 4, C = OC + 4 * 4;
@@ -39,6 +45,12 @@ interface POp {
 
 export class PixelShader9 {
   readonly dcls: Dcl[];
+  readonly version: number;
+  /** a ps_1_x or the legacy shader: colour inputs evaluated clamped to [0, 1] (CPSTrans::Initialize 0x1002f97d, the
+   *  EVAL clamp flag for versions below 1.4), the colour result r0 (DoPixels 0x100251ab: RDColor::Clamp) */
+  readonly v1: boolean;
+  /** the register-file offset of the colour result (oC0, or r0 for ps_1_x) */
+  readonly out: number;
   readonly prog: POp[] = [];
   readonly consts = new Float32Array(32 * 4);
   private defMask = new Uint8Array(32);
@@ -50,15 +62,41 @@ export class PixelShader9 {
   private smp = new Float64Array(4);
   private tmp = new Float64Array(12);
   constructor(tokens: Uint32Array) {
-    const p = parse(tokens);
-    if ((p.version >>> 16) !== 0xffff || (p.version & 0xffff) !== 0x200) throw new Error('RefDevice9: only ps_2_0 is implemented');
+    const p = parse(tokens), ver = p.version;
+    this.version = ver;
+    this.v1 = ver === PS_LEGACY || (ver >= 0xffff0101 && ver <= 0xffff0103);
+    if (!this.v1 && ver !== 0xffff0200) throw new Error('RefDevice9: pixel shader version ' + ver.toString(16) + ' is not implemented');
+    this.out = this.v1 && ver !== PS_LEGACY ? R : OC;   // (the legacy result: rast.ts's stage blending into oC0)
     this.dcls = p.dcls;
+    if (this.v1) {
+      // 1.x declares nothing: the inputs are the t# a tex samples through and the v# read
+      const seen = new Set<number>();
+      const add = (type: number, num: number): void => {
+        const k = type * 64 + num;
+        if (!seen.has(k)) { seen.add(k); this.dcls.push({ type, num, usage: 0, index: 0, mask: 0xf }); }
+      };
+      for (const i of p.code) {
+        if (i.op === Op.TEXLD) add(PReg.TEXTURE, i.dst.num);
+        for (const s of i.src) if (s.type === Reg.INPUT) add(Reg.INPUT, s.num);
+      }
+    }
     for (const d of p.defs) { this.consts.set(d.v, d.num * 4); this.defMask[d.num] = 1; }
     const written = new Set<number>();
     let inputCoords = true;
     for (const i of p.code) {
-      if (i.op !== Op.MOV && i.op !== Op.ADD && i.op !== Op.MAD && i.op !== Op.MUL && i.op !== Op.TEXLD) {
+      if (this.v1 && i.op === Op.TEXLD) {
+        // tex tN (1.x / legacy): sample stage N at texture coordinate set N into tN (no source tokens)
+        if (i.src.length) throw new Error('RefDevice9: ps_1_4 texld is not implemented');
+        i.src = [{ type: PReg.TEXTURE, num: i.dst.num, swz: 0xe4, mod: 0, rel: -1 }, { type: Reg.SAMPLER, num: i.dst.num, swz: 0xe4, mod: 0, rel: -1 }];
+      }
+      if (!PS_OPS.has(i.op) || (this.v1 && (i.op === Op.RSQ || (i.op > Op.DP3 && i.op !== Op.TEXLD)))) {
         throw new Error('RefDevice9: pixel shader opcode ' + i.op + ' is not implemented');
+      }
+      // the scalar sources (rsq's, pow's two): REF reads one component (CPSTrans: the swizzle's first selector, a
+      // swizzle move first otherwise); with a replicate swizzle every reading agrees
+      for (const k of i.op === Op.RSQ ? [0] : i.op === Op.POW ? [0, 1] : []) {
+        const w = i.src[k].swz;
+        if (w !== (w & 3) * 0x55) throw new Error('RefDevice9: a scalar pixel shader source without a replicate swizzle');
       }
       for (const s of i.src) if (s.mod !== 0 && s.mod !== 1) throw new Error('RefDevice9: pixel shader source modifier ' + s.mod + ' is not implemented');
       const src = (k: number): number[] => {
@@ -122,13 +160,23 @@ export class PixelShader9 {
           x = regs[b + I.b0]; y = regs[b + I.b1]; z = regs[b + I.b2]; w = regs[b + I.b3];
           if (I.nb) { x = -x; y = -y; z = -z; w = -w; }
           t[4] = x; t[5] = y; t[6] = z; t[7] = w;
-          if (op === Op.MAD) {
+          if (op === Op.MAD || op === Op.CMP) {
             x = regs[b + I.c0]; y = regs[b + I.c1]; z = regs[b + I.c2]; w = regs[b + I.c3];
             if (I.nc) { x = -x; y = -y; z = -z; w = -w; }
             t[8] = x; t[9] = y; t[10] = z; t[11] = w;
           }
         }
         const o = b + I.dst;
+        // the scalar ops' one value: rsq 0x29 f32(1 / f32(sqrt(|x|))) at 64 bits (one rounding each: neither a float's
+        // square root nor a float's reciprocal lies within 2^-49 of a float midpoint unless exact); nrm: rsq of dp3
+        // 0x1c of the source with itself (then mul 0x27); pow: log 0x21 f32(f32(ln |x|) * ooLOG2), mul 0x27 by y,
+        // exp 0x1e f32(pow(2, that))
+        // ponytail: the CRT's _CIlog / _CIpow against fdlibm's log / pow (V8's): equal floats unless a double result
+        // straddles a float midpoint (about 2^-29 a value); a trace that differs there needs the CRT's own routines
+        let sc = 0;
+        if (op === Op.RSQ) sc = fr(1 / fr(Math.sqrt(Math.abs(t[0]))));
+        else if (op === Op.NRM) sc = fr(1 / fr(Math.sqrt(Math.abs(E.sum32x3(t[0] * t[0], t[1] * t[1], t[2] * t[2])))));
+        else if (op === Op.POW) sc = fr(Math.pow(2, fr(fr(fr(Math.log(Math.abs(t[0]))) * OOLOG2) * t[4])));
         for (let j = 0; j < 4; j++) {
           if (!((mask >> j) & 1)) continue;
           let v: number;
@@ -140,6 +188,14 @@ export class PixelShader9 {
             v = lo === fr(sm + e) ? lo : E.add32(pr, c);
           }
           else if (op === Op.MOV) v = t[j];                                       // 0x26
+          // cmp 0x17: src0 >= 0 (not NaN) picks src1, else src2
+          else if (op === Op.CMP) v = t[j] >= 0 ? t[4 + j] : t[8 + j];
+          // max 0x24: src1 > src0 (or unordered) picks src1, else src0
+          else if (op === Op.MAX) v = t[j] >= t[4 + j] ? t[j] : t[4 + j];
+          else if (op === Op.NRM) v = fr(t[j] * sc);
+          else if (op === Op.RSQ || op === Op.POW) v = sc;
+          // dp3: f32((a.x b.x + a.y b.y) + a.z b.z) at 64 bits (exact float products)
+          else if (op === Op.DP3) v = E.sum32x3(t[0] * t[4], t[1] * t[5], t[2] * t[6]);
           else if (op === Op.ADD) v = fr(t[j] + t[4 + j]);                        // 0x15
           else v = fr(t[j] * t[4 + j]);                                           // MUL 0x27
           if (I.sat) v = v > 1 ? 1 : v >= 0 ? v : 0;                               // _EmitDstMod: clamp 0x2
@@ -167,4 +223,19 @@ export class PixelShader9 {
       for (let j = 0; j < 4; j++) if ((mask >> j) & 1) regs[o + j] = I.sat ? Math.min(Math.max(out[j], 0), 1) : out[j];
     }
   }
+}
+
+/** UpdateLegacyPixelShader 0x1002234f: the shader REF runs without a pixel shader, `tex tN` for each texture stage
+ *  up to the first COLOROP DISABLE (the stage blending itself is rast.ts's legacyBlend) */
+const LEGACY = new Map<number, PixelShader9>();
+export function legacyShader(stages: number): PixelShader9 {
+  let s = LEGACY.get(stages);
+  if (!s) {
+    const t = [PS_LEGACY];
+    for (let i = 0; i < stages; i++) t.push(0x42, (0xb00f0000 | i) >>> 0);
+    t.push(0xffff);
+    s = new PixelShader9(new Uint32Array(t));
+    LEGACY.set(stages, s);
+  }
+  return s;
 }

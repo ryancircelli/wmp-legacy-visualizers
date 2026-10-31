@@ -27,7 +27,8 @@ function bytes(): Uint8Array {
   return b;
 }
 function start(m: WebAssembly.Module): void {
-  X = new WebAssembly.Instance(m, {}).exports as unknown as Exports;
+  // pow2: ps.ts pow's exp (Math.pow), which the kernel imports
+  X = new WebAssembly.Instance(m, { 'kernel-as': { pow2: (x: number) => Math.pow(2, x) } }).exports as unknown as Exports;
   X.init();
   heap.reset(X.heapBase());
 }

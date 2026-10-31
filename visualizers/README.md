@@ -120,6 +120,8 @@ Every visualizer is byte-identical to the real Microsoft object for 30,000 conse
 | Windows Media Player 10 (the gallery's `MediaPlayer_10.dll` 1.0.3.1, its one preset Energy Bliss, 320x240 and 401x301; drawn through our port of Direct3D 8's reference rasterizer, its GDI+ equalizer panel through our own GDI+ steps, the DLL's clock pinned) | 4: rock at two clock steps (16 and 33 ms a frame), the synthetic composition at 33 ms and rock at 401x301, 30,000 frames each | 120,000 | identical |
 | TwistedPixel (Visolu's `TwistedPixel.dll` 1.0.0.1, its VBScript and JScript engines on our own 12 presets, the window's size; drawn through our port of Direct3D 8's reference rasterizer, the DLL's clock pinned and its new memory zeroed, since its cross-fades read fields it never wrote) | 4: rock at 34 ms a frame, electronic at 100 ms, classical at 400 ms and 333x247, and a long stream at 34 ms, 30,000 frames each, every preset and its cross-fades | 120,000 | identical |
 | 3D Spectrum Analyzer (Carlo McWhirter's `WM3DSpectrum.dll`, 2009, all 8 presets, the window's size; drawn as Direct3D 9's reference rasterizer draws, D3DX 9 on its x87 path) | 4: rock and classical at 320x240, electronic at 401x301 and a long stream at 640x480, 30,000 frames each, every preset (a switch every 3,750 frames); its history texture compared after every frame, the picture on 1,015 frames a run | 120,000 | identical; its Verdana credit line (Windows' font) is not drawn |
+| Bubbles (the Psychedelia Viz Pack's `Bubbles.dll`, 2007, all 4 presets, 320x240 and 240x320; drawn as Direct3D 9's reference rasterizer draws, D3DX 9 on its x87 path) | 20: every preset on the synthetic composition and rock with two seeds, and electronic at 240x320, 30,000 frames each; two 8,000-frame preset-switch runs | 616,000 | identical; the cover's own pixels (Folder.jpg through Windows' codecs) are not compared |
+| Ribbons (the Psychedelia Viz Pack's `RibbonsVis.dll`, 2007, all 6 presets, the window's size; drawn as Direct3D 9's reference rasterizer draws, D3DX 9 on its x87 path, render targets starting at zero) | 14: every preset on rock and a long stream at 320x240, and electronic at 239x317 for Mystify and Embossed, 30,000 frames each, with the DLL's texture and noise table | 420,000 | identical |
 | Shacojin (the WMP 7 Bonus Pack's `shacojin.dll`, all 4 presets, the window's size; drawn through our own GDI rasterizer) | 21: every preset on the synthetic composition, rock, classical and electronic at 640x480 and on rock at 333x247, and a preset switch at frame 15,000 | 630,000 | identical |
 | WMP's spectrum analyzer (WMP 9-12) | 63 per build: every byte of every snapshot, six recordings and a synthetic set | 751,914 snapshots per build | identical |
 | WMP's spectrum analyzer (WMP 7.0, 7.1, 8, 8 SP1) | 63 per build, the same set: every byte of every snapshot, both spectrum layouts | 751,914 snapshots per build | identical |
@@ -189,8 +191,8 @@ Scope and Scan), PixelTrip (Visolu, 2002), Animator (Glass3D, 2003; its 2.2, the
 engine; our own photos, backdrop and sign in place of the film's), T3 (Rise of the Machines, Grind's engine rebuilt; our own machine-age
 pictures and sign in place of the film's), Windows Media Player 10 (Energy Bliss, the gallery's download for WMP 10; our own sky,
 clouds and buttons in place of its pictures), TwistedPixel (Visolu, 2003, Direct3D 8, with its VBScript and
-JScript engines; twelve presets of our own, since its 333 are their authors') and Bubbles (the Psychedelia Viz Pack's, Direct3D 9, our own artwork; the pack's Distortion,
-Gigertron 3D, Hypnobloom, Album Art 3D, Ribbons and Up Cuber are next).
+JScript engines; twelve presets of our own, since its 333 are their authors') and Bubbles and Ribbons (the Psychedelia Viz Pack's, Direct3D 9, our own artwork; the pack's
+Distortion, Gigertron 3D, Hypnobloom, Album Art 3D and Up Cuber are next).
 
 Not found yet: "Thanks" and "Chinese New Year 2005" from Microsoft's gallery.
 

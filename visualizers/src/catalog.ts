@@ -65,6 +65,7 @@ const CURRENT: Record<VisKind, Versions> = {
   firedancer: [9, 9],
   // the Psychedelia Viz Pack's visualizations (2007): for WMP 11
   bubbles: [11, 11],
+  ribbons: [11, 11],
   // 3D Spectrum Analyzer: Carlo McWhirter's plug-in for WMP 11 (2009)
   wm3dspectrum: [11, 11],
   // Analyzed: Miha Software's plug-in, tested by its author on WMP 10 and 11

@@ -95,6 +95,30 @@ runs' devices); captured again, each in a sandbox of its own, all ten are identi
 The cover bubble shows the song's art here; the DLL loads the album's Folder.jpg through Windows' imaging codecs,
 which a browser's decoder cannot reproduce, so the art's own pixels are outside the comparison.
 
+## Ribbons (2026-10-31): the Psychedelia Viz Pack, Direct3D 9
+
+RibbonsVis.dll runs on the same ground truth as Bubbles (Windows' reference device, D3DX 9 on its x87 path, the DLL's
+math at 24-bit x87 precision). It reads no clock; `rand()` is seeded by `time()`, pinned by the host. The runs use
+the DLL's own texture and noise permutation (the public build draws our own texture and its own shuffle of the
+noise table). The reference device does not clear a new render target: Ribbons' feedback target starts with what the
+heap held, which shows in the first frame's corners and lingers through the fade. The host zero-fills each new
+render-target texture before the DLL draws (outside the recording), as the port's targets start; with that, every run
+below is identical.
+
+| Preset | Streams | Frames | Result |
+|---|---|---|---|
+| Random | rock, a long stream | 60,000 | identical |
+| Mystify | rock, a long stream; electronic at 239x317 | 90,000 | identical |
+| Ribbons | rock, a long stream | 60,000 | identical |
+| Dense | rock, a long stream | 60,000 | identical |
+| Embossed | rock, a long stream; electronic at 239x317 | 90,000 | identical |
+| More Embossed | rock, a long stream | 60,000 | identical |
+
+Rock and electronic run with the clock pinned at 100,000 ms (seed 1058270499), the long stream at 50,000,000 ms
+(seed 1058320399); 320x240 unless marked. D3DX's vector normalize reads a 512-entry reciprocal square root table with no
+Newton step; the table is the secant of 1/sqrt through each segment's ends rounded to float, the same in d3dx9_28, 29
+and 31.
+
 ## Goom (2026-10-13): What a GOOM! 2k4's plug-in for WMP 9
 
 Goom is not Microsoft's: iOS Software's LGPL visualizer, whose installer (archived by the Wayback Machine from the

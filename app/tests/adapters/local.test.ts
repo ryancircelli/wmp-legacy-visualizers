@@ -270,6 +270,7 @@ describe('the analyzer build per preset', () => {
       .map((p) => 'Battery: ' + p.name),
       // the Psychedelia Viz Pack's, made for WMP 11
       ...PRESETS.filter((p) => p.vis === 'bubbles').map((p) => 'Bubbles: ' + p.name),
+      ...PRESETS.filter((p) => p.vis === 'ribbons').map((p) => 'Ribbons: ' + p.name),
       // Analyzed, a plug-in for WMP 10 and 11: the newer's
       ...PRESETS.filter((p) => p.vis === 'analyzed').map((p) => 'Analyzed: ' + p.name),
       // 3D Spectrum Analyzer, a plug-in for WMP 11
