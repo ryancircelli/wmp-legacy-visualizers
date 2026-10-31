@@ -61,6 +61,8 @@ export interface AlchemyNS {
   batteryKernel: 'auto' | 'js' | 'wasm';
   /** Bars' bar drawing and trail sink: 'auto' = WebAssembly when available, else JS (bars-kernel.ts). */
   barsKernel: 'auto' | 'js' | 'wasm';
+  /** 3D Spectrum Analyzer's vertices and raster: 'auto' = WebAssembly when available, else JS (wm3dspectrum/kernel.ts). */
+  wm3dKernel: 'auto' | 'js' | 'wasm';
   Bars: typeof Bars;
   BatteryWarps: typeof BatteryWarps;
   BatteryDraws: BatteryDrawsNS;

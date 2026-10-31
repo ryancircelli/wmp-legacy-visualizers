@@ -17,6 +17,7 @@ const KERNELS = [
   { src: 'assembly/battery.ts', out: 'src/battery/kernel-wasm.ts', name: 'BATTERY_WASM' },
   { src: 'assembly/trig.ts', out: 'src/trig-wasm.ts', name: 'TRIG_WASM' },
   { src: 'assembly/bars.ts', out: 'src/bars-wasm.ts', name: 'BARS_WASM' },
+  { src: 'assembly/wm3dspectrum.ts', out: 'src/wm3dspectrum/kernel-wasm.ts', name: 'WM3D_WASM' },
 ];
 
 let stale = false;

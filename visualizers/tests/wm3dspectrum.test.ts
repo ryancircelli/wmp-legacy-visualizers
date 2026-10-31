@@ -35,6 +35,30 @@ describe('3D Spectrum Analyzer', () => {
     spectrum(f, out, true);
     expect([290, 291, 299, 300, 301, 310, 311].map((i) => out[i])).toEqual([0, 5, 7, 7, 2, 1, 0]);
   });
+  it('the WebAssembly kernel draws every pixel the JavaScript does: each preset, a resize, a path switch mid-run', () => {
+    const run = (preset: number, mode: (f: number) => 'js' | 'wasm'): Uint32Array[] => {
+      const e = new WM3DSpectrum({ width: 97, height: 61, preset }), gen = new InputGen(0x3d5 + preset), out: Uint32Array[] = [];
+      try {
+        for (let f = 0; f < 60; f++) {
+          A.wm3dKernel = mode(f);
+          if (f === 40) e.resize(131, 89);
+          if (f === 50) e.setPreset(preset ^ 1);   // the other palette
+          const l = gen.next();
+          if (f % 10 === 9) out.push(e.render(l).px.slice());
+          else (e as unknown as { update(l: unknown): void }).update(l);
+        }
+      } finally { A.wm3dKernel = 'auto'; }
+      return out;
+    };
+    let lit = 0;
+    for (let p = 0; p < 8; p++) {
+      const js = run(p, () => 'js');
+      if (js.some((px) => px.some((c) => c !== 0))) lit++;
+      expect(run(p, () => 'wasm'), `preset ${p}`).toEqual(js);
+      expect(run(p, (f) => (f % 20 < 10 ? 'wasm' : 'js')), `preset ${p} switching`).toEqual(js);
+    }
+    expect(lit).toBeGreaterThan(4);   // (City Lights stays dark at low heights)
+  }, 600_000);
   it('the camera: the effect constants the DLL sets at 320x240 (D3DX 9 on its x87 path)', () => {
     expect(Array.from(wvp(320, 240))).toEqual([-1.7405428886413574, 0, 0.4990004301071167, 0, -0.28384411334991455, 2.183493137359619, -0.9900649785995483, 0,
       -0.24925775825977325, -0.42662757635116577, -0.8694257736206055, 585.9156494140625, -0.24925276637077332, -0.4266190230846405, -0.869408369064331, 586.00390625]);

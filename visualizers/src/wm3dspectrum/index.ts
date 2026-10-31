@@ -31,6 +31,7 @@ import * as E from '../d3d8/ref/ext';
 import { linCoord } from '../d3d9/ref/tex';
 import { f, matMul, vec3Normalize } from '../psychedelia/d3dx9';
 import { Raster, Target, Verts, snap } from './raster';
+import { type Arena, newArena, reserve } from './kernel';
 
 const PRESET_NAMES = ['Rose Garden', 'City Lights', 'Rose Garden Points', 'City Lights Points', 'Rose Garden - Smooth',
   'City Lights - Smooth', 'Rose Garden Points - Smooth', 'City Lights Points - Smooth'];
@@ -147,6 +148,12 @@ class WM3DSpectrum {
   /** the colours by S for [Rose Garden, City Lights], filled on first use */
   declare cols: [Float32Array, Float32Array];
   declare have: [Uint8Array, Uint8Array];
+  /** the palette the vertex arrays were computed for (-1: none, or the size changed) */
+  declare lastCity: number;
+  /** the WebAssembly kernel holding every buffer above (null: plain arrays, JavaScript only) */
+  declare arena: Arena | null;
+  /** the palette is complete (the kernel cannot shade a missing colour) */
+  declare full: [boolean, boolean];
 
   static PRESET_NAMES: string[] = PRESET_NAMES;
 
@@ -158,23 +165,36 @@ class WM3DSpectrum {
     this.preset = cfg.preset ? cfg.preset | 0 : 0;
     if (this.preset < 0 || this.preset >= PRESET_NAMES.length) this.preset = 0;
     this.frame = 0;
-    this.field = new Uint8Array(NV);
     this.head = 0;
     this.L = new Uint8Array(512); this.R = new Uint8Array(512);
-    this.verts = null; this.target = null; this.raster = null;
-    this.c = new Float32Array(0);
+    this.target = null; this.raster = null; this.lastCity = -1;
     this.out = { w: 0, h: 0, px: new Uint32Array(0) };
-    this.cols = [new Float32Array(3 * (SMAX + 1)), new Float32Array(3 * (SMAX + 1))];
     this.have = [new Uint8Array(SMAX + 1), new Uint8Array(SMAX + 1)];
+    this.full = [false, false];
+    this.arena = newArena(NV, 3 * (SMAX + 1));
+    this.views();
     // the sampling coordinates: u = f32(x * -c + 1), v = f32(z * c + 0.5) (mad at 64 bits), c = 1 / 512.5 as a float
     const cu = float(0xbaffc010), cv = float(0x3affc010);
-    this.iu = new Int32Array(3 * N); this.jv = new Int32Array(3 * N);
     for (let i = 0; i < N; i++) {
       const n = linCoord(E.add32(f(f(i * 0.5) - 256) * cu, 1), N), i0 = n >> 5;
       this.iu[3 * i] = i0 & 1023; this.iu[3 * i + 1] = (i0 + 1) & 1023; this.iu[3 * i + 2] = n & 31;
       const m = linCoord(E.add32(f(256 - f(0.5 * i)) * cv, 0.5), N), j0 = m >> 5;
       this.jv[3 * i] = j0 & 1023; this.jv[3 * i + 1] = (j0 + 1) & 1023; this.jv[3 * i + 2] = m & 31;
     }
+  }
+
+  /** the buffers, as views of the kernel's memory (made again whenever it grows: the contents stay) or arrays */
+  private views(): void {
+    const ar = this.arena, buf = ar ? ar.k.memory.buffer : undefined;
+    this.field = ar ? new Uint8Array(buf as ArrayBuffer, ar.field, NV) : new Uint8Array(NV);
+    this.iu = ar ? new Int32Array(buf as ArrayBuffer, ar.iu, 3 * N) : new Int32Array(3 * N);
+    this.jv = ar ? new Int32Array(buf as ArrayBuffer, ar.jv, 3 * N) : new Int32Array(3 * N);
+    this.c = ar ? new Float32Array(buf as ArrayBuffer, ar.c, 16) : new Float32Array(16);
+    const nc = 3 * (SMAX + 1);
+    this.cols = ar ? [new Float32Array(buf as ArrayBuffer, ar.cols[0], nc), new Float32Array(buf as ArrayBuffer, ar.cols[1], nc)]
+      : [new Float32Array(nc), new Float32Array(nc)];
+    this.verts = new Verts(NV, buf, ar ? ar.verts : 0);
+    this.target = null; this.lastCity = -1;
   }
 
   resize(w: number, h: number): void {
@@ -208,19 +228,46 @@ class WM3DSpectrum {
   private draw(): Surface {
     const w = this.w, h = this.h;
     if (!this.target || this.target.w !== w || this.target.h !== h) {
-      this.target = new Target(w, h);
-      if (!this.verts) this.verts = new Verts(NV);
-      this.raster = new Raster(this.target, this.verts);
-      this.c = wvp(w, h);
+      let ar = this.arena;
+      if (ar) {
+        try { if (reserve(ar, w * h)) this.views(); } catch {
+          // no memory for this window: the JavaScript from now on, on arrays of its own
+          const { field, iu, jv, cols } = this;
+          this.arena = ar = null;
+          this.views();
+          this.field.set(field); this.iu.set(iu); this.jv.set(jv); this.cols[0].set(cols[0]); this.cols[1].set(cols[1]);
+        }
+      }
+      this.target = ar ? new Target(w, h, ar.k.memory.buffer, ar.target) : new Target(w, h);
+      this.raster = new Raster(this.target, this.verts as Verts);
+      this.c.set(wvp(w, h));
+      this.lastCity = -1;
       this.out = { w, h, px: this.target.px };
     }
-    const t = this.target, ras = this.raster as Raster;
+    const t = this.target, ras = this.raster as Raster, v = this.verts as Verts, city = this.preset & 1;
+    // a vertex's outputs depend only on its place, its S, the palette and the size: where S is what it was last
+    // frame (the flat ground, quiet bands) they are still in the vertex arrays
+    if (this.lastCity !== city) { v.s.fill(-1); this.lastCity = city; v.cols = this.cols[city]; }
     t.clear();
-    this.vertices();
-    if (this.preset & 2) for (let i = 0; i < NV; i++) ras.point(i);
-    else {
+    const ar = A.wm3dKernel === 'js' ? null : this.arena;
+    if (!ar && A.wm3dKernel === 'wasm') throw new Error('3D Spectrum Analyzer: the WebAssembly kernel is unavailable here');
+    if (ar) {
+      if (!this.full[city]) {
+        const cols = this.cols[city], have = this.have[city], shade = city ? cityLights : roseGarden;
+        for (let S = 0; S <= SMAX; S++) if (!have[S]) { shade(S / 131072, cols, 3 * S); have[S] = 1; }
+        this.full[city] = true;
+      }
+      const k = ar.k, o = ar.verts;
+      k.bind(ar.field, ar.iu, ar.jv, ar.c, o, o + 4 * NV, o + 8 * NV, o + 12 * NV, o + 16 * NV, o + 20 * NV, o + 24 * NV,
+        t.px.byteOffset, t.zb.byteOffset, w, h);
+      k.palette(ar.cols[city]);
+      k.vertices(this.head, w, h);
+      if (this.preset & 2) k.points(); else k.triangles();
+    } else {
+      this.vertices();
+      if (this.preset & 2) for (let i = 0; i < NV; i++) ras.point(i);
       // the index buffer: per b, (b, b + 1, b + 1023) and (b + 1023, b + 1, b + 1024)
-      for (let b = 0; b < 1023 * 1023; b++) { ras.triangle(b, b + 1, b + 1023); ras.triangle(b + 1023, b + 1, b + 1024); }
+      else for (let b = 0; b < 1023 * 1023; b++) { ras.triangle(b, b + 1, b + 1023); ras.triangle(b + 1023, b + 1, b + 1024); }
     }
     if (this.options.overlay) this.options.overlay(t.px, w, h);
     return this.out;
@@ -230,6 +277,7 @@ class WM3DSpectrum {
   private vertices(): void {
     const v = this.verts as Verts, c = this.c, fd = this.field, head = this.head, iu = this.iu, jv = this.jv;
     const city = this.preset & 1, cols = this.cols[city], have = this.have[city], shade = city ? cityLights : roseGarden;
+    const last = v.s;
     const W = this.w, H = this.h;
     const c00 = c[0], c01 = c[1], c02 = c[2], c03 = c[3], c10 = c[4], c11 = c[5], c12 = c[6], c13 = c[7];
     const c20 = c[8], c21 = c[9], c22 = c[10], c23 = c[11], c30 = c[12], c31 = c[13], c32 = c[14], c33 = c[15];
@@ -241,6 +289,8 @@ class WM3DSpectrum {
         const i0 = iu[3 * i], i1 = iu[3 * i + 1], fu = iu[3 * i + 2], gu = 32 - fu;
         // texldl: (i0, j0), (i1, j0), (i1, j1), (i0, j1), weights in 1024ths; green = byte / 128
         const S = gv * (gu * fd[r0 + i0] + fu * fd[r0 + i1]) + fv * (fu * fd[r1 + i1] + gu * fd[r1 + i0]);
+        if (last[n] === S) continue;
+        last[n] = S;
         if (!have[S]) { shade(S / 131072, cols, 3 * S); have[S] = 1; }
         const y = fr(S * (100 / 131072));
         // dp4 o0, (x, y, z, 1), c#: f32(((y c.y + x c.x) + z c.z) + c.w) at 64 bits
@@ -257,7 +307,6 @@ class WM3DSpectrum {
         if (sy !== fr(p + e)) { E.ldMul(yc, rhw); E.fmul(-H); E.fadd(H); sy = E.st32(); }
         v.x[n] = sx; v.y[n] = sy; v.z[n] = cz * rhw; v.rhw[n] = rhw;
         v.X[n] = snap(sx); v.Y[n] = snap(sy);
-        v.r[n] = cols[3 * S]; v.g[n] = cols[3 * S + 1]; v.b[n] = cols[3 * S + 2];
       }
     }
   }
