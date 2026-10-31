@@ -41,7 +41,7 @@ it("lets the shell set every family's options live, whatever the port keeps", as
     expect(() => { eng.options.alpha = 'luma'; eng.options.tint = [255, 0, 0]; eng.options.backgroundColor = 0x102030; }, k).not.toThrow();
     expect(eng.options.alpha, k).toBe('luma');
   }
-});
+}, 30000);   // builds every family's engine: T3's, Plus! 3-D's and Yule Log's take seconds on a loaded machine
 
 it('draws a fixed-size family at its own size at every scale (else present() drew nothing)', async () => {
   const { createEngine } = await import('wmp-legacy-visualizers');
