@@ -119,6 +119,30 @@ Rock and electronic run with the clock pinned at 100,000 ms (seed 1058270499), t
 Newton step; the table is the secant of 1/sqrt through each segment's ends rounded to float, the same in d3dx9_28, 29
 and 31.
 
+## Gigertron 3D (2026-10-31): the Psychedelia Viz Pack, Direct3D 9
+
+ThreeDBars.dll draws the spectrum as a field of 3D bars, fixed-function and additive, on the same ground truth as
+Bubbles. `rand()` (the first heights and colours) is seeded by `time()`; its frame time is the C runtime's `_ftime64`
+milliseconds, pinned at 16 ms a frame.
+
+| Preset | Streams | Frames | Result |
+|---|---|---|---|
+| Cubetro | rock, a long stream; electronic at 239x317 | 90,000 | identical |
+| Syntax | rock, a long stream | 60,000 | identical |
+| Northern | rock, a long stream; electronic at 239x317 | 90,000 | identical |
+
+Syntax and Northern clear the back buffer only on their 402nd frame and every 402 after; before that they add onto
+what the reference device's new back buffer held, heap leftovers (pointers, then environment text) that differ from
+run to run. Each run's start is that run's first frame minus the port's first frame over black; the public build
+starts from black (option `backBuffer`).
+
+**No ground truth: the original crashes on the reference device** for its seven other presets (Guybrush, Polaris,
+Beausoleil, Blacklight, Arcadia, Etherium, Dragons). Each ring's DrawIndexedPrimitive passes MinVertexIndex =
+StartIndex (1800 k) while the ring's vertices start at 1200 k; a hardware driver takes the minimum as a hint and draws
+it, the reference device indexes its processed vertices below their start and faults (an access violation in
+`d3dref9.dll`, traced and untraced alike). The port draws those presets with the right range, but nothing can check
+them, so they are not in the menu.
+
 ## Goom (2026-10-13): What a GOOM! 2k4's plug-in for WMP 9
 
 Goom is not Microsoft's: iOS Software's LGPL visualizer, whose installer (archived by the Wayback Machine from the

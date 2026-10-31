@@ -83,7 +83,7 @@ describe('menus', () => {
     const { $ } = setup();
     press($('#vpick')!);
     expect([...menu(0)!.querySelectorAll<HTMLElement>('[role^=menuitem]')].map((b) => b.children[1]!.textContent)).toEqual(['3D Alchemy', 'Animator', 'Alchemy', 'Ambience', 'Analyzed', 'Bars and Waves', 'Battery', 'Blazing Colors', 'Bubbles', 'Celestial', 'Clarify', 'Color Cubes', 'Phthalo\'s Corona', 'Particle', 'Dungeon Siege', 'Eclectic Colors', 'Fire Dancer', 'Flashes', 'Googly Moogly!', 'Grind(2003)', 'Kid Drawing', 'Windows Media Player 10', 'Windows Media 9 Series', 'Picture Viz', 'Picture Viz II', 'Picture Viz 3D', 'PixelTrip', 'Plenoptic', 'Plus! 3-D Visualizations', 'Pulsing Colors', 'Ribbons', 'Ripple', 'Shacojin', 'SnowTime', 'Spikes', 'StarTime',
-      'T3', 'Trilogy I', 'Trilogy II', 'Trilogy III', 'TwistedPixel', 'Better Bars', '3D Spectrum Analyzer', 'Goom', 'Musical Colors', 'Yule Log']);   // by registry key: Particle is "Dotplane"
+      'T3', 'Gigertron 3D', 'Trilogy I', 'Trilogy II', 'Trilogy III', 'TwistedPixel', 'Better Bars', '3D Spectrum Analyzer', 'Goom', 'Musical Colors', 'Yule Log']);   // by registry key: Particle is "Dotplane"
     await act(() => new Promise((r) => setTimeout(r, 0)));     // Radix listens for outside presses from the next tick
     press(document.body);
     expect(menu(0)).toBeNull();

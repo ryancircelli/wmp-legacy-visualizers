@@ -56,6 +56,7 @@ describe('the catalog', () => {
       'Spikes, WMP 10 2',
       'StarTime, WMP 7–8 3',
       'T3, WMP 9 1',
+      'Gigertron 3D, WMP 11 3',
       'Trilogy I, WMP 7–8 4',
       'Trilogy II, WMP 7–8 4',
       'Trilogy III, WMP 7–8 4',

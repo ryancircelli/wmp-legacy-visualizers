@@ -46,6 +46,7 @@ import './betterbars/index';
 import './celestial/index';
 import './blackfly/firedancer';
 import './psychedelia/bubbles/index';
+import './psychedelia/gigertron/index';
 import './psychedelia/ribbons/index';
 import './wm3dspectrum/index';
 import { RefDevice } from './d3d8/ref';
@@ -57,7 +58,7 @@ export { pictureFromRGBA, loadPicture } from './pictureviz/picture';
 
 export type VisKind = 'alchemy' | 'bars' | 'battery' | 'spikes' | 'particle' | 'plenoptic' | 'ambience' | 'musical'
   | 'blazing' | 'colorcubes' | 'pulsing' | 'trilogy1' | 'trilogy2' | 'trilogy3' | 'dungeon' | 'snowtime' | 'startime' | 'eclectic' | 'alchemy3d' | 'pictureviz' | 'pictureviz2' | 'pictureviz3' | 'yule'
-  | 'goom' | 'kiddraw' | 'shacojin' | 'plus3d' | 'wm9s' | 'googly' | 'corona' | 'ripple' | 'betterbars' | 'clarify' | 'pixeltrip' | 'animator' | 'flashes' | 'celestial' | 'bubbles' | 'ribbons' | 'analyzed' | 'grind' | 'firedancer' | 't3' | 'twistedpixel' | 'wm10' | 'wm3dspectrum';
+  | 'goom' | 'kiddraw' | 'shacojin' | 'plus3d' | 'wm9s' | 'googly' | 'corona' | 'ripple' | 'betterbars' | 'clarify' | 'pixeltrip' | 'animator' | 'flashes' | 'celestial' | 'bubbles' | 'gigertron' | 'ribbons' | 'analyzed' | 'grind' | 'firedancer' | 't3' | 'twistedpixel' | 'wm10' | 'wm3dspectrum';
 /** 'original' = each DLL's own surface size; 'auto' = the view, capped near 720p worth of pixels; n = view * n. */
 export type Scale = 'original' | 'auto' | number;
 
@@ -93,7 +94,7 @@ export interface PresetEntry {
   preset: number;
   group: 'Alchemy' | 'Bars and Waves' | 'Battery' | 'Spikes' | 'Particle' | 'Plenoptic' | 'Ambience' | 'Musical Colors'
     | 'Blazing Colors' | 'Color Cubes' | 'Pulsing Colors' | 'Trilogy I' | 'Trilogy II' | 'Trilogy III' | 'Dungeon Siege' | 'SnowTime' | 'StarTime' | 'Eclectic Colors' | '3D Alchemy' | 'Picture Viz' | 'Picture Viz II' | 'Picture Viz 3D' | 'Kid Drawing' | 'Shacojin' | 'Yule Log'
-    | 'Goom' | 'Plus! 3-D Visualizations' | 'Windows Media 9 Series' | 'Googly Moogly!' | 'Phthalo\'s Corona' | 'Ripple' | 'Better Bars' | 'Clarify' | 'PixelTrip' | 'Animator' | 'Flashes' | 'Celestial' | 'Bubbles' | 'Ribbons' | 'Analyzed' | 'Grind(2003)' | 'Fire Dancer' | 'T3' | 'TwistedPixel' | 'Windows Media Player 10' | '3D Spectrum Analyzer';
+    | 'Goom' | 'Plus! 3-D Visualizations' | 'Windows Media 9 Series' | 'Googly Moogly!' | 'Phthalo\'s Corona' | 'Ripple' | 'Better Bars' | 'Clarify' | 'PixelTrip' | 'Animator' | 'Flashes' | 'Celestial' | 'Bubbles' | 'Gigertron 3D' | 'Ribbons' | 'Analyzed' | 'Grind(2003)' | 'Fire Dancer' | 'T3' | 'TwistedPixel' | 'Windows Media Player 10' | '3D Spectrum Analyzer';
   name: string;
   /** the family's registry key, HKLM\SOFTWARE\Microsoft\MediaPlayer\Objects\Effects\<key> (its place in the list) */
   key: string;
@@ -222,6 +223,8 @@ const FAMILIES: readonly { key: string; vis: VisKind; group: PresetEntry['group'
   // the Psychedelia Viz Pack (2007, Tim Cowley and Stephen Coy, for WMP 11): each DLL registers its own Effects key;
   // Bubbles.dll's is "Bubbles"
   { key: 'Bubbles', vis: 'bubbles', group: 'Bubbles', names: A.Bubbles.PRESET_NAMES },
+  // ThreeDBars.dll's is "ThreeDBars" (titled Gigertron 3D); three of its ten presets, the ones the original draws on the reference device
+  { key: 'ThreeDBars', vis: 'gigertron', group: 'Gigertron 3D', names: A.Gigertron.PRESET_NAMES },
   // RibbonsVis.dll's is "RibbonsVis"
   { key: 'RibbonsVis', vis: 'ribbons', group: 'Ribbons', names: A.Ribbons.PRESET_NAMES },
   // WM3DSpectrum.dll (2009, Carlo McWhirter, a Direct3D 9 plug-in for WMP 11): its Effects key is WM3DSpectrum, its title
@@ -302,7 +305,7 @@ export function nativeSize(kind: VisKind, viewW: number, viewH: number, preset =
   if (kind === 'alchemy' && preset === 1) return [384, 288];          // Random (WMP 9)
   if (kind === 'bars' || kind === 'spikes' || kind === 'particle' || kind === 'musical' || PLUS[kind] || kind === 'alchemy3d' || kind === 'pictureviz' || kind === 'pictureviz2' || kind === 'pictureviz3' || kind === 'kiddraw' || kind === 'shacojin') return [Math.min(1920, viewW), Math.min(1080, viewH)];
   // Ripple: a 32-bit DIB section of the window's size, BitBlt'd 1:1
-  if (kind === 'ripple' || kind === 'betterbars' || kind === 'clarify' || kind === 'celestial' || kind === 'bubbles' || kind === 'ribbons' || kind === 'firedancer' || kind === 'wm3dspectrum') return [Math.min(1920, viewW), Math.min(1080, viewH)];
+  if (kind === 'ripple' || kind === 'betterbars' || kind === 'clarify' || kind === 'celestial' || kind === 'bubbles' || kind === 'gigertron' || kind === 'ribbons' || kind === 'firedancer' || kind === 'wm3dspectrum') return [Math.min(1920, viewW), Math.min(1080, viewH)];
   if (kind === 'googly' || kind === 'corona' || kind === 'animator' || kind === 'flashes') return [Math.max(32, Math.min(1920, viewW)), Math.max(32, Math.min(1080, viewH))];   // the window's own, 32x32 at least
   if (kind === 'pixeltrip') {   // the window's shape within 640x480 worth of pixels (its per-pixel field runs ~18 ms there in JS)
     // ponytail: a fixed pixel budget, as the Direct3D families; the window's own size once the field is faster
@@ -413,6 +416,7 @@ function makeRaw(kind: VisKind, preset: number, options: EngineOptions): RawEngi
   // Fire Dancer draws a 320x384 frame and StretchBlts it to the window's height; Randomize seeds it from the clock
   if (kind === 'firedancer') return new A.FireDancer({ width: 16, height: 16, options, preset, seed: (Date.now() % 86400000) >>> 0 }) as unknown as RawEngine;
   if (kind === 'bubbles') return new (A.Bubbles as unknown as RawCtor)({ width: 16, height: 16, options, preset });
+  if (kind === 'gigertron') return new (A.Gigertron as unknown as RawCtor)({ width: 16, height: 16, options, preset });
   if (kind === 'ribbons') return new (A.Ribbons as unknown as RawCtor)({ width: 16, height: 16, options, preset });
   // 3D Spectrum Analyzer: a back buffer of the window's size
   if (kind === 'wm3dspectrum') return new (A.WM3DSpectrum as unknown as RawCtor)({ width: 16, height: 16, options, preset });
