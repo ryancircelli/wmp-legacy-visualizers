@@ -198,7 +198,7 @@ export interface Lyrics {
 }
 
 export interface CaptureSource {
-  /** 'display' | 'wsaudio' | 'loopback' | 'tone' | 'file' */
+  /** 'display' | 'wsaudio' | 'loopback' | 'tone' | 'synthetic' | 'file' */
   kind: string;
   label: string;
 }

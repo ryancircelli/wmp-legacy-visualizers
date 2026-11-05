@@ -6,6 +6,7 @@ import { noCommands, positionNow } from '../../model';
 import { announceHostUpdate, checkForUpdates, detectMode, rememberSiteVersion, followFullscreen, hostWindow, openSocket, socketUrl, win, type HostSocket, type MediaFrame } from '../host';
 import { idleStatus, onLyricsFrame, onMediaFrame, optimistic, pausedPatch, setSession, sourceStatus, MSG_LOCAL } from '../host/media';
 import { makeLevel, createAnalyserGraph, createPcmLevel, type AnalyserGraph } from './audio';
+import { createSyntheticLevel } from './synthetic';
 
 const MSG_PICK = 'Choose a tab or your screen and tick "Share audio"';
 const MSG_NOAUDIO = 'No audio in that share — share again with "Share audio" ticked';
@@ -147,10 +148,17 @@ export function startHost(store: AppStore, opts: { hostMedia?: () => boolean; pl
     if (!sock) actions.setStatus(idleStatus(store) + ' (system audio: cannot open ' + url + ')');
   }
 
-  // Hidden CI / screenshot sources: ?src=tone, ?src=url:<href>.
+  // Hidden CI / screenshot sources: ?src=tone, ?src=url:<href>, ?src=synthetic.
   function startTone(): void {
     const g = audio();
     attach({ kind: 'tone', ...g.tone(), label: 'test tone' });
+  }
+  // Generated music, silent and without an AudioContext (synthetic.ts): for a screen saver with no audio and no
+  // gesture to start one. The volume slider does not scale it.
+  function startSynthetic(): void {
+    const syn = createSyntheticLevel();
+    const fill = (l: TimedLevel) => { const v = store.getState().vis; syn.fill(l, S().smoothing, v.kind, v.preset); };
+    attach({ kind: 'synthetic', label: 'synthetic audio', fill });
   }
   function playURL(href: string): void {
     const g = audio(), f = g.file(href);
@@ -181,6 +189,7 @@ export function startHost(store: AppStore, opts: { hostMedia?: () => boolean; pl
   const q = /(^|[?&])src=([^&]*)/.exec(location.search), v = q ? decodeURIComponent(q[2]!) : '';
   const url = socketUrl();
   if (v === 'tone') startTone();
+  else if (v === 'synthetic') startSynthetic();
   else if (v.startsWith('url:')) playURL(v.slice(4));
   else if (url) openHostAudio(url);
   else if (window.alchemyElectron?.loopback) void startLoopback();

@@ -56,6 +56,13 @@ to answer a capture request with a loopback stream. [`tauri/README.md`](tauri/RE
 [`docs/history/deno-webview.md`](docs/history/deno-webview.md) the measurements from the first host
 that forced this design.
 
+With no audio at all (a TV's screen saver, say), `?src=synthetic` feeds the visualizers generated music
+instead: a small drum machine and synth made in JS (`src/adapters/local/synthetic.ts`), through the same
+analyzer, so every visualizer has beats, a moving spectrum and a waveform. It is silent and needs no
+AudioContext and no click: nothing is played. `alchemy.html?mode=screensaver&src=synthetic` with the
+visualizer chosen in `localStorage['alchemy.settings']` (`{vis, preset}`) runs any preset that way.
+(`?src=tone`, the CI tone, goes through Web Audio and needs a gesture.)
+
 ## Spotify
 
 `WmpSpotify.exe` is the same WMP 9 window, but it is also the Spotify client. Spotify's own web
