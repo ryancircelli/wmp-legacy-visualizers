@@ -1,6 +1,7 @@
 {
   "name": "wmp-legacy-visualizers",
   "version": "0.1.0",
+  "license": "(MIT AND LGPL-2.1-only)",
   "description": "Every Windows Media Player visualizer, WMP 7 to 12, ported instruction for instruction to TypeScript and WebAssembly",
   "type": "module",
   "exports": {

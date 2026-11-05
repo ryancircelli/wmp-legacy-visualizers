@@ -22,3 +22,9 @@ npm run build       # visualizers/dist/engine.js, then app/dist/ (the site) and 
 See [`app/README.md`](app/README.md) for the downloads and the build details, and
 [`visualizers/README.md`](visualizers/README.md) for using the engine in your own project, the fidelity record and
 a note on the source material.
+
+## Licence
+
+MIT ([`LICENSE`](LICENSE)), except Goom (`visualizers/src/goom/`), which is under the LGPL, version 2.1, as
+[its own section](visualizers/README.md#gooms-licence) explains. The licence covers this repository's own code;
+Windows Media Player's visualizers, and the plug-ins ported here, remain their authors' designs.
